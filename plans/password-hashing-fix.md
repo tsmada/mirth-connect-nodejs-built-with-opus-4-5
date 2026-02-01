@@ -1,5 +1,15 @@
 # Password Hashing Fix Plan
 
+## ✅ STATUS: RESOLVED (2026-02-01)
+
+The password hashing algorithm has been fixed in `src/api/middleware/auth.ts`.
+Node.js Mirth can now verify passwords created by Java Mirth.
+
+**Key fix**: The iteration loop runs `iterations - 1` (999) times after the initial digest,
+not `iterations` (1000) times. The initial `digest()` call counts as iteration 1.
+
+---
+
 ## Problem Statement
 
 The Node.js Mirth implementation cannot verify passwords created by Java Mirth because we were using an incorrect algorithm in our `hashPassword()` and `verifyPassword()` functions.
@@ -240,14 +250,14 @@ const cleanedHash = storedHash.replace(/\s/g, '');
 
 ## Implementation Checklist
 
-- [ ] Update `hashPassword()` to use `iterations - 1` loop
-- [ ] Update `hashPassword()` to use chunked Base64 output
-- [ ] Update `verifyPassword()` to clean whitespace from stored hash
-- [ ] Generate test vectors from Java Mirth
-- [ ] Verify Node.js implementation against test vectors
-- [ ] Remove development bypass in `verifyPassword()`
+- [x] Update `hashPassword()` to use `iterations - 1` loop ✅ (2026-02-01)
+- [x] Update `verifyPassword()` to clean whitespace from stored hash ✅ (2026-02-01)
+- [x] Generate test vectors from Java Mirth ✅ Hash: `YzKZIAnbQ5m+3llggrZvNtf5fg69yX7pAplfYg0Dngn/fESH93OktQ==`
+- [x] Verify Node.js implementation against test vectors ✅ Password 'admin' verified
+- [x] Remove development bypass in `verifyPassword()` ✅
+- [x] Run integration test with Docker Java Mirth ✅ Login successful
+- [ ] Update `hashPassword()` to use chunked Base64 output (optional - not needed for verification)
 - [ ] Add unit tests for password hashing
-- [ ] Run integration test with Docker Java Mirth
 
 ---
 

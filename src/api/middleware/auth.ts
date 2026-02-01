@@ -105,31 +105,51 @@ export function cleanExpiredSessions(): void {
 setInterval(cleanExpiredSessions, 5 * 60 * 1000);
 
 /**
- * Mirth Connect password hashing:
+ * Mirth Connect password hashing (v3.x+):
+ * Ported from: com.mirth.commons.encryption.Digester
  *
- * Current (v2.2+): Simple SHA256 hash, Base64 encoded
- * - No salt, no iterations
- * - Format: Base64(SHA256(password))
+ * Algorithm:
+ * - SHA256 with 1000 iterations
+ * - 8-byte random salt
+ * - Format: Base64(salt_8bytes + hash_32bytes)
  *
  * Legacy (pre-2.2): SALT_ + base64(8-byte-salt) + base64(SHA1(salt+password))
  */
 
 const PRE22_PREFIX = 'SALT_';
 const PRE22_SALT_LENGTH = 12; // Base64 length of 8-byte salt
+const MIRTH_SALT_SIZE = 8;
+const MIRTH_ITERATIONS = 1000;
 
 /**
- * Hash password using Mirth's current format (SHA256 + Base64)
- * This matches the Digester class with SHA256 algorithm
+ * Hash password using Mirth's exact algorithm
+ * Ported from: com.mirth.commons.encryption.Digester
+ *
+ * Algorithm:
+ * 1. SHA256(salt + password) - initial digest counts as iteration 1
+ * 2. Loop iterations-1 (999) times: hash = SHA256(hash)
+ * 3. Result = Base64(salt + final_hash)
  */
-export function hashPassword(password: string): string {
-  const hash = crypto.createHash('sha256').update(password).digest();
-  return hash.toString('base64');
+export function hashPassword(password: string, existingSalt?: Buffer): string {
+  const salt = existingSalt || crypto.randomBytes(MIRTH_SALT_SIZE);
+
+  // Initial hash: SHA256(salt + password) - this is iteration 1
+  let hash = crypto.createHash('sha256').update(salt).update(password).digest();
+
+  // Apply iterations-1 more times (999 iterations)
+  // The initial digest above counts as the first iteration
+  for (let i = 0; i < MIRTH_ITERATIONS - 1; i++) {
+    hash = crypto.createHash('sha256').update(hash).digest();
+  }
+
+  // Combine salt + hash and base64 encode
+  return Buffer.concat([salt, hash]).toString('base64');
 }
 
 /**
  * Verify password against Mirth's hashed password format
  * @param password Plain text password to verify
- * @param _salt Unused - kept for interface compatibility
+ * @param _salt Unused - kept for interface compatibility (salt is embedded in hash)
  * @param storedHash Base64 encoded password hash from database
  */
 export function verifyPassword(password: string, _salt: string | null, storedHash: string | null): boolean {
@@ -143,18 +163,26 @@ export function verifyPassword(password: string, _salt: string | null, storedHas
       return verifyPre22Password(password, storedHash);
     }
 
-    // Current format (2.2+): Simple Base64(SHA256(password))
-    const computedHash = hashPassword(password);
+    // Modern format: Base64(8-byte-salt + 32-byte-hash)
+    // Remove any whitespace/newlines from chunked Base64
+    const cleanedHash = storedHash.replace(/\s/g, '');
+    const decoded = Buffer.from(cleanedHash, 'base64');
 
-    // Use timing-safe comparison
-    const storedBuf = Buffer.from(storedHash, 'base64');
-    const computedBuf = Buffer.from(computedHash, 'base64');
-
-    if (storedBuf.length !== computedBuf.length) {
+    if (decoded.length !== MIRTH_SALT_SIZE + 32) {
       return false;
     }
 
-    return crypto.timingSafeEqual(storedBuf, computedBuf);
+    // Extract salt (first 8 bytes)
+    const salt = decoded.subarray(0, MIRTH_SALT_SIZE);
+    const storedHashBuf = decoded.subarray(MIRTH_SALT_SIZE);
+
+    // Recompute hash with extracted salt
+    const computedHashBase64 = hashPassword(password, salt);
+    const computedDecoded = Buffer.from(computedHashBase64, 'base64');
+    const computedHashBuf = computedDecoded.subarray(MIRTH_SALT_SIZE);
+
+    // Use timing-safe comparison
+    return crypto.timingSafeEqual(computedHashBuf, storedHashBuf);
   } catch {
     return false;
   }

@@ -267,3 +267,24 @@ with the pattern
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+
+---
+
+## Available Agents
+
+Specialized subagents for complex workflows. See `agents/README.md` for full documentation.
+
+### mirth-porter
+Port Java Mirth Connect code to TypeScript following TDD methodology.
+
+**Use for**: New connectors, API endpoints, plugins, validation gaps.
+
+**Quick start**:
+```
+Use the mirth-porter agent to port {ComponentName}.
+Parameters:
+- componentName: {name}
+- targetCategory: connectors|javascript|api|plugins|donkey
+```
+
+See `agents/mirth-porter.md` for full specification.
