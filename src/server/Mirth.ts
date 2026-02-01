@@ -13,6 +13,9 @@
 import { Donkey } from '../donkey/Donkey.js';
 import { startServer } from '../api/server.js';
 import { initPool, closePool } from '../db/pool.js';
+import { ChannelController } from '../controllers/ChannelController.js';
+import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
+import { DeployedState } from '../api/models/DashboardStatus.js';
 import type { Server } from 'http';
 
 export interface MirthConfig {
@@ -68,8 +71,8 @@ export class Mirth {
     // Start REST API server
     this.server = await startServer({ port: this.config.httpPort });
 
-    // TODO: Load channels from database
-    // TODO: Start enabled channels
+    // Load channels from database and deploy them
+    await this.loadAndDeployChannels();
 
     this.running = true;
     console.warn(
@@ -84,7 +87,20 @@ export class Mirth {
 
     console.warn('Stopping Mirth Connect...');
 
-    // TODO: Stop all running channels
+    // Stop all running channels
+    if (this.donkey) {
+      const channels = this.donkey.getChannels();
+      for (const channel of channels) {
+        try {
+          if (channel.getState() !== 'STOPPED') {
+            console.warn(`Stopping channel: ${channel.getName()}`);
+            await channel.stop();
+          }
+        } catch (error) {
+          console.error(`Error stopping channel ${channel.getName()}:`, error);
+        }
+      }
+    }
 
     // Stop REST API server
     if (this.server) {
@@ -116,5 +132,42 @@ export class Mirth {
 
   getDonkey(): Donkey | null {
     return this.donkey;
+  }
+
+  /**
+   * Load channels from database and deploy them to Donkey engine
+   */
+  private async loadAndDeployChannels(): Promise<void> {
+    try {
+      const channelConfigs = await ChannelController.getAllChannels();
+      console.warn(`Found ${channelConfigs.length} channel(s) in database`);
+
+      for (const channelConfig of channelConfigs) {
+        try {
+          // Build runtime channel from config
+          const runtimeChannel = buildChannel(channelConfig);
+
+          // Deploy to Donkey engine
+          await this.donkey!.deployChannel(runtimeChannel);
+          console.warn(`Deployed channel: ${channelConfig.name} (${channelConfig.id})`);
+
+          // Start channel if enabled and initial state is STARTED
+          const initialState = channelConfig.properties?.initialState;
+          if (channelConfig.enabled && initialState !== DeployedState.STOPPED) {
+            try {
+              await runtimeChannel.start();
+              console.warn(`Started channel: ${channelConfig.name}`);
+            } catch (startError) {
+              console.error(`Failed to start channel ${channelConfig.name}:`, startError);
+            }
+          }
+        } catch (channelError) {
+          console.error(`Failed to deploy channel ${channelConfig.name}:`, channelError);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load channels from database:', error);
+      // Don't throw - allow server to start even if channels fail to load
+    }
   }
 }

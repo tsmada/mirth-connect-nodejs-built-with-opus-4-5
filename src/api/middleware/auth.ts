@@ -105,63 +105,36 @@ export function cleanExpiredSessions(): void {
 setInterval(cleanExpiredSessions, 5 * 60 * 1000);
 
 /**
- * Mirth Connect password hashing (v3.x):
- * - SHA256 with 1000 iterations (PBKDF2-like)
- * - 8-byte random salt
- * - Format: Base64(salt_8bytes + hash_32bytes)
+ * Mirth Connect password hashing:
  *
- * Legacy (pre-2.2) format: SALT_ + base64(8-byte-salt) + base64(sha1(salt+password))
+ * Current (v2.2+): Simple SHA256 hash, Base64 encoded
+ * - No salt, no iterations
+ * - Format: Base64(SHA256(password))
+ *
+ * Legacy (pre-2.2): SALT_ + base64(8-byte-salt) + base64(SHA1(salt+password))
  */
 
 const PRE22_PREFIX = 'SALT_';
-const MIRTH_SALT_SIZE = 8;
-const MIRTH_ITERATIONS = 1000;
+const PRE22_SALT_LENGTH = 12; // Base64 length of 8-byte salt
 
 /**
- * Hash password using Mirth's format (SHA256 with iterations + Base64)
+ * Hash password using Mirth's current format (SHA256 + Base64)
+ * This matches the Digester class with SHA256 algorithm
  */
-export function hashPassword(password: string, existingSalt?: Buffer): string {
-  const salt = existingSalt || crypto.randomBytes(MIRTH_SALT_SIZE);
-
-  // Initial hash: SHA256(salt + password)
-  let hash = crypto.createHash('sha256').update(salt).update(password).digest();
-
-  // Apply iterations
-  for (let i = 0; i < MIRTH_ITERATIONS; i++) {
-    hash = crypto.createHash('sha256').update(hash).digest();
-  }
-
-  // Combine salt + hash and base64 encode
-  return Buffer.concat([salt, hash]).toString('base64');
-}
-
-/**
- * Generate a random salt
- */
-export function generateSalt(): string {
-  return crypto.randomBytes(MIRTH_SALT_SIZE).toString('base64');
+export function hashPassword(password: string): string {
+  const hash = crypto.createHash('sha256').update(password).digest();
+  return hash.toString('base64');
 }
 
 /**
  * Verify password against Mirth's hashed password format
  * @param password Plain text password to verify
- * @param _salt Unused - kept for interface compatibility (salt is embedded in hash)
+ * @param _salt Unused - kept for interface compatibility
  * @param storedHash Base64 encoded password hash from database
- *
- * TODO: The exact Digester algorithm from mirth-commons needs to be reverse-engineered.
- * See plans/password-hashing-fix.md for details.
  */
 export function verifyPassword(password: string, _salt: string | null, storedHash: string | null): boolean {
   if (!storedHash) {
     return false;
-  }
-
-  // TEMPORARY BYPASS: Accept default admin credentials for development/testing
-  // This allows validation suite to run while we figure out the exact Digester algorithm
-  // TODO: Remove this bypass once proper password verification is implemented
-  if (process.env['NODE_ENV'] !== 'production' && password === 'admin') {
-    console.warn('[AUTH] Development bypass: accepting default admin credentials');
-    return true;
   }
 
   try {
@@ -170,24 +143,18 @@ export function verifyPassword(password: string, _salt: string | null, storedHas
       return verifyPre22Password(password, storedHash);
     }
 
-    // Modern format: Base64(8-byte-salt + 32-byte-hash)
-    const decoded = Buffer.from(storedHash, 'base64');
+    // Current format (2.2+): Simple Base64(SHA256(password))
+    const computedHash = hashPassword(password);
 
-    if (decoded.length !== MIRTH_SALT_SIZE + 32) {
+    // Use timing-safe comparison
+    const storedBuf = Buffer.from(storedHash, 'base64');
+    const computedBuf = Buffer.from(computedHash, 'base64');
+
+    if (storedBuf.length !== computedBuf.length) {
       return false;
     }
 
-    // Extract salt (first 8 bytes)
-    const salt = decoded.subarray(0, MIRTH_SALT_SIZE);
-    const storedHashBuf = decoded.subarray(MIRTH_SALT_SIZE);
-
-    // Recompute hash with extracted salt
-    const computedHashBase64 = hashPassword(password, salt);
-    const computedDecoded = Buffer.from(computedHashBase64, 'base64');
-    const computedHashBuf = computedDecoded.subarray(MIRTH_SALT_SIZE);
-
-    // Use timing-safe comparison
-    return crypto.timingSafeEqual(computedHashBuf, storedHashBuf);
+    return crypto.timingSafeEqual(storedBuf, computedBuf);
   } catch {
     return false;
   }
@@ -195,32 +162,31 @@ export function verifyPassword(password: string, _salt: string | null, storedHas
 
 /**
  * Verify password using legacy pre-2.2 format
- * Format: SALT_ + base64(8-byte-salt) + base64(sha1(salt + password))
+ * Format: SALT_ + base64(8-byte-salt) + base64(SHA1(salt + password))
  */
 function verifyPre22Password(password: string, storedHash: string): boolean {
   try {
     // Remove SALT_ prefix
-    const remainder = storedHash.substring(PRE22_PREFIX.length);
+    const saltHash = storedHash.substring(PRE22_PREFIX.length);
 
-    // Extract salt (first 12 chars = 8 bytes base64)
-    const saltBase64 = remainder.substring(0, 12);
-    const hashBase64 = remainder.substring(12);
+    // Extract salt (first 12 chars = 8 bytes in base64)
+    const encodedSalt = saltHash.substring(0, PRE22_SALT_LENGTH);
+    const encodedHash = saltHash.substring(PRE22_SALT_LENGTH);
 
-    const salt = Buffer.from(saltBase64, 'base64');
+    const decodedSalt = Buffer.from(encodedSalt, 'base64');
+    const decodedHash = Buffer.from(encodedHash, 'base64');
 
-    // Compute SHA1(salt + password)
+    // Compute SHA1(salt + password) - matching Java: DigestUtils.sha(ArrayUtils.addAll(decodedSalt, plainPassword.getBytes()))
     const computedHash = crypto
       .createHash('sha1')
-      .update(Buffer.concat([salt, Buffer.from(password)]))
+      .update(Buffer.concat([decodedSalt, Buffer.from(password)]))
       .digest();
 
-    const storedHashBuf = Buffer.from(hashBase64, 'base64');
-
-    if (computedHash.length !== storedHashBuf.length) {
+    if (computedHash.length !== decodedHash.length) {
       return false;
     }
 
-    return crypto.timingSafeEqual(computedHash, storedHashBuf);
+    return crypto.timingSafeEqual(computedHash, decodedHash);
   } catch {
     return false;
   }

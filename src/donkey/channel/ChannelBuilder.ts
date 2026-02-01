@@ -6,9 +6,16 @@
  */
 
 import { Channel, ChannelConfig } from './Channel.js';
+import { DestinationConnector } from './DestinationConnector.js';
 import { TcpReceiver } from '../../connectors/tcp/TcpReceiver.js';
-import { TcpReceiverProperties, ServerMode, TransmissionMode, ResponseMode } from '../../connectors/tcp/TcpConnectorProperties.js';
-import { Channel as ChannelModel } from '../../api/models/Channel.js';
+import { TcpDispatcher } from '../../connectors/tcp/TcpDispatcher.js';
+import { TcpReceiverProperties, TcpDispatcherProperties, ServerMode, TransmissionMode, ResponseMode } from '../../connectors/tcp/TcpConnectorProperties.js';
+import { HttpDispatcher } from '../../connectors/http/HttpDispatcher.js';
+import { HttpDispatcherProperties } from '../../connectors/http/HttpConnectorProperties.js';
+import { FileDispatcher } from '../../connectors/file/FileDispatcher.js';
+import { FileDispatcherProperties } from '../../connectors/file/FileConnectorProperties.js';
+import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js';
+import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 
 /**
  * Build a runtime Channel from a channel configuration
@@ -34,13 +41,13 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     channel.setSourceConnector(sourceConnector);
   }
 
-  // TODO: Build destination connectors
-  // for (const destConfig of channelConfig.destinationConnectors) {
-  //   const dest = buildDestinationConnector(destConfig);
-  //   if (dest) {
-  //     channel.addDestinationConnector(dest);
-  //   }
-  // }
+  // Build destination connectors
+  for (const destConfig of channelConfig.destinationConnectors || []) {
+    const dest = buildDestinationConnector(destConfig);
+    if (dest) {
+      channel.addDestinationConnector(dest);
+    }
+  }
 
   return channel;
 }
@@ -146,4 +153,231 @@ function hexToBytes(hex: string): number[] {
     }
   }
   return bytes;
+}
+
+/**
+ * Build destination connector from configuration
+ */
+function buildDestinationConnector(destConfig: Connector): DestinationConnector | null {
+  if (!destConfig.enabled) {
+    return null;
+  }
+
+  const transportName = destConfig.transportName;
+
+  switch (transportName) {
+    case 'TCP Sender':
+    case 'MLLP Sender':
+      return buildTcpDispatcher(destConfig);
+    case 'HTTP Sender':
+      return buildHttpDispatcher(destConfig);
+    case 'File Writer':
+      return buildFileDispatcher(destConfig);
+    case 'Database Writer':
+      return buildDatabaseDispatcher(destConfig);
+    case 'Channel Writer':
+      // Channel writer routes to another channel - log warning for now
+      console.warn(`Channel Writer not yet implemented for destination: ${destConfig.name}`);
+      return null;
+    default:
+      console.warn(`Unsupported destination connector transport: ${transportName}`);
+      return null;
+  }
+}
+
+/**
+ * Build TCP/MLLP dispatcher from configuration
+ */
+function buildTcpDispatcher(destConfig: Connector): TcpDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+  const transmissionProps = props?.transmissionModeProperties as Record<string, unknown>;
+
+  // Parse host and port
+  let host = String(props?.remoteAddress || props?.host || 'localhost');
+  let port = parseInt(String(props?.remotePort || props?.port || '6661'), 10);
+
+  // Handle variable references
+  if (host.startsWith('${')) {
+    host = 'localhost';
+  }
+  if (isNaN(port)) {
+    port = 6661;
+  }
+
+  // Determine transmission mode
+  let transmissionMode = TransmissionMode.MLLP;
+  let startOfMessageBytes: number[] = [0x0b];
+  let endOfMessageBytes: number[] = [0x1c, 0x0d];
+
+  if (transmissionProps) {
+    const pluginPointName = String(transmissionProps.pluginPointName || 'MLLP');
+    if (pluginPointName === 'MLLP') {
+      transmissionMode = TransmissionMode.MLLP;
+      startOfMessageBytes = hexToBytes(String(transmissionProps.startOfMessageBytes || '0B'));
+      endOfMessageBytes = hexToBytes(String(transmissionProps.endOfMessageBytes || '1C0D'));
+    } else if (pluginPointName === 'Frame') {
+      transmissionMode = TransmissionMode.FRAME;
+      startOfMessageBytes = hexToBytes(String(transmissionProps.startOfMessageBytes || ''));
+      endOfMessageBytes = hexToBytes(String(transmissionProps.endOfMessageBytes || ''));
+    } else {
+      transmissionMode = TransmissionMode.RAW;
+    }
+  }
+
+  const tcpProperties: Partial<TcpDispatcherProperties> = {
+    host,
+    port,
+    transmissionMode,
+    startOfMessageBytes,
+    endOfMessageBytes,
+    keepConnectionOpen: String(props?.keepConnectionOpen) !== 'false',
+    socketTimeout: parseInt(String(props?.sendTimeout || '30000'), 10),
+    responseTimeout: parseInt(String(props?.responseTimeout || '30000'), 10),
+    template: String(props?.template || ''),
+  };
+
+  return new TcpDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    properties: tcpProperties,
+  });
+}
+
+/**
+ * Build HTTP dispatcher from configuration
+ */
+function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  // Parse URL
+  let url = String(props?.host || props?.url || 'http://localhost');
+  if (url.startsWith('${')) {
+    url = 'http://localhost';
+  }
+
+  // Parse headers
+  const headers = new Map<string, string[]>();
+  const headerProps = props?.headers as Record<string, unknown>;
+  if (headerProps && typeof headerProps === 'object') {
+    const entries = (headerProps.entry || []) as Array<{ string?: string[] }>;
+    for (const entry of Array.isArray(entries) ? entries : [entries]) {
+      if (entry?.string && Array.isArray(entry.string) && entry.string.length >= 2) {
+        const key = entry.string[0];
+        const value = entry.string[1];
+        if (key && value) {
+          headers.set(key, [value]);
+        }
+      }
+    }
+  }
+
+  // Parse parameters
+  const parameters = new Map<string, string[]>();
+  const paramProps = props?.parameters as Record<string, unknown>;
+  if (paramProps && typeof paramProps === 'object') {
+    const entries = (paramProps.entry || []) as Array<{ string?: string[] }>;
+    for (const entry of Array.isArray(entries) ? entries : [entries]) {
+      if (entry?.string && Array.isArray(entry.string) && entry.string.length >= 2) {
+        const key = entry.string[0];
+        const value = entry.string[1];
+        if (key && value) {
+          parameters.set(key, [value]);
+        }
+      }
+    }
+  }
+
+  const httpProperties: Partial<HttpDispatcherProperties> = {
+    host: url,
+    method: String(props?.method || 'POST').toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+    headers,
+    parameters,
+    content: String(props?.content || ''),
+    contentType: String(props?.contentType || 'text/plain'),
+    charset: String(props?.charset || 'UTF-8'),
+    useAuthentication: String(props?.useAuthentication) === 'true',
+    authenticationType: String(props?.authenticationType || 'Basic') as 'Basic' | 'Digest',
+    username: String(props?.username || ''),
+    password: String(props?.password || ''),
+    socketTimeout: parseInt(String(props?.socketTimeout || '30000'), 10),
+  };
+
+  return new HttpDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    properties: httpProperties,
+  });
+}
+
+/**
+ * Build File dispatcher from configuration
+ */
+function buildFileDispatcher(destConfig: Connector): FileDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+  const schemeProps = props?.schemeProperties as Record<string, unknown>;
+
+  // Parse directory and filename
+  let directory = String(schemeProps?.host || props?.host || '/tmp');
+  const outputPattern = String(props?.outputPattern || 'output.txt');
+
+  // Handle variable references
+  if (directory.startsWith('${')) {
+    directory = '/tmp';
+  }
+
+  // Parse output append mode
+  const outputAppend = String(props?.outputAppend) === 'true';
+
+  const fileProperties: Partial<FileDispatcherProperties> = {
+    directory,
+    outputPattern,
+    outputAppend,
+    template: String(props?.template || ''),
+    charsetEncoding: String(props?.charsetEncoding || 'UTF-8'),
+  };
+
+  return new FileDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    properties: fileProperties,
+  });
+}
+
+/**
+ * Build Database dispatcher from configuration
+ */
+function buildDatabaseDispatcher(destConfig: Connector): DatabaseDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  // Parse JDBC URL
+  let url = String(props?.url || 'jdbc:mysql://localhost:3306/test');
+
+  // Handle variable references
+  if (url.startsWith('${')) {
+    url = 'jdbc:mysql://localhost:3306/test';
+  }
+
+  return new DatabaseDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    properties: {
+      url,
+      driver: String(props?.driver || 'com.mysql.cj.jdbc.Driver'),
+      username: String(props?.username || ''),
+      password: String(props?.password || ''),
+      query: String(props?.query || ''),
+    },
+  });
 }

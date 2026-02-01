@@ -76,16 +76,55 @@ describe('JSONDataType', () => {
   });
 
   describe('toXML', () => {
-    it('should return null (not implemented)', () => {
+    it('should convert simple JSON object to XML', () => {
       const dataType = new JSONDataType();
-      expect(dataType.toXML()).toBeNull();
+      const json = '{"name":"John","age":30}';
+      const xml = dataType.toXML(json, 'person');
+      expect(xml).toBe('<person><name>John</name><age>30</age></person>');
+    });
+
+    it('should convert JSON array to XML', () => {
+      const dataType = new JSONDataType();
+      const json = '[{"id":1},{"id":2}]';
+      const xml = dataType.toXML(json, 'item');
+      expect(xml).toBe('<item><id>1</id></item><item><id>2</id></item>');
+    });
+
+    it('should return null for invalid JSON', () => {
+      const dataType = new JSONDataType();
+      expect(dataType.toXML('invalid json', 'root')).toBeNull();
+    });
+
+    it('should escape special XML characters', () => {
+      const dataType = new JSONDataType();
+      const json = '{"text":"<test>&value</test>"}';
+      const xml = dataType.toXML(json, 'root');
+      expect(xml).toBe('<root><text>&lt;test&gt;&amp;value&lt;/test&gt;</text></root>');
     });
   });
 
   describe('fromXML', () => {
-    it('should return null (not implemented)', () => {
+    it('should convert simple XML to JSON', () => {
       const dataType = new JSONDataType();
-      expect(dataType.fromXML()).toBeNull();
+      const xml = '<person><name>John</name><age>30</age></person>';
+      const json = dataType.fromXML(xml);
+      expect(json).not.toBeNull();
+      const parsed = JSON.parse(json!);
+      expect(parsed).toEqual({ name: 'John', age: '30' });
+    });
+
+    it('should handle repeated elements as arrays', () => {
+      const dataType = new JSONDataType();
+      const xml = '<root><item>a</item><item>b</item></root>';
+      const json = dataType.fromXML(xml);
+      expect(json).not.toBeNull();
+      const parsed = JSON.parse(json!);
+      expect(parsed).toEqual({ item: ['a', 'b'] });
+    });
+
+    it('should return null for invalid XML', () => {
+      const dataType = new JSONDataType();
+      expect(dataType.fromXML('not xml at all {')).toBeNull();
     });
   });
 

@@ -20,6 +20,7 @@ import {
   resultsToXml,
   UpdateMode,
 } from './DatabaseConnectorProperties.js';
+import { getDefaultExecutor } from '../../javascript/runtime/JavaScriptExecutor.js';
 
 export interface DatabaseReceiverConfig {
   name?: string;
@@ -283,12 +284,67 @@ export class DatabaseReceiver extends SourceConnector {
   }
 
   /**
-   * Execute JavaScript script
+   * Execute JavaScript script for script mode polling
+   *
+   * The script has access to:
+   * - dbConn: Database connection wrapper with executeQuery/executeUpdate methods
+   * - globalMap, channelMap, etc.: Standard Mirth maps
+   *
+   * The script should return a string or array of strings to be dispatched as messages.
    */
-  private async executeScript(_conn: PoolConnection): Promise<void> {
-    // Script mode would require JavaScript execution context
-    // For now, throw an error indicating not yet implemented
-    throw new Error('Script mode not yet implemented for Database Receiver');
+  private async executeScript(conn: PoolConnection): Promise<void> {
+    if (!this.properties.select) {
+      return;
+    }
+
+    // Create a database connection wrapper for the script
+    const dbConn = {
+      executeQuery: async (sql: string): Promise<Record<string, unknown>[]> => {
+        const [rows] = await conn.query<RowDataPacket[]>(sql);
+        return rows as Record<string, unknown>[];
+      },
+      executeUpdate: async (sql: string): Promise<number> => {
+        const [result] = await conn.query(sql);
+        return (result as { affectedRows?: number }).affectedRows ?? 0;
+      },
+    };
+
+    // Build scope with database connection
+    const scope = {
+      dbConn,
+      logger: {
+        info: (msg: string) => console.log(`[DB Script] ${msg}`),
+        error: (msg: string) => console.error(`[DB Script] ${msg}`),
+        warn: (msg: string) => console.warn(`[DB Script] ${msg}`),
+        debug: (msg: string) => console.debug(`[DB Script] ${msg}`),
+      },
+    };
+
+    const executor = getDefaultExecutor();
+    const result = executor.executeWithScope<string | string[] | undefined>(
+      this.properties.select,
+      scope,
+      { timeout: 60000 }
+    );
+
+    if (!result.success) {
+      throw result.error ?? new Error('Script execution failed');
+    }
+
+    // Dispatch results as messages
+    if (result.result) {
+      const messages = Array.isArray(result.result) ? result.result : [result.result];
+      for (const message of messages) {
+        if (message && typeof message === 'string') {
+          await this.dispatchRawMessage(message);
+        }
+      }
+    }
+
+    // Execute post-process update if configured
+    if (this.properties.update) {
+      await conn.query(this.properties.update);
+    }
   }
 
   /**

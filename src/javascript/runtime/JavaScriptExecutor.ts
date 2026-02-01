@@ -429,3 +429,12 @@ export function getDefaultExecutor(): JavaScriptExecutor {
 export function resetDefaultExecutor(): void {
   defaultExecutor = null;
 }
+
+/**
+ * Initialize the default executor (called during engine startup)
+ */
+export function initializeExecutor(): void {
+  if (!defaultExecutor) {
+    defaultExecutor = createJavaScriptExecutor();
+  }
+}

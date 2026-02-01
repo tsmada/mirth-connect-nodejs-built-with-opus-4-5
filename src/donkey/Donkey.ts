@@ -10,10 +10,12 @@
  */
 
 import { Channel } from './channel/Channel.js';
+import { initializeExecutor } from '../javascript/runtime/JavaScriptExecutor.js';
 
 export class Donkey {
   private channels: Map<string, Channel> = new Map();
   private running = false;
+  private initialized = false;
 
   async start(): Promise<void> {
     if (this.running) {
@@ -22,9 +24,15 @@ export class Donkey {
 
     console.warn('Starting Donkey engine...');
 
-    // TODO: Initialize message persistence
-    // TODO: Load channel configurations
-    // TODO: Initialize JavaScript runtime
+    // Initialize JavaScript runtime (singleton executor)
+    if (!this.initialized) {
+      initializeExecutor();
+      this.initialized = true;
+      console.warn('JavaScript runtime initialized');
+    }
+
+    // Message persistence is handled by DonkeyDao when messages are processed
+    // Channel configurations are loaded by Mirth.ts from the database
 
     this.running = true;
     console.warn('Donkey engine started');
