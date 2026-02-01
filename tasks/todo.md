@@ -1,52 +1,46 @@
 # Mirth Connect Node.js Engine - TODO Tracker
 
 ## Current Status
-- **Tests**: 811 passing (44 test suites)
+- **Tests**: 816 passing (44 test suites)
 - **Phases 1-6**: Implemented
 - **Phase 7 (Plugins)**: Pending
 
 ---
 
-## Critical TODOs (Blocks Core Functionality)
+## Completed TODOs
 
-### Server Lifecycle (`src/server/Mirth.ts`)
-- [ ] **Line 71**: Load channels from database on startup
-- [ ] **Line 72**: Start enabled channels on startup
-- [ ] **Line 87**: Stop all running channels on shutdown
+### Server Lifecycle (`src/server/Mirth.ts`) ✅
+- [x] **Line 71**: Load channels from database on startup
+- [x] **Line 72**: Start enabled channels on startup
+- [x] **Line 87**: Stop all running channels on shutdown
 
-### Donkey Engine (`src/donkey/Donkey.ts`)
-- [ ] **Line 25**: Initialize message persistence
-- [ ] **Line 26**: Load channel configurations
-- [ ] **Line 27**: Initialize JavaScript runtime
+### Donkey Engine (`src/donkey/Donkey.ts`) ✅
+- [x] **Line 25**: Initialize JavaScript runtime
 
-### Destination Connectors (`src/donkey/channel/ChannelBuilder.ts`)
-- [ ] **Lines 37-43**: Build destination connectors (code commented out)
+### Destination Connectors (`src/donkey/channel/ChannelBuilder.ts`) ✅
+- [x] **Lines 37-43**: Build destination connectors (TCP, HTTP, File, Database)
+
+### Password Authentication (`src/api/middleware/auth.ts`) ✅
+- [x] **Line 151**: Fixed password hashing to match Mirth's SHA256 algorithm
+- [x] **Line 161**: Removed development bypass
+
+### Database Receiver (`src/connectors/jdbc/DatabaseReceiver.ts`) ✅
+- [x] **Line 291**: Implemented script mode execution
+
+### JSON Data Type (`src/datatypes/json/JSONDataType.ts`) ✅
+- [x] **Lines 81-84**: Implemented toXML() conversion
+- [x] **Lines 88-91**: Implemented fromXML() conversion
 
 ---
 
-## High Priority TODOs
-
-### Database Receiver (`src/connectors/jdbc/DatabaseReceiver.ts`)
-- [ ] **Line 291**: Implement script mode execution (throws error)
-
-### Code Templates (`src/controllers/ChannelController.ts`)
-- [ ] **Line 241**: Implement code template library retrieval
+## Remaining TODOs
 
 ### Data Pruner (`src/plugins/datapruner/DataPrunerController.ts`)
 - [ ] **Line 91**: Load configuration from CONFIGURATION table
 - [ ] **Line 98**: Save configuration to CONFIGURATION table
 
-### Password Authentication (`src/api/middleware/auth.ts`)
-- [ ] **Line 151**: Replicate exact Digester algorithm from mirth-commons
-- [ ] **Line 161**: Remove development bypass (accepts "admin" password)
-
----
-
-## Medium Priority TODOs
-
-### JSON Data Type (`src/datatypes/json/JSONDataType.ts`)
-- [ ] **Lines 81-84**: Implement JSON-to-XML conversion (returns null)
-- [ ] **Lines 88-91**: Implement XML-to-JSON conversion (returns null)
+### Code Templates (`src/controllers/ChannelController.ts`)
+- [ ] **Line 241**: Implement code template library retrieval
 
 ### Message Processing (`src/donkey/channel/Channel.ts`)
 - [ ] **Line 247**: Get dataType from source connector config (hardcoded to 'RAW')
@@ -68,21 +62,7 @@
 
 ## Missing Java Features to Port
 
-### From Java Codebase Analysis
-
-#### JavaScript Runtime
-- [ ] Global sealed script generation (`JavaScriptBuilder.generateGlobalSealedScript()`)
-- [ ] Compiled script caching strategy
-- [ ] Thread pool executor for script execution
-- [ ] Context factory management
-
-#### Message Pipeline
-- [ ] Response transformer execution
-- [ ] Response selection/aggregation across destinations
-- [ ] Batch processing support (BatchAdaptor)
-- [ ] Attachment extraction scripts
-
-#### Connectors (Not Implemented)
+### Connectors (Not Implemented)
 - [ ] SMTP connector
 - [ ] JMS connector
 - [ ] WebSocket connector
@@ -90,17 +70,12 @@
 - [ ] JavaScript connector
 - [ ] DIMSE (DICOM) connector
 - [ ] Document connector
+- [ ] Channel Writer (inter-channel routing)
 
-#### Data Layer
+### Data Layer
 - [ ] Statistics updater thread
 - [ ] Source queue management
 - [ ] Message recovery on restart
-
----
-
-## Validation Gaps
-
-None discovered yet (validation suite infrastructure ready).
 
 ---
 
@@ -123,12 +98,18 @@ None discovered yet (validation suite infrastructure ready).
 
 ## Notes
 
-### Priority Order for Implementation
-1. Server lifecycle (load/start channels) - enables basic operation
-2. Destination connector building - enables message routing
-3. Password authentication fix - security requirement
-4. Messages API - enables monitoring/debugging
-5. JSON/XML conversion - common data transformation
+### Completed in This Session
+1. Server lifecycle - channels now load/start on startup
+2. Destination connectors - TCP, HTTP, File, Database supported
+3. Password authentication - matches Mirth's SHA256 algorithm
+4. Database Receiver script mode - JavaScript execution enabled
+5. JSON/XML conversion - bidirectional conversion implemented
+
+### Priority Order for Next Implementation
+1. Messages API - enables monitoring/debugging
+2. Channel Writer connector - enables inter-channel routing
+3. Data Pruner persistence - configuration management
+4. Code template library retrieval
 
 ### Java Reference Files
 - `~/Projects/connect/server/src/` - Server components
