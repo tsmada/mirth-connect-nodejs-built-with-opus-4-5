@@ -1,0 +1,9 @@
+{
+  "id": "0.1",
+  "name": "Simple Channel Round-Trip Export",
+  "description": "Export a channel from Java, import to Node.js, export from Node.js, compare",
+  "priority": 0,
+  "type": "export",
+  "channelFile": "Simple Channel - MLLP to File.xml",
+  "timeout": 30000
+}

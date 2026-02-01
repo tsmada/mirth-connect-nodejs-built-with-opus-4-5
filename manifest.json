@@ -1,0 +1,261 @@
+{
+  "version": "0.1.0",
+  "mirthCompatibility": "3.9.x",
+  "phaseProgress": {
+    "phase1_foundation": "implemented",
+    "phase2_javascript_runtime": "implemented",
+    "phase3_message_pipeline": "implemented",
+    "phase4_connectors": "implemented",
+    "phase5_datatypes": "implemented",
+    "phase6_rest_api": "implemented",
+    "phase7_plugins": "pending"
+  },
+  "components": {
+    "database": {
+      "core_tables": {
+        "status": "implemented",
+        "description": "Core Mirth tables: CHANNEL, CONFIGURATION, PERSON, etc.",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/dbconf/mysql/mysql-database.sql",
+        "files": ["src/db/MirthDao.ts", "src/db/pool.ts"],
+        "tests": ["tests/integration/db/MirthDao.integration.test.ts"]
+      },
+      "message_tables": {
+        "status": "implemented",
+        "description": "Dynamic per-channel message tables: D_M, D_MM, D_MC, D_MA, D_MS, D_MSQ",
+        "javaSource": "/Users/adamstruthers/Projects/connect/donkey/donkeydbconf/mysql.xml",
+        "files": ["src/db/DonkeyDao.ts"],
+        "tests": ["tests/integration/db/DonkeyDao.integration.test.ts"]
+      }
+    },
+    "javascript": {
+      "e4x_transpiler": {
+        "status": "implemented",
+        "description": "E4X syntax parser and transpiler to modern JS",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/org/mozilla/javascript/",
+        "files": ["src/javascript/e4x/E4XTranspiler.ts", "src/javascript/e4x/E4XParser.ts"],
+        "tests": ["tests/unit/javascript/e4x/E4XTranspiler.test.ts", "tests/unit/javascript/e4x/E4XParser.test.ts"]
+      },
+      "xml_proxy": {
+        "status": "implemented",
+        "description": "XMLProxy class with E4X-compatible API",
+        "files": ["src/javascript/e4x/XMLProxy.ts", "src/javascript/e4x/XMLList.ts"],
+        "tests": ["tests/unit/javascript/e4x/XMLProxy.test.ts"]
+      },
+      "scope_builder": {
+        "status": "implemented",
+        "description": "Build JavaScript scope with all Mirth variables",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/server/util/javascript/JavaScriptScopeUtil.java",
+        "files": ["src/javascript/runtime/ScopeBuilder.ts"],
+        "tests": ["tests/unit/javascript/runtime/ScopeBuilder.test.ts"]
+      },
+      "script_builder": {
+        "status": "implemented",
+        "description": "Generate JavaScript scripts matching Java output",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/server/builders/JavaScriptBuilder.java",
+        "files": ["src/javascript/runtime/ScriptBuilder.ts"],
+        "tests": ["tests/unit/javascript/runtime/ScriptBuilder.test.ts"]
+      },
+      "script_executor": {
+        "status": "implemented",
+        "description": "VM sandbox for script execution with timeout",
+        "files": ["src/javascript/runtime/JavaScriptExecutor.ts"],
+        "tests": ["tests/unit/javascript/runtime/JavaScriptExecutor.test.ts"]
+      },
+      "mirth_maps": {
+        "status": "implemented",
+        "description": "Map classes: ChannelMap, SourceMap, GlobalMap, etc.",
+        "files": ["src/javascript/userutil/MirthMap.ts", "src/javascript/userutil/ChannelMap.ts", "src/javascript/userutil/SourceMap.ts", "src/javascript/userutil/GlobalMap.ts", "src/javascript/userutil/ResponseMap.ts", "src/javascript/userutil/ConfigurationMap.ts"],
+        "tests": ["tests/unit/javascript/userutil/MirthMap.test.ts"]
+      }
+    },
+    "connectors": {
+      "http": {
+        "status": "implemented",
+        "description": "HTTP/REST receiver and dispatcher",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/http/",
+        "files": ["src/connectors/http/HttpReceiver.ts", "src/connectors/http/HttpDispatcher.ts"],
+        "tests": ["tests/unit/connectors/http/HttpReceiver.test.ts", "tests/unit/connectors/http/HttpDispatcher.test.ts"]
+      },
+      "jdbc": {
+        "status": "implemented",
+        "description": "Database receiver and dispatcher",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/jdbc/",
+        "files": ["src/connectors/jdbc/DatabaseReceiver.ts", "src/connectors/jdbc/DatabaseDispatcher.ts"],
+        "tests": ["tests/unit/connectors/jdbc/DatabaseReceiver.test.ts", "tests/unit/connectors/jdbc/DatabaseDispatcher.test.ts"]
+      },
+      "file": {
+        "status": "implemented",
+        "description": "File receiver and dispatcher (local filesystem)",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/file/",
+        "files": ["src/connectors/file/FileReceiver.ts", "src/connectors/file/FileDispatcher.ts"],
+        "tests": ["tests/unit/connectors/file/FileReceiver.test.ts", "tests/unit/connectors/file/FileDispatcher.test.ts"]
+      },
+      "tcp_mllp": {
+        "status": "implemented",
+        "description": "TCP/MLLP receiver and dispatcher",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/tcp/",
+        "files": ["src/connectors/tcp/TcpReceiver.ts", "src/connectors/tcp/TcpDispatcher.ts", "src/connectors/tcp/MLLPFraming.ts"],
+        "tests": ["tests/unit/connectors/tcp/TcpReceiver.test.ts", "tests/unit/connectors/tcp/TcpDispatcher.test.ts", "tests/unit/connectors/tcp/MLLPFraming.test.ts"]
+      }
+    },
+    "datatypes": {
+      "hl7v2": {
+        "status": "implemented",
+        "description": "HL7v2 parser and serializer",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/hl7v2/",
+        "files": ["src/datatypes/hl7v2/HL7v2Parser.ts", "src/datatypes/hl7v2/HL7v2Serializer.ts", "src/datatypes/hl7v2/HL7v2Properties.ts", "src/datatypes/hl7v2/HL7v2MetaData.ts", "src/datatypes/hl7v2/HL7v2Ack.ts"],
+        "tests": ["tests/unit/datatypes/hl7v2/HL7v2Parser.test.ts", "tests/unit/datatypes/hl7v2/HL7v2Serializer.test.ts"]
+      },
+      "xml": {
+        "status": "implemented",
+        "description": "XML data type handler",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/xml/",
+        "files": ["src/datatypes/xml/XMLDataType.ts"],
+        "tests": ["tests/unit/datatypes/xml/XMLDataType.test.ts"]
+      },
+      "json": {
+        "status": "implemented",
+        "description": "JSON data type handler",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/json/",
+        "files": ["src/datatypes/json/JSONDataType.ts"],
+        "tests": ["tests/unit/datatypes/json/JSONDataType.test.ts"]
+      }
+    },
+    "api": {
+      "server": {
+        "status": "implemented",
+        "description": "Express server with XML/JSON content negotiation",
+        "files": ["src/api/server.ts", "src/api/middleware/contentNegotiation.ts", "src/api/middleware/auth.ts"],
+        "tests": []
+      },
+      "users": {
+        "status": "implemented",
+        "description": "User management API",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/UserServletInterface.java",
+        "files": ["src/api/servlets/UserServlet.ts", "src/api/models/User.ts"],
+        "tests": []
+      },
+      "channels": {
+        "status": "implemented",
+        "description": "Channel CRUD REST API",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/ChannelServletInterface.java",
+        "files": ["src/api/servlets/ChannelServlet.ts", "src/api/models/Channel.ts", "src/controllers/ChannelController.ts"],
+        "tests": []
+      },
+      "channel_status": {
+        "status": "implemented",
+        "description": "Channel start/stop/pause API",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/ChannelStatusServletInterface.java",
+        "files": ["src/api/servlets/ChannelStatusServlet.ts", "src/api/models/DashboardStatus.ts"],
+        "tests": []
+      },
+      "engine": {
+        "status": "implemented",
+        "description": "Engine lifecycle API (deploy/undeploy)",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/EngineServletInterface.java",
+        "files": ["src/api/servlets/EngineServlet.ts", "src/controllers/EngineController.ts"],
+        "tests": []
+      },
+      "configuration": {
+        "status": "implemented",
+        "description": "Server configuration API",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/ConfigurationServletInterface.java",
+        "files": ["src/api/servlets/ConfigurationServlet.ts", "src/api/models/ServerSettings.ts", "src/controllers/ConfigurationController.ts"],
+        "tests": []
+      },
+      "messages": {
+        "status": "pending",
+        "description": "Message search and retrieval API",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/MessageServletInterface.java",
+        "tests": []
+      }
+    },
+    "plugins": {
+      "code_templates": {
+        "status": "pending",
+        "description": "Code templates library plugin",
+        "tests": []
+      },
+      "data_pruner": {
+        "status": "pending",
+        "description": "Message pruning plugin",
+        "tests": []
+      },
+      "xslt": {
+        "status": "pending",
+        "description": "XSLT transformer plugin",
+        "tests": []
+      }
+    },
+    "core": {
+      "models": {
+        "status": "implemented",
+        "description": "Domain models: Message, Channel, Connector, etc.",
+        "files": [
+          "src/model/Status.ts",
+          "src/model/ContentType.ts",
+          "src/model/Message.ts",
+          "src/model/ConnectorMessage.ts",
+          "src/model/RawMessage.ts",
+          "src/model/Response.ts",
+          "src/model/Filter.ts",
+          "src/model/Rule.ts",
+          "src/model/Transformer.ts",
+          "src/model/Step.ts",
+          "src/model/ChannelProperties.ts",
+          "src/model/index.ts"
+        ],
+        "tests": [
+          "tests/unit/model/Status.test.ts",
+          "tests/unit/model/ContentType.test.ts",
+          "tests/unit/model/Message.test.ts",
+          "tests/unit/model/RawMessage.test.ts",
+          "tests/unit/model/Response.test.ts",
+          "tests/unit/model/FilterTransformer.test.ts",
+          "tests/unit/model/ChannelProperties.test.ts"
+        ]
+      },
+      "server": {
+        "status": "implemented",
+        "description": "Main server lifecycle",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/server/Mirth.java",
+        "files": ["src/server/Mirth.ts", "src/index.ts"],
+        "tests": []
+      },
+      "donkey_engine": {
+        "status": "implemented",
+        "description": "Donkey message engine",
+        "javaSource": "/Users/adamstruthers/Projects/connect/donkey/src/main/java/com/mirth/connect/donkey/server/Donkey.java",
+        "files": [
+          "src/donkey/Donkey.ts",
+          "src/donkey/channel/Channel.ts",
+          "src/donkey/channel/SourceConnector.ts",
+          "src/donkey/channel/DestinationConnector.ts",
+          "src/donkey/channel/FilterTransformerExecutor.ts"
+        ],
+        "tests": ["tests/unit/donkey/channel/Channel.test.ts"]
+      }
+    },
+    "validation": {
+      "infrastructure": {
+        "status": "implemented",
+        "description": "Side-by-side validation tooling for Java/Node.js comparison",
+        "files": [
+          "validation/config/environments.ts",
+          "validation/clients/MirthApiClient.ts",
+          "validation/clients/MLLPClient.ts",
+          "validation/clients/HttpMessageClient.ts",
+          "validation/clients/FileClient.ts",
+          "validation/comparators/MessageComparator.ts",
+          "validation/comparators/ResponseComparator.ts",
+          "validation/comparators/ChannelExportComparator.ts",
+          "validation/runners/ValidationRunner.ts",
+          "validation/runners/ScenarioRunner.ts"
+        ]
+      }
+    }
+  },
+  "validationGaps": {
+    "_comment": "Validation gaps discovered during side-by-side testing with Java engine"
+  }
+}

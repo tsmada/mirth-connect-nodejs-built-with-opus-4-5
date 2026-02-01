@@ -1,0 +1,47 @@
+version: '3.8'
+services:
+  mirth-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: mirthroot
+      MYSQL_DATABASE: mirthdb
+      MYSQL_USER: mirth
+      MYSQL_PASSWORD: mirth
+    ports:
+      - "3306:3306"
+    volumes:
+      - mirth-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mirth-connect:
+    image: nextgenhealthcare/connect:3.9
+    depends_on:
+      mirth-db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"    # HTTP API
+      - "8443:8443"    # HTTPS API
+      - "6661:6661"    # MLLP test port
+      - "8082:8082"    # HTTP test port
+    environment:
+      - DATABASE=mysql
+      - DATABASE_URL=jdbc:mysql://mirth-db:3306/mirthdb
+      - DATABASE_USERNAME=mirth
+      - DATABASE_PASSWORD=mirth
+    volumes:
+      - mirth-appdata:/opt/connect/appdata
+      - ./test-data:/opt/connect/test-data
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "https://localhost:8443/api/server/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  mirth-db-data:
+  mirth-appdata:

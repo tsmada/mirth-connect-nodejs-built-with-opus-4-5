@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Reports (generated during validation runs)
+reports/*.json
+reports/*.html
+
+# Environment (may contain sensitive data)
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

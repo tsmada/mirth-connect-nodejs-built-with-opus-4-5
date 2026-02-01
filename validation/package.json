@@ -1,0 +1,31 @@
+{
+  "name": "mirth-connect-validation",
+  "version": "0.1.0",
+  "description": "Validation suite for comparing Node.js and Java Mirth Connect implementations",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "validate": "ts-node runners/ValidationRunner.ts",
+    "validate:priority0": "ts-node runners/ValidationRunner.ts --priority 0",
+    "validate:priority1": "ts-node runners/ValidationRunner.ts --priority 1",
+    "validate:scenario": "ts-node runners/ScenarioRunner.ts",
+    "report": "ts-node scripts/generate-report.ts",
+    "setup": "bash scripts/setup.sh",
+    "clean": "rm -rf dist reports/*.html reports/*.json"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "fast-xml-parser": "^4.3.2",
+    "winston": "^3.11.0",
+    "chalk": "^4.1.2",
+    "diff": "^5.1.0",
+    "mysql2": "^3.6.5"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.0.8",
+    "@types/node": "^20.10.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

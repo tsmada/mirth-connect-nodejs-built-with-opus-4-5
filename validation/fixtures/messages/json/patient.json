@@ -1,0 +1,36 @@
+{
+  "resourceType": "Patient",
+  "id": "12345678",
+  "identifier": [
+    {
+      "system": "urn:oid:2.16.840.1.113883.19.5",
+      "value": "12345678"
+    }
+  ],
+  "name": [
+    {
+      "use": "official",
+      "family": "Doe",
+      "given": ["John", "Q"]
+    }
+  ],
+  "gender": "male",
+  "birthDate": "1980-01-01",
+  "address": [
+    {
+      "use": "home",
+      "line": ["123 Main St"],
+      "city": "Anytown",
+      "state": "ST",
+      "postalCode": "12345",
+      "country": "USA"
+    }
+  ],
+  "telecom": [
+    {
+      "system": "phone",
+      "value": "555-123-4567",
+      "use": "home"
+    }
+  ]
+}
