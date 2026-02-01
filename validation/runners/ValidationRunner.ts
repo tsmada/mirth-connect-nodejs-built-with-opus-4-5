@@ -187,7 +187,13 @@ export class ValidationRunner {
   }
 
   /**
-   * Load scenario configurations from filesystem
+   * Load scenario configurations from filesystem.
+   *
+   * Supports two formats:
+   * 1. Single config.json per directory (original format)
+   * 2. Multiple config-{id}.json files per directory (e.g., config-1.1.json, config-1.2.json)
+   *
+   * Scenarios are sorted by ID (e.g., "0.1" < "1.1" < "1.2").
    */
   private loadScenarios(priority?: number): ScenarioConfig[] {
     const scenariosDir = path.join(__dirname, '..', 'scenarios');
@@ -211,20 +217,43 @@ export class ValidationRunner {
       }
 
       const scenarioDir = path.join(scenariosDir, dir);
-      const configFile = path.join(scenarioDir, 'config.json');
 
-      if (fs.existsSync(configFile)) {
+      // Load all config*.json files in the directory
+      const configFiles = fs.readdirSync(scenarioDir).filter((f) => {
+        return f.startsWith('config') && f.endsWith('.json');
+      });
+
+      for (const configFile of configFiles) {
+        const configPath = path.join(scenarioDir, configFile);
         try {
-          const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-          scenarios.push({
-            ...config,
-            basePath: scenarioDir,
-          });
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+          // Support array of scenarios in a single file
+          if (Array.isArray(config)) {
+            for (const c of config) {
+              scenarios.push({
+                ...c,
+                basePath: scenarioDir,
+              });
+            }
+          } else {
+            scenarios.push({
+              ...config,
+              basePath: scenarioDir,
+            });
+          }
         } catch (error) {
-          console.warn(`Warning: Failed to load scenario config from ${configFile}`);
+          console.warn(`Warning: Failed to load scenario config from ${configPath}`);
         }
       }
     }
+
+    // Sort by scenario ID (e.g., "0.1" < "1.1" < "1.2")
+    scenarios.sort((a, b) => {
+      const [aMajor, aMinor] = a.id.split('.').map((n) => parseInt(n, 10) || 0);
+      const [bMajor, bMinor] = b.id.split('.').map((n) => parseInt(n, 10) || 0);
+      return aMajor !== bMajor ? aMajor - bMajor : aMinor - bMinor;
+    });
 
     return scenarios;
   }

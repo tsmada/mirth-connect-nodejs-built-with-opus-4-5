@@ -21,6 +21,11 @@ export interface ScenarioConfig {
   timeout?: number;
   basePath?: string;
   steps?: ScenarioStep[];
+  /**
+   * File output directory for file writer channels.
+   * Defaults to /tmp/mirth-validation
+   */
+  fileOutputDir?: string;
 }
 
 export interface ScenarioStep {
@@ -200,48 +205,55 @@ export class ScenarioRunner {
 
   /**
    * Run MLLP message flow scenario
+   *
+   * This method prepares separate channel configurations for each engine,
+   * with engine-specific ports and channel IDs to avoid conflicts.
    */
   private async runMLLPScenario(
     config: ScenarioConfig,
     startTime: number
   ): Promise<ScenarioResult> {
     const basePath = config.basePath || path.join(__dirname, '..', 'scenarios', config.id);
-    let channelId: string | null = null;
+    let javaChannelId: string | null = null;
+    let nodeChannelId: string | null = null;
 
-    // Load channel and deploy
+    // Load channel and deploy to both engines with engine-specific configurations
     if (config.channelFile) {
       const channelXml = this.loadChannelFile(config.channelFile, basePath);
-      channelId = this.extractChannelId(channelXml);
 
-      if (!channelId) {
-        throw new Error('Could not extract channel ID');
-      }
+      // Prepare separate channel XMLs for each engine
+      const javaChannel = this.prepareChannelForEngine(channelXml, 'java', config);
+      const nodeChannel = this.prepareChannelForEngine(channelXml, 'node', config);
+
+      javaChannelId = javaChannel.channelId;
+      nodeChannelId = nodeChannel.channelId;
 
       // Delete existing channels first
       try {
-        await this.javaClient.undeployChannel(channelId);
-        await this.javaClient.deleteChannel(channelId);
+        await this.javaClient.undeployChannel(javaChannelId);
+        await this.javaClient.deleteChannel(javaChannelId);
       } catch {
         // Ignore - channel may not exist
       }
       try {
-        await this.nodeClient.undeployChannel(channelId);
-        await this.nodeClient.deleteChannel(channelId);
+        await this.nodeClient.undeployChannel(nodeChannelId);
+        await this.nodeClient.deleteChannel(nodeChannelId);
       } catch {
         // Ignore - channel may not exist
       }
       await this.delay(500);
 
-      // Import and deploy to both
-      await this.javaClient.importChannel(channelXml, true);
-      await this.nodeClient.importChannel(channelXml, true);
+      // Import engine-specific channels
+      await this.javaClient.importChannel(javaChannel.xml, true);
+      await this.nodeClient.importChannel(nodeChannel.xml, true);
 
-      await this.javaClient.deployChannel(channelId);
-      await this.nodeClient.deployChannel(channelId);
+      // Deploy both channels
+      await this.javaClient.deployChannel(javaChannelId);
+      await this.nodeClient.deployChannel(nodeChannelId);
 
       // Wait for channels to start
-      await this.javaClient.waitForChannelState(channelId, 'STARTED', 30000);
-      await this.nodeClient.waitForChannelState(channelId, 'STARTED', 30000);
+      await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 30000);
+      await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 30000);
     }
 
     // Load test message
@@ -263,7 +275,7 @@ export class ScenarioRunner {
       throw new Error('MLLP scenario requires inputMessage');
     }
 
-    // Create MLLP clients
+    // Create MLLP clients targeting engine-specific ports
     const javaMLLP = new MLLPClient({
       host: 'localhost',
       port: this.env.java.mllpPort,
@@ -275,7 +287,7 @@ export class ScenarioRunner {
       timeout: config.timeout || 30000,
     });
 
-    // Send message to both
+    // Send message to both engines
     const javaResponse = await javaMLLP.send(testMessage);
     const nodeResponse = await nodeMLLP.send(testMessage);
 
@@ -285,14 +297,21 @@ export class ScenarioRunner {
       nodeResponse.rawResponse || ''
     );
 
-    // Cleanup
-    if (config.channelFile) {
-      const channelId = this.extractChannelId(this.loadChannelFile(config.channelFile, basePath));
-      if (channelId) {
-        await this.javaClient.undeployChannel(channelId);
-        await this.nodeClient.undeployChannel(channelId);
-        await this.javaClient.deleteChannel(channelId);
-        await this.nodeClient.deleteChannel(channelId);
+    // Cleanup - undeploy and delete both engine-specific channels
+    if (javaChannelId) {
+      try {
+        await this.javaClient.undeployChannel(javaChannelId);
+        await this.javaClient.deleteChannel(javaChannelId);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    if (nodeChannelId) {
+      try {
+        await this.nodeClient.undeployChannel(nodeChannelId);
+        await this.nodeClient.deleteChannel(nodeChannelId);
+      } catch {
+        // Ignore cleanup errors
       }
     }
 
@@ -309,14 +328,19 @@ export class ScenarioRunner {
 
   /**
    * Run HTTP message flow scenario
+   *
+   * Like MLLP scenarios, this prepares separate channel configurations
+   * for each engine with engine-specific HTTP ports.
    */
   private async runHttpScenario(
     config: ScenarioConfig,
     startTime: number
   ): Promise<ScenarioResult> {
     const basePath = config.basePath || path.join(__dirname, '..', 'scenarios', config.id);
+    let javaChannelId: string | null = null;
+    let nodeChannelId: string | null = null;
 
-    // Setup similar to MLLP but with HTTP clients
+    // Setup HTTP clients targeting engine-specific ports
     const javaHttp = new HttpMessageClient({
       baseUrl: `http://localhost:${this.env.java.httpTestPort}`,
     });
@@ -324,19 +348,41 @@ export class ScenarioRunner {
       baseUrl: `http://localhost:${this.env.node.httpTestPort}`,
     });
 
-    // Load and deploy channel if specified
+    // Load and deploy channel with engine-specific configurations
     if (config.channelFile) {
       const channelXml = this.loadChannelFile(config.channelFile, basePath);
-      const channelId = this.extractChannelId(channelXml);
 
-      if (channelId) {
-        await this.javaClient.importChannel(channelXml, true);
-        await this.nodeClient.importChannel(channelXml, true);
-        await this.javaClient.deployChannel(channelId);
-        await this.nodeClient.deployChannel(channelId);
-        await this.javaClient.waitForChannelState(channelId, 'STARTED', 30000);
-        await this.nodeClient.waitForChannelState(channelId, 'STARTED', 30000);
+      // Prepare separate channel XMLs for each engine
+      const javaChannel = this.prepareChannelForEngine(channelXml, 'java', config);
+      const nodeChannel = this.prepareChannelForEngine(channelXml, 'node', config);
+
+      javaChannelId = javaChannel.channelId;
+      nodeChannelId = nodeChannel.channelId;
+
+      // Delete existing channels first
+      try {
+        await this.javaClient.undeployChannel(javaChannelId);
+        await this.javaClient.deleteChannel(javaChannelId);
+      } catch {
+        // Ignore - channel may not exist
       }
+      try {
+        await this.nodeClient.undeployChannel(nodeChannelId);
+        await this.nodeClient.deleteChannel(nodeChannelId);
+      } catch {
+        // Ignore - channel may not exist
+      }
+      await this.delay(500);
+
+      // Import engine-specific channels
+      await this.javaClient.importChannel(javaChannel.xml, true);
+      await this.nodeClient.importChannel(nodeChannel.xml, true);
+
+      // Deploy and wait for start
+      await this.javaClient.deployChannel(javaChannelId);
+      await this.nodeClient.deployChannel(nodeChannelId);
+      await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 30000);
+      await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 30000);
     }
 
     // Load test message
@@ -345,10 +391,16 @@ export class ScenarioRunner {
       const messagePath = path.join(basePath, config.inputMessage);
       if (fs.existsSync(messagePath)) {
         testMessage = fs.readFileSync(messagePath, 'utf8');
+      } else {
+        // Try fixtures
+        const fixturesPath = path.join(__dirname, '..', 'fixtures', 'messages', config.inputMessage);
+        if (fs.existsSync(fixturesPath)) {
+          testMessage = fs.readFileSync(fixturesPath, 'utf8');
+        }
       }
     }
 
-    // Send to both
+    // Send to both engines
     const javaResponse = await javaHttp.post('/', testMessage);
     const nodeResponse = await nodeHttp.post('/', testMessage);
 
@@ -360,14 +412,21 @@ export class ScenarioRunner {
       nodeResponse.body
     );
 
-    // Cleanup
-    if (config.channelFile) {
-      const channelId = this.extractChannelId(this.loadChannelFile(config.channelFile, basePath));
-      if (channelId) {
-        await this.javaClient.undeployChannel(channelId);
-        await this.nodeClient.undeployChannel(channelId);
-        await this.javaClient.deleteChannel(channelId);
-        await this.nodeClient.deleteChannel(channelId);
+    // Cleanup - undeploy and delete both engine-specific channels
+    if (javaChannelId) {
+      try {
+        await this.javaClient.undeployChannel(javaChannelId);
+        await this.javaClient.deleteChannel(javaChannelId);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    if (nodeChannelId) {
+      try {
+        await this.nodeClient.undeployChannel(nodeChannelId);
+        await this.nodeClient.deleteChannel(nodeChannelId);
+      } catch {
+        // Ignore cleanup errors
       }
     }
 
@@ -432,6 +491,83 @@ export class ScenarioRunner {
     // Simple regex extraction
     const match = xml.match(/<id>([^<]+)<\/id>/);
     return match ? match[1] : null;
+  }
+
+  /**
+   * Generate a deterministic UUID based on original ID and engine.
+   * This creates a valid UUID that's unique per engine but reproducible.
+   */
+  private generateEngineChannelId(originalId: string, engine: 'java' | 'node'): string {
+    // Simple deterministic UUID generation: modify last segment based on engine
+    // Original: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    // Java:     xxxxxxxx-xxxx-xxxx-xxxx-xxxxxx000001
+    // Node:     xxxxxxxx-xxxx-xxxx-xxxx-xxxxxx000002
+    const suffix = engine === 'java' ? '000001' : '000002';
+    const parts = originalId.split('-');
+    if (parts.length === 5) {
+      // Replace last 6 chars of the final segment
+      parts[4] = parts[4].substring(0, 6) + suffix;
+      return parts.join('-');
+    }
+    // Fallback: generate completely new UUID-like ID
+    return engine === 'java'
+      ? '00000000-0000-0000-0000-000000000001'
+      : '00000000-0000-0000-0000-000000000002';
+  }
+
+  /**
+   * Prepare channel XML for a specific engine by substituting placeholders.
+   *
+   * Supported placeholders:
+   * - {{MLLP_PORT}} - MLLP listener port
+   * - {{HTTP_PORT}} - HTTP listener port
+   * - {{FILE_OUTPUT_DIR}} - File output directory
+   * - {{CHANNEL_ID}} - Unique channel ID (generated if not in original)
+   * - ${listenerPort}, ${listenerAddress}, ${fileOutboxPath} - Legacy Mirth variables
+   *
+   * Generates a unique but valid UUID for each engine to avoid conflicts.
+   */
+  private prepareChannelForEngine(
+    xml: string,
+    engine: 'java' | 'node',
+    config: ScenarioConfig
+  ): { xml: string; channelId: string } {
+    let prepared = xml;
+
+    const mllpPort = engine === 'java' ? this.env.java.mllpPort : this.env.node.mllpPort;
+    const httpPort = engine === 'java' ? this.env.java.httpTestPort : this.env.node.httpTestPort;
+    const fileOutputDir = config.fileOutputDir || `/tmp/mirth-validation/${engine}`;
+
+    // Extract original channel ID
+    const originalId = this.extractChannelId(xml);
+    if (!originalId) {
+      throw new Error('Could not extract channel ID from XML');
+    }
+
+    // Generate engine-specific channel ID (valid UUID to avoid DB column length issues)
+    const engineChannelId = this.generateEngineChannelId(originalId, engine);
+
+    // Replace channel ID
+    prepared = prepared.replace(
+      new RegExp(`<id>${originalId}</id>`),
+      `<id>${engineChannelId}</id>`
+    );
+
+    // Replace modern placeholders
+    prepared = prepared
+      .replace(/\{\{MLLP_PORT\}\}/g, String(mllpPort))
+      .replace(/\{\{HTTP_PORT\}\}/g, String(httpPort))
+      .replace(/\{\{FILE_OUTPUT_DIR\}\}/g, fileOutputDir)
+      .replace(/\{\{CHANNEL_ID\}\}/g, engineChannelId);
+
+    // Replace legacy Mirth configuration variables
+    prepared = prepared
+      .replace(/\$\{listenerPort\}/g, String(mllpPort))
+      .replace(/\$\{listenerAddress\}/g, '0.0.0.0')
+      .replace(/\$\{fileOutboxPath\}/g, fileOutputDir)
+      .replace(/\$\{filePrefix\}/g, 'msg-');
+
+    return { xml: prepared, channelId: engineChannelId };
   }
 
   /**

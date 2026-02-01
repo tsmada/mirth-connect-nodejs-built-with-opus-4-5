@@ -70,7 +70,7 @@ export class MirthApiClient {
   constructor(private endpoint: MirthEndpoint) {
     this.client = axios.create({
       baseURL: endpoint.baseUrl,
-      timeout: 30000,
+      timeout: 120000,  // 2 minutes - Mirth API can be slow for channel operations
       headers: {
         'Content-Type': 'application/xml',
         Accept: 'application/xml',
@@ -238,9 +238,9 @@ export class MirthApiClient {
       }
     );
 
-
     // Check status code
     if (response.status !== 200 && response.status !== 201) {
+      console.error(`Channel import failed with status ${response.status}: ${JSON.stringify(response.data).substring(0, 500)}`);
       return false;
     }
 
