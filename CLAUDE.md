@@ -9,6 +9,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 - **Connectors**: Protocol implementations in `src/connectors/`
 - **JavaScript Runtime**: E4X transpilation in `src/javascript/`
 - **REST API**: Express-based in `src/api/`
+- **CLI Tool**: Terminal monitor utility in `src/cli/`
 
 ### REST API Servlets (Implemented)
 | Servlet | File | Endpoints |
@@ -27,6 +28,47 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 | Database Task | DatabaseTaskServlet.ts | Maintenance tasks |
 | System | SystemServlet.ts | System info/stats |
 | Usage | UsageServlet.ts | Usage data reporting |
+
+### CLI Monitor Utility (`src/cli/`)
+
+A terminal-based CLI tool for monitoring and managing Mirth Connect, providing alternatives to the Mirth Administrator GUI.
+
+**Structure:**
+```
+src/cli/
+├── index.ts                    # Entry point with Commander setup
+├── commands/
+│   ├── auth.ts                 # login, logout, whoami
+│   ├── channels.ts             # list, get, deploy, start, stop, pause, resume, stats
+│   ├── messages.ts             # list, search, get, export
+│   ├── send.ts                 # mllp, http, hl7 message sending
+│   ├── server.ts               # info, status, stats
+│   ├── events.ts               # list, search, errors
+│   ├── config.ts               # get, set, list, reset
+│   └── dashboard.ts            # Interactive Ink-based dashboard
+├── ui/
+│   └── (Ink React components for dashboard)
+├── lib/
+│   ├── ApiClient.ts            # REST API client
+│   ├── ConfigManager.ts        # ~/.mirth-cli.json management
+│   ├── OutputFormatter.ts      # Table/JSON output formatting
+│   ├── ChannelResolver.ts      # Channel name → ID resolution
+│   └── MessageSender.ts        # MLLP/HTTP sending utilities
+└── types/
+    └── index.ts                # CLI-specific types
+```
+
+**Key Commands:**
+```bash
+mirth-cli login --user admin      # Authenticate
+mirth-cli channels                 # List channels with status
+mirth-cli channels start <name>   # Start by name (not just ID!)
+mirth-cli messages <channelId> --status E  # Find errors
+mirth-cli send hl7 localhost:6662 @test.hl7  # Send test message
+mirth-cli dashboard               # Interactive real-time view
+```
+
+**Dependencies:** commander, chalk (v5+), ora (v8+), conf, ink, react
 
 ## Critical Patterns
 

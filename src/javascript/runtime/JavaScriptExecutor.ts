@@ -20,7 +20,7 @@ import {
   TransformerStep,
   SerializationType,
   ScriptOptions,
-} from './ScriptBuilder';
+} from './ScriptBuilder.js';
 import {
   buildBasicScope,
   buildChannelScope,
@@ -32,9 +32,9 @@ import {
   ScriptContext,
   ScriptLogger,
   Scope,
-} from './ScopeBuilder';
-import { ConnectorMessage } from '../../model/ConnectorMessage';
-import { Message } from '../../model/Message';
+} from './ScopeBuilder.js';
+import { ConnectorMessage } from '../../model/ConnectorMessage.js';
+import { Message } from '../../model/Message.js';
 
 /**
  * Script execution result

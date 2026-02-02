@@ -25,6 +25,7 @@ This project provides a modern, TypeScript-based implementation of the Mirth Con
 | **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.) |
 | **API** | Full REST API compatible with Mirth Administrator |
 | **Plugins** | Code Templates, Data Pruner, XSLT Transformer |
+| **CLI Tool** | Terminal-based monitor and management utility |
 
 ## Quick Start
 
@@ -80,6 +81,159 @@ npm run dev
 
 The server will start on `http://localhost:8081`. Connect Mirth Administrator to this endpoint.
 
+## CLI Tool
+
+The `mirth-cli` command provides a terminal-based interface for monitoring and managing Mirth Connect channels, offering an alternative to the Mirth Administrator GUI.
+
+### CLI Installation
+
+```bash
+# Build and link globally
+npm run build
+npm link
+
+# Or run directly with ts-node
+npm run cli -- <command>
+```
+
+### CLI Configuration
+
+```bash
+# Set server URL
+mirth-cli config set url http://localhost:8081
+
+# Login and save session
+mirth-cli login --user admin --password admin
+
+# View current configuration
+mirth-cli config
+```
+
+Configuration is stored in `~/.mirth-cli.json`.
+
+### CLI Commands
+
+#### Authentication
+```bash
+mirth-cli login                     # Interactive login
+mirth-cli login -u admin -p admin   # Login with credentials
+mirth-cli logout                    # Clear session
+mirth-cli whoami                    # Show current user
+```
+
+#### Channel Management
+```bash
+mirth-cli channels                  # List all channels with status
+mirth-cli channels list             # Same as above
+mirth-cli channels get <id|name>    # Get channel details
+mirth-cli channels deploy <id|name> # Deploy a channel
+mirth-cli channels undeploy <id|name>
+mirth-cli channels start <id|name>
+mirth-cli channels stop <id|name>
+mirth-cli channels pause <id|name>
+mirth-cli channels resume <id|name>
+mirth-cli channels stats            # Show statistics for all channels
+mirth-cli channels stats <id|name>  # Show statistics for one channel
+```
+
+#### Message Browsing
+```bash
+mirth-cli messages list <channelId>              # List recent messages
+mirth-cli messages search <channelId>            # Search with filters
+  --status <R|F|T|S|Q|E|P>                       # Filter by status
+  --from <datetime>                              # Messages from date
+  --to <datetime>                                # Messages to date
+  --limit <n>                                    # Limit results
+mirth-cli messages get <channelId> <messageId>   # Get message details
+mirth-cli messages export <channelId>            # Export messages
+  --output <file>                                # Output file
+  --format <json|xml>                            # Export format
+```
+
+#### Message Sending
+```bash
+# Send MLLP message
+mirth-cli send mllp localhost:6662 "MSH|^~\&|..."
+mirth-cli send mllp localhost:6662 @message.hl7  # From file
+
+# Send HTTP message
+mirth-cli send http http://localhost:8083/api @payload.json
+  --method POST                                  # HTTP method
+  --content-type application/json                # Content type
+  --header "Authorization: Bearer token"         # Add headers
+
+# Send HL7 (MLLP shorthand)
+mirth-cli send hl7 localhost:6662 @adt.hl7
+```
+
+#### Server Information
+```bash
+mirth-cli server info               # Show server version and info
+mirth-cli server status             # Show server status
+mirth-cli server stats              # Show system statistics
+```
+
+#### Event Browsing
+```bash
+mirth-cli events                    # List recent events
+mirth-cli events list               # Same as above
+mirth-cli events search             # Search with filters
+  --from <datetime>                 # Events from date
+  --to <datetime>                   # Events to date
+  --level <INFO|WARN|ERROR>         # Filter by level
+mirth-cli events errors             # Show only error events
+```
+
+#### Interactive Dashboard
+```bash
+mirth-cli dashboard                 # Launch interactive dashboard
+mirth-cli dashboard --refresh 5     # Set refresh interval (seconds)
+```
+
+The dashboard provides real-time channel status monitoring with keyboard navigation.
+
+### Global Options
+
+All commands support these options:
+
+```bash
+--url <url>         # Override server URL
+--json              # Output as JSON (for scripting)
+-v, --verbose       # Verbose output
+```
+
+### Example Session
+
+```bash
+# Setup and login
+$ mirth-cli config set url http://localhost:8081
+✔ Set url = http://localhost:8081
+
+$ mirth-cli login -u admin -p admin
+✔ Logged in as admin
+
+# Check channels
+$ mirth-cli channels
+┌──────────────────────────────────────┬──────────────────┬─────────┬──────┬──────┬─────┐
+│ ID                                   │ Name             │ Status  │ Recv │ Sent │ Err │
+├──────────────────────────────────────┼──────────────────┼─────────┼──────┼──────┼─────┤
+│ 550e8400-e29b-41d4-a716-446655440000 │ MLLP Router      │ STARTED │  150 │  148 │   2 │
+│ 6ba7b810-9dad-11d1-80b4-00c04fd430c8 │ HTTP Passthrough │ STOPPED │    0 │    0 │   0 │
+└──────────────────────────────────────┴──────────────────┴─────────┴──────┴──────┴─────┘
+
+# View errors
+$ mirth-cli messages search 550e8400... --status E
+$ mirth-cli messages get 550e8400... 147
+
+# Send test message
+$ mirth-cli send mllp localhost:6662 @test.hl7
+✔ Message sent successfully
+Response: MSA|AA|12345
+
+# JSON output for scripting
+$ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
+```
+
 ## Architecture
 
 ```
@@ -114,6 +268,7 @@ The server will start on `http://localhost:8081`. Connect Mirth Administrator to
 | **JavaScript Runtime** | `src/javascript/` | E4X transpilation and script execution |
 | **Data Types** | `src/datatypes/` | HL7v2, XML, JSON parsing and serialization |
 | **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator |
+| **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
 | **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT |
 
 ## API Endpoints
@@ -223,6 +378,11 @@ src/
 │   ├── e4x/              # E4X transpiler
 │   ├── runtime/          # Script execution
 │   └── userutil/         # Mirth maps
+├── cli/                  # CLI tool
+│   ├── commands/         # Command implementations
+│   ├── lib/              # Utilities (ApiClient, ConfigManager)
+│   ├── ui/               # Ink dashboard components
+│   └── types/            # CLI-specific types
 ├── db/                   # Database access
 ├── model/                # Domain models
 └── plugins/              # Plugin implementations
@@ -241,6 +401,15 @@ npm run lint          # Check code style
 npm run lint:fix      # Fix linting issues
 npm run format        # Format with Prettier
 npm run typecheck     # Type check without compiling
+npm run cli           # Run CLI with ts-node
+```
+
+#### CLI Scripts
+
+```bash
+npm run cli -- channels           # Run CLI command directly
+npm run cli -- login -u admin     # Login via CLI
+npm link                          # Install mirth-cli globally
 ```
 
 ### Code Quality

@@ -20,12 +20,12 @@ import {
   GlobalMap,
   GlobalChannelMapStore,
   ConfigurationMap,
-} from '../userutil/MirthMap';
-import { XMLProxy, createXML, setDefaultXmlNamespace, getDefaultXmlNamespace } from '../e4x/XMLProxy';
-import { transpileE4X } from '../e4x/E4XTranspiler';
-import { ConnectorMessage } from '../../model/ConnectorMessage';
-import { Message } from '../../model/Message';
-import { Status } from '../../model/Status';
+} from '../userutil/MirthMap.js';
+import { XMLProxy, createXML, setDefaultXmlNamespace, getDefaultXmlNamespace } from '../e4x/XMLProxy.js';
+import { transpileE4X } from '../e4x/E4XTranspiler.js';
+import { ConnectorMessage } from '../../model/ConnectorMessage.js';
+import { Message } from '../../model/Message.js';
+import { Status } from '../../model/Status.js';
 
 /**
  * Logger interface for script execution

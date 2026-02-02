@@ -12,7 +12,7 @@
  * - Add utility functions (validate, $, etc.)
  */
 
-import { transpileE4X } from '../e4x/E4XTranspiler';
+import { transpileE4X } from '../e4x/E4XTranspiler.js';
 
 /**
  * Serialization type for message data
