@@ -9,6 +9,11 @@ import { MessageComparator, ComparisonResult, Difference } from '../comparators/
 import { ResponseComparator } from '../comparators/ResponseComparator';
 import { ChannelExportComparator } from '../comparators/ChannelExportComparator';
 
+// Get project root - process.cwd() should be validation directory when run via npm scripts
+function getProjectRoot(): string {
+  return process.cwd();
+}
+
 export interface ScenarioConfig {
   id: string;
   name: string;
@@ -105,7 +110,7 @@ export class ScenarioRunner {
     config: ScenarioConfig,
     startTime: number
   ): Promise<ScenarioResult> {
-    const basePath = config.basePath || path.join(__dirname, '..', 'scenarios', config.id);
+    const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
 
     // Load channel file
     let channelXml: string;
@@ -113,7 +118,7 @@ export class ScenarioRunner {
       const channelPath = path.join(basePath, config.channelFile);
       if (!fs.existsSync(channelPath)) {
         // Try fixtures directory
-        const fixturesPath = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'example-channels', config.channelFile);
+        const fixturesPath = path.join(getProjectRoot(), '..', 'tests', 'fixtures', 'example-channels', config.channelFile);
         if (fs.existsSync(fixturesPath)) {
           channelXml = fs.readFileSync(fixturesPath, 'utf8');
         } else {
@@ -213,7 +218,7 @@ export class ScenarioRunner {
     config: ScenarioConfig,
     startTime: number
   ): Promise<ScenarioResult> {
-    const basePath = config.basePath || path.join(__dirname, '..', 'scenarios', config.id);
+    const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
     let javaChannelId: string | null = null;
     let nodeChannelId: string | null = null;
 
@@ -264,7 +269,7 @@ export class ScenarioRunner {
         testMessage = fs.readFileSync(messagePath, 'utf8');
       } else {
         // Try fixtures
-        const fixturesPath = path.join(__dirname, '..', 'fixtures', 'messages', config.inputMessage);
+        const fixturesPath = path.join(getProjectRoot(), 'fixtures', 'messages', config.inputMessage);
         if (fs.existsSync(fixturesPath)) {
           testMessage = fs.readFileSync(fixturesPath, 'utf8');
         } else {
@@ -336,7 +341,7 @@ export class ScenarioRunner {
     config: ScenarioConfig,
     startTime: number
   ): Promise<ScenarioResult> {
-    const basePath = config.basePath || path.join(__dirname, '..', 'scenarios', config.id);
+    const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
     let javaChannelId: string | null = null;
     let nodeChannelId: string | null = null;
 
@@ -393,7 +398,7 @@ export class ScenarioRunner {
         testMessage = fs.readFileSync(messagePath, 'utf8');
       } else {
         // Try fixtures
-        const fixturesPath = path.join(__dirname, '..', 'fixtures', 'messages', config.inputMessage);
+        const fixturesPath = path.join(getProjectRoot(), 'fixtures', 'messages', config.inputMessage);
         if (fs.existsSync(fixturesPath)) {
           testMessage = fs.readFileSync(fixturesPath, 'utf8');
         }
@@ -469,8 +474,7 @@ export class ScenarioRunner {
     }
 
     const fixturesPath = path.join(
-      __dirname,
-      '..',
+      getProjectRoot(),
       '..',
       'tests',
       'fixtures',

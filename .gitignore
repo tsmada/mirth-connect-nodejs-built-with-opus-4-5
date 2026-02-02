@@ -38,3 +38,6 @@ docker/volumes/
 # Temporary files
 tmp/
 temp/
+
+# Tech debt reports
+reports/

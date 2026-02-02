@@ -10,8 +10,17 @@ import { authMiddleware, contentNegotiationMiddleware } from './middleware/index
 import { userRouter } from './servlets/UserServlet.js';
 import { channelRouter } from './servlets/ChannelServlet.js';
 import { channelStatusRouter } from './servlets/ChannelStatusServlet.js';
+import { channelStatisticsRouter } from './servlets/ChannelStatisticsServlet.js';
 import { engineRouter } from './servlets/EngineServlet.js';
 import { configurationRouter } from './servlets/ConfigurationServlet.js';
+import { eventRouter } from './servlets/EventServlet.js';
+import { alertRouter } from './servlets/AlertServlet.js';
+import { messageRouter } from './servlets/MessageServlet.js';
+import { channelGroupRouter } from './servlets/ChannelGroupServlet.js';
+import { extensionRouter } from './servlets/ExtensionServlet.js';
+import { databaseTaskRouter } from './servlets/DatabaseTaskServlet.js';
+import { systemRouter } from './servlets/SystemServlet.js';
+import { usageRouter } from './servlets/UsageServlet.js';
 
 // Plugin routes
 import { codeTemplateRouter } from '../plugins/codetemplates/index.js';
@@ -89,8 +98,17 @@ export function createApp(options: ServerOptions = {}): Express {
   // Protected routes (auth required)
   app.use('/api/channels', authMiddleware({ required: true }), channelRouter);
   app.use('/api/channels', authMiddleware({ required: true }), channelStatusRouter);
+  app.use('/api/channels', authMiddleware({ required: true }), channelStatisticsRouter);
   app.use('/api/channels', authMiddleware({ required: true }), engineRouter);
+  app.use('/api/channels/:channelId/messages', authMiddleware({ required: true }), messageRouter);
+  app.use('/api/channelgroups', authMiddleware({ required: true }), channelGroupRouter);
   app.use('/api/server', authMiddleware({ required: true }), configurationRouter);
+  app.use('/api/events', authMiddleware({ required: true }), eventRouter);
+  app.use('/api/alerts', authMiddleware({ required: true }), alertRouter);
+  app.use('/api/extensions', authMiddleware({ required: true }), extensionRouter);
+  app.use('/api/databaseTasks', authMiddleware({ required: true }), databaseTaskRouter);
+  app.use('/api/system', authMiddleware({ required: true }), systemRouter);
+  app.use('/api/usageData', authMiddleware({ required: true }), usageRouter);
 
   // Plugin routes
   app.use('/api', codeTemplateRouter);

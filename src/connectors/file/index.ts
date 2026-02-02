@@ -2,6 +2,7 @@
  * File Connector Module
  *
  * Provides file-based source and destination connectors.
+ * Supports local filesystem (FILE) and SFTP schemes.
  */
 
 export {
@@ -20,3 +21,15 @@ export {
 
 export { FileReceiver, FileReceiverConfig } from './FileReceiver.js';
 export { FileDispatcher, FileDispatcherConfig } from './FileDispatcher.js';
+
+// SFTP-specific exports
+export {
+  SftpConnection,
+  SftpConnectionOptions,
+  SftpFileInfo,
+  SftpSchemeProperties,
+  HostKeyChecking,
+  getDefaultSftpSchemeProperties,
+  validateSftpSchemeProperties,
+  getSftpPropertiesSummary,
+} from './sftp/index.js';

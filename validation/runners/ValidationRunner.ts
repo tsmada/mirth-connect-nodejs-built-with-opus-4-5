@@ -196,7 +196,10 @@ export class ValidationRunner {
    * Scenarios are sorted by ID (e.g., "0.1" < "1.1" < "1.2").
    */
   private loadScenarios(priority?: number): ScenarioConfig[] {
-    const scenariosDir = path.join(__dirname, '..', 'scenarios');
+    // __dirname points to dist/runners when compiled, so we need to find scenarios relative to project root
+    // Use process.cwd() which should be the validation directory when run via npm scripts
+    const projectRoot = process.cwd();
+    const scenariosDir = path.join(projectRoot, 'scenarios');
     const scenarios: ScenarioConfig[] = [];
 
     // Get all scenario directories

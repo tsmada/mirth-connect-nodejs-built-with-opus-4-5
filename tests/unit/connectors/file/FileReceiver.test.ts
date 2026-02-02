@@ -271,15 +271,16 @@ describe('FileReceiver', () => {
       await expect(receiver.start()).rejects.toThrow('not yet implemented');
     });
 
-    it('should reject SFTP scheme', async () => {
+    it('should require host for SFTP scheme', async () => {
       const receiver = new FileReceiver({
         properties: {
           scheme: FileScheme.SFTP,
           directory: '/path',
+          // host is missing
         },
       });
 
-      await expect(receiver.start()).rejects.toThrow('not yet implemented');
+      await expect(receiver.start()).rejects.toThrow('Host is required for SFTP');
     });
 
     it('should reject S3 scheme', async () => {

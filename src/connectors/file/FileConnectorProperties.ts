@@ -10,6 +10,8 @@
  * - Support for multiple file schemes (FILE, FTP, SFTP, S3, SMB)
  */
 
+import { SftpSchemeProperties } from './sftp/SftpSchemeProperties.js';
+
 /**
  * File scheme types
  */
@@ -93,6 +95,8 @@ export interface FileReceiverProperties {
   validateConnection: boolean;
   /** Timeout for connections (ms) */
   timeout: number;
+  /** SFTP-specific scheme properties */
+  sftpSchemeProperties?: SftpSchemeProperties;
 }
 
 /**
@@ -133,6 +137,8 @@ export interface FileDispatcherProperties {
   validateConnection: boolean;
   /** Timeout for connections (ms) */
   timeout: number;
+  /** SFTP-specific scheme properties */
+  sftpSchemeProperties?: SftpSchemeProperties;
 }
 
 /**

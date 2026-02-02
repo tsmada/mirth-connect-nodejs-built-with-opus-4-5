@@ -118,16 +118,38 @@ The server will start on `http://localhost:8081`. Connect Mirth Administrator to
 
 ## API Endpoints
 
-The REST API mirrors the Mirth Connect Server API:
+The REST API mirrors the Mirth Connect Server API with **14 fully-implemented servlets**:
 
+### Channel Operations
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/api/channels` | GET, POST, PUT, DELETE | Channel CRUD operations |
 | `/api/channels/{id}/status` | GET, POST | Channel status and control |
 | `/api/channels/_deploy` | POST | Deploy channels |
 | `/api/channels/_undeploy` | POST | Undeploy channels |
+| `/api/channels/statistics` | GET, POST | Channel statistics |
+| `/api/channels/{id}/messages` | GET, POST, DELETE | Message operations |
+| `/api/channels/{id}/messages/_search` | POST | Search with filters |
+| `/api/channels/{id}/messages/_reprocess` | POST | Reprocess messages |
+
+### Server & Configuration
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
 | `/api/server/configuration` | GET, PUT | Server configuration |
+| `/api/system/info` | GET | System information |
+| `/api/system/stats` | GET | System statistics |
+| `/api/usageData` | GET | Usage reporting |
+| `/api/databaseTasks` | GET, POST | Database maintenance |
+
+### Administration
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
 | `/api/users` | GET, POST, PUT, DELETE | User management |
+| `/api/events` | GET, POST, DELETE | Audit log |
+| `/api/events/_search` | POST | Event search |
+| `/api/alerts` | GET, POST, PUT, DELETE | Alert management |
+| `/api/extensions` | GET, PUT | Plugin management |
+| `/api/channelgroups` | GET, POST | Channel groups |
 | `/api/codeTemplates` | GET, POST, PUT, DELETE | Code template library |
 
 ## JavaScript Runtime

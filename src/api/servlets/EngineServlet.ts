@@ -10,6 +10,58 @@ import { EngineController } from '../../controllers/EngineController.js';
 
 export const engineRouter = Router();
 
+/**
+ * Extract channel IDs from various request body formats.
+ *
+ * Mirth sends channel IDs in XML format: <set><string>id</string></set>
+ * After XML parsing, this becomes: { set: { string: 'id' } } or { set: { string: ['id1', 'id2'] } }
+ *
+ * This helper normalizes all formats to a string array.
+ */
+function extractChannelIds(body: unknown): string[] {
+  if (!body) {
+    return [];
+  }
+
+  // Already an array (e.g., from JSON body)
+  if (Array.isArray(body)) {
+    return body.filter((id) => typeof id === 'string');
+  }
+
+  // Handle parsed XML format: { set: { string: 'id' } } or { set: { string: ['id1', 'id2'] } }
+  if (typeof body === 'object' && body !== null) {
+    const obj = body as Record<string, unknown>;
+
+    // Check for <set><string>...</string></set> format
+    if (obj.set && typeof obj.set === 'object') {
+      const setObj = obj.set as Record<string, unknown>;
+      if (setObj.string) {
+        if (Array.isArray(setObj.string)) {
+          return setObj.string.filter((id) => typeof id === 'string');
+        }
+        if (typeof setObj.string === 'string') {
+          return [setObj.string];
+        }
+      }
+    }
+
+    // Check for <list><string>...</string></list> format (alternative XML format)
+    if (obj.list && typeof obj.list === 'object') {
+      const listObj = obj.list as Record<string, unknown>;
+      if (listObj.string) {
+        if (Array.isArray(listObj.string)) {
+          return listObj.string.filter((id) => typeof id === 'string');
+        }
+        if (typeof listObj.string === 'string') {
+          return [listObj.string];
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
 // Route param types
 interface ChannelParams {
   channelId: string;
@@ -60,12 +112,15 @@ engineRouter.post('/:channelId/_deploy', async (req: Request<ChannelParams>, res
  */
 engineRouter.post('/_deploy', async (req: Request, res: Response) => {
   try {
-    const channelIds = req.body;
-    if (channelIds && Array.isArray(channelIds) && channelIds.length > 0) {
+    const channelIds = extractChannelIds(req.body);
+
+    if (channelIds.length > 0) {
+      console.log(`[EngineServlet] Deploying channels: ${channelIds.join(', ')}`);
       for (const id of channelIds) {
         await EngineController.deployChannel(id);
       }
     } else {
+      console.log('[EngineServlet] No specific channels requested, deploying all');
       await EngineController.deployAllChannels();
     }
 
@@ -107,12 +162,15 @@ engineRouter.post('/:channelId/_undeploy', async (req: Request<ChannelParams>, r
  */
 engineRouter.post('/_undeploy', async (req: Request, res: Response) => {
   try {
-    const channelIds = req.body;
-    if (channelIds && Array.isArray(channelIds) && channelIds.length > 0) {
+    const channelIds = extractChannelIds(req.body);
+
+    if (channelIds.length > 0) {
+      console.log(`[EngineServlet] Undeploying channels: ${channelIds.join(', ')}`);
       for (const id of channelIds) {
         await EngineController.undeployChannel(id);
       }
     } else {
+      console.log('[EngineServlet] No specific channels requested, undeploying all');
       await EngineController.undeployAllChannels();
     }
 

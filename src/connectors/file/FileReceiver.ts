@@ -6,6 +6,7 @@
  * Key behaviors to replicate:
  * - Poll-based file discovery
  * - Support local filesystem (FILE scheme)
+ * - Support SFTP servers (SFTP scheme)
  * - File filtering (glob and regex patterns)
  * - After-processing actions (move, delete)
  * - Binary and text mode reading
@@ -25,6 +26,8 @@ import {
   FileScheme,
   FileInfo,
 } from './FileConnectorProperties.js';
+import { SftpConnection, SftpFileInfo } from './sftp/SftpConnection.js';
+import { getDefaultSftpSchemeProperties } from './sftp/SftpSchemeProperties.js';
 
 export interface FileReceiverConfig {
   name?: string;
@@ -35,10 +38,12 @@ export interface FileReceiverConfig {
 
 /**
  * File Source Connector that polls for files
+ * Supports local filesystem (FILE) and SFTP schemes
  */
 export class FileReceiver extends SourceConnector {
   private properties: FileReceiverProperties;
   private pollTimer: NodeJS.Timeout | null = null;
+  private sftpConnection: SftpConnection | null = null;
 
   constructor(config: FileReceiverConfig) {
     super({
@@ -76,30 +81,29 @@ export class FileReceiver extends SourceConnector {
       throw new Error('File Receiver is already running');
     }
 
-    // Validate configuration
-    if (this.properties.scheme !== FileScheme.FILE) {
-      throw new Error(
-        `File scheme ${this.properties.scheme} not yet implemented`
-      );
-    }
-
     if (!this.properties.directory) {
       throw new Error('Directory is required');
     }
 
-    // Verify directory exists
-    try {
-      const stats = await fs.stat(this.properties.directory);
-      if (!stats.isDirectory()) {
+    // Initialize based on scheme
+    switch (this.properties.scheme) {
+      case FileScheme.FILE:
+        await this.initializeLocalFileSystem();
+        break;
+
+      case FileScheme.SFTP:
+        await this.initializeSftpConnection();
+        break;
+
+      case FileScheme.FTP:
+      case FileScheme.S3:
+      case FileScheme.SMB:
         throw new Error(
-          `Path is not a directory: ${this.properties.directory}`
+          `File scheme ${this.properties.scheme} not yet implemented`
         );
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new Error(`Directory not found: ${this.properties.directory}`);
-      }
-      throw error;
+
+      default:
+        throw new Error(`Unknown file scheme: ${this.properties.scheme}`);
     }
 
     // Start polling
@@ -116,7 +120,72 @@ export class FileReceiver extends SourceConnector {
     }
 
     this.stopPolling();
+
+    // Clean up SFTP connection if active
+    if (this.sftpConnection) {
+      await this.sftpConnection.disconnect();
+      this.sftpConnection = null;
+    }
+
     this.running = false;
+  }
+
+  /**
+   * Initialize local file system access
+   */
+  private async initializeLocalFileSystem(): Promise<void> {
+    // Verify directory exists
+    try {
+      const stats = await fs.stat(this.properties.directory);
+      if (!stats.isDirectory()) {
+        throw new Error(
+          `Path is not a directory: ${this.properties.directory}`
+        );
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`Directory not found: ${this.properties.directory}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Initialize SFTP connection
+   */
+  private async initializeSftpConnection(): Promise<void> {
+    if (!this.properties.host) {
+      throw new Error('Host is required for SFTP connections');
+    }
+
+    const schemeProps = this.properties.sftpSchemeProperties ?? getDefaultSftpSchemeProperties();
+
+    this.sftpConnection = new SftpConnection({
+      host: this.properties.host,
+      port: this.properties.port,
+      username: this.properties.username,
+      password: this.properties.password,
+      schemeProperties: schemeProps,
+      timeout: this.properties.timeout,
+    });
+
+    await this.sftpConnection.connect();
+
+    // Verify we can read the directory
+    const canRead = await this.sftpConnection.canRead(this.properties.directory);
+    if (!canRead) {
+      throw new Error(`Cannot read SFTP directory: ${this.properties.directory}`);
+    }
+  }
+
+  /**
+   * Ensure SFTP connection is active, reconnecting if needed
+   */
+  private async ensureSftpConnection(): Promise<SftpConnection> {
+    if (!this.sftpConnection || !this.sftpConnection.isConnected()) {
+      await this.initializeSftpConnection();
+    }
+    return this.sftpConnection!;
   }
 
   /**
@@ -155,8 +224,20 @@ export class FileReceiver extends SourceConnector {
     }
 
     try {
-      // List files in directory
-      const files = await this.listFiles(this.properties.directory);
+      // List files based on scheme
+      let files: FileInfo[];
+      switch (this.properties.scheme) {
+        case FileScheme.FILE:
+          files = await this.listLocalFiles(this.properties.directory);
+          break;
+
+        case FileScheme.SFTP:
+          files = await this.listSftpFiles(this.properties.directory);
+          break;
+
+        default:
+          throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
+      }
 
       // Filter files
       const filteredFiles = this.filterFiles(files);
@@ -180,9 +261,9 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
-   * List files in directory
+   * List files from local filesystem
    */
-  private async listFiles(directory: string): Promise<FileInfo[]> {
+  private async listLocalFiles(directory: string): Promise<FileInfo[]> {
     const files: FileInfo[] = [];
     const entries = await fs.readdir(directory, { withFileTypes: true });
 
@@ -197,7 +278,7 @@ export class FileReceiver extends SourceConnector {
       if (entry.isDirectory()) {
         // Recurse into subdirectories if enabled
         if (this.properties.directoryRecursion) {
-          const subFiles = await this.listFiles(fullPath);
+          const subFiles = await this.listLocalFiles(fullPath);
           files.push(...subFiles);
         }
       } else if (entry.isFile()) {
@@ -217,21 +298,56 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
+   * List files from SFTP server
+   */
+  private async listSftpFiles(directory: string): Promise<SftpFileInfo[]> {
+    const sftp = await this.ensureSftpConnection();
+
+    // Use SFTP's listFiles which handles filtering internally
+    const files = await sftp.listFiles(
+      directory,
+      this.properties.fileFilter,
+      this.properties.regex,
+      this.properties.ignoreDot
+    );
+
+    // Handle directory recursion for SFTP
+    if (this.properties.directoryRecursion) {
+      const subdirs = await sftp.listDirectories(directory);
+      for (const subdir of subdirs) {
+        // Skip hidden directories if configured
+        const dirName = subdir.split('/').pop() || '';
+        if (this.properties.ignoreDot && dirName.startsWith('.')) {
+          continue;
+        }
+
+        const subFiles = await this.listSftpFiles(subdir);
+        files.push(...subFiles);
+      }
+    }
+
+    return files;
+  }
+
+  /**
    * Filter files based on pattern and age
    */
   private filterFiles(files: FileInfo[]): FileInfo[] {
     const now = Date.now();
 
     return files.filter((file) => {
-      // Check pattern match
-      if (
-        !matchesFilter(
-          file.name,
-          this.properties.fileFilter,
-          this.properties.regex
-        )
-      ) {
-        return false;
+      // For SFTP, filtering is already done in listSftpFiles
+      // For local files, check pattern match
+      if (this.properties.scheme === FileScheme.FILE) {
+        if (
+          !matchesFilter(
+            file.name,
+            this.properties.fileFilter,
+            this.properties.regex
+          )
+        ) {
+          return false;
+        }
       }
 
       // Check file age
@@ -305,6 +421,22 @@ export class FileReceiver extends SourceConnector {
    * Read file content
    */
   private async readFile(file: FileInfo): Promise<string> {
+    switch (this.properties.scheme) {
+      case FileScheme.FILE:
+        return this.readLocalFile(file);
+
+      case FileScheme.SFTP:
+        return this.readSftpFile(file);
+
+      default:
+        throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
+    }
+  }
+
+  /**
+   * Read local file content
+   */
+  private async readLocalFile(file: FileInfo): Promise<string> {
     if (this.properties.binary) {
       const buffer = await fs.readFile(file.path);
       return buffer.toString('base64');
@@ -316,26 +448,35 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
+   * Read SFTP file content
+   */
+  private async readSftpFile(file: FileInfo): Promise<string> {
+    const sftp = await this.ensureSftpConnection();
+
+    if (this.properties.binary) {
+      const buffer = await sftp.readFile(file.name, file.directory);
+      return buffer.toString('base64');
+    } else {
+      return await sftp.readFileAsString(
+        file.name,
+        file.directory,
+        this.properties.charsetEncoding as BufferEncoding
+      );
+    }
+  }
+
+  /**
    * Execute after-processing action
    */
   private async executeAfterProcessingAction(file: FileInfo): Promise<void> {
     switch (this.properties.afterProcessingAction) {
       case AfterProcessingAction.DELETE:
-        await fs.unlink(file.path);
+        await this.deleteFile(file);
         break;
 
       case AfterProcessingAction.MOVE:
         if (this.properties.moveToDirectory) {
-          const destPath = path.join(
-            this.properties.moveToDirectory,
-            file.name
-          );
-
-          // Ensure destination directory exists
-          await fs.mkdir(this.properties.moveToDirectory, { recursive: true });
-
-          // Move file
-          await fs.rename(file.path, destPath);
+          await this.moveFile(file, this.properties.moveToDirectory);
         }
         break;
 
@@ -352,18 +493,12 @@ export class FileReceiver extends SourceConnector {
   private async executeErrorAction(file: FileInfo): Promise<void> {
     switch (this.properties.errorAction) {
       case AfterProcessingAction.DELETE:
-        await fs.unlink(file.path);
+        await this.deleteFile(file);
         break;
 
       case AfterProcessingAction.MOVE:
         if (this.properties.errorDirectory) {
-          const destPath = path.join(this.properties.errorDirectory, file.name);
-
-          // Ensure error directory exists
-          await fs.mkdir(this.properties.errorDirectory, { recursive: true });
-
-          // Move file
-          await fs.rename(file.path, destPath);
+          await this.moveFile(file, this.properties.errorDirectory);
         }
         break;
 
@@ -371,6 +506,48 @@ export class FileReceiver extends SourceConnector {
       default:
         // No action needed
         break;
+    }
+  }
+
+  /**
+   * Delete a file
+   */
+  private async deleteFile(file: FileInfo): Promise<void> {
+    switch (this.properties.scheme) {
+      case FileScheme.FILE:
+        await fs.unlink(file.path);
+        break;
+
+      case FileScheme.SFTP:
+        const sftp = await this.ensureSftpConnection();
+        await sftp.delete(file.name, file.directory, false);
+        break;
+
+      default:
+        throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
+    }
+  }
+
+  /**
+   * Move a file to a new directory
+   */
+  private async moveFile(file: FileInfo, toDirectory: string): Promise<void> {
+    switch (this.properties.scheme) {
+      case FileScheme.FILE:
+        const destPath = path.join(toDirectory, file.name);
+        // Ensure destination directory exists
+        await fs.mkdir(toDirectory, { recursive: true });
+        // Move file
+        await fs.rename(file.path, destPath);
+        break;
+
+      case FileScheme.SFTP:
+        const sftp = await this.ensureSftpConnection();
+        await sftp.move(file.name, file.directory, file.name, toDirectory);
+        break;
+
+      default:
+        throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
     }
   }
 }

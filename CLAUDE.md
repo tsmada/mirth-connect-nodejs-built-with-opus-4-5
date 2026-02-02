@@ -10,6 +10,24 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 - **JavaScript Runtime**: E4X transpilation in `src/javascript/`
 - **REST API**: Express-based in `src/api/`
 
+### REST API Servlets (Implemented)
+| Servlet | File | Endpoints |
+|---------|------|-----------|
+| Channel | ChannelServlet.ts | CRUD, import/export |
+| Configuration | ConfigurationServlet.ts | Server settings |
+| Engine | EngineServlet.ts | Deploy, undeploy, start/stop |
+| User | UserServlet.ts | Authentication, CRUD |
+| Code Template | CodeTemplateServlet.ts | Library management |
+| Channel Statistics | ChannelStatisticsServlet.ts | Stats get/clear |
+| Event | EventServlet.ts | Audit log search/export |
+| Alert | AlertServlet.ts | Alert CRUD, enable/disable |
+| Message | MessageServlet.ts | Search, reprocess, import/export |
+| Channel Group | ChannelGroupServlet.ts | Group CRUD |
+| Extension | ExtensionServlet.ts | Plugin management |
+| Database Task | DatabaseTaskServlet.ts | Maintenance tasks |
+| System | SystemServlet.ts | System info/stats |
+| Usage | UsageServlet.ts | Usage data reporting |
+
 ## Critical Patterns
 
 ### E4X Transpilation
@@ -216,6 +234,164 @@ Discovered gaps are tracked in `manifest.json` under `validationGaps`:
 
 Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 
+### Validation Status (as of 2026-02-01)
+
+| Priority | Category | Status | Notes |
+|----------|----------|--------|-------|
+| 0 | Export Compatibility | ✅ Passing | Channel round-trip works |
+| 1 | MLLP Message Flow | ✅ Passing | 3/3 tests, minor ACK format gaps |
+| 2 | JavaScript Runtime | 🟡 In Progress | E4X transpiler verified |
+| 3-5 | Connectors/Data Types/Advanced | ⏳ Pending | Scenarios defined |
+
+### Quick Validation Scripts
+
+```bash
+# Quick MLLP test (uses already-deployed channels)
+cd validation
+npx ts-node quick-validate.ts
+
+# Test JavaScript runtime components
+npx ts-node test-js-runtime.ts
+
+# Full validation (slow - Java Mirth under QEMU)
+npm run validate -- --priority 1
+```
+
+### Known Minor Gaps (Priority 1)
+
+| Gap | Java Mirth | Node.js Mirth | Severity |
+|-----|------------|---------------|----------|
+| ACK sender/receiver | Swapped from message | Always `MIRTH\|MIRTH` | Minor |
+| ACK message type | `ACK^A01^ACK` | `ACK` | Minor |
+| Timestamp precision | With milliseconds | Without milliseconds | Minor |
+
+---
+
+## Development Environment
+
+### Test Ports Configuration
+
+| Service | Java Mirth | Node.js Mirth |
+|---------|------------|---------------|
+| REST API | https://localhost:8443 | http://localhost:8081 |
+| MLLP Test | localhost:6661 | localhost:6662 |
+| HTTP Test | localhost:8082 | localhost:8083 |
+| MySQL | localhost:3306 (shared) | localhost:3306 (shared) |
+
+### Starting the Engines
+
+```bash
+# Terminal 1: Java Mirth (Docker)
+cd validation
+docker-compose up -d
+
+# Terminal 2: Node.js Mirth
+cd /path/to/project
+PORT=8081 node dist/index.js
+
+# Verify both are running
+lsof -i :8081 -i :8443 -i :6661 -i :6662 | grep LISTEN
+```
+
+### Performance Notes
+
+- **Java Mirth under QEMU** (M1 Mac): Channel deploy operations are very slow (2+ minutes)
+- **Workaround**: Use `quick-validate.ts` which tests already-deployed channels
+- **Channel deployment timeout**: Set to 120 seconds in `MirthApiClient.ts`
+
+---
+
+## Known Issues and Fixes
+
+### TypeScript Patterns for Database Operations
+
+When working with mysql2/promise in TypeScript strict mode:
+
+**1. Database Row Interfaces Must Extend RowDataPacket**
+```typescript
+// ❌ Wrong - will cause type errors with query<T>()
+interface MyRow {
+  ID: number;
+  NAME: string;
+}
+
+// ✅ Correct
+interface MyRow extends RowDataPacket {
+  ID: number;
+  NAME: string;
+}
+```
+
+**2. execute() Does Not Accept Type Parameters**
+```typescript
+// ❌ Wrong - execute() has no type parameter
+const result = await execute<ResultSetHeader>('INSERT...');
+
+// ✅ Correct - returns ResultSetHeader automatically
+const result = await execute('INSERT...');
+```
+
+**3. Array Access After Length Check Needs Non-Null Assertion**
+```typescript
+// TypeScript doesn't narrow after length check
+const rows = await query<MyRow>('SELECT...');
+if (rows.length === 0) return null;
+
+// ❌ Wrong - rows[0] is still possibly undefined
+return rows[0].NAME;
+
+// ✅ Correct - use non-null assertion
+return rows[0]!.NAME;
+```
+
+**4. Express Route Params Are string | undefined**
+```typescript
+// For nested routers with mergeParams: true, params come from parent
+// But TypeScript still considers them possibly undefined
+
+// ❌ Wrong - channelId might be undefined
+const { channelId } = req.params;
+await someFunction(channelId); // Error!
+
+// ✅ Correct - use type assertion (safe with mergeParams)
+const channelId = req.params.channelId as string;
+
+// Or use a helper function
+function getChannelId(req: Request): string {
+  return req.params.channelId as string;
+}
+```
+
+### XML Body Parsing in Deploy Endpoint
+
+**Issue**: `/api/channels/_deploy` expects array but receives XML `<set><string>id</string></set>`
+
+**Fix**: Added `extractChannelIds()` helper in `src/api/servlets/EngineServlet.ts`:
+```typescript
+function extractChannelIds(body: unknown): string[] {
+  // Handles both array and XML { set: { string: 'id' } } formats
+}
+```
+
+### Path Resolution in Validation Suite
+
+**Issue**: `__dirname` points to `dist/` after TypeScript compilation, breaking path lookups
+
+**Fix**: Use `process.cwd()` instead of `__dirname` in:
+- `validation/config/environments.ts`
+- `validation/runners/ValidationRunner.ts`
+- `validation/runners/ScenarioRunner.ts`
+
+### Channel ID Length in MySQL
+
+**Issue**: Channel IDs with `-java`/`-node` suffixes exceed MySQL column limit
+
+**Fix**: Modify last 6 characters of UUID instead:
+```typescript
+// Instead of: originalId + '-java'
+// Use: parts[4].substring(0, 6) + '000001'
+```
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default
@@ -224,32 +400,44 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 - Use plan mode for verification steps, not just building
 - Write detailed specs upfront to reduce ambiguity
 
-### 2. Subagent Strategy
+### 2. Plan Archival
+After completing an implementation that used a plan file:
+1. **Copy the plan** to `plans/` directory in the project root
+2. **Rename with descriptive name** that reflects what was accomplished (not the auto-generated name)
+   - Bad: `plan-2026-02-01-abc123.md`
+   - Good: `password-hashing-fix.md`, `mllp-connector-implementation.md`, `e4x-transpiler-upgrade.md`
+3. **Add completion metadata** at the top of the archived plan:
+   ```markdown
+   <!-- Completed: 2026-02-01 | Status: Implemented -->
+   ```
+4. Plans serve as documentation of design decisions and implementation history
+
+### 3. Subagent Strategy
 - Use subagents liberally to keep main context window clean
 - Offload research, exploration, and parallel analysis to subagents
 - For complex problems, throw more compute at it via subagents
 - One task per subagent for focused execution
 
-### 3. Self-Improvement Loop
+### 4. Self-Improvement Loop
 - After ANY correction from the user: update tasks/lessons-md*
 with the pattern
 - Write rules for yourself that prevent the same mistake
 - Ruthlessly iterate on these lessons until mistake rate drops
 - Review lessons at session start for relevant project
 
-### 4. Verification Before Done
+### 5. Verification Before Done
 - Never mark a task complete without proving it works
 - Diff behavior between main and your changes when relevant
 - Ask yourself: "Would a staff engineer approve this?"
 - Run tests, check logs, demonstrate correctness
 
-### 5. Demand Elegance (Balanced)
+### 6. Demand Elegance (Balanced)
 - For non-trivial changes: pause and ask "is there a more elegant way?"
 - If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
 - Skip this for simple, obvious fixes - don't over-engineer
 - Challenge your own work before presenting it
 
-### 6. Autonomous Bug Fixing
+### 7. Autonomous Bug Fixing
 - When given a bug report: just fix it. Don't ask for hand-holding
 - Point at logs, errors, failing tests - then resolve them
 - Zero context switching required from the user

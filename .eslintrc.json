@@ -26,7 +26,11 @@
     "@typescript-eslint/no-misused-promises": ["error", { "checksVoidReturn": false }],
     "@typescript-eslint/no-unsafe-enum-comparison": "off",
     "no-console": ["warn", { "allow": ["warn", "error"] }],
-    "prettier/prettier": "error"
+    "prettier/prettier": "error",
+    "complexity": ["warn", { "max": 10 }],
+    "max-lines-per-function": ["warn", { "max": 100, "skipBlankLines": true, "skipComments": true }],
+    "max-depth": ["warn", { "max": 4 }],
+    "max-params": ["warn", { "max": 5 }]
   },
   "ignorePatterns": ["dist", "node_modules", "*.js"]
 }

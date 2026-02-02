@@ -286,16 +286,17 @@ describe('FileDispatcher', () => {
       await expect(dispatcher.start()).rejects.toThrow('not yet implemented');
     });
 
-    it('should reject SFTP scheme', async () => {
+    it('should require host for SFTP scheme', async () => {
       const dispatcher = new FileDispatcher({
         metaDataId: 1,
         properties: {
           scheme: FileScheme.SFTP,
           directory: '/path',
+          // host is missing
         },
       });
 
-      await expect(dispatcher.start()).rejects.toThrow('not yet implemented');
+      await expect(dispatcher.start()).rejects.toThrow('Host is required for SFTP');
     });
 
     it('should reject S3 scheme', async () => {
