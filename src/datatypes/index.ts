@@ -13,3 +13,12 @@ export * from './xml/index.js';
 
 // JSON DataType
 export * from './json/index.js';
+
+// Raw DataType
+export * from './raw/index.js';
+
+// Delimited DataType
+export * from './delimited/index.js';
+
+// EDI/X12 DataType
+export * from './edi/index.js';
