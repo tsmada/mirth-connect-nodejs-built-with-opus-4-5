@@ -80,3 +80,73 @@ export {
   DatabaseConnectionFactory,
   dbConnFactory,
 } from './DatabaseConnectionFactory.js';
+
+// Future for async operations
+export {
+  Future,
+  TimeoutError,
+  CancellationError,
+} from './Future.js';
+
+// Deployed state enum
+export {
+  DeployedState,
+  DEPLOYED_STATE_DESCRIPTIONS,
+  parseDeployedState,
+  isActiveState,
+  isTransitionalState,
+} from './DeployedState.js';
+
+// Channel utilities
+export {
+  ChannelUtil,
+  setChannelUtilChannelController,
+  setChannelUtilEngineController,
+  getChannelUtilChannelController,
+  getChannelUtilEngineController,
+  resetChannelUtilInstance,
+  // Static function exports
+  getChannelNames,
+  getChannelIds,
+  getDeployedChannelNames,
+  getDeployedChannelIds,
+  getChannelName,
+  getDeployedChannelName,
+  getDeployedChannelId,
+  startChannel,
+  stopChannel,
+  pauseChannel,
+  resumeChannel,
+  haltChannel,
+  deployChannel,
+  undeployChannel,
+  isChannelDeployed,
+  getChannelState,
+  startConnector,
+  stopConnector,
+  getConnectorState,
+  getReceivedCount,
+  getFilteredCount,
+  getQueuedCount,
+  getSentCount,
+  getErrorCount,
+  resetStatistics,
+  // Types
+  type IChannel,
+  type IDashboardStatus,
+  type IDeployedChannel,
+  type IChannelUtilChannelController,
+  type IErrorTaskHandler,
+  type IChannelUtilEngineController,
+} from './ChannelUtil.js';
+
+// Alert sending
+export {
+  AlertSender,
+  setAlertEventController,
+  getAlertEventController,
+  ErrorEventType,
+  type ErrorEvent,
+  type IAlertConnectorMessage,
+  type IEventController,
+} from './AlertSender.js';
