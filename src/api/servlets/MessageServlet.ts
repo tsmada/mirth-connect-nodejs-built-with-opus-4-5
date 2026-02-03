@@ -38,6 +38,7 @@ import {
   MESSAGE_GET_ATTACHMENT,
 } from '../middleware/operations.js';
 import { QueryBuilder } from '../../db/QueryBuilder.js';
+import { EngineController } from '../../controllers/EngineController.js';
 
 // mergeParams: true ensures channelId from parent route is available
 // All handlers can safely use req.params.channelId! with non-null assertion
@@ -649,12 +650,55 @@ messageRouter.post(
       // Get messages to reprocess
       const messages = await searchMessages(channelId, filter, 0, 1000, true);
 
-      // TODO: Implement actual reprocessing via Engine
-      // For now, return the count of messages that would be reprocessed
+      // Check if channel is deployed
+      if (!EngineController.isDeployed(channelId)) {
+        res.status(400).json({
+          error: 'Channel not deployed',
+          message: 'Channel must be deployed to reprocess messages',
+        });
+        return;
+      }
+
+      // Reprocess each message
+      const results: Array<{ originalId: number; newMessageId: number; success: boolean }> = [];
+      for (const message of messages) {
+        try {
+          // Get the original raw content from connector message 0
+          const sourceConnector = message.connectorMessages[0];
+          const rawContent = sourceConnector?.content?.[1]?.content ?? ''; // ContentType.RAW = 1
+
+          if (rawContent) {
+            // Create source map with reprocessing metadata
+            const sourceMap = new Map<string, unknown>();
+            sourceMap.set('reprocessed', true);
+            sourceMap.set('originalMessageId', message.messageId);
+            if (replace) {
+              sourceMap.set('replaceMessage', true);
+            }
+            if (filterDestinations) {
+              sourceMap.set('filterDestinations', true);
+            }
+
+            const result = await EngineController.dispatchMessage(channelId, rawContent, sourceMap);
+            results.push({
+              originalId: message.messageId,
+              newMessageId: result.messageId,
+              success: true,
+            });
+          }
+        } catch (error) {
+          results.push({
+            originalId: message.messageId,
+            newMessageId: 0,
+            success: false,
+          });
+        }
+      }
+
       res.sendData({
-        reprocessed: messages.length,
-        replace,
-        filterDestinations,
+        reprocessed: results.filter(r => r.success).length,
+        total: messages.length,
+        results,
       });
     } catch (error) {
       console.error('Reprocess messages error:', error);
@@ -683,7 +727,7 @@ messageRouter.post(
         return;
       }
 
-      // Get the message
+      // Get the message with content
       const message = await getMessage(channelId, messageId, true);
 
       if (!message) {
@@ -691,10 +735,46 @@ messageRouter.post(
         return;
       }
 
-      // TODO: Implement actual reprocessing via Engine
+      // Check if channel is deployed
+      if (!EngineController.isDeployed(channelId)) {
+        res.status(400).json({
+          error: 'Channel not deployed',
+          message: 'Channel must be deployed to reprocess messages',
+        });
+        return;
+      }
+
+      // Get the original raw content from connector message 0 (source)
+      const sourceConnector = message.connectorMessages[0];
+      const rawContent = sourceConnector?.content?.[1]?.content ?? ''; // ContentType.RAW = 1
+
+      if (!rawContent) {
+        res.status(400).json({
+          error: 'No raw content',
+          message: 'Message has no raw content to reprocess',
+        });
+        return;
+      }
+
+      // Create source map with reprocessing metadata
+      const sourceMap = new Map<string, unknown>();
+      sourceMap.set('reprocessed', true);
+      sourceMap.set('originalMessageId', messageId);
+      if (replace) {
+        sourceMap.set('replaceMessage', true);
+      }
+      if (filterDestinations) {
+        sourceMap.set('filterDestinations', true);
+      }
+
+      // Dispatch the message
+      const result = await EngineController.dispatchMessage(channelId, rawContent, sourceMap);
+
       res.sendData({
         reprocessed: 1,
-        messageId,
+        originalMessageId: messageId,
+        newMessageId: result.messageId,
+        processed: result.processed,
         replace,
         filterDestinations,
       });
@@ -786,14 +866,98 @@ messageRouter.post(
   async (req: Request, res: Response) => {
     try {
       const channelId = getChannelId(req);
-      // Note: req.body contains the message to import
 
-      // TODO: Implement message import
-      // This would parse the message XML/JSON (req.body) and insert into database
-      res.status(501).json({
-        error: 'Not implemented',
-        message: 'Message import is not yet implemented',
-        channelId,
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({
+          error: 'Channel not found',
+          message: 'Channel message tables do not exist',
+        });
+        return;
+      }
+
+      // Parse the imported message from request body
+      const importedMessage = req.body as {
+        messageId?: number;
+        serverId?: string;
+        receivedDate?: string;
+        processed?: boolean;
+        connectorMessages?: Record<number, {
+          metaDataId: number;
+          connectorName: string;
+          status: string;
+          content?: Record<number, { contentType: number; content: string; dataType: string }>;
+        }>;
+      };
+
+      if (!importedMessage || !importedMessage.connectorMessages) {
+        res.status(400).json({
+          error: 'Invalid message format',
+          message: 'Message must contain connectorMessages',
+        });
+        return;
+      }
+
+      const pool = getPool();
+
+      // Get next message ID
+      const [seqRows] = await pool.query<RowDataPacket[]>(
+        `SELECT ID FROM D_MSQ${channelId.replace(/-/g, '_')} FOR UPDATE`
+      );
+      const nextId = (seqRows[0]?.ID ?? 0) + 1;
+      await pool.execute(
+        `UPDATE D_MSQ${channelId.replace(/-/g, '_')} SET ID = ?`,
+        [nextId]
+      );
+
+      // Insert message
+      const receivedDate = importedMessage.receivedDate
+        ? new Date(importedMessage.receivedDate)
+        : new Date();
+
+      await pool.execute(
+        `INSERT INTO ${messageTable(channelId)}
+         (ID, SERVER_ID, RECEIVED_DATE, PROCESSED, IMPORT_ID)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          nextId,
+          importedMessage.serverId ?? 'import',
+          receivedDate,
+          importedMessage.processed ? 1 : 0,
+          importedMessage.messageId ?? null, // Original ID stored as IMPORT_ID
+        ]
+      );
+
+      // Insert connector messages and content
+      for (const [metaDataIdStr, connectorMsg] of Object.entries(importedMessage.connectorMessages)) {
+        const metaDataId = parseInt(metaDataIdStr, 10);
+
+        await pool.execute(
+          `INSERT INTO ${connectorMessageTable(channelId)}
+           (MESSAGE_ID, METADATA_ID, CONNECTOR_NAME, RECEIVED_DATE, STATUS)
+           VALUES (?, ?, ?, ?, ?)`,
+          [nextId, metaDataId, connectorMsg.connectorName, receivedDate, connectorMsg.status]
+        );
+
+        // Insert content
+        if (connectorMsg.content) {
+          for (const [contentTypeStr, content] of Object.entries(connectorMsg.content)) {
+            const contentType = parseInt(contentTypeStr, 10);
+            await pool.execute(
+              `INSERT INTO ${contentTable(channelId)}
+               (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED)
+               VALUES (?, ?, ?, ?, ?, 0)`,
+              [nextId, metaDataId, contentType, content.content, content.dataType]
+            );
+          }
+        }
+      }
+
+      res.sendData({
+        imported: true,
+        messageId: nextId,
+        originalId: importedMessage.messageId,
       });
     } catch (error) {
       console.error('Import message error:', error);
@@ -848,16 +1012,52 @@ messageRouter.post(
   async (req: Request, res: Response) => {
     try {
       const channelId = getChannelId(req);
-      const rawMessage = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-      // Note: sourceMapEntry and destinationMetaDataId query params available for future processing
 
-      // TODO: Implement actual message processing via Engine
-      // This would send the message through the channel pipeline
-      res.status(501).json({
-        error: 'Not implemented',
-        message: 'Direct message processing is not yet implemented',
-        channelId,
-        rawMessageLength: rawMessage.length,
+      // Check if channel is deployed
+      if (!EngineController.isDeployed(channelId)) {
+        res.status(400).json({
+          error: 'Channel not deployed',
+          message: 'Channel must be deployed to process messages',
+        });
+        return;
+      }
+
+      // Get raw message content
+      const rawMessage = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+      // Build source map from query parameters
+      const sourceMap = new Map<string, unknown>();
+
+      // Parse sourceMapEntry (comma-separated key=value pairs)
+      const sourceMapEntry = req.query.sourceMapEntry as string | undefined;
+      if (sourceMapEntry) {
+        const entries = sourceMapEntry.split(',');
+        for (const entry of entries) {
+          const [key, value] = entry.split('=');
+          if (key && value !== undefined) {
+            sourceMap.set(key.trim(), value.trim());
+          }
+        }
+      }
+
+      // Parse destination filter
+      const destinationMetaDataIdStr = req.query.destinationMetaDataId as string | undefined;
+      if (destinationMetaDataIdStr) {
+        const destinationMetaDataIds = destinationMetaDataIdStr
+          .split(',')
+          .map(id => parseInt(id.trim(), 10))
+          .filter(id => !isNaN(id));
+        if (destinationMetaDataIds.length > 0) {
+          sourceMap.set('destinationMetaDataIds', destinationMetaDataIds);
+        }
+      }
+
+      // Dispatch message through the channel
+      const result = await EngineController.dispatchMessage(channelId, rawMessage, sourceMap);
+
+      res.sendData({
+        messageId: result.messageId,
+        processed: result.processed,
       });
     } catch (error) {
       console.error('Process message error:', error);
