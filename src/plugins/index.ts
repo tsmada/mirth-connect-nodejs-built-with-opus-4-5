@@ -47,3 +47,18 @@ export {
   isMessageBuilderStep,
   isMessageBuilderStepType,
 } from './messagebuilder/index.js';
+
+// XSLT Step Plugin (XSLT transformations)
+export {
+  XsltStep,
+  XsltTransformer,
+  XsltIteratorProperties,
+  XSLT_STEP_PLUGIN_POINT,
+  createXsltStep,
+  isXsltStep,
+  isXsltStepType,
+  XsltStepProperties,
+  DEFAULT_XSLT_STEP_PROPERTIES,
+  validateXsltStepProperties,
+  mergeWithDefaults as mergeXsltStepDefaults,
+} from './xsltstep/index.js';
