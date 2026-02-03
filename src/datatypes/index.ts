@@ -16,3 +16,6 @@ export * from './json/index.js';
 
 // Raw DataType
 export * from './raw/index.js';
+
+// Delimited DataType
+export * from './delimited/index.js';
