@@ -15,6 +15,7 @@ import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
+import { DestinationQueue } from '../queue/DestinationQueue.js';
 
 export interface DestinationConnectorConfig {
   name: string;
@@ -48,6 +49,7 @@ export abstract class DestinationConnector {
 
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
   protected responseTransformerExecutor: FilterTransformerExecutor | null = null;
+  protected queue: DestinationQueue | null = null;
 
   constructor(config: DestinationConnectorConfig) {
     this.name = config.name;
@@ -144,6 +146,27 @@ export abstract class DestinationConnector {
 
   isQueueEnabled(): boolean {
     return this.queueEnabled;
+  }
+
+  /**
+   * Check if queue should send first before queuing
+   */
+  shouldSendFirst(): boolean {
+    return this.queueSendFirst;
+  }
+
+  /**
+   * Get the destination queue
+   */
+  getQueue(): DestinationQueue | null {
+    return this.queue;
+  }
+
+  /**
+   * Set the destination queue
+   */
+  setQueue(queue: DestinationQueue): void {
+    this.queue = queue;
   }
 
   /**
