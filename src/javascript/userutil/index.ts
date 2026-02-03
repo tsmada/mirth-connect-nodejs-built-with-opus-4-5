@@ -58,3 +58,21 @@ export { SMTPConnectionFactory, SMTPConfig } from './SMTPConnectionFactory.js';
 
 // Date utilities
 export { DateUtil } from './DateUtil.js';
+
+// Database utilities
+export {
+  MirthCachedRowSet,
+  type ColumnMetaData,
+  type RowSetMetaData,
+} from './MirthCachedRowSet.js';
+
+export {
+  DatabaseConnection,
+  type Logger as DatabaseLogger,
+  type DatabaseConnectionOptions,
+} from './DatabaseConnection.js';
+
+export {
+  DatabaseConnectionFactory,
+  dbConnFactory,
+} from './DatabaseConnectionFactory.js';
