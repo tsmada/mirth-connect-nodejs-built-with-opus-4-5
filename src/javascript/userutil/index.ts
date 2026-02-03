@@ -59,6 +59,10 @@ export { SMTPConnectionFactory, SMTPConfig } from './SMTPConnectionFactory.js';
 // Date utilities
 export { DateUtil } from './DateUtil.js';
 
+// Attachment utilities
+export { Attachment } from './Attachment.js';
+export { AttachmentUtil, type ImmutableConnectorMessage } from './AttachmentUtil.js';
+
 // Database utilities
 export {
   MirthCachedRowSet,
