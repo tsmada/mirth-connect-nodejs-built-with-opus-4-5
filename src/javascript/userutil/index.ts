@@ -2,7 +2,7 @@
  * User Utility Classes
  *
  * These classes are available in Mirth Connect JavaScript contexts and provide
- * utilities for message routing, response handling, and map manipulation.
+ * utilities for message routing, response handling, file I/O, HTTP, email, and dates.
  *
  * Ported from: ~/Projects/connect/server/src/com/mirth/connect/server/userutil/
  */
@@ -45,3 +45,16 @@ export { RawMessage } from './RawMessage.js';
 // Response creation and handling
 export { ResponseFactory } from './ResponseFactory.js';
 export { ImmutableResponse } from './ImmutableResponse.js';
+
+// File utilities
+export { FileUtil } from './FileUtil.js';
+
+// HTTP utilities
+export { HTTPUtil } from './HTTPUtil.js';
+
+// SMTP utilities
+export { SMTPConnection } from './SMTPConnection.js';
+export { SMTPConnectionFactory, SMTPConfig } from './SMTPConnectionFactory.js';
+
+// Date utilities
+export { DateUtil } from './DateUtil.js';
