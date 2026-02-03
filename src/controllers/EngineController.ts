@@ -368,6 +368,38 @@ export class EngineController {
   }
 
   /**
+   * Get the runtime channel instance for a deployed channel
+   */
+  static getDeployedChannel(channelId: string): Channel | null {
+    const state = channelStates.get(channelId);
+    return state?.runtimeChannel ?? null;
+  }
+
+  /**
+   * Dispatch a raw message to a channel for processing
+   * @param channelId - The channel ID to dispatch to
+   * @param rawMessage - The raw message content
+   * @param sourceMapData - Optional source map data
+   * @returns The processed message
+   */
+  static async dispatchMessage(
+    channelId: string,
+    rawMessage: string,
+    sourceMapData?: Map<string, unknown>
+  ): Promise<{ messageId: number; processed: boolean }> {
+    const channel = this.getDeployedChannel(channelId);
+    if (!channel) {
+      throw new Error(`Channel not deployed: ${channelId}`);
+    }
+
+    const message = await channel.dispatchRawMessage(rawMessage, sourceMapData);
+    return {
+      messageId: message.getMessageId(),
+      processed: message.isProcessed(),
+    };
+  }
+
+  /**
    * Get deployed channel count
    */
   static getDeployedCount(): number {
