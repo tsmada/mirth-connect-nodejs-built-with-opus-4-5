@@ -27,7 +27,8 @@
     "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
     "tech-debt": "npm run lint && npm outdated",
     "tech-debt:dupes": "jscpd src --reporters console",
-    "tech-debt:unused": "knip --reporter compact"
+    "tech-debt:unused": "knip --reporter compact",
+    "postinstall": "node scripts/fix-xslt-processor.js"
   },
   "keywords": [
     "mirth",
@@ -59,7 +60,7 @@
     "ssh2-sftp-client": "^9.1.0",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
-    "xslt-processor": "^4.8.2"
+    "xslt-processor": "^4.7.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
