@@ -518,3 +518,118 @@ Parameters:
 ```
 
 See `agents/mirth-porter.md` for full specification.
+
+---
+
+## Parallel Agent Porting (Wave 1 Complete - 2026-02-02)
+
+### Architecture Used
+
+Successfully used **8 parallel Claude agents** with git worktrees to port 35+ components in a single session:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    PARENT SHELL (Coordinator)                       │
+│  - Creates worktrees and branches                                   │
+│  - Spawns child Claude agents                                       │
+│  - Tracks progress across all agents                                │
+│  - Merges completed branches                                        │
+└─────────────────────────────────────────────────────────────────────┘
+         │
+         ├──► [Worktree 1: feature/userutil-core]     → Agent 1 ✅
+         ├──► [Worktree 2: feature/userutil-db]       → Agent 2 ⚠️ (permission issues)
+         ├──► [Worktree 3: feature/userutil-io]       → Agent 3 ✅
+         ├──► [Worktree 4: feature/donkey-engine]     → Agent 4 ✅
+         ├──► [Worktree 5: feature/connectors-vm]     → Agent 5 ✅
+         ├──► [Worktree 6: feature/datatypes]         → Agent 6 ✅
+         ├──► [Worktree 7: feature/plugins-core]      → Agent 7 ✅
+         └──► [Worktree 8: feature/utils]             → Agent 8 ✅
+```
+
+### Results
+
+| Metric | Value |
+|--------|-------|
+| Agents spawned | 8 |
+| Agents completed | 7 (87.5%) |
+| Total commits | 40+ |
+| Lines added | 20,666+ |
+| Tests added | 500+ |
+| Total tests passing | 1,646 |
+
+### Components Ported
+
+**Userutil Core (5 classes):**
+- VMRouter - Inter-channel message routing (CRITICAL)
+- DestinationSet - Filter which destinations receive messages
+- RawMessage - Create raw messages in scripts
+- ResponseFactory - Create Response objects
+- ImmutableResponse - Immutable response wrapper
+
+**Userutil I/O (5 classes):**
+- FileUtil - File read/write from scripts
+- HTTPUtil - HTTP request helpers
+- SMTPConnection - Send emails from scripts
+- SMTPConnectionFactory - SMTP pooling
+- DateUtil - Date formatting utilities
+
+**Donkey Engine (6 components):**
+- Statistics - Track message counts, errors, queue sizes
+- SourceQueue - Queue incoming messages at source
+- DestinationQueue - Queue messages for destination
+- DestinationChain - Chain of destination connectors
+- ResponseSelector - Select response from multiple destinations
+- ResponseTransformerExecutor - Execute response transformers
+
+**VM Connector (4 components):**
+- VmConnectorProperties - Receiver/dispatcher configuration
+- VmReceiver - Receive messages routed from other channels
+- VmDispatcher - Route messages to other channels
+
+**Data Types (3 types):**
+- Raw - Pass-through data type
+- Delimited - CSV, pipe-delimited, tab-delimited parsing
+- EDI/X12 - Healthcare EDI transactions
+
+**Plugins (4 plugins):**
+- JavaScriptRule - Filter rule execution (CRITICAL for UI)
+- JavaScriptStep - Transformer step execution (CRITICAL for UI)
+- Mapper - Variable mapping transformer
+- MessageBuilder - Build message segments
+
+**Utilities (5 classes):**
+- ValueReplacer - Replace ${variable} placeholders (CRITICAL)
+- ErrorMessageBuilder - Build formatted error messages
+- JsonXmlUtil - Convert between JSON and XML
+- ACKGenerator - Generate HL7 ACK messages
+- SerializerFactory - Create data type serializers
+
+### Lessons Learned
+
+**1. Git Worktrees Enable True Parallelism**
+```bash
+# Create isolated worktree for each agent
+git worktree add ../mirth-worktrees/feature-name -b feature/feature-name
+```
+Each agent works in complete isolation - no merge conflicts until final integration.
+
+**2. Permission Issues in Background Agents**
+One agent (userutil-db) had "Permission to use Read has been auto-denied" errors. This can happen when agents run in background mode with limited prompts. Solution: retry with explicit permissions or port manually.
+
+**3. Merge Conflicts in Index Files**
+When multiple agents modify the same `index.ts` export file, expect merge conflicts. These are easy to resolve by combining export statements.
+
+**4. ESM vs CJS Jest Config**
+Multiple agents renamed `jest.config.js` to `jest.config.cjs`. The file must use `module.exports = {}` (CJS syntax), not `export default {}` (ESM syntax) when using `.cjs` extension.
+
+**5. Missing Dependencies After Merge**
+Some branches add npm dependencies that don't merge cleanly. After merging all branches, run `npm install` to ensure all dependencies are present.
+
+### Remaining Work (userutil-db)
+
+The following classes still need manual porting:
+- DatabaseConnection - Execute SQL from user scripts
+- DatabaseConnectionFactory - Create DB connections with pooling
+- MirthCachedRowSet - Cache and iterate JDBC results
+
+These are needed for channels that execute SQL directly in scripts.

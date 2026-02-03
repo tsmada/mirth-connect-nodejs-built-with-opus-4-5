@@ -20,12 +20,13 @@ This project provides a modern, TypeScript-based implementation of the Mirth Con
 
 | Category | Features |
 |----------|----------|
-| **Connectors** | HTTP Receiver/Dispatcher, TCP/MLLP, JDBC Database, File/SFTP/S3 |
-| **Data Types** | HL7v2 (with ACK generation), XML, JSON, Raw |
-| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.) |
+| **Connectors** | HTTP Receiver/Dispatcher, TCP/MLLP, JDBC Database, File/SFTP/S3, **VM (inter-channel)** |
+| **Data Types** | HL7v2 (with ACK generation), XML, JSON, Raw, **Delimited (CSV/TSV)**, **EDI/X12** |
+| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), **VMRouter**, **DestinationSet** |
 | **API** | Full REST API compatible with Mirth Administrator |
-| **Plugins** | Code Templates, Data Pruner, XSLT Transformer |
+| **Plugins** | Code Templates, Data Pruner, XSLT Transformer, **JavaScriptRule**, **JavaScriptStep**, **Mapper**, **MessageBuilder** |
 | **CLI Tool** | Terminal-based monitor and management utility |
+| **Utilities** | **ValueReplacer** (${var} templates), **ACKGenerator**, **JsonXmlUtil**, **SerializerFactory** |
 
 ## Quick Start
 
@@ -263,13 +264,14 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 
 | Component | Location | Description |
 |-----------|----------|-------------|
-| **Donkey Engine** | `src/donkey/` | Message processing pipeline |
-| **Connectors** | `src/connectors/` | Protocol implementations (HTTP, TCP, JDBC, File) |
-| **JavaScript Runtime** | `src/javascript/` | E4X transpilation and script execution |
-| **Data Types** | `src/datatypes/` | HL7v2, XML, JSON parsing and serialization |
+| **Donkey Engine** | `src/donkey/` | Message processing pipeline (Statistics, Queues, DestinationChain, ResponseSelector) |
+| **Connectors** | `src/connectors/` | Protocol implementations (HTTP, TCP, JDBC, File, **VM inter-channel**) |
+| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, **userutil classes** (VMRouter, FileUtil, HTTPUtil, etc.) |
+| **Data Types** | `src/datatypes/` | HL7v2, XML, JSON, **Raw**, **Delimited**, **EDI/X12** parsing and serialization |
 | **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator |
 | **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
-| **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT |
+| **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT, **JavaScriptRule**, **JavaScriptStep**, **Mapper**, **MessageBuilder** |
+| **Utilities** | `src/util/` | **ValueReplacer**, **ACKGenerator**, **JsonXmlUtil**, **ErrorMessageBuilder**, **SerializerFactory** |
 
 ## API Endpoints
 
@@ -369,11 +371,15 @@ src/
 │   ├── http/             # HTTP/REST
 │   ├── tcp/              # TCP/MLLP
 │   ├── jdbc/             # Database
-│   └── file/             # File/SFTP/S3
+│   ├── file/             # File/SFTP/S3
+│   └── vm/               # Inter-channel routing (VmReceiver, VmDispatcher)
 ├── datatypes/            # Data type handlers
 │   ├── hl7v2/            # HL7 v2.x
 │   ├── xml/              # XML
-│   └── json/             # JSON
+│   ├── json/             # JSON
+│   ├── raw/              # Pass-through
+│   ├── delimited/        # CSV, TSV, pipe-delimited
+│   └── edi/              # EDI/X12 healthcare transactions
 ├── javascript/           # JS runtime
 │   ├── e4x/              # E4X transpiler
 │   ├── runtime/          # Script execution
@@ -385,7 +391,17 @@ src/
 │   └── types/            # CLI-specific types
 ├── db/                   # Database access
 ├── model/                # Domain models
+├── util/                 # Core utilities
+│   ├── ValueReplacer.ts  # ${variable} template replacement
+│   ├── ACKGenerator.ts   # HL7 ACK message generation
+│   ├── JsonXmlUtil.ts    # JSON ↔ XML conversion
+│   ├── ErrorMessageBuilder.ts
+│   └── SerializerFactory.ts
 └── plugins/              # Plugin implementations
+    ├── javascriptrule/   # Filter rules (UI filters)
+    ├── javascriptstep/   # Transformer steps (UI transformers)
+    ├── mapper/           # Variable mapping
+    └── messagebuilder/   # Message segment building
 ```
 
 ### Scripts
