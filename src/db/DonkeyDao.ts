@@ -622,3 +622,138 @@ export async function getMessageCountBeforeDate(
 
   return rows[0]?.count ?? 0;
 }
+
+// ============================================================================
+// Attachment Methods
+// ============================================================================
+
+/**
+ * Row interface for attachment ID data
+ */
+interface AttachmentIdRow extends RowDataPacket {
+  ID: string;
+}
+
+/**
+ * Row interface for attachment data
+ */
+export interface AttachmentRow extends RowDataPacket {
+  ID: string;
+  MESSAGE_ID: number;
+  TYPE: string | null;
+  SEGMENT_ID: number;
+  ATTACHMENT: Buffer | null;
+}
+
+/**
+ * Get all attachment IDs for a message
+ */
+export async function getAttachmentIds(
+  channelId: string,
+  messageId: number
+): Promise<string[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<AttachmentIdRow[]>(
+    `SELECT DISTINCT ID FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? ORDER BY ID`,
+    [messageId]
+  );
+  return rows.map((row) => row.ID);
+}
+
+/**
+ * Get all attachments for a message
+ */
+export async function getAttachments(
+  channelId: string,
+  messageId: number
+): Promise<AttachmentRow[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<AttachmentRow[]>(
+    `SELECT ID, MESSAGE_ID, TYPE, SEGMENT_ID, ATTACHMENT
+     FROM ${attachmentTable(channelId)}
+     WHERE MESSAGE_ID = ?
+     ORDER BY ID, SEGMENT_ID`,
+    [messageId]
+  );
+  return rows;
+}
+
+/**
+ * Get a specific attachment by ID
+ */
+export async function getAttachment(
+  channelId: string,
+  messageId: number,
+  attachmentId: string
+): Promise<AttachmentRow[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<AttachmentRow[]>(
+    `SELECT ID, MESSAGE_ID, TYPE, SEGMENT_ID, ATTACHMENT
+     FROM ${attachmentTable(channelId)}
+     WHERE MESSAGE_ID = ? AND ID = ?
+     ORDER BY SEGMENT_ID`,
+    [messageId, attachmentId]
+  );
+  return rows;
+}
+
+/**
+ * Insert a new attachment
+ * Large attachments may be split into multiple segments
+ */
+export async function insertAttachment(
+  channelId: string,
+  messageId: number,
+  attachmentId: string,
+  type: string | null,
+  content: Buffer
+): Promise<void> {
+  const pool = getPool();
+
+  // For simplicity, store as single segment
+  // In production, large attachments would be split into 10MB segments
+  await pool.execute(
+    `INSERT INTO ${attachmentTable(channelId)} (ID, MESSAGE_ID, TYPE, SEGMENT_ID, ATTACHMENT)
+     VALUES (?, ?, ?, 0, ?)`,
+    [attachmentId, messageId, type, content]
+  );
+}
+
+/**
+ * Update an existing attachment
+ */
+export async function updateAttachment(
+  channelId: string,
+  messageId: number,
+  attachmentId: string,
+  type: string | null,
+  content: Buffer
+): Promise<void> {
+  const pool = getPool();
+
+  // Delete existing segments and insert new one
+  await pool.execute(
+    `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? AND ID = ?`,
+    [messageId, attachmentId]
+  );
+
+  await insertAttachment(channelId, messageId, attachmentId, type, content);
+}
+
+/**
+ * Delete a specific attachment
+ */
+export async function deleteAttachment(
+  channelId: string,
+  messageId: number,
+  attachmentId: string
+): Promise<number> {
+  const pool = getPool();
+
+  const [result] = await pool.execute(
+    `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? AND ID = ?`,
+    [messageId, attachmentId]
+  );
+
+  return (result as { affectedRows: number }).affectedRows;
+}
