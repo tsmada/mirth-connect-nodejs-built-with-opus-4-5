@@ -13,3 +13,6 @@ export * from './xml/index.js';
 
 // JSON DataType
 export * from './json/index.js';
+
+// Raw DataType
+export * from './raw/index.js';
