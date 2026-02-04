@@ -248,6 +248,54 @@ export const MESSAGE_GET_ATTACHMENT = createOperation(
   P.MESSAGES_VIEW
 );
 
+export const MESSAGE_CREATE_ATTACHMENT = createOperation(
+  'createAttachment',
+  'Create attachment',
+  P.MESSAGES_IMPORT
+);
+
+export const MESSAGE_UPDATE_ATTACHMENT = createOperation(
+  'updateAttachment',
+  'Update attachment',
+  P.MESSAGES_IMPORT
+);
+
+export const MESSAGE_DELETE_ATTACHMENT = createOperation(
+  'deleteAttachment',
+  'Delete attachment',
+  P.MESSAGES_REMOVE
+);
+
+export const MESSAGE_IMPORT_MULTIPART = createOperation(
+  'importMessageMultipart',
+  'Import message (multipart)',
+  P.MESSAGES_IMPORT
+);
+
+export const MESSAGE_EXPORT_ENCRYPTED = createOperation(
+  'exportMessageEncrypted',
+  'Export message (encrypted)',
+  P.MESSAGES_EXPORT_SERVER
+);
+
+export const MESSAGE_REPROCESS_BULK = createOperation(
+  'reprocessMessagesBulk',
+  'Reprocess messages (bulk)',
+  P.MESSAGES_REPROCESS
+);
+
+export const MESSAGE_GET_CONTENT = createOperation(
+  'getMessageContent',
+  'Get message content',
+  P.MESSAGES_VIEW
+);
+
+export const MESSAGE_UPDATE_CONTENT = createOperation(
+  'updateMessageContent',
+  'Update message content',
+  P.MESSAGES_IMPORT
+);
+
 // ============================================================================
 // Event Operations
 // ============================================================================
@@ -627,6 +675,14 @@ const allOperations: Operation[] = [
   MESSAGE_IMPORT,
   MESSAGE_EXPORT,
   MESSAGE_GET_ATTACHMENT,
+  MESSAGE_CREATE_ATTACHMENT,
+  MESSAGE_UPDATE_ATTACHMENT,
+  MESSAGE_DELETE_ATTACHMENT,
+  MESSAGE_IMPORT_MULTIPART,
+  MESSAGE_EXPORT_ENCRYPTED,
+  MESSAGE_REPROCESS_BULK,
+  MESSAGE_GET_CONTENT,
+  MESSAGE_UPDATE_CONTENT,
   // Events
   EVENT_GET,
   EVENT_GET_MAX_ID,
