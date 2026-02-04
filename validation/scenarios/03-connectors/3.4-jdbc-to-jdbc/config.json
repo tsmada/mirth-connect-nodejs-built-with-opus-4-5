@@ -1,0 +1,32 @@
+{
+  "id": "3.4",
+  "name": "Database Reader to Database Writer",
+  "description": "Tests JDBC connector for reading from database tables and writing results to another table",
+  "priority": 3,
+  "type": "database",
+  "channelFile": "jdbc-to-jdbc.xml",
+  "inputType": "database",
+  "expectedOutputType": "database",
+  "timeout": 60000,
+  "database": {
+    "driver": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "database": "mirth_validation",
+    "username": "mirth",
+    "password": "mirth",
+    "sourceTable": "validation_source",
+    "destinationTable": "validation_dest"
+  },
+  "jdbcSettings": {
+    "pollingInterval": 5000,
+    "maxRows": 100,
+    "updateAfterRead": true
+  },
+  "validationPoints": [
+    "Records written to destination match",
+    "Column values preserved correctly",
+    "NULL handling consistency",
+    "Transaction behavior"
+  ]
+}

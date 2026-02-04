@@ -1,0 +1,6 @@
+VALIDATION|TEST|MESSAGE|001
+This is a raw TCP test message.
+It contains multiple lines.
+Special characters: !@#$%^&*()
+Unicode: cafe - Mirth Connect
+End of message.

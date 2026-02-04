@@ -1,0 +1,15 @@
+{
+  "messageId": "test-001",
+  "messageType": "TestMessage",
+  "timestamp": "2026-02-03T12:00:00Z",
+  "data": {
+    "patientId": "P12345",
+    "patientName": "John Doe",
+    "dateOfBirth": "1980-01-15",
+    "encounterType": "outpatient"
+  },
+  "metadata": {
+    "source": "validation-suite",
+    "version": "1.0"
+  }
+}

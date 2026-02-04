@@ -1,0 +1,73 @@
+[
+  {
+    "id": "3.1",
+    "name": "HTTP Listener to HTTP Sender",
+    "description": "Tests HTTP listener receiving POST requests and HTTP sender dispatching to downstream service. Validates request/response handling, headers, and status codes.",
+    "priority": 3,
+    "type": "http",
+    "channelFile": "http-to-http.xml",
+    "inputType": "http",
+    "inputMessage": "http/json-payload.json",
+    "expectedOutputType": "http",
+    "timeout": 30000,
+    "ports": {
+      "javaListener": 8082,
+      "nodeListener": 8083,
+      "mockDestination": 8084
+    }
+  },
+  {
+    "id": "3.2",
+    "name": "TCP Listener to TCP Sender",
+    "description": "Tests raw TCP socket communication without MLLP framing. Validates socket connection handling, data transmission, and connection lifecycle.",
+    "priority": 3,
+    "type": "tcp",
+    "channelFile": "tcp-to-tcp.xml",
+    "inputType": "tcp",
+    "inputMessage": "tcp/raw-message.txt",
+    "expectedOutputType": "tcp",
+    "timeout": 30000,
+    "ports": {
+      "javaListener": 6663,
+      "nodeListener": 6664,
+      "mockDestination": 6665
+    }
+  },
+  {
+    "id": "3.3",
+    "name": "File Reader to File Writer",
+    "description": "Tests file polling for input and file writing for output. Validates file detection, content reading, directory handling, and output file naming.",
+    "priority": 3,
+    "type": "file",
+    "channelFile": "file-to-file.xml",
+    "inputType": "file",
+    "inputMessage": "file/test-document.txt",
+    "expectedOutputType": "file",
+    "timeout": 60000,
+    "directories": {
+      "javaInput": "/tmp/mirth-java-in",
+      "javaOutput": "/tmp/mirth-java-out",
+      "nodeInput": "/tmp/mirth-node-in",
+      "nodeOutput": "/tmp/mirth-node-out"
+    }
+  },
+  {
+    "id": "3.4",
+    "name": "Database Reader to Database Writer",
+    "description": "Tests JDBC connector for reading from database tables and writing results to another table. Validates SQL execution, result set handling, and transaction behavior.",
+    "priority": 3,
+    "type": "database",
+    "channelFile": "jdbc-to-jdbc.xml",
+    "inputType": "database",
+    "expectedOutputType": "database",
+    "timeout": 60000,
+    "database": {
+      "driver": "mysql",
+      "host": "localhost",
+      "port": 3306,
+      "database": "mirth_validation",
+      "sourceTable": "validation_source",
+      "destinationTable": "validation_dest"
+    }
+  }
+]

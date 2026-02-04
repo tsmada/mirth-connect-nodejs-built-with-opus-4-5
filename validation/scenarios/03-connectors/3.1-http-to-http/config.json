@@ -1,0 +1,23 @@
+{
+  "id": "3.1",
+  "name": "HTTP Listener to HTTP Sender",
+  "description": "Tests HTTP listener receiving POST requests and HTTP sender dispatching to downstream service",
+  "priority": 3,
+  "type": "http",
+  "channelFile": "http-to-http.xml",
+  "inputType": "http",
+  "inputMessage": "inputs/json-payload.json",
+  "expectedOutputType": "http",
+  "timeout": 30000,
+  "ports": {
+    "javaListener": 8082,
+    "nodeListener": 8083,
+    "mockDestination": 8084
+  },
+  "validationPoints": [
+    "HTTP status code matches",
+    "Response body content matches",
+    "Content-Type header handling",
+    "Custom header forwarding"
+  ]
+}

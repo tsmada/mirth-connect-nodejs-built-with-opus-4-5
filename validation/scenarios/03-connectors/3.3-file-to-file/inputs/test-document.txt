@@ -1,0 +1,18 @@
+DOCUMENT ID: DOC-2026-001
+TYPE: Validation Test Document
+DATE: 2026-02-03
+
+This is a test document for validating the File Reader to File Writer channel.
+
+Contents:
+- Line 1: Simple text
+- Line 2: Numbers 12345
+- Line 3: Special chars !@#$%
+- Line 4: Unicode cafe
+
+Patient Information:
+  Name: John Doe
+  DOB: 1980-01-15
+  MRN: P12345
+
+End of document.

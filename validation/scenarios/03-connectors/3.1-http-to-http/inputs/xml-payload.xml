@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TestMessage>
+  <messageId>test-002</messageId>
+  <messageType>TestMessage</messageType>
+  <timestamp>2026-02-03T12:00:00Z</timestamp>
+  <data>
+    <patientId>P12345</patientId>
+    <patientName>John Doe</patientName>
+    <dateOfBirth>1980-01-15</dateOfBirth>
+    <encounterType>outpatient</encounterType>
+  </data>
+  <metadata>
+    <source>validation-suite</source>
+    <version>1.0</version>
+  </metadata>
+</TestMessage>
