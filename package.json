@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.454.0",
+    "@types/ws": "^8.18.1",
     "axios": "^1.6.2",
     "basic-ftp": "^5.0.4",
     "chalk": "^5.3.0",
@@ -63,6 +64,7 @@
     "stompit": "^1.0.0",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
+    "ws": "^8.19.0",
     "xslt-processor": "^4.7.0"
   },
   "devDependencies": {
