@@ -1,0 +1,28 @@
+{
+  "id": "3.2",
+  "name": "TCP Listener to TCP Sender",
+  "description": "Tests raw TCP socket communication without MLLP framing",
+  "priority": 3,
+  "type": "tcp",
+  "channelFile": "tcp-to-tcp.xml",
+  "inputType": "tcp",
+  "inputMessage": "inputs/raw-message.txt",
+  "expectedOutputType": "tcp",
+  "timeout": 30000,
+  "ports": {
+    "javaListener": 6663,
+    "nodeListener": 6664,
+    "mockDestination": 6665
+  },
+  "tcpSettings": {
+    "frameMode": "none",
+    "encoding": "UTF-8",
+    "responseTimeout": 10000
+  },
+  "validationPoints": [
+    "Data received exactly matches sent",
+    "Socket connection lifecycle",
+    "Binary data handling",
+    "Timeout behavior"
+  ]
+}

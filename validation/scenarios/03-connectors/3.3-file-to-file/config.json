@@ -1,0 +1,30 @@
+{
+  "id": "3.3",
+  "name": "File Reader to File Writer",
+  "description": "Tests file polling for input and file writing for output",
+  "priority": 3,
+  "type": "file",
+  "channelFile": "file-to-file.xml",
+  "inputType": "file",
+  "inputMessage": "inputs/test-document.txt",
+  "expectedOutputType": "file",
+  "timeout": 60000,
+  "directories": {
+    "javaInput": "/tmp/mirth-java-in",
+    "javaOutput": "/tmp/mirth-java-out",
+    "nodeInput": "/tmp/mirth-node-in",
+    "nodeOutput": "/tmp/mirth-node-out"
+  },
+  "fileSettings": {
+    "pollingInterval": 1000,
+    "fileFilter": "*.txt",
+    "sortBy": "name",
+    "processedAction": "delete"
+  },
+  "validationPoints": [
+    "Output file content matches",
+    "File naming pattern",
+    "Processing order consistency",
+    "Error file handling"
+  ]
+}
