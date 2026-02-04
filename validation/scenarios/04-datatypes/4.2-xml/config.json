@@ -1,0 +1,137 @@
+{
+  "id": "4.2",
+  "name": "XML Parsing",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "XML",
+  "description": "Tests XML message parsing with namespaces, XPath queries, attribute access, and CDATA handling",
+  "inputs": ["patient-simple.xml", "patient-namespaced.xml", "cda-document.xml", "patient-cdata.xml"],
+  "tests": [
+    {
+      "name": "Access root element",
+      "input": "patient-simple.xml",
+      "script": "msg.name().toString()",
+      "expected": "Patient"
+    },
+    {
+      "name": "Access direct child element",
+      "input": "patient-simple.xml",
+      "script": "msg.id.toString()",
+      "expected": "12345678"
+    },
+    {
+      "name": "Access nested element - family name",
+      "input": "patient-simple.xml",
+      "script": "msg.name.family.toString()",
+      "expected": "Doe"
+    },
+    {
+      "name": "Access nested element - given name",
+      "input": "patient-simple.xml",
+      "script": "msg.name.given[0].toString()",
+      "expected": "John"
+    },
+    {
+      "name": "Access multiple children - count given names",
+      "input": "patient-simple.xml",
+      "script": "msg.name.given.length().toString()",
+      "expected": "2"
+    },
+    {
+      "name": "Access element attribute",
+      "input": "patient-simple.xml",
+      "script": "msg.telecom.@use.toString()",
+      "expected": "home"
+    },
+    {
+      "name": "Access element with attribute and text",
+      "input": "patient-simple.xml",
+      "script": "msg.telecom.toString()",
+      "expected": "555-123-4567"
+    },
+    {
+      "name": "Access gender attribute code",
+      "input": "patient-simple.xml",
+      "script": "msg.gender.@code.toString()",
+      "expected": "M"
+    },
+    {
+      "name": "Access address components",
+      "input": "patient-simple.xml",
+      "script": "msg.address.city.toString()",
+      "expected": "Anytown"
+    },
+    {
+      "name": "Namespaced element - default namespace",
+      "input": "patient-namespaced.xml",
+      "script": "msg.*::id.@extension.toString()",
+      "expected": "12345678"
+    },
+    {
+      "name": "Namespaced element - access name",
+      "input": "patient-namespaced.xml",
+      "script": "msg.*::name.*::family.toString()",
+      "expected": "Doe"
+    },
+    {
+      "name": "CDA document - access header",
+      "input": "cda-document.xml",
+      "script": "msg.*::typeId.@root.toString()",
+      "expected": "2.16.840.1.113883.1.3"
+    },
+    {
+      "name": "CDA document - access patient name",
+      "input": "cda-document.xml",
+      "script": "msg.*::recordTarget.*::patientRole.*::patient.*::name.*::given.toString()",
+      "expected": "John"
+    },
+    {
+      "name": "CDA document - access author",
+      "input": "cda-document.xml",
+      "script": "msg.*::author.*::assignedAuthor.*::assignedPerson.*::name.*::family.toString()",
+      "expected": "Smith"
+    },
+    {
+      "name": "CDATA content extraction",
+      "input": "patient-cdata.xml",
+      "script": "msg.notes.toString()",
+      "expected": "Patient has <allergies> to penicillin & sulfa drugs."
+    },
+    {
+      "name": "Mixed content handling",
+      "input": "patient-cdata.xml",
+      "script": "msg.diagnosis.text().toString().trim()",
+      "expected": "Type 2 Diabetes"
+    },
+    {
+      "name": "Descendants access - all ids",
+      "input": "patient-simple.xml",
+      "script": "msg..id.length().toString()",
+      "expected": "2"
+    },
+    {
+      "name": "Child iteration count",
+      "input": "patient-simple.xml",
+      "script": "var count = 0; for each (var child in msg.children()) count++; count.toString()",
+      "expected": "7"
+    },
+    {
+      "name": "Element text content",
+      "input": "patient-simple.xml",
+      "script": "msg.birthDate.text().toString()",
+      "expected": "1980-01-01"
+    },
+    {
+      "name": "Check element existence - exists",
+      "input": "patient-simple.xml",
+      "script": "(msg.name.length() > 0).toString()",
+      "expected": "true"
+    },
+    {
+      "name": "Check element existence - not exists",
+      "input": "patient-simple.xml",
+      "script": "(msg.occupation.length() > 0).toString()",
+      "expected": "false"
+    }
+  ]
+}

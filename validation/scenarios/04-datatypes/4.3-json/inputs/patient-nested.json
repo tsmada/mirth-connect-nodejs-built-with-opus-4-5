@@ -1,0 +1,52 @@
+{
+  "patientId": "12345678",
+  "demographics": {
+    "name": {
+      "first": "John",
+      "middle": "Q",
+      "last": "Doe"
+    },
+    "dob": "1980-01-01",
+    "gender": "M",
+    "address": {
+      "home": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "state": "ST",
+        "zip": "12345"
+      },
+      "work": {
+        "street": "456 Business Ave",
+        "city": "Commerce",
+        "state": "ST",
+        "zip": "54321"
+      }
+    }
+  },
+  "contacts": {
+    "emergency": [
+      {
+        "name": "Jane Doe",
+        "relationship": "Spouse",
+        "phone": "555-987-6543"
+      },
+      {
+        "name": "Bob Doe",
+        "relationship": "Brother",
+        "phone": "555-456-7890"
+      }
+    ],
+    "physician": {
+      "name": "Dr. Smith",
+      "phone": "555-111-2222",
+      "specialty": "Internal Medicine"
+    }
+  },
+  "insurance": {
+    "primary": {
+      "carrier": "Blue Cross",
+      "policyNumber": "BCBS123456",
+      "groupNumber": "GRP789"
+    }
+  }
+}

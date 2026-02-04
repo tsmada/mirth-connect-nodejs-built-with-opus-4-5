@@ -1,0 +1,137 @@
+{
+  "id": "4.1",
+  "name": "HL7v2 Parsing",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "HL7V2",
+  "description": "Tests HL7v2 message parsing, segment access, field extraction, and escape handling",
+  "inputs": ["adt-a01.hl7", "oru-r01.hl7", "adt-a08-escaped.hl7"],
+  "tests": [
+    {
+      "name": "Parse MSH segment - Message Type",
+      "input": "adt-a01.hl7",
+      "script": "msg['MSH']['MSH.9']['MSH.9.1'].toString()",
+      "expected": "ADT"
+    },
+    {
+      "name": "Parse MSH segment - Trigger Event",
+      "input": "adt-a01.hl7",
+      "script": "msg['MSH']['MSH.9']['MSH.9.2'].toString()",
+      "expected": "A01"
+    },
+    {
+      "name": "Parse MSH segment - Sending Application",
+      "input": "adt-a01.hl7",
+      "script": "msg['MSH']['MSH.3']['MSH.3.1'].toString()",
+      "expected": "SENDING_APP"
+    },
+    {
+      "name": "Parse MSH segment - Message Control ID",
+      "input": "adt-a01.hl7",
+      "script": "msg['MSH']['MSH.10']['MSH.10.1'].toString()",
+      "expected": "MSG00001"
+    },
+    {
+      "name": "Access PID - Patient ID",
+      "input": "adt-a01.hl7",
+      "script": "msg['PID']['PID.3']['PID.3.1'].toString()",
+      "expected": "12345678"
+    },
+    {
+      "name": "Access PID - Patient Last Name",
+      "input": "adt-a01.hl7",
+      "script": "msg['PID']['PID.5']['PID.5.1'].toString()",
+      "expected": "DOE"
+    },
+    {
+      "name": "Access PID - Patient First Name",
+      "input": "adt-a01.hl7",
+      "script": "msg['PID']['PID.5']['PID.5.2'].toString()",
+      "expected": "JOHN"
+    },
+    {
+      "name": "Access PID - Patient Middle Name",
+      "input": "adt-a01.hl7",
+      "script": "msg['PID']['PID.5']['PID.5.3'].toString()",
+      "expected": "Q"
+    },
+    {
+      "name": "Access PID - Date of Birth",
+      "input": "adt-a01.hl7",
+      "script": "msg['PID']['PID.7']['PID.7.1'].toString()",
+      "expected": "19800101"
+    },
+    {
+      "name": "Access PID - Gender",
+      "input": "adt-a01.hl7",
+      "script": "msg['PID']['PID.8']['PID.8.1'].toString()",
+      "expected": "M"
+    },
+    {
+      "name": "Access PV1 - Patient Class",
+      "input": "adt-a01.hl7",
+      "script": "msg['PV1']['PV1.2']['PV1.2.1'].toString()",
+      "expected": "I"
+    },
+    {
+      "name": "Access PV1 - Room Number",
+      "input": "adt-a01.hl7",
+      "script": "msg['PV1']['PV1.3']['PV1.3.2'].toString()",
+      "expected": "101"
+    },
+    {
+      "name": "Count OBX segments in ORU",
+      "input": "oru-r01.hl7",
+      "script": "msg['OBX'].length().toString()",
+      "expected": "5"
+    },
+    {
+      "name": "Access OBX[0] - Test Name",
+      "input": "oru-r01.hl7",
+      "script": "msg['OBX'][0]['OBX.3']['OBX.3.2'].toString()",
+      "expected": "WHITE BLOOD CELL COUNT"
+    },
+    {
+      "name": "Access OBX[0] - Value",
+      "input": "oru-r01.hl7",
+      "script": "msg['OBX'][0]['OBX.5']['OBX.5.1'].toString()",
+      "expected": "7.5"
+    },
+    {
+      "name": "Access OBX[0] - Units",
+      "input": "oru-r01.hl7",
+      "script": "msg['OBX'][0]['OBX.6']['OBX.6.1'].toString()",
+      "expected": "10*3/uL"
+    },
+    {
+      "name": "Iterate OBX segments - count",
+      "input": "oru-r01.hl7",
+      "script": "var count = 0; for each (var obx in msg['OBX']) count++; count.toString()",
+      "expected": "5"
+    },
+    {
+      "name": "Access OBX by index - HGB value",
+      "input": "oru-r01.hl7",
+      "script": "msg['OBX'][2]['OBX.5']['OBX.5.1'].toString()",
+      "expected": "14.2"
+    },
+    {
+      "name": "Handle escaped ampersand",
+      "input": "adt-a08-escaped.hl7",
+      "script": "msg['PID']['PID.5']['PID.5.1'].toString()",
+      "expected": "SMITH&JONES"
+    },
+    {
+      "name": "Handle escaped caret (subcomponent)",
+      "input": "adt-a08-escaped.hl7",
+      "script": "msg['PV1']['PV1.7']['PV1.7.2'].toString()",
+      "expected": "DR^HOUSE"
+    },
+    {
+      "name": "Handle escaped pipe",
+      "input": "adt-a08-escaped.hl7",
+      "script": "msg['NTE']['NTE.3']['NTE.3.1'].toString()",
+      "expected": "BP: 120|80"
+    }
+  ]
+}

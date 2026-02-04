@@ -1,0 +1,143 @@
+{
+  "id": "4.5",
+  "name": "EDI/X12 Parsing",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "EDI/X12",
+  "description": "Tests healthcare EDI transaction parsing including eligibility (270/271), claims (837), and remittance (835)",
+  "inputs": ["270-eligibility-inquiry.x12", "271-eligibility-response.x12", "837p-professional-claim.x12", "835-remittance.x12"],
+  "tests": [
+    {
+      "name": "270 - ISA Sender ID",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['ISA']['ISA06'].toString().trim()",
+      "expected": "SENDER"
+    },
+    {
+      "name": "270 - ISA Receiver ID",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['ISA']['ISA08'].toString().trim()",
+      "expected": "RECEIVER"
+    },
+    {
+      "name": "270 - ISA Control Number",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['ISA']['ISA13'].toString()",
+      "expected": "000000001"
+    },
+    {
+      "name": "270 - GS Functional ID",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['GS']['GS01'].toString()",
+      "expected": "HS"
+    },
+    {
+      "name": "270 - ST Transaction Set ID",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['ST']['ST01'].toString()",
+      "expected": "270"
+    },
+    {
+      "name": "270 - BHT Purpose",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['BHT']['BHT02'].toString()",
+      "expected": "13"
+    },
+    {
+      "name": "270 - Subscriber Name",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['NM1'][1]['NM103'].toString()",
+      "expected": "DOE"
+    },
+    {
+      "name": "270 - Subscriber First Name",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['NM1'][1]['NM104'].toString()",
+      "expected": "JOHN"
+    },
+    {
+      "name": "270 - Subscriber ID",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['NM1'][1]['NM109'].toString()",
+      "expected": "123456789"
+    },
+    {
+      "name": "271 - Response Status",
+      "input": "271-eligibility-response.x12",
+      "script": "msg['EB']['EB01'].toString()",
+      "expected": "1"
+    },
+    {
+      "name": "271 - Coverage Type",
+      "input": "271-eligibility-response.x12",
+      "script": "msg['EB']['EB03'].toString()",
+      "expected": "30"
+    },
+    {
+      "name": "271 - Benefit Amount",
+      "input": "271-eligibility-response.x12",
+      "script": "msg['EB'][1]['EB07'].toString()",
+      "expected": "500"
+    },
+    {
+      "name": "837P - Claim Type",
+      "input": "837p-professional-claim.x12",
+      "script": "msg['ST']['ST01'].toString()",
+      "expected": "837"
+    },
+    {
+      "name": "837P - Billing Provider Name",
+      "input": "837p-professional-claim.x12",
+      "script": "msg['NM1'][0]['NM103'].toString()",
+      "expected": "SMITH MEDICAL GROUP"
+    },
+    {
+      "name": "837P - Patient Name",
+      "input": "837p-professional-claim.x12",
+      "script": "msg['NM1'][1]['NM103'].toString()",
+      "expected": "DOE"
+    },
+    {
+      "name": "837P - Claim Amount",
+      "input": "837p-professional-claim.x12",
+      "script": "msg['CLM']['CLM02'].toString()",
+      "expected": "250.00"
+    },
+    {
+      "name": "837P - Service Line Procedure",
+      "input": "837p-professional-claim.x12",
+      "script": "msg['SV1']['SV101-1'].toString()",
+      "expected": "99213"
+    },
+    {
+      "name": "837P - Service Line Amount",
+      "input": "837p-professional-claim.x12",
+      "script": "msg['SV1']['SV102'].toString()",
+      "expected": "250.00"
+    },
+    {
+      "name": "835 - Payment Amount",
+      "input": "835-remittance.x12",
+      "script": "msg['BPR']['BPR02'].toString()",
+      "expected": "200.00"
+    },
+    {
+      "name": "835 - Claim Payment Amount",
+      "input": "835-remittance.x12",
+      "script": "msg['CLP']['CLP04'].toString()",
+      "expected": "200.00"
+    },
+    {
+      "name": "Segment count - ISA",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['ISA'].length().toString()",
+      "expected": "1"
+    },
+    {
+      "name": "Multiple NM1 segments",
+      "input": "270-eligibility-inquiry.x12",
+      "script": "msg['NM1'].length().toString()",
+      "expected": "2"
+    }
+  ]
+}
