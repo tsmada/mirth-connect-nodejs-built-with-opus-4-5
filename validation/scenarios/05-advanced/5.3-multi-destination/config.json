@@ -1,0 +1,58 @@
+{
+  "id": "5.3",
+  "name": "Multi-Destination Flow",
+  "description": "Tests channels with multiple destinations processing in parallel",
+  "priority": 5,
+  "type": "advanced",
+  "channelFile": "multi-destination-channel.xml",
+  "inputType": "mllp",
+  "inputMessage": "inputs/multi-dest-message.hl7",
+  "timeout": 45000,
+  "ports": {
+    "javaListener": 6679,
+    "nodeListener": 6680,
+    "mockDestination1": 6681,
+    "mockDestination2": 6682,
+    "mockDestination3": 6683
+  },
+  "tests": [
+    {
+      "id": "5.3.1",
+      "name": "Parallel destination processing",
+      "description": "Test that all destinations receive messages concurrently",
+      "setup": "Deploy channel with 3 MLLP destinations",
+      "input": "Send single ADT message",
+      "expected": "All 3 mock destinations receive the message"
+    },
+    {
+      "id": "5.3.2",
+      "name": "Destination filtering by metadata",
+      "description": "Test filtering destinations based on message metadata",
+      "setup": "Configure destination filters based on patient type",
+      "input": "Send messages with different patient types",
+      "expected": "Messages route to destinations matching patient type"
+    },
+    {
+      "id": "5.3.3",
+      "name": "Response aggregation",
+      "description": "Test selecting response from multiple destination responses",
+      "setup": "Configure response selection from first successful destination",
+      "input": "Send message, all destinations respond",
+      "expected": "Source receives aggregated/selected response"
+    },
+    {
+      "id": "5.3.4",
+      "name": "One destination failure isolation",
+      "description": "Test that one destination failure doesn't affect others",
+      "setup": "Configure one mock destination to fail",
+      "input": "Send message",
+      "expected": "Other destinations succeed, failure is isolated"
+    }
+  ],
+  "validationPoints": [
+    "All destinations receive messages",
+    "Destination filtering works correctly",
+    "Response aggregation matches",
+    "Failure isolation works"
+  ]
+}

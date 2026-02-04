@@ -1,0 +1,55 @@
+{
+  "id": "5.5",
+  "name": "Preprocessor and Postprocessor",
+  "description": "Tests deploy scripts including preprocessor and postprocessor execution",
+  "priority": 5,
+  "type": "advanced",
+  "channelFile": "processor-channel.xml",
+  "inputType": "mllp",
+  "inputMessage": "inputs/processor-test-message.hl7",
+  "timeout": 30000,
+  "ports": {
+    "javaListener": 6687,
+    "nodeListener": 6688
+  },
+  "tests": [
+    {
+      "id": "5.5.1",
+      "name": "Preprocessor message modification",
+      "description": "Test preprocessor script modifying message before processing",
+      "setup": "Deploy channel with preprocessor that adds timestamp segment",
+      "input": "Send raw ADT message",
+      "expected": "Message has preprocessor modifications before reaching filter"
+    },
+    {
+      "id": "5.5.2",
+      "name": "Postprocessor logging/cleanup",
+      "description": "Test postprocessor script execution after message processing",
+      "setup": "Deploy channel with postprocessor that logs completion",
+      "input": "Send message through channel",
+      "expected": "Postprocessor executes after all destinations complete"
+    },
+    {
+      "id": "5.5.3",
+      "name": "Deploy script execution",
+      "description": "Test channel deploy script runs on channel start",
+      "setup": "Channel with deploy script that sets globalMap variable",
+      "input": "Deploy channel and verify globalMap",
+      "expected": "Deploy script sets expected globalMap values"
+    },
+    {
+      "id": "5.5.4",
+      "name": "Undeploy script execution",
+      "description": "Test channel undeploy script runs on channel stop",
+      "setup": "Channel with undeploy script that clears resources",
+      "input": "Undeploy channel",
+      "expected": "Undeploy script executes and cleanup occurs"
+    }
+  ],
+  "validationPoints": [
+    "Preprocessor modifications apply correctly",
+    "Postprocessor executes at correct time",
+    "Deploy script sets expected state",
+    "Undeploy script cleanup works"
+  ]
+}

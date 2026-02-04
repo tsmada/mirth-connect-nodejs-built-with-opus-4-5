@@ -1,0 +1,62 @@
+{
+  "id": "5.6",
+  "name": "Database Interactions",
+  "description": "Tests database operations from user scripts using DatabaseConnection",
+  "priority": 5,
+  "type": "advanced",
+  "channelFile": "database-script-channel.xml",
+  "inputType": "mllp",
+  "inputMessage": "inputs/db-lookup-message.hl7",
+  "timeout": 45000,
+  "ports": {
+    "javaListener": 6689,
+    "nodeListener": 6690
+  },
+  "database": {
+    "driver": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "database": "mirth_validation",
+    "testTable": "patient_lookup"
+  },
+  "tests": [
+    {
+      "id": "5.6.1",
+      "name": "DatabaseConnection usage",
+      "description": "Test creating database connection and executing queries in transformer",
+      "setup": "Deploy channel with transformer that queries patient_lookup table",
+      "input": "Send message with patient ID",
+      "expected": "Query results are used to enrich message"
+    },
+    {
+      "id": "5.6.2",
+      "name": "Query result handling",
+      "description": "Test iterating query results and extracting values",
+      "setup": "Query returns multiple columns",
+      "input": "Send message with patient ID that has full data",
+      "expected": "All columns are extracted correctly"
+    },
+    {
+      "id": "5.6.3",
+      "name": "Insert and update operations",
+      "description": "Test executing INSERT and UPDATE statements",
+      "setup": "Transformer inserts audit record for each message",
+      "input": "Send message",
+      "expected": "Audit record is created in database"
+    },
+    {
+      "id": "5.6.4",
+      "name": "Connection pooling",
+      "description": "Test DatabaseConnectionFactory connection pooling",
+      "setup": "Multiple messages use pooled connections",
+      "input": "Send batch of messages",
+      "expected": "Connections are reused, pool metrics match"
+    }
+  ],
+  "validationPoints": [
+    "Query results match between engines",
+    "Message enrichment is identical",
+    "Insert/update operations execute correctly",
+    "Connection pooling behavior matches"
+  ]
+}
