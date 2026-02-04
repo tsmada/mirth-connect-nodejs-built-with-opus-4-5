@@ -22,3 +22,6 @@ export * from './delimited/index.js';
 
 // EDI/X12 DataType
 export * from './edi/index.js';
+
+// NCPDP DataType (Pharmacy claims)
+export * from './ncpdp/index.js';
