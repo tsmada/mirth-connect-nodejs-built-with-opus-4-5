@@ -58,6 +58,7 @@
     "nodemailer": "^7.0.13",
     "ora": "^8.0.1",
     "react": "^18.2.0",
+    "soap": "^1.6.4",
     "ssh2-sftp-client": "^9.1.0",
     "stompit": "^1.0.0",
     "uuid": "^9.0.1",
