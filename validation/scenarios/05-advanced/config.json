@@ -1,0 +1,112 @@
+[
+  {
+    "id": "5.1",
+    "name": "Response Transformers",
+    "description": "Tests response transformer functionality including response map modification, status changes, content transformation, and error handling in response context.",
+    "priority": 5,
+    "type": "advanced",
+    "channelFile": "response-transformer-channel.xml",
+    "inputType": "mllp",
+    "inputMessage": "inputs/sample-adt.hl7",
+    "timeout": 30000,
+    "ports": {
+      "javaListener": 6670,
+      "nodeListener": 6671,
+      "mockDestination": 6672
+    }
+  },
+  {
+    "id": "5.2",
+    "name": "Channel Routing",
+    "description": "Tests VMRouter and inter-channel communication including routeMessage calls, channel chaining, destination routing filters, and DestinationSet usage.",
+    "priority": 5,
+    "type": "advanced",
+    "channelFiles": [
+      "router-source-channel.xml",
+      "router-dest-channel-a.xml",
+      "router-dest-channel-b.xml"
+    ],
+    "inputType": "mllp",
+    "inputMessage": "inputs/routable-message.hl7",
+    "timeout": 60000,
+    "ports": {
+      "javaSourceListener": 6673,
+      "nodeSourceListener": 6674,
+      "javaDestAListener": 6675,
+      "nodeDestAListener": 6676,
+      "javaDestBListener": 6677,
+      "nodeDestBListener": 6678
+    }
+  },
+  {
+    "id": "5.3",
+    "name": "Multi-Destination Flow",
+    "description": "Tests channels with multiple destinations including parallel processing, destination filtering by metadata, response aggregation, and failure isolation.",
+    "priority": 5,
+    "type": "advanced",
+    "channelFile": "multi-destination-channel.xml",
+    "inputType": "mllp",
+    "inputMessage": "inputs/multi-dest-message.hl7",
+    "timeout": 45000,
+    "ports": {
+      "javaListener": 6679,
+      "nodeListener": 6680,
+      "mockDestination1": 6681,
+      "mockDestination2": 6682,
+      "mockDestination3": 6683
+    }
+  },
+  {
+    "id": "5.4",
+    "name": "Error Handling Patterns",
+    "description": "Tests error handling scenarios including source filter rejection, transformer errors, destination connection failures, and queue behavior on error.",
+    "priority": 5,
+    "type": "advanced",
+    "channelFile": "error-handling-channel.xml",
+    "inputType": "mllp",
+    "inputMessage": "inputs/error-trigger-message.hl7",
+    "timeout": 30000,
+    "ports": {
+      "javaListener": 6684,
+      "nodeListener": 6685,
+      "unreachableDestination": 6686
+    }
+  },
+  {
+    "id": "5.5",
+    "name": "Preprocessor and Postprocessor",
+    "description": "Tests deploy scripts including preprocessor message modification, postprocessor logging/cleanup, and deploy/undeploy script execution.",
+    "priority": 5,
+    "type": "advanced",
+    "channelFile": "processor-channel.xml",
+    "inputType": "mllp",
+    "inputMessage": "inputs/processor-test-message.hl7",
+    "timeout": 30000,
+    "ports": {
+      "javaListener": 6687,
+      "nodeListener": 6688
+    }
+  },
+  {
+    "id": "5.6",
+    "name": "Database Interactions",
+    "description": "Tests database operations from user scripts including DatabaseConnection usage, query result handling, transaction support, and connection pooling.",
+    "priority": 5,
+    "type": "advanced",
+    "channelFile": "database-script-channel.xml",
+    "inputType": "mllp",
+    "inputMessage": "inputs/db-lookup-message.hl7",
+    "timeout": 45000,
+    "ports": {
+      "javaListener": 6689,
+      "nodeListener": 6690
+    },
+    "database": {
+      "driver": "mysql",
+      "host": "localhost",
+      "port": 3306,
+      "database": "mirth_validation",
+      "testTable": "patient_lookup"
+    }
+  }
+]

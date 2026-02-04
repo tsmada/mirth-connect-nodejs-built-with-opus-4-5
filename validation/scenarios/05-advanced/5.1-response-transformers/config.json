@@ -1,0 +1,56 @@
+{
+  "id": "5.1",
+  "name": "Response Transformers",
+  "description": "Tests response transformer functionality for modifying destination responses before returning to the source",
+  "priority": 5,
+  "type": "advanced",
+  "channelFile": "response-transformer-channel.xml",
+  "inputType": "mllp",
+  "inputMessage": "inputs/sample-adt.hl7",
+  "timeout": 30000,
+  "ports": {
+    "javaListener": 6670,
+    "nodeListener": 6671,
+    "mockDestination": 6672
+  },
+  "tests": [
+    {
+      "id": "5.1.1",
+      "name": "Response map variable setting",
+      "description": "Test setting variables in responseMap from response transformer",
+      "setup": "Deploy channel with response transformer that sets $r('customVar')",
+      "input": "Send ADT A01 message via MLLP",
+      "expected": "Response map contains customVar with expected value"
+    },
+    {
+      "id": "5.1.2",
+      "name": "Response status modification",
+      "description": "Test changing response status in response transformer",
+      "setup": "Deploy channel where response transformer changes status to SENT",
+      "input": "Send message that would normally filter",
+      "expected": "Final status reflects transformer modification"
+    },
+    {
+      "id": "5.1.3",
+      "name": "Response content transformation",
+      "description": "Test modifying response message content",
+      "setup": "Deploy channel with response transformer that modifies ACK",
+      "input": "Send ADT message",
+      "expected": "ACK contains transformed content from response transformer"
+    },
+    {
+      "id": "5.1.4",
+      "name": "Error handling in response transformers",
+      "description": "Test error behavior when response transformer throws exception",
+      "setup": "Deploy channel with response transformer that throws on specific input",
+      "input": "Send message that triggers transformer error",
+      "expected": "Error is captured, message status is ERROR"
+    }
+  ],
+  "validationPoints": [
+    "Response map variables match between engines",
+    "Final message status matches",
+    "Response content matches (normalized)",
+    "Error handling behavior matches"
+  ]
+}

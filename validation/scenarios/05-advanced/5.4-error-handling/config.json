@@ -1,0 +1,56 @@
+{
+  "id": "5.4",
+  "name": "Error Handling Patterns",
+  "description": "Tests various error handling scenarios and recovery mechanisms",
+  "priority": 5,
+  "type": "advanced",
+  "channelFile": "error-handling-channel.xml",
+  "inputType": "mllp",
+  "inputMessage": "inputs/error-trigger-message.hl7",
+  "timeout": 30000,
+  "ports": {
+    "javaListener": 6684,
+    "nodeListener": 6685,
+    "unreachableDestination": 6686
+  },
+  "tests": [
+    {
+      "id": "5.4.1",
+      "name": "Source filter rejection",
+      "description": "Test message rejection at source filter stage",
+      "setup": "Deploy channel with source filter that rejects specific messages",
+      "input": "Send message that fails filter criteria",
+      "expected": "Message status is FILTERED, no destination processing"
+    },
+    {
+      "id": "5.4.2",
+      "name": "Transformer errors",
+      "description": "Test error handling when transformer throws exception",
+      "setup": "Deploy channel with transformer that throws on specific input",
+      "input": "Send message that triggers transformer error",
+      "expected": "Message status is ERROR, error logged correctly"
+    },
+    {
+      "id": "5.4.3",
+      "name": "Destination connection failures",
+      "description": "Test behavior when destination is unreachable",
+      "setup": "Configure destination to non-existent server",
+      "input": "Send message",
+      "expected": "Message status is QUEUED or ERROR based on config"
+    },
+    {
+      "id": "5.4.4",
+      "name": "Queue behavior on error",
+      "description": "Test message queuing when errors occur",
+      "setup": "Enable queue on error for destination",
+      "input": "Send message to failing destination",
+      "expected": "Message is queued for retry, queue count increments"
+    }
+  ],
+  "validationPoints": [
+    "Error status codes match",
+    "Error messages are captured",
+    "Queue behavior matches",
+    "Filter rejection behavior matches"
+  ]
+}
