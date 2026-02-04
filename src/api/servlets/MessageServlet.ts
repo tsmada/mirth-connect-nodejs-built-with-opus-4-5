@@ -16,6 +16,8 @@
 
 import { Router, Request, Response } from 'express';
 import { RowDataPacket } from 'mysql2';
+import * as multer from 'multer';
+import * as crypto from 'crypto';
 import { getPool } from '../../db/pool.js';
 import {
   MessageFilter,
@@ -36,9 +38,25 @@ import {
   MESSAGE_IMPORT,
   MESSAGE_EXPORT,
   MESSAGE_GET_ATTACHMENT,
+  MESSAGE_CREATE_ATTACHMENT,
+  MESSAGE_UPDATE_ATTACHMENT,
+  MESSAGE_DELETE_ATTACHMENT,
+  MESSAGE_IMPORT_MULTIPART,
+  MESSAGE_EXPORT_ENCRYPTED,
+  MESSAGE_REPROCESS_BULK,
+  MESSAGE_GET_CONTENT,
+  MESSAGE_UPDATE_CONTENT,
 } from '../middleware/operations.js';
 import { QueryBuilder } from '../../db/QueryBuilder.js';
 import { EngineController } from '../../controllers/EngineController.js';
+
+// Configure multer for multipart file uploads
+const upload = multer.default({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
+});
 
 // mergeParams: true ensures channelId from parent route is available
 // All handlers can safely use req.params.channelId! with non-null assertion
@@ -1106,6 +1124,747 @@ messageRouter.delete(
     } catch (error) {
       console.error('Remove all messages error:', error);
       res.status(500).json({ error: 'Failed to remove messages' });
+    }
+  }
+);
+
+// ============================================================================
+// Routes - Multipart Import (Phase 2)
+// ============================================================================
+
+/**
+ * POST /channels/:channelId/messages/_importMultipart
+ * Import a message from multipart form data
+ */
+messageRouter.post(
+  '/_importMultipart',
+  authorize({ operation: MESSAGE_IMPORT_MULTIPART, checkAuthorizedChannelId: 'channelId' }),
+  upload.single('file'),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({
+          error: 'Channel not found',
+          message: 'Channel message tables do not exist',
+        });
+        return;
+      }
+
+      // Check for uploaded file
+      if (!req.file) {
+        res.status(400).json({
+          error: 'No file uploaded',
+          message: 'Request must include a file in multipart form data',
+        });
+        return;
+      }
+
+      // Parse the file content as JSON
+      let importedMessage: {
+        messageId?: number;
+        serverId?: string;
+        receivedDate?: string;
+        processed?: boolean;
+        connectorMessages?: Record<number, {
+          metaDataId: number;
+          connectorName: string;
+          status: string;
+          content?: Record<number, { contentType: number; content: string; dataType: string }>;
+        }>;
+      };
+
+      try {
+        importedMessage = JSON.parse(req.file.buffer.toString('utf8'));
+      } catch {
+        res.status(400).json({
+          error: 'Invalid file format',
+          message: 'File must contain valid JSON',
+        });
+        return;
+      }
+
+      if (!importedMessage || !importedMessage.connectorMessages) {
+        res.status(400).json({
+          error: 'Invalid message format',
+          message: 'Message must contain connectorMessages',
+        });
+        return;
+      }
+
+      const pool = getPool();
+
+      // Get next message ID
+      const seqTable = `D_MSQ${channelId.replace(/-/g, '_')}`;
+      const [seqRows] = await pool.query<RowDataPacket[]>(
+        `SELECT ID FROM ${seqTable} FOR UPDATE`
+      );
+      const nextId = (seqRows[0]?.ID ?? 0) + 1;
+      await pool.execute(`UPDATE ${seqTable} SET ID = ?`, [nextId]);
+
+      // Insert message
+      const receivedDate = importedMessage.receivedDate
+        ? new Date(importedMessage.receivedDate)
+        : new Date();
+
+      await pool.execute(
+        `INSERT INTO ${messageTable(channelId)}
+         (ID, SERVER_ID, RECEIVED_DATE, PROCESSED, IMPORT_ID)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          nextId,
+          importedMessage.serverId ?? 'import',
+          receivedDate,
+          importedMessage.processed ? 1 : 0,
+          importedMessage.messageId ?? null,
+        ]
+      );
+
+      // Insert connector messages and content
+      for (const [metaDataIdStr, connectorMsg] of Object.entries(importedMessage.connectorMessages)) {
+        const metaDataId = parseInt(metaDataIdStr, 10);
+
+        await pool.execute(
+          `INSERT INTO ${connectorMessageTable(channelId)}
+           (MESSAGE_ID, METADATA_ID, CONNECTOR_NAME, RECEIVED_DATE, STATUS)
+           VALUES (?, ?, ?, ?, ?)`,
+          [nextId, metaDataId, connectorMsg.connectorName, receivedDate, connectorMsg.status]
+        );
+
+        // Insert content
+        if (connectorMsg.content) {
+          for (const [contentTypeStr, content] of Object.entries(connectorMsg.content)) {
+            const contentType = parseInt(contentTypeStr, 10);
+            await pool.execute(
+              `INSERT INTO ${contentTable(channelId)}
+               (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED)
+               VALUES (?, ?, ?, ?, ?, 0)`,
+              [nextId, metaDataId, contentType, content.content, content.dataType]
+            );
+          }
+        }
+      }
+
+      res.sendData({
+        imported: true,
+        messageId: nextId,
+        originalId: importedMessage.messageId,
+        filename: req.file.originalname,
+      });
+    } catch (error) {
+      console.error('Import message multipart error:', error);
+      res.status(500).json({ error: 'Failed to import message' });
+    }
+  }
+);
+
+// ============================================================================
+// Routes - Encrypted Export (Phase 2)
+// ============================================================================
+
+/**
+ * Encrypt data using AES-256-GCM
+ */
+function encryptData(data: Buffer, key: string): { encrypted: Buffer; iv: Buffer; tag: Buffer } {
+  // Derive a 32-byte key from the provided key using SHA-256
+  const derivedKey = crypto.createHash('sha256').update(key).digest();
+  const iv = crypto.randomBytes(12); // GCM recommended IV length
+
+  const cipher = crypto.createCipheriv('aes-256-gcm', derivedKey, iv);
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  return { encrypted, iv, tag };
+}
+
+/**
+ * POST /channels/:channelId/messages/_exportEncrypted
+ * Export messages with optional encryption
+ */
+messageRouter.post(
+  '/_exportEncrypted',
+  authorize({ operation: MESSAGE_EXPORT_ENCRYPTED, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const filter = parseMessageFilter(req.body as Record<string, unknown>);
+      const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : 100;
+      const encryptionKey = req.query.encryptionKey as string | undefined;
+
+      // Get messages to export
+      const messages = await searchMessages(channelId, filter, 0, pageSize, true);
+
+      // Convert to JSON
+      const jsonData = JSON.stringify(messages, null, 2);
+      const dataBuffer = Buffer.from(jsonData, 'utf8');
+
+      if (encryptionKey) {
+        // Encrypt the data
+        const { encrypted, iv, tag } = encryptData(dataBuffer, encryptionKey);
+
+        // Create an archive format with metadata
+        const archive = {
+          format: 'mirth-encrypted-v1',
+          algorithm: 'aes-256-gcm',
+          iv: iv.toString('base64'),
+          tag: tag.toString('base64'),
+          data: encrypted.toString('base64'),
+          messageCount: messages.length,
+          channelId,
+          exportedAt: new Date().toISOString(),
+        };
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename="messages-encrypted.json"');
+        res.json(archive);
+      } else {
+        // Return unencrypted
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename="messages.json"');
+        res.json(messages);
+      }
+    } catch (error) {
+      console.error('Export encrypted messages error:', error);
+      res.status(500).json({ error: 'Failed to export messages' });
+    }
+  }
+);
+
+// ============================================================================
+// Routes - Attachment CRUD (Phase 2)
+// ============================================================================
+
+/**
+ * POST /channels/:channelId/messages/:messageId/attachments
+ * Create a new attachment
+ */
+messageRouter.post(
+  '/:messageId/attachments',
+  authorize({ operation: MESSAGE_CREATE_ATTACHMENT, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const messageIdStr = req.params.messageId as string;
+      const messageId = parseInt(messageIdStr, 10);
+
+      if (isNaN(messageId)) {
+        res.status(400).json({ error: 'Invalid message ID' });
+        return;
+      }
+
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found' });
+        return;
+      }
+
+      // Verify message exists
+      const message = await getMessage(channelId, messageId, false);
+      if (!message) {
+        res.status(404).json({ error: 'Message not found' });
+        return;
+      }
+
+      // Extract attachment data from request
+      const { id, type, content } = req.body as {
+        id?: string;
+        type?: string;
+        content: string; // Base64 encoded
+      };
+
+      if (!content) {
+        res.status(400).json({
+          error: 'Missing content',
+          message: 'Attachment content is required (base64 encoded)',
+        });
+        return;
+      }
+
+      const attachmentId = id ?? crypto.randomUUID();
+      const attachmentType = type ?? 'application/octet-stream';
+
+      // Decode base64 content
+      const data = Buffer.from(content, 'base64');
+
+      const pool = getPool();
+
+      // Insert attachment (single segment for simplicity)
+      await pool.execute(
+        `INSERT INTO ${attachmentTable(channelId)}
+         (ID, MESSAGE_ID, TYPE, SEGMENT_ID, ATTACHMENT)
+         VALUES (?, ?, ?, 0, ?)`,
+        [attachmentId, messageId, attachmentType, data]
+      );
+
+      res.status(201).sendData({
+        id: attachmentId,
+        messageId,
+        type: attachmentType,
+        size: data.length,
+      });
+    } catch (error) {
+      console.error('Create attachment error:', error);
+      res.status(500).json({ error: 'Failed to create attachment' });
+    }
+  }
+);
+
+/**
+ * PUT /channels/:channelId/messages/:messageId/attachments/:attachmentId
+ * Update an existing attachment
+ */
+messageRouter.put(
+  '/:messageId/attachments/:attachmentId',
+  authorize({ operation: MESSAGE_UPDATE_ATTACHMENT, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const messageIdStr = req.params.messageId as string;
+      const attachmentId = req.params.attachmentId as string;
+      const messageId = parseInt(messageIdStr, 10);
+
+      if (isNaN(messageId)) {
+        res.status(400).json({ error: 'Invalid message ID' });
+        return;
+      }
+
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found' });
+        return;
+      }
+
+      // Check if attachment exists
+      const existingAttachment = await getAttachment(channelId, messageId, attachmentId);
+      if (!existingAttachment) {
+        res.status(404).json({ error: 'Attachment not found' });
+        return;
+      }
+
+      // Extract new data from request
+      const { type, content } = req.body as {
+        type?: string;
+        content: string; // Base64 encoded
+      };
+
+      if (!content) {
+        res.status(400).json({
+          error: 'Missing content',
+          message: 'Attachment content is required (base64 encoded)',
+        });
+        return;
+      }
+
+      // Decode base64 content
+      const data = Buffer.from(content, 'base64');
+      const attachmentType = type ?? 'application/octet-stream';
+
+      const pool = getPool();
+
+      // Delete existing segments
+      await pool.execute(
+        `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? AND ID = ?`,
+        [messageId, attachmentId]
+      );
+
+      // Insert updated attachment
+      await pool.execute(
+        `INSERT INTO ${attachmentTable(channelId)}
+         (ID, MESSAGE_ID, TYPE, SEGMENT_ID, ATTACHMENT)
+         VALUES (?, ?, ?, 0, ?)`,
+        [attachmentId, messageId, attachmentType, data]
+      );
+
+      res.sendData({
+        id: attachmentId,
+        messageId,
+        type: attachmentType,
+        size: data.length,
+      });
+    } catch (error) {
+      console.error('Update attachment error:', error);
+      res.status(500).json({ error: 'Failed to update attachment' });
+    }
+  }
+);
+
+/**
+ * DELETE /channels/:channelId/messages/:messageId/attachments/:attachmentId
+ * Delete an attachment
+ */
+messageRouter.delete(
+  '/:messageId/attachments/:attachmentId',
+  authorize({ operation: MESSAGE_DELETE_ATTACHMENT, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const messageIdStr = req.params.messageId as string;
+      const attachmentId = req.params.attachmentId as string;
+      const messageId = parseInt(messageIdStr, 10);
+
+      if (isNaN(messageId)) {
+        res.status(400).json({ error: 'Invalid message ID' });
+        return;
+      }
+
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found' });
+        return;
+      }
+
+      const pool = getPool();
+
+      // Delete attachment
+      const [result] = await pool.execute(
+        `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? AND ID = ?`,
+        [messageId, attachmentId]
+      );
+
+      if ((result as { affectedRows: number }).affectedRows === 0) {
+        res.status(404).json({ error: 'Attachment not found' });
+        return;
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      console.error('Delete attachment error:', error);
+      res.status(500).json({ error: 'Failed to delete attachment' });
+    }
+  }
+);
+
+// ============================================================================
+// Routes - Bulk Reprocess with Connector Filtering (Phase 2)
+// ============================================================================
+
+/**
+ * POST /channels/:channelId/messages/_reprocessBulk
+ * Reprocess multiple messages by ID with optional connector filtering
+ */
+messageRouter.post(
+  '/_reprocessBulk',
+  authorize({ operation: MESSAGE_REPROCESS_BULK, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const { messageIds, destinationMetaDataIds } = req.body as {
+        messageIds: number[];
+        destinationMetaDataIds?: number[];
+      };
+
+      if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        res.status(400).json({
+          error: 'Invalid request',
+          message: 'messageIds must be a non-empty array',
+        });
+        return;
+      }
+
+      // Check if channel is deployed
+      if (!EngineController.isDeployed(channelId)) {
+        res.status(400).json({
+          error: 'Channel not deployed',
+          message: 'Channel must be deployed to reprocess messages',
+        });
+        return;
+      }
+
+      const replace = req.query.replace === 'true';
+      const filterDestinations = destinationMetaDataIds && destinationMetaDataIds.length > 0;
+
+      // Reprocess each message
+      const results: Array<{
+        originalId: number;
+        newMessageId: number;
+        success: boolean;
+        error?: string;
+      }> = [];
+
+      for (const messageId of messageIds) {
+        try {
+          // Get the message with content
+          const message = await getMessage(channelId, messageId, true);
+
+          if (!message) {
+            results.push({
+              originalId: messageId,
+              newMessageId: 0,
+              success: false,
+              error: 'Message not found',
+            });
+            continue;
+          }
+
+          // Get the original raw content from connector message 0 (source)
+          const sourceConnector = message.connectorMessages[0];
+          const rawContent = sourceConnector?.content?.[1]?.content ?? ''; // ContentType.RAW = 1
+
+          if (!rawContent) {
+            results.push({
+              originalId: messageId,
+              newMessageId: 0,
+              success: false,
+              error: 'No raw content to reprocess',
+            });
+            continue;
+          }
+
+          // Create source map with reprocessing metadata
+          const sourceMap = new Map<string, unknown>();
+          sourceMap.set('reprocessed', true);
+          sourceMap.set('originalMessageId', messageId);
+
+          if (replace) {
+            sourceMap.set('replaceMessage', true);
+          }
+
+          if (filterDestinations && destinationMetaDataIds) {
+            sourceMap.set('destinationMetaDataIds', destinationMetaDataIds);
+            sourceMap.set('filterDestinations', true);
+          }
+
+          // Dispatch the message
+          const result = await EngineController.dispatchMessage(channelId, rawContent, sourceMap);
+
+          results.push({
+            originalId: messageId,
+            newMessageId: result.messageId,
+            success: true,
+          });
+        } catch (error) {
+          results.push({
+            originalId: messageId,
+            newMessageId: 0,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
+      res.sendData({
+        reprocessed: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
+        total: messageIds.length,
+        destinationMetaDataIds: filterDestinations ? destinationMetaDataIds : null,
+        results,
+      });
+    } catch (error) {
+      console.error('Bulk reprocess messages error:', error);
+      res.status(500).json({ error: 'Failed to reprocess messages' });
+    }
+  }
+);
+
+// ============================================================================
+// Routes - Message Content Operations (Phase 2)
+// ============================================================================
+
+/**
+ * GET /channels/:channelId/messages/:messageId/connectorMessages/:metaDataId/content/:contentType
+ * Get specific content for a connector message
+ */
+messageRouter.get(
+  '/:messageId/connectorMessages/:metaDataId/content/:contentType',
+  authorize({ operation: MESSAGE_GET_CONTENT, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const messageIdStr = req.params.messageId as string;
+      const metaDataIdStr = req.params.metaDataId as string;
+      const contentTypeStr = req.params.contentType as string;
+
+      const messageId = parseInt(messageIdStr, 10);
+      const metaDataId = parseInt(metaDataIdStr, 10);
+
+      if (isNaN(messageId) || isNaN(metaDataId)) {
+        res.status(400).json({ error: 'Invalid message ID or metadata ID' });
+        return;
+      }
+
+      // Map content type string to number if needed
+      let contentTypeNum: number;
+      if (/^\d+$/.test(contentTypeStr)) {
+        contentTypeNum = parseInt(contentTypeStr, 10);
+      } else {
+        // Map string names to ContentType enum values
+        const contentTypeMap: Record<string, number> = {
+          RAW: 1,
+          PROCESSED_RAW: 2,
+          TRANSFORMED: 3,
+          ENCODED: 4,
+          SENT: 5,
+          RESPONSE: 6,
+          RESPONSE_TRANSFORMED: 7,
+          PROCESSED_RESPONSE: 8,
+          CONNECTOR_MAP: 9,
+          CHANNEL_MAP: 10,
+          RESPONSE_MAP: 11,
+          PROCESSING_ERROR: 12,
+          POSTPROCESSOR_ERROR: 13,
+          RESPONSE_ERROR: 14,
+          SOURCE_MAP: 15,
+        };
+        contentTypeNum = contentTypeMap[contentTypeStr.toUpperCase()] ?? -1;
+      }
+
+      if (contentTypeNum < 0) {
+        res.status(400).json({ error: 'Invalid content type' });
+        return;
+      }
+
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found' });
+        return;
+      }
+
+      const pool = getPool();
+
+      // Get the specific content
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT CONTENT, DATA_TYPE, IS_ENCRYPTED
+         FROM ${contentTable(channelId)}
+         WHERE MESSAGE_ID = ? AND METADATA_ID = ? AND CONTENT_TYPE = ?`,
+        [messageId, metaDataId, contentTypeNum]
+      );
+
+      if (rows.length === 0) {
+        res.status(404).json({ error: 'Content not found' });
+        return;
+      }
+
+      const row = rows[0]!;
+      res.sendData({
+        messageId,
+        metaDataId,
+        contentType: contentTypeNum,
+        content: row.CONTENT,
+        dataType: row.DATA_TYPE,
+        encrypted: row.IS_ENCRYPTED === 1,
+      });
+    } catch (error) {
+      console.error('Get content error:', error);
+      res.status(500).json({ error: 'Failed to get content' });
+    }
+  }
+);
+
+/**
+ * PUT /channels/:channelId/messages/:messageId/connectorMessages/:metaDataId/content/:contentType
+ * Update specific content for a connector message
+ */
+messageRouter.put(
+  '/:messageId/connectorMessages/:metaDataId/content/:contentType',
+  authorize({ operation: MESSAGE_UPDATE_CONTENT, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const messageIdStr = req.params.messageId as string;
+      const metaDataIdStr = req.params.metaDataId as string;
+      const contentTypeStr = req.params.contentType as string;
+
+      const messageId = parseInt(messageIdStr, 10);
+      const metaDataId = parseInt(metaDataIdStr, 10);
+
+      if (isNaN(messageId) || isNaN(metaDataId)) {
+        res.status(400).json({ error: 'Invalid message ID or metadata ID' });
+        return;
+      }
+
+      // Map content type string to number if needed
+      let contentTypeNum: number;
+      if (/^\d+$/.test(contentTypeStr)) {
+        contentTypeNum = parseInt(contentTypeStr, 10);
+      } else {
+        const contentTypeMap: Record<string, number> = {
+          RAW: 1,
+          PROCESSED_RAW: 2,
+          TRANSFORMED: 3,
+          ENCODED: 4,
+          SENT: 5,
+          RESPONSE: 6,
+          RESPONSE_TRANSFORMED: 7,
+          PROCESSED_RESPONSE: 8,
+          CONNECTOR_MAP: 9,
+          CHANNEL_MAP: 10,
+          RESPONSE_MAP: 11,
+          PROCESSING_ERROR: 12,
+          POSTPROCESSOR_ERROR: 13,
+          RESPONSE_ERROR: 14,
+          SOURCE_MAP: 15,
+        };
+        contentTypeNum = contentTypeMap[contentTypeStr.toUpperCase()] ?? -1;
+      }
+
+      if (contentTypeNum < 0) {
+        res.status(400).json({ error: 'Invalid content type' });
+        return;
+      }
+
+      // Validate message tables exist
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found' });
+        return;
+      }
+
+      const { content, dataType } = req.body as {
+        content: string;
+        dataType?: string;
+      };
+
+      if (content === undefined) {
+        res.status(400).json({
+          error: 'Missing content',
+          message: 'Content is required in request body',
+        });
+        return;
+      }
+
+      const pool = getPool();
+
+      // Check if content exists
+      const [existingRows] = await pool.query<RowDataPacket[]>(
+        `SELECT 1 FROM ${contentTable(channelId)}
+         WHERE MESSAGE_ID = ? AND METADATA_ID = ? AND CONTENT_TYPE = ?`,
+        [messageId, metaDataId, contentTypeNum]
+      );
+
+      if (existingRows.length === 0) {
+        // Insert new content
+        await pool.execute(
+          `INSERT INTO ${contentTable(channelId)}
+           (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED)
+           VALUES (?, ?, ?, ?, ?, 0)`,
+          [messageId, metaDataId, contentTypeNum, content, dataType ?? 'HL7V2']
+        );
+      } else {
+        // Update existing content
+        await pool.execute(
+          `UPDATE ${contentTable(channelId)}
+           SET CONTENT = ?, DATA_TYPE = ?
+           WHERE MESSAGE_ID = ? AND METADATA_ID = ? AND CONTENT_TYPE = ?`,
+          [content, dataType ?? 'HL7V2', messageId, metaDataId, contentTypeNum]
+        );
+      }
+
+      res.sendData({
+        messageId,
+        metaDataId,
+        contentType: contentTypeNum,
+        updated: true,
+      });
+    } catch (error) {
+      console.error('Update content error:', error);
+      res.status(500).json({ error: 'Failed to update content' });
     }
   }
 );
