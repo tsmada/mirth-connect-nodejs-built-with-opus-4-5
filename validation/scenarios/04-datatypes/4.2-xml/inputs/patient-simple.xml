@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Patient>
+  <id>12345678</id>
+  <name>
+    <family>Doe</family>
+    <given>John</given>
+    <given>Q</given>
+  </name>
+  <gender code="M" codeSystem="2.16.840.1.113883.5.1">Male</gender>
+  <birthDate>1980-01-01</birthDate>
+  <address>
+    <streetLine>123 Main St</streetLine>
+    <city>Anytown</city>
+    <state>ST</state>
+    <postalCode>12345</postalCode>
+    <country>USA</country>
+  </address>
+  <telecom use="home">555-123-4567</telecom>
+  <id type="MRN">MRN12345</id>
+</Patient>

@@ -1,0 +1,143 @@
+{
+  "id": "4.3",
+  "name": "JSON Parsing",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "JSON",
+  "description": "Tests JSON message handling including nested objects, arrays, and various data types",
+  "inputs": ["patient-fhir.json", "patient-nested.json", "lab-results.json", "bundle.json"],
+  "tests": [
+    {
+      "name": "Access root property - resourceType",
+      "input": "patient-fhir.json",
+      "script": "msg.resourceType",
+      "expected": "Patient"
+    },
+    {
+      "name": "Access root property - id",
+      "input": "patient-fhir.json",
+      "script": "msg.id",
+      "expected": "12345678"
+    },
+    {
+      "name": "Access array element - first identifier",
+      "input": "patient-fhir.json",
+      "script": "msg.identifier[0].value",
+      "expected": "12345678"
+    },
+    {
+      "name": "Access array element - identifier system",
+      "input": "patient-fhir.json",
+      "script": "msg.identifier[0].system",
+      "expected": "urn:oid:2.16.840.1.113883.19.5"
+    },
+    {
+      "name": "Access nested array - family name",
+      "input": "patient-fhir.json",
+      "script": "msg.name[0].family",
+      "expected": "Doe"
+    },
+    {
+      "name": "Access nested array - given names count",
+      "input": "patient-fhir.json",
+      "script": "msg.name[0].given.length.toString()",
+      "expected": "2"
+    },
+    {
+      "name": "Access nested array - first given name",
+      "input": "patient-fhir.json",
+      "script": "msg.name[0].given[0]",
+      "expected": "John"
+    },
+    {
+      "name": "Access string property - gender",
+      "input": "patient-fhir.json",
+      "script": "msg.gender",
+      "expected": "male"
+    },
+    {
+      "name": "Access date property - birthDate",
+      "input": "patient-fhir.json",
+      "script": "msg.birthDate",
+      "expected": "1980-01-01"
+    },
+    {
+      "name": "Access boolean property - active",
+      "input": "patient-fhir.json",
+      "script": "msg.active.toString()",
+      "expected": "true"
+    },
+    {
+      "name": "Deep nesting - street address",
+      "input": "patient-nested.json",
+      "script": "msg.demographics.address.home.street",
+      "expected": "123 Main St"
+    },
+    {
+      "name": "Deep nesting - emergency contact",
+      "input": "patient-nested.json",
+      "script": "msg.contacts.emergency[0].name",
+      "expected": "Jane Doe"
+    },
+    {
+      "name": "Array length - telecom count",
+      "input": "patient-fhir.json",
+      "script": "msg.telecom.length.toString()",
+      "expected": "2"
+    },
+    {
+      "name": "Array iteration - collect phone numbers",
+      "input": "patient-fhir.json",
+      "script": "var phones = []; for (var i = 0; i < msg.telecom.length; i++) phones.push(msg.telecom[i].value); phones.join(',')",
+      "expected": "555-123-4567,john.doe@example.com"
+    },
+    {
+      "name": "Numeric value - lab result",
+      "input": "lab-results.json",
+      "script": "msg.results[0].value.toString()",
+      "expected": "7.5"
+    },
+    {
+      "name": "Null handling - optional field",
+      "input": "lab-results.json",
+      "script": "(msg.results[0].comment === null).toString()",
+      "expected": "true"
+    },
+    {
+      "name": "Check property existence - exists",
+      "input": "patient-fhir.json",
+      "script": "(msg.hasOwnProperty('gender')).toString()",
+      "expected": "true"
+    },
+    {
+      "name": "Check property existence - not exists",
+      "input": "patient-fhir.json",
+      "script": "(msg.hasOwnProperty('occupation')).toString()",
+      "expected": "false"
+    },
+    {
+      "name": "Object keys enumeration",
+      "input": "patient-fhir.json",
+      "script": "Object.keys(msg).length.toString()",
+      "expected": "9"
+    },
+    {
+      "name": "Bundle entry count",
+      "input": "bundle.json",
+      "script": "msg.entry.length.toString()",
+      "expected": "3"
+    },
+    {
+      "name": "Bundle entry resource access",
+      "input": "bundle.json",
+      "script": "msg.entry[0].resource.resourceType",
+      "expected": "Patient"
+    },
+    {
+      "name": "Filter array - find by system",
+      "input": "patient-fhir.json",
+      "script": "msg.telecom.filter(function(t) { return t.system === 'phone'; })[0].value",
+      "expected": "555-123-4567"
+    }
+  ]
+}

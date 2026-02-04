@@ -1,0 +1,74 @@
+{
+  "resourceType": "Bundle",
+  "id": "bundle-001",
+  "type": "collection",
+  "timestamp": "2024-01-15T14:00:00Z",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:patient-12345678",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "12345678",
+        "name": [
+          {
+            "family": "Doe",
+            "given": ["John"]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1980-01-01"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:observation-wbc",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-wbc-001",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "6690-2",
+              "display": "Leukocytes [#/volume] in Blood"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/12345678"
+        },
+        "valueQuantity": {
+          "value": 7.5,
+          "unit": "10*3/uL",
+          "system": "http://unitsofmeasure.org",
+          "code": "10*3/uL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:diagnosticreport-cbc",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "dr-cbc-001",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "58410-2",
+              "display": "Complete blood count (hemogram) panel"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient/12345678"
+        },
+        "result": [
+          {
+            "reference": "Observation/obs-wbc-001"
+          }
+        ]
+      }
+    }
+  ]
+}

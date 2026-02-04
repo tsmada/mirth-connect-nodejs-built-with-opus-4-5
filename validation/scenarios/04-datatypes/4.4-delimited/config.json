@@ -1,0 +1,135 @@
+{
+  "id": "4.4",
+  "name": "Delimited Data Parsing",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "DELIMITED",
+  "description": "Tests CSV, pipe-delimited, and tab-delimited data parsing with quote handling and escaping",
+  "inputs": ["patients.csv", "lab-results.psv", "demographics.tsv", "quoted-fields.csv", "multiline.csv"],
+  "tests": [
+    {
+      "name": "CSV - Row count",
+      "input": "patients.csv",
+      "script": "msg.children().length().toString()",
+      "expected": "3"
+    },
+    {
+      "name": "CSV - Access first row",
+      "input": "patients.csv",
+      "script": "msg.row[0].column1.toString()",
+      "expected": "12345678"
+    },
+    {
+      "name": "CSV - Access by column name (MRN)",
+      "input": "patients.csv",
+      "dataTypeConfig": { "columnNames": ["MRN", "LastName", "FirstName", "DOB", "Gender", "Phone"] },
+      "script": "msg.row[0].MRN.toString()",
+      "expected": "12345678"
+    },
+    {
+      "name": "CSV - Access by column name (LastName)",
+      "input": "patients.csv",
+      "dataTypeConfig": { "columnNames": ["MRN", "LastName", "FirstName", "DOB", "Gender", "Phone"] },
+      "script": "msg.row[0].LastName.toString()",
+      "expected": "Doe"
+    },
+    {
+      "name": "CSV - Access second row",
+      "input": "patients.csv",
+      "script": "msg.row[1].column2.toString()",
+      "expected": "Smith"
+    },
+    {
+      "name": "CSV - Iterate rows count",
+      "input": "patients.csv",
+      "script": "var count = 0; for each (var row in msg.children()) count++; count.toString()",
+      "expected": "3"
+    },
+    {
+      "name": "Pipe-delimited - Row count",
+      "input": "lab-results.psv",
+      "script": "msg.children().length().toString()",
+      "expected": "5"
+    },
+    {
+      "name": "Pipe-delimited - Access test name",
+      "input": "lab-results.psv",
+      "script": "msg.row[0].column2.toString()",
+      "expected": "WBC"
+    },
+    {
+      "name": "Pipe-delimited - Access result value",
+      "input": "lab-results.psv",
+      "script": "msg.row[0].column3.toString()",
+      "expected": "7.5"
+    },
+    {
+      "name": "Tab-delimited - Row count",
+      "input": "demographics.tsv",
+      "script": "msg.children().length().toString()",
+      "expected": "4"
+    },
+    {
+      "name": "Tab-delimited - Access city",
+      "input": "demographics.tsv",
+      "dataTypeConfig": { "columnNames": ["ID", "Name", "Address", "City", "State", "Zip"] },
+      "script": "msg.row[0].City.toString()",
+      "expected": "Anytown"
+    },
+    {
+      "name": "Quoted fields - Simple quoted",
+      "input": "quoted-fields.csv",
+      "script": "msg.row[0].column2.toString()",
+      "expected": "John Doe"
+    },
+    {
+      "name": "Quoted fields - Comma in field",
+      "input": "quoted-fields.csv",
+      "script": "msg.row[1].column2.toString()",
+      "expected": "Smith, Jane"
+    },
+    {
+      "name": "Quoted fields - Escaped quote",
+      "input": "quoted-fields.csv",
+      "script": "msg.row[2].column3.toString()",
+      "expected": "Says \"Hello\""
+    },
+    {
+      "name": "Multiline - Quoted newline in field",
+      "input": "multiline.csv",
+      "script": "msg.row[0].column3.toString().indexOf('\\n') > -1 ? 'has newline' : 'no newline'",
+      "expected": "has newline"
+    },
+    {
+      "name": "Empty field handling",
+      "input": "patients.csv",
+      "script": "msg.row[2].column6.toString()",
+      "expected": ""
+    },
+    {
+      "name": "Column count per row",
+      "input": "patients.csv",
+      "script": "msg.row[0].children().length().toString()",
+      "expected": "6"
+    },
+    {
+      "name": "Numeric value access",
+      "input": "lab-results.psv",
+      "script": "parseFloat(msg.row[2].column3.toString()).toFixed(1)",
+      "expected": "14.2"
+    },
+    {
+      "name": "Last row access",
+      "input": "patients.csv",
+      "script": "msg.row[msg.children().length() - 1].column1.toString()",
+      "expected": "11111111"
+    },
+    {
+      "name": "Filter rows - find by gender",
+      "input": "patients.csv",
+      "dataTypeConfig": { "columnNames": ["MRN", "LastName", "FirstName", "DOB", "Gender", "Phone"] },
+      "script": "var females = []; for each (var row in msg.children()) if (row.Gender.toString() === 'F') females.push(row.LastName.toString()); females.join(',')",
+      "expected": "Smith"
+    }
+  ]
+}

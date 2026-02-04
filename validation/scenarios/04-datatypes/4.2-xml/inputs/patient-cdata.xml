@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Patient>
+  <id>98765432</id>
+  <name>
+    <family>Smith</family>
+    <given>Jane</given>
+  </name>
+  <notes><![CDATA[Patient has <allergies> to penicillin & sulfa drugs.]]></notes>
+  <diagnosis code="E11.9">
+    <text>Type 2 Diabetes</text>
+    <note>Controlled with diet</note>
+  </diagnosis>
+  <history><![CDATA[
+    Previous conditions:
+    - Hypertension (2019)
+    - Appendectomy (2015)
+
+    Family history: Father had heart disease < 60 years old.
+  ]]></history>
+</Patient>

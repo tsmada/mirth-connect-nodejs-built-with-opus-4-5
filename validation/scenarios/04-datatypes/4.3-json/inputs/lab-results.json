@@ -1,0 +1,59 @@
+{
+  "orderId": "ORD123",
+  "patientId": "12345678",
+  "collectionDate": "2024-01-15T13:00:00Z",
+  "resultDate": "2024-01-15T14:00:00Z",
+  "status": "final",
+  "results": [
+    {
+      "code": "WBC",
+      "name": "White Blood Cell Count",
+      "value": 7.5,
+      "unit": "10*3/uL",
+      "referenceRange": "4.5-11.0",
+      "interpretation": "N",
+      "comment": null
+    },
+    {
+      "code": "RBC",
+      "name": "Red Blood Cell Count",
+      "value": 4.8,
+      "unit": "10*6/uL",
+      "referenceRange": "4.5-5.5",
+      "interpretation": "N",
+      "comment": null
+    },
+    {
+      "code": "HGB",
+      "name": "Hemoglobin",
+      "value": 14.2,
+      "unit": "g/dL",
+      "referenceRange": "13.5-17.5",
+      "interpretation": "N",
+      "comment": null
+    },
+    {
+      "code": "HCT",
+      "name": "Hematocrit",
+      "value": 42.1,
+      "unit": "%",
+      "referenceRange": "38.8-50.0",
+      "interpretation": "N",
+      "comment": null
+    },
+    {
+      "code": "PLT",
+      "name": "Platelet Count",
+      "value": 250,
+      "unit": "10*3/uL",
+      "referenceRange": "150-400",
+      "interpretation": "N",
+      "comment": null
+    }
+  ],
+  "performingLab": {
+    "name": "Hospital Laboratory",
+    "address": "123 Hospital Dr, Anytown ST 12345",
+    "director": "Dr. Lab Director"
+  }
+}
