@@ -22,3 +22,6 @@ export * from './delimited/index.js';
 
 // EDI/X12 DataType
 export * from './edi/index.js';
+
+// HL7v3 DataType
+export * from './hl7v3/index.js';
