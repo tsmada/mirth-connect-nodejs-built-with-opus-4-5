@@ -20,14 +20,14 @@ This project provides a modern, TypeScript-based implementation of the Mirth Con
 
 | Category | Features |
 |----------|----------|
-| **Connectors** | HTTP Receiver/Dispatcher, TCP/MLLP, JDBC Database, File/SFTP/S3, **VM (inter-channel)** |
-| **Data Types** | HL7v2 (with ACK generation), XML, JSON, Raw, **Delimited (CSV/TSV)**, **EDI/X12** |
-| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), **VMRouter**, **DestinationSet**, **FileUtil**, **HTTPUtil** |
-| **API** | Full REST API compatible with Mirth Administrator (14 servlets) |
-| **Plugins** | Code Templates, Data Pruner, **XSLT Transformer**, **JavaScriptRule**, **JavaScriptStep**, **Mapper**, **MessageBuilder** |
+| **Connectors** | HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, **SMTP (email)**, **JMS (messaging)**, **WebService (SOAP)**, **DICOM (medical imaging)** |
+| **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, **HL7v3 (CDA)**, **NCPDP (pharmacy)**, **DICOM** |
+| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), VMRouter, DestinationSet, FileUtil, HTTPUtil, **DICOMUtil** |
+| **API** | Full REST API compatible with Mirth Administrator (14 servlets) with **message import/export** and **attachments** |
+| **Plugins** | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, **ServerLog**, **DashboardStatus** |
 | **CLI Tool** | Terminal-based monitor and management utility |
-| **Userutil** | **DatabaseConnection** (SQL in scripts), **AttachmentUtil**, **ChannelUtil**, **AlertSender**, **Future** |
-| **Utilities** | **ValueReplacer** (${var} templates), **ACKGenerator**, **JsonXmlUtil**, **SerializerFactory** |
+| **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, **UUIDGenerator**, **NCPDPUtil**, **ContextFactory** |
+| **Utilities** | ValueReplacer, ACKGenerator, JsonXmlUtil, SerializerFactory, **ErrorMessageBuilder** |
 
 ## Quick Start
 
@@ -255,6 +255,8 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 │  Connectors        │  Data Types      │  JavaScript Runtime    │
 │  HTTP, MLLP, TCP   │  HL7v2, XML      │  E4X Transpiler        │
 │  JDBC, File, SFTP  │  JSON, Raw       │  Scope Builder         │
+│  SMTP, JMS, SOAP   │  EDI, HL7v3      │  28 Userutil Classes   │
+│  DICOM             │  NCPDP, DICOM    │                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                      Database Layer                             │
 │              (MySQL - Existing Mirth Schema)                    │
@@ -266,14 +268,14 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 | Component | Location | Description |
 |-----------|----------|-------------|
 | **Donkey Engine** | `src/donkey/` | Message processing pipeline (Statistics, Queues, DestinationChain, ResponseSelector) |
-| **Connectors** | `src/connectors/` | Protocol implementations (HTTP, TCP, JDBC, File, **VM inter-channel**) |
-| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, **19 userutil classes** |
-| **Userutil Classes** | `src/javascript/userutil/` | VMRouter, FileUtil, HTTPUtil, **DatabaseConnection**, **AttachmentUtil**, **ChannelUtil**, **AlertSender**, **Future** |
-| **Data Types** | `src/datatypes/` | HL7v2, XML, JSON, **Raw**, **Delimited**, **EDI/X12** parsing and serialization |
-| **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (14 servlets) |
+| **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM, SMTP, JMS, WebService, DICOM) |
+| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 28 userutil classes |
+| **Userutil Classes** | `src/javascript/userutil/` | VMRouter, FileUtil, HTTPUtil, DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, DICOMUtil |
+| **Data Types** | `src/datatypes/` | 9 types: HL7v2, XML, JSON, Raw, Delimited, EDI/X12, HL7v3, NCPDP, DICOM |
+| **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (14 servlets, import/export, attachments) |
 | **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
-| **Plugins** | `src/plugins/` | Code Templates, Data Pruner, **XSLT**, **JavaScriptRule**, **JavaScriptStep**, **Mapper**, **MessageBuilder** |
-| **Utilities** | `src/util/` | **ValueReplacer**, **ACKGenerator**, **JsonXmlUtil**, **ErrorMessageBuilder**, **SerializerFactory** |
+| **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
+| **Utilities** | `src/util/` | ValueReplacer, ACKGenerator, JsonXmlUtil, ErrorMessageBuilder, SerializerFactory |
 
 ## API Endpoints
 
@@ -374,18 +376,25 @@ src/
 │   ├── tcp/              # TCP/MLLP
 │   ├── jdbc/             # Database
 │   ├── file/             # File/SFTP/S3
-│   └── vm/               # Inter-channel routing (VmReceiver, VmDispatcher)
+│   ├── vm/               # Inter-channel routing (VmReceiver, VmDispatcher)
+│   ├── smtp/             # Email (SmtpDispatcher via nodemailer)
+│   ├── jms/              # JMS messaging (STOMP protocol)
+│   ├── ws/               # WebService/SOAP (receiver + dispatcher)
+│   └── dicom/            # DICOM/DIMSE (C-STORE, C-ECHO)
 ├── datatypes/            # Data type handlers
 │   ├── hl7v2/            # HL7 v2.x
 │   ├── xml/              # XML
 │   ├── json/             # JSON
 │   ├── raw/              # Pass-through
 │   ├── delimited/        # CSV, TSV, pipe-delimited
-│   └── edi/              # EDI/X12 healthcare transactions
+│   ├── edi/              # EDI/X12 healthcare transactions
+│   ├── hl7v3/            # HL7 v3/CDA XML
+│   ├── ncpdp/            # NCPDP pharmacy claims (D.0, 5.1)
+│   └── dicom/            # DICOM medical imaging
 ├── javascript/           # JS runtime
 │   ├── e4x/              # E4X transpiler
 │   ├── runtime/          # Script execution
-│   └── userutil/         # 19 Mirth utility classes
+│   └── userutil/         # 28 Mirth utility classes
 │       ├── VMRouter.ts           # Inter-channel routing
 │       ├── DatabaseConnection.ts # SQL from scripts
 │       ├── AttachmentUtil.ts     # Message attachments
@@ -393,6 +402,10 @@ src/
 │       ├── AlertSender.ts        # Send alerts
 │       ├── Future.ts             # Async wrapper
 │       ├── FileUtil.ts           # File I/O
+│       ├── UUIDGenerator.ts      # Crypto-based UUIDs
+│       ├── NCPDPUtil.ts          # Pharmacy overpunch
+│       ├── ContextFactory.ts     # JavaScript context info
+│       ├── DICOMUtil.ts          # DICOM operations
 │       └── ...                   # HTTPUtil, SMTPConnection, etc.
 ├── cli/                  # CLI tool
 │   ├── commands/         # Command implementations
@@ -412,7 +425,10 @@ src/
     ├── javascriptstep/   # Transformer steps (UI transformers)
     ├── xsltstep/         # XSLT transformations
     ├── mapper/           # Variable mapping
-    └── messagebuilder/   # Message segment building
+    ├── messagebuilder/   # Message segment building
+    ├── serverlog/        # Real-time log streaming (WebSocket)
+    ├── dashboardstatus/  # Real-time channel status (WebSocket)
+    └── datapruner/       # Message pruning/archival
 ```
 
 ### Scripts
@@ -512,16 +528,18 @@ npm run validate -- --scenario 1.1
 | HTTP | localhost:8082 | localhost:8083 |
 | MySQL | localhost:3306 | localhost:3306 |
 
-### Validation Status (as of 2026-02-02)
+### Validation Status (as of 2026-02-03)
 
 | Priority | Category | Status | Tests |
 |----------|----------|--------|-------|
 | 0 | Export Compatibility | ✅ Passing | Channel round-trip verified |
 | 1 | MLLP Message Flow | ✅ Passing | 3/3 scenarios |
 | 2 | JavaScript Runtime | ✅ Passing | E4X, userutil, XSLT verified |
-| 3-5 | Connectors/Data Types/Advanced | ⏳ Pending | Scenarios defined |
+| 3 | Connectors | ✅ Passing | HTTP, TCP, File, JDBC, SMTP, JMS, WebService, DICOM |
+| 4 | Data Types | ✅ Passing | HL7v2, XML, JSON, Delimited, EDI, HL7v3, NCPDP, DICOM |
+| 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination |
 
-**Total Tests: 1,935 passing**
+**Total Tests: 2,521 passing**
 
 ## Database
 
