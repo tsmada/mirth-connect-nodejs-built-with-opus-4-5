@@ -25,3 +25,6 @@ export * from './edi/index.js';
 
 // HL7v3 DataType
 export * from './hl7v3/index.js';
+
+// NCPDP DataType (Pharmacy claims)
+export * from './ncpdp/index.js';
