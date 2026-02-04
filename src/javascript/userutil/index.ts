@@ -150,3 +150,18 @@ export {
   type IAlertConnectorMessage,
   type IEventController,
 } from './AlertSender.js';
+
+// UUID generation
+export { UUIDGenerator } from './UUIDGenerator.js';
+
+// NCPDP utilities
+export { NCPDPUtil } from './NCPDPUtil.js';
+
+// JavaScript context information
+export {
+  ContextFactory,
+  DefaultContextFactoryDelegate,
+  createDefaultContextFactory,
+  createContextFactory,
+  type IContextFactoryDelegate,
+} from './ContextFactory.js';
