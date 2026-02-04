@@ -28,3 +28,6 @@ export * from './hl7v3/index.js';
 
 // NCPDP DataType (Pharmacy claims)
 export * from './ncpdp/index.js';
+
+// DICOM DataType
+export * from './dicom/index.js';

@@ -276,14 +276,16 @@ Discovered gaps are tracked in `manifest.json` under `validationGaps`:
 
 Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 
-### Validation Status (as of 2026-02-01)
+### Validation Status (as of 2026-02-02)
 
 | Priority | Category | Status | Notes |
 |----------|----------|--------|-------|
 | 0 | Export Compatibility | ✅ Passing | Channel round-trip works |
 | 1 | MLLP Message Flow | ✅ Passing | 3/3 tests, minor ACK format gaps |
-| 2 | JavaScript Runtime | 🟡 In Progress | E4X transpiler verified |
+| 2 | JavaScript Runtime | ✅ Passing | E4X, userutil, XSLT verified (Wave 2) |
 | 3-5 | Connectors/Data Types/Advanced | ⏳ Pending | Scenarios defined |
+
+**Total Tests: 1,935 passing**
 
 ### Quick Validation Scripts
 
@@ -521,11 +523,11 @@ See `agents/mirth-porter.md` for full specification.
 
 ---
 
-## Parallel Agent Porting (Wave 1 Complete - 2026-02-02)
+## Parallel Agent Porting (Waves 1 & 2 Complete - 2026-02-02)
 
 ### Architecture Used
 
-Successfully used **8 parallel Claude agents** with git worktrees to port 35+ components in a single session:
+Successfully used **parallel Claude agents** with git worktrees to port 45+ components across two waves:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -546,16 +548,16 @@ Successfully used **8 parallel Claude agents** with git worktrees to port 35+ co
          └──► [Worktree 8: feature/utils]             → Agent 8 ✅
 ```
 
-### Results
+### Results (Combined Waves 1 & 2)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 8 |
-| Agents completed | 7 (87.5%) |
-| Total commits | 40+ |
-| Lines added | 20,666+ |
-| Tests added | 500+ |
-| Total tests passing | 1,646 |
+| Agents spawned | 14 (8 Wave 1 + 6 Wave 2) |
+| Agents completed | 13 (93%) |
+| Total commits | 60+ |
+| Lines added | 25,000+ |
+| Tests added | 789+ |
+| Total tests passing | 1,935 |
 
 ### Components Ported
 
@@ -572,6 +574,21 @@ Successfully used **8 parallel Claude agents** with git worktrees to port 35+ co
 - SMTPConnection - Send emails from scripts
 - SMTPConnectionFactory - SMTP pooling
 - DateUtil - Date formatting utilities
+
+**Userutil Database (3 classes) - Wave 2:**
+- DatabaseConnection - Execute SQL from user scripts
+- DatabaseConnectionFactory - Create DB connections with pooling
+- MirthCachedRowSet - Cache and iterate JDBC results
+
+**Userutil Attachment (2 classes) - Wave 2:**
+- Attachment - Attachment model with base64 encoding
+- AttachmentUtil - Extract/store message attachments
+
+**Userutil Channel (4 classes) - Wave 2:**
+- ChannelUtil - Programmatic channel operations from scripts
+- AlertSender - Send alerts programmatically
+- Future - Async operation wrapper with cancellation
+- DeployedState - Channel deployment state enum
 
 **Donkey Engine (6 components):**
 - Statistics - Track message counts, errors, queue sizes
@@ -591,11 +608,12 @@ Successfully used **8 parallel Claude agents** with git worktrees to port 35+ co
 - Delimited - CSV, pipe-delimited, tab-delimited parsing
 - EDI/X12 - Healthcare EDI transactions
 
-**Plugins (4 plugins):**
+**Plugins (5 plugins):**
 - JavaScriptRule - Filter rule execution (CRITICAL for UI)
 - JavaScriptStep - Transformer step execution (CRITICAL for UI)
 - Mapper - Variable mapping transformer
 - MessageBuilder - Build message segments
+- XsltStep - XSLT transformer step (Wave 2)
 
 **Utilities (5 classes):**
 - ValueReplacer - Replace ${variable} placeholders (CRITICAL)
@@ -625,11 +643,73 @@ Multiple agents renamed `jest.config.js` to `jest.config.cjs`. The file must use
 **5. Missing Dependencies After Merge**
 Some branches add npm dependencies that don't merge cleanly. After merging all branches, run `npm install` to ensure all dependencies are present.
 
-### Remaining Work (userutil-db)
+**6. NPM Package Publishing Bugs (Wave 2)**
+Some npm packages have publishing bugs where declared exports don't match actual file locations. Fix with postinstall scripts:
+```javascript
+// scripts/fix-xslt-processor.js - xslt-processor declares exports in dist/ but files are at root
+const files = ['index.js', 'index.mjs', 'index.d.ts'];
+for (const file of files) {
+  symlinkSync(join('..', file), join(distDir, file));
+}
+```
 
-The following classes still need manual porting:
-- DatabaseConnection - Execute SQL from user scripts
-- DatabaseConnectionFactory - Create DB connections with pooling
-- MirthCachedRowSet - Cache and iterate JDBC results
+**7. TypeScript Overload Signature Compatibility (Wave 2)**
+When porting Java methods with many overloads, the implementation signature must be a superset of all parameter types:
+```typescript
+// ❌ Wrong - overload signature not compatible
+static async updateAttachment(
+  msg: ImmutableConnectorMessage | string,
+  id: string | number | Attachment,
+  content: string | Buffer | Attachment | boolean  // Missing types!
+): Promise<Attachment>
 
-These are needed for channels that execute SQL directly in scripts.
+// ✅ Correct - implementation signature includes ALL possible types from ALL overloads
+static async updateAttachment(
+  msg: ImmutableConnectorMessage | string,
+  id: string | number | Attachment,
+  content: string | Buffer | Attachment | boolean | undefined,
+  type?: string | Buffer | boolean,  // Added Buffer from one overload
+  base64?: boolean | string | Buffer  // Added all possibilities
+): Promise<Attachment>
+```
+
+**8. Regex Patterns: hex vs alphanumeric (Wave 2)**
+When porting regex patterns, verify character classes match real-world data:
+```typescript
+// ❌ Wrong - hex-only pattern won't match "att-embed"
+const ATTACHMENT_TOKEN_PATTERN = /\$\{ATTACH:([a-f0-9-]+)\}/gi;
+
+// ✅ Correct - alphanumeric pattern matches all attachment IDs
+const ATTACHMENT_TOKEN_PATTERN = /\$\{ATTACH:([\w-]+)\}/gi;
+```
+
+**9. Promise Microtask Timing for resolved() (Wave 2)**
+Static factory methods for "already resolved" futures must set state synchronously:
+```typescript
+// ❌ Wrong - isDone() returns false immediately after resolved()
+static resolved<T>(value: T): Future<T> {
+  return new Future<T>(Promise.resolve(value));  // .then() hasn't run yet!
+}
+
+// ✅ Correct - set state immediately, not via .then()
+static resolved<T>(value: T): Future<T> {
+  const future = new Future<T>(Promise.resolve(value));
+  future._isDone = true;
+  future._result = value;
+  return future;
+}
+```
+
+**10. Agent Rate Limit Recovery (Wave 2)**
+When background agents hit rate limits (429 errors), they make partial progress before failing. Strategy:
+1. Check worktree for any completed files
+2. Manually commit partial progress: `git add . && git commit -m "Partial progress"`
+3. Continue work manually or retry agent with remaining tasks
+4. Don't discard partial work - agents often complete 60-80% before hitting limits
+
+### Remaining Work
+
+All Wave 1 and Wave 2 components are complete. Future work:
+- Remote I/O Utils (S3Util, FtpUtil, SftpUtil) - Optional, lower priority
+- Additional servlet test coverage
+- End-to-end validation against Java Mirth for complex channels

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "2.1",
+    "name": "JavaScript Filter - Accept ADT",
+    "description": "Filter that accepts only ADT messages. Tests msg['MSH']['MSH.9']['MSH.9.1'].toString() pattern.",
+    "priority": 2,
+    "type": "mllp",
+    "channelFile": "mllp-with-filter.xml",
+    "inputMessage": "hl7v2/adt-a01.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "2.2",
+    "name": "JavaScript Filter - Reject ORU",
+    "description": "Same filter should reject ORU messages. Filtered messages get no ACK in Mirth.",
+    "priority": 2,
+    "type": "mllp",
+    "channelFile": "mllp-with-filter.xml",
+    "inputMessage": "hl7v2/oru-r01.hl7",
+    "timeout": 30000
+  }
+]

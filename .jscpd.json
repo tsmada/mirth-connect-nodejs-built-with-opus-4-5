@@ -1,0 +1,9 @@
+{
+  "threshold": 0,
+  "minLines": 5,
+  "minTokens": 50,
+  "reporters": ["console"],
+  "output": "./reports",
+  "pattern": ["src/**/*.ts"],
+  "ignore": ["**/*.test.ts", "**/*.spec.ts", "**/node_modules/**", "**/dist/**"]
+}

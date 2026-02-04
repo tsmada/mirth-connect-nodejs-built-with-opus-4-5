@@ -165,3 +165,10 @@ export {
   createContextFactory,
   type IContextFactoryDelegate,
 } from './ContextFactory.js';
+
+// DICOM utilities
+export {
+  DICOMUtil,
+  type DicomObject,
+  type DicomElement,
+} from './DICOMUtil.js';
