@@ -62,3 +62,53 @@ export {
   validateXsltStepProperties,
   mergeWithDefaults as mergeXsltStepDefaults,
 } from './xsltstep/index.js';
+
+// Server Log Plugin (Real-time log streaming)
+export {
+  ServerLogItem,
+  SerializableServerLogItem,
+  LogLevel,
+  LOG_DATE_FORMAT,
+  createServerLogItem,
+  createSimpleLogItem,
+  serializeServerLogItem,
+  formatServerLogItem,
+  parseLogLevel,
+  shouldDisplayLogLevel,
+  ServerLogController,
+  serverLogController,
+  LogFilter,
+  hookConsole,
+  hookWinston,
+  ServerLogWebSocketHandler,
+  serverLogWebSocket,
+  serverLogRouter,
+  SERVER_LOG_PLUGIN_POINT,
+  SERVER_LOG_PERMISSION_VIEW,
+} from './serverlog/index.js';
+
+// Dashboard Status Plugin (Real-time connector status)
+export {
+  ConnectionLogItem,
+  SerializableConnectionLogItem,
+  ConnectionStatusEventType,
+  createConnectionLogItem,
+  serializeConnectionLogItem,
+  parseConnectionStatusEventType,
+  isStateEvent,
+  ConnectionStateItem,
+  SerializableConnectionStateItem,
+  createConnectionStateItem,
+  serializeConnectionStateItem,
+  getStateColor,
+  formatStateDisplay,
+  DashboardStatusController,
+  dashboardStatusController,
+  ConnectionStatusEvent,
+  ConnectorCountEvent,
+  DashboardStatusWebSocketHandler,
+  dashboardStatusWebSocket,
+  dashboardStatusRouter,
+  DASHBOARD_STATUS_PLUGIN_POINT,
+  DASHBOARD_STATUS_PERMISSION_VIEW,
+} from './dashboardstatus/index.js';
