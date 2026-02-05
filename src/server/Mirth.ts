@@ -18,9 +18,12 @@ import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
 import { DeployedState } from '../api/models/DashboardStatus.js';
 import type { Server } from 'http';
 
+export type OperationalMode = 'takeover' | 'standalone' | 'auto';
+
 export interface MirthConfig {
   httpPort: number;
   httpsPort: number;
+  mode?: OperationalMode;
   database: {
     host: string;
     port: number;
@@ -33,6 +36,7 @@ export interface MirthConfig {
 const DEFAULT_CONFIG: MirthConfig = {
   httpPort: parseInt(process.env['PORT'] ?? '8080', 10),
   httpsPort: parseInt(process.env['HTTPS_PORT'] ?? '8443', 10),
+  mode: (process.env['MIRTH_MODE'] as OperationalMode) ?? 'auto',
   database: {
     host: process.env['DB_HOST'] ?? 'localhost',
     port: parseInt(process.env['DB_PORT'] ?? '3306', 10),
@@ -47,6 +51,7 @@ export class Mirth {
   private donkey: Donkey | null = null;
   private server: Server | null = null;
   private running = false;
+  private detectedMode: 'takeover' | 'standalone' = 'standalone';
 
   constructor(config: Partial<MirthConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -63,6 +68,26 @@ export class Mirth {
     console.warn('Connecting to database...');
     initPool(this.config.database);
     console.warn(`Connected to database at ${this.config.database.host}:${this.config.database.port}`);
+
+    // Initialize schema based on operational mode
+    const { detectMode, verifySchema, ensureCoreTables, seedDefaults } = await import('../db/SchemaManager.js');
+
+    this.detectedMode = await detectMode();
+    console.warn(`Operational mode: ${this.detectedMode}`);
+
+    if (this.detectedMode === 'standalone') {
+      console.warn('Standalone mode: ensuring core tables exist...');
+      await ensureCoreTables();
+      await seedDefaults();
+      console.warn('Core schema initialized');
+    } else {
+      // Takeover mode - verify existing schema
+      const result = await verifySchema();
+      if (!result.compatible) {
+        throw new Error(`Schema incompatible: ${result.errors.join(', ')}`);
+      }
+      console.warn(`Takeover mode: schema verified (version ${result.version})`);
+    }
 
     // Initialize Donkey engine
     this.donkey = new Donkey();
@@ -128,6 +153,14 @@ export class Mirth {
 
   getConfig(): MirthConfig {
     return { ...this.config };
+  }
+
+  getMode(): OperationalMode {
+    return this.config.mode ?? 'auto';
+  }
+
+  getDetectedMode(): 'takeover' | 'standalone' {
+    return this.detectedMode;
   }
 
   getDonkey(): Donkey | null {
