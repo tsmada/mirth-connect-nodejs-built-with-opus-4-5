@@ -31,6 +31,19 @@ export interface ScenarioConfig {
    * Defaults to /tmp/mirth-validation
    */
   fileOutputDir?: string;
+  /**
+   * Skip channel deployment - assume channels are already deployed.
+   * Useful for quick validation against pre-deployed channels.
+   */
+  skipDeployment?: boolean;
+  /**
+   * Pre-configured channel IDs for each engine (used with skipDeployment).
+   * If not provided, will be computed from channelFile.
+   */
+  preDeployedChannelIds?: {
+    java?: string;
+    node?: string;
+  };
 }
 
 export interface ScenarioStep {
@@ -213,6 +226,9 @@ export class ScenarioRunner {
    *
    * This method prepares separate channel configurations for each engine,
    * with engine-specific ports and channel IDs to avoid conflicts.
+   *
+   * When skipDeployment is true, assumes channels are already deployed
+   * and skips the deploy/undeploy steps for faster validation.
    */
   private async runMLLPScenario(
     config: ScenarioConfig,
@@ -221,6 +237,7 @@ export class ScenarioRunner {
     const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
     let javaChannelId: string | null = null;
     let nodeChannelId: string | null = null;
+    const shouldDeploy = !config.skipDeployment;
 
     // Load channel and deploy to both engines with engine-specific configurations
     if (config.channelFile) {
@@ -230,35 +247,38 @@ export class ScenarioRunner {
       const javaChannel = this.prepareChannelForEngine(channelXml, 'java', config);
       const nodeChannel = this.prepareChannelForEngine(channelXml, 'node', config);
 
-      javaChannelId = javaChannel.channelId;
-      nodeChannelId = nodeChannel.channelId;
+      // Use pre-deployed channel IDs if provided, otherwise use computed ones
+      javaChannelId = config.preDeployedChannelIds?.java || javaChannel.channelId;
+      nodeChannelId = config.preDeployedChannelIds?.node || nodeChannel.channelId;
 
-      // Delete existing channels first
-      try {
-        await this.javaClient.undeployChannel(javaChannelId);
-        await this.javaClient.deleteChannel(javaChannelId);
-      } catch {
-        // Ignore - channel may not exist
+      if (shouldDeploy) {
+        // Delete existing channels first
+        try {
+          await this.javaClient.undeployChannel(javaChannelId);
+          await this.javaClient.deleteChannel(javaChannelId);
+        } catch {
+          // Ignore - channel may not exist
+        }
+        try {
+          await this.nodeClient.undeployChannel(nodeChannelId);
+          await this.nodeClient.deleteChannel(nodeChannelId);
+        } catch {
+          // Ignore - channel may not exist
+        }
+        await this.delay(500);
+
+        // Import engine-specific channels
+        await this.javaClient.importChannel(javaChannel.xml, true);
+        await this.nodeClient.importChannel(nodeChannel.xml, true);
+
+        // Deploy both channels
+        await this.javaClient.deployChannel(javaChannelId);
+        await this.nodeClient.deployChannel(nodeChannelId);
+
+        // Wait for channels to start (increased timeout for QEMU/slow environments)
+        await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 120000);
+        await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 120000);
       }
-      try {
-        await this.nodeClient.undeployChannel(nodeChannelId);
-        await this.nodeClient.deleteChannel(nodeChannelId);
-      } catch {
-        // Ignore - channel may not exist
-      }
-      await this.delay(500);
-
-      // Import engine-specific channels
-      await this.javaClient.importChannel(javaChannel.xml, true);
-      await this.nodeClient.importChannel(nodeChannel.xml, true);
-
-      // Deploy both channels
-      await this.javaClient.deployChannel(javaChannelId);
-      await this.nodeClient.deployChannel(nodeChannelId);
-
-      // Wait for channels to start
-      await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 30000);
-      await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 30000);
     }
 
     // Load test message
@@ -302,21 +322,23 @@ export class ScenarioRunner {
       nodeResponse.rawResponse || ''
     );
 
-    // Cleanup - undeploy and delete both engine-specific channels
-    if (javaChannelId) {
-      try {
-        await this.javaClient.undeployChannel(javaChannelId);
-        await this.javaClient.deleteChannel(javaChannelId);
-      } catch {
-        // Ignore cleanup errors
+    // Cleanup - undeploy and delete both engine-specific channels (skip if skipDeployment)
+    if (shouldDeploy) {
+      if (javaChannelId) {
+        try {
+          await this.javaClient.undeployChannel(javaChannelId);
+          await this.javaClient.deleteChannel(javaChannelId);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
-    }
-    if (nodeChannelId) {
-      try {
-        await this.nodeClient.undeployChannel(nodeChannelId);
-        await this.nodeClient.deleteChannel(nodeChannelId);
-      } catch {
-        // Ignore cleanup errors
+      if (nodeChannelId) {
+        try {
+          await this.nodeClient.undeployChannel(nodeChannelId);
+          await this.nodeClient.deleteChannel(nodeChannelId);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
     }
 
@@ -336,6 +358,8 @@ export class ScenarioRunner {
    *
    * Like MLLP scenarios, this prepares separate channel configurations
    * for each engine with engine-specific HTTP ports.
+   *
+   * When skipDeployment is true, assumes channels are already deployed.
    */
   private async runHttpScenario(
     config: ScenarioConfig,
@@ -344,6 +368,7 @@ export class ScenarioRunner {
     const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
     let javaChannelId: string | null = null;
     let nodeChannelId: string | null = null;
+    const shouldDeploy = !config.skipDeployment;
 
     // Setup HTTP clients targeting engine-specific ports
     const javaHttp = new HttpMessageClient({
@@ -361,33 +386,36 @@ export class ScenarioRunner {
       const javaChannel = this.prepareChannelForEngine(channelXml, 'java', config);
       const nodeChannel = this.prepareChannelForEngine(channelXml, 'node', config);
 
-      javaChannelId = javaChannel.channelId;
-      nodeChannelId = nodeChannel.channelId;
+      // Use pre-deployed channel IDs if provided, otherwise use computed ones
+      javaChannelId = config.preDeployedChannelIds?.java || javaChannel.channelId;
+      nodeChannelId = config.preDeployedChannelIds?.node || nodeChannel.channelId;
 
-      // Delete existing channels first
-      try {
-        await this.javaClient.undeployChannel(javaChannelId);
-        await this.javaClient.deleteChannel(javaChannelId);
-      } catch {
-        // Ignore - channel may not exist
+      if (shouldDeploy) {
+        // Delete existing channels first
+        try {
+          await this.javaClient.undeployChannel(javaChannelId);
+          await this.javaClient.deleteChannel(javaChannelId);
+        } catch {
+          // Ignore - channel may not exist
+        }
+        try {
+          await this.nodeClient.undeployChannel(nodeChannelId);
+          await this.nodeClient.deleteChannel(nodeChannelId);
+        } catch {
+          // Ignore - channel may not exist
+        }
+        await this.delay(500);
+
+        // Import engine-specific channels
+        await this.javaClient.importChannel(javaChannel.xml, true);
+        await this.nodeClient.importChannel(nodeChannel.xml, true);
+
+        // Deploy and wait for start (increased timeout for QEMU/slow environments)
+        await this.javaClient.deployChannel(javaChannelId);
+        await this.nodeClient.deployChannel(nodeChannelId);
+        await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 120000);
+        await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 120000);
       }
-      try {
-        await this.nodeClient.undeployChannel(nodeChannelId);
-        await this.nodeClient.deleteChannel(nodeChannelId);
-      } catch {
-        // Ignore - channel may not exist
-      }
-      await this.delay(500);
-
-      // Import engine-specific channels
-      await this.javaClient.importChannel(javaChannel.xml, true);
-      await this.nodeClient.importChannel(nodeChannel.xml, true);
-
-      // Deploy and wait for start
-      await this.javaClient.deployChannel(javaChannelId);
-      await this.nodeClient.deployChannel(nodeChannelId);
-      await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 30000);
-      await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 30000);
     }
 
     // Load test message
@@ -417,21 +445,23 @@ export class ScenarioRunner {
       nodeResponse.body
     );
 
-    // Cleanup - undeploy and delete both engine-specific channels
-    if (javaChannelId) {
-      try {
-        await this.javaClient.undeployChannel(javaChannelId);
-        await this.javaClient.deleteChannel(javaChannelId);
-      } catch {
-        // Ignore cleanup errors
+    // Cleanup - undeploy and delete both engine-specific channels (skip if skipDeployment)
+    if (shouldDeploy) {
+      if (javaChannelId) {
+        try {
+          await this.javaClient.undeployChannel(javaChannelId);
+          await this.javaClient.deleteChannel(javaChannelId);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
-    }
-    if (nodeChannelId) {
-      try {
-        await this.nodeClient.undeployChannel(nodeChannelId);
-        await this.nodeClient.deleteChannel(nodeChannelId);
-      } catch {
-        // Ignore cleanup errors
+      if (nodeChannelId) {
+        try {
+          await this.nodeClient.undeployChannel(nodeChannelId);
+          await this.nodeClient.deleteChannel(nodeChannelId);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
     }
 

@@ -165,3 +165,52 @@ Each report contains:
 - Individual scenario results
 - Detailed differences
 - Discovered gaps
+
+## Quick Validation (Pre-deployed Channels)
+
+For faster validation against pre-deployed channels (skipping deployment/undeployment):
+
+```bash
+# Run P1 MLLP scenarios against pre-deployed channels
+npx ts-node quick-validate-p1.ts
+
+# Verbose output
+npx ts-node quick-validate-p1.ts --verbose
+
+# Test Node.js only (no Java comparison)
+npx ts-node quick-validate-p1.ts --node-only
+```
+
+This is useful when:
+- Channels are already deployed on both engines
+- You want to run quick smoke tests
+- You're iterating on fixes and don't want deployment overhead
+
+## QEMU Performance Notes (Apple Silicon)
+
+When running Java Mirth under QEMU on Apple Silicon Macs:
+
+- **Channel deployment is very slow** (2+ minutes vs seconds native)
+- **Timeouts have been increased** to 120s for QEMU compatibility
+- **Use quick-validate scripts** to test pre-deployed channels faster
+- **waitForChannelState()** uses exponential backoff to handle slow responses
+
+### Recommended Workflow for M1/M2 Macs
+
+1. Start Docker services once and leave them running
+2. Deploy channels manually or wait for first full validation
+3. Use `quick-validate-p1.ts` for iterative testing
+4. Only run full validation when verifying final results
+
+### Timeout Configuration
+
+Scenario timeouts can be configured in `config.json`:
+
+```json
+{
+  "timeout": 120000,
+  "skipDeployment": true
+}
+```
+
+The `skipDeployment: true` option skips channel deployment and cleanup, assuming channels are already deployed.
