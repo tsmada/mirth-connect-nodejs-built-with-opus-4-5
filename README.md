@@ -16,6 +16,42 @@ This project provides a modern, TypeScript-based implementation of the Mirth Con
 - **MLLP, HTTP, TCP, File, Database** — All major connector protocols
 - **Mirth Administrator Compatibility** — Use the existing Mirth Administrator GUI
 
+## 🔄 Incremental Takeover Strategy
+
+**The key differentiator: Node.js Mirth can seamlessly replace Java Mirth without any migration.**
+
+The only difference between the Java and Node.js engines is the **operational mode** — a single environment variable that determines how the Node.js runtime interacts with the database:
+
+| Mode | Command | Use Case |
+|------|---------|----------|
+| **Takeover** | `MIRTH_MODE=takeover npm start` | Connect to existing Java Mirth database. Zero migration. |
+| **Standalone** | `MIRTH_MODE=standalone npm start` | Fresh installation with auto-created schema. |
+| **Auto** | `npm start` | Auto-detect: uses existing DB if found, else creates new. |
+
+### Migration Path: Java → Node.js
+
+```
+Week 1: Run Node.js Mirth in TAKEOVER mode alongside Java Mirth
+        ↓ Both engines share the same MySQL database
+        ↓ Use Java Mirth as primary, Node.js for testing
+
+Week 2: Gradually route traffic to Node.js endpoints
+        ↓ Compare behavior, validate messages
+
+Week 3: Switch primary to Node.js
+        ↓ Keep Java Mirth as fallback
+
+Week 4: Decommission Java Mirth
+        ↓ Node.js runs standalone
+```
+
+### Why This Matters
+
+- **Zero Data Migration**: Point Node.js at your existing MySQL database — all channels, messages, users, and configuration are immediately available
+- **Rollback Safety**: If issues arise, switch back to Java Mirth instantly (same database)
+- **Gradual Adoption**: Test channel-by-channel before full cutover
+- **Same Admin GUI**: Mirth Administrator works identically with both engines
+
 ## Features
 
 | Category | Features |
@@ -56,7 +92,11 @@ npm run build
 Create a `.env` file in the project root:
 
 ```env
-# Database
+# Operational Mode (the ONLY difference between Java and Node.js Mirth)
+# Options: takeover | standalone | auto (default: auto)
+MIRTH_MODE=auto
+
+# Database (same as Java Mirth - point to existing DB for takeover mode)
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=mirth
@@ -70,6 +110,14 @@ NODE_ENV=development
 # Logging
 LOG_LEVEL=info
 ```
+
+### Operational Modes Explained
+
+| Mode | Schema Management | Default Credentials | Use Case |
+|------|-------------------|---------------------|----------|
+| `takeover` | Uses existing schema, verifies compatibility | Uses existing users | Replace running Java Mirth |
+| `standalone` | Creates all tables, seeds defaults | admin/admin | Fresh Node.js installation |
+| `auto` | Detects: existing schema → takeover, empty DB → standalone | Depends on detection | Development, testing |
 
 ### Running
 
@@ -528,7 +576,7 @@ npm run validate -- --scenario 1.1
 | HTTP | localhost:8082 | localhost:8083 |
 | MySQL | localhost:3306 | localhost:3306 |
 
-### Validation Status (as of 2026-02-03)
+### Validation Status (as of 2026-02-04)
 
 | Priority | Category | Status | Tests |
 |----------|----------|--------|-------|
@@ -538,16 +586,39 @@ npm run validate -- --scenario 1.1
 | 3 | Connectors | ✅ Passing | HTTP, TCP, File, JDBC, SMTP, JMS, WebService, DICOM |
 | 4 | Data Types | ✅ Passing | HL7v2, XML, JSON, Delimited, EDI, HL7v3, NCPDP, DICOM |
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination |
+| 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect scenarios |
 
-**Total Tests: 2,521 passing**
+**Total Tests: 2,559 passing**
 
 ## Database
 
-This project uses the **existing Mirth MySQL schema** — no modifications required.
+This project uses the **existing Mirth MySQL schema** — no modifications required in takeover mode.
 
-### Per-Channel Tables
+### Operational Mode Database Behavior
 
-Each channel creates dynamic tables:
+| Mode | Core Tables | Channel Tables | User Data |
+|------|-------------|----------------|-----------|
+| **Takeover** | Verifies existing schema | Uses existing tables | Preserves all users |
+| **Standalone** | Creates with `IF NOT EXISTS` | Auto-creates on deploy | Seeds admin/admin |
+
+### Core Tables (Created in Standalone Mode)
+
+| Table | Purpose |
+|-------|---------|
+| `SCHEMA_INFO` | Version tracking (3.9.1) |
+| `CHANNEL` | Channel definitions |
+| `CONFIGURATION` | Server settings |
+| `PERSON` / `PERSON_PASSWORD` | User accounts |
+| `EVENT` | Audit log |
+| `ALERT` | Alert definitions |
+| `CODE_TEMPLATE` / `CODE_TEMPLATE_LIBRARY` | Templates |
+| `CHANNEL_GROUP` | Channel groupings |
+| `SCRIPT` | Global scripts |
+| `D_CHANNELS` | Channel ID → local ID mapping |
+
+### Per-Channel Tables (Auto-Created on Deploy)
+
+Each channel creates dynamic tables when deployed:
 
 | Table | Purpose |
 |-------|---------|
@@ -557,6 +628,9 @@ Each channel creates dynamic tables:
 | `D_MA{id}` | Message attachments |
 | `D_MS{id}` | Message statistics |
 | `D_MSQ{id}` | Message sequence |
+| `D_MCM{id}` | Custom metadata (user-defined fields) |
+
+**Note**: In takeover mode, existing channel tables are reused. In standalone mode, tables are created automatically when a channel is deployed.
 
 ## Troubleshooting
 

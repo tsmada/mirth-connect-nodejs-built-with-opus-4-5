@@ -86,8 +86,55 @@ $c=channelMap, $s=sourceMap, $g=globalMap, $gc=globalChannelMap,
 $cfg=configurationMap, $r=responseMap, $co=connectorMap
 
 ## Database
-Using existing Mirth MySQL schema - do NOT modify tables.
-Per-channel tables: D_M{id}, D_MM{id}, D_MC{id}, D_MA{id}, D_MS{id}, D_MSQ{id}
+
+### Operational Modes (CRITICAL CONCEPT)
+
+**The ONLY difference between Java Mirth and Node.js Mirth is the operational mode.**
+
+| Mode | Environment Variable | Behavior |
+|------|---------------------|----------|
+| **Takeover** | `MIRTH_MODE=takeover` | Connect to existing Java Mirth database |
+| **Standalone** | `MIRTH_MODE=standalone` | Create fresh schema from scratch |
+| **Auto** | `MIRTH_MODE=auto` (default) | Detect based on CHANNEL table presence |
+
+This enables **zero-migration replacement** of Java Mirth with Node.js Mirth.
+
+### SchemaManager (`src/db/SchemaManager.ts`)
+
+Central module for dual operational mode support:
+
+```typescript
+import { detectMode, verifySchema, ensureCoreTables, seedDefaults, ensureChannelTables } from './SchemaManager.js';
+
+// At startup (in Mirth.ts):
+const mode = await detectMode();  // Returns 'takeover' | 'standalone'
+if (mode === 'standalone') {
+  await ensureCoreTables();  // CREATE TABLE IF NOT EXISTS for all core tables
+  await seedDefaults();      // admin/admin user, default configuration
+} else {
+  const result = await verifySchema();  // Check SCHEMA_INFO and required tables
+  if (!result.compatible) throw new Error('Schema incompatible');
+}
+
+// During channel deployment (in EngineController.ts):
+await ensureChannelTables(channelId);  // Creates D_M, D_MM, D_MC, D_MA, D_MS, D_MSQ, D_MCM
+```
+
+### Database Tables
+
+**Core Tables** (existing Mirth schema):
+- `CHANNEL`, `CONFIGURATION`, `PERSON`, `PERSON_PASSWORD`, `EVENT`, `ALERT`
+- `CODE_TEMPLATE`, `CODE_TEMPLATE_LIBRARY`, `CHANNEL_GROUP`, `SCRIPT`
+- `SCHEMA_INFO` (version tracking), `D_CHANNELS` (channel ID mapping)
+
+**Per-Channel Tables** (auto-created on deploy):
+- `D_M{id}` - Messages
+- `D_MM{id}` - Message metadata
+- `D_MC{id}` - Message content
+- `D_MA{id}` - Message attachments
+- `D_MS{id}` - Message statistics
+- `D_MSQ{id}` - Message sequence
+- `D_MCM{id}` - Custom metadata (user-defined fields)
 
 ## Validation Requirements
 Before marking component complete:
@@ -276,7 +323,7 @@ Discovered gaps are tracked in `manifest.json` under `validationGaps`:
 
 Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 
-### Validation Status (as of 2026-02-03)
+### Validation Status (as of 2026-02-04)
 
 | Priority | Category | Status | Notes |
 |----------|----------|--------|-------|
@@ -286,8 +333,9 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 3 | Connectors | ✅ Passing | HTTP, TCP, File, JDBC, SMTP, JMS, WebService, DICOM (Wave 3-5) |
 | 4 | Data Types | ✅ Passing | HL7v2, XML, JSON, Delimited, EDI, HL7v3, NCPDP, DICOM (Wave 3-5) |
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
+| 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 2,521 passing**
+**Total Tests: 2,559 passing**
 
 ### Quick Validation Scripts
 
@@ -550,16 +598,16 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
          └──► [Worktree 8: feature/utils]             → Agent 8 ✅
 ```
 
-### Results (Combined Waves 1-5)
+### Results (Combined Waves 1-6)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 26 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5) |
-| Agents completed | 26 (100%) |
-| Total commits | 120+ |
-| Lines added | 54,000+ |
-| Tests added | 1,375+ |
-| Total tests passing | 2,521 |
+| Agents spawned | 30 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6) |
+| Agents completed | 30 (100%) |
+| Total commits | 125+ |
+| Lines added | 55,200+ |
+| Tests added | 1,391+ |
+| Total tests passing | 2,559 |
 
 ### Wave Summary
 
@@ -570,7 +618,8 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 | 3 | 4 | ~5,000 | 140 | 1.5 hrs | Simple utils, validation P3/P4, MessageServlet |
 | 4 | 4 | ~12,700 | 305 | 4 hrs | SMTP, JMS, WebService, advanced plugins |
 | 5 | 4 | ~11,500 | 141 | 5 hrs | HL7v3, NCPDP, DICOM, validation P5 |
-| **Total** | **26** | **~54,200** | **1,375** | **~16 hrs** | |
+| 6 | 4 | ~1,000 | 16 | 12 min | **Dual Operational Modes** (SchemaManager, mode integration) |
+| **Total** | **30** | **~55,200** | **1,391** | **~17 hrs** | |
 
 ### Components Ported
 
@@ -865,16 +914,67 @@ export * from './dicom/index.js';
 // Simply combine all export statements
 ```
 
-### Remaining Work
+**18. Dynamic Imports for Optional Dependencies (Wave 6)**
+When modules may not exist at compile time (parallel development), use dynamic imports:
+```typescript
+// In Mirth.ts - SchemaManager may be created by parallel agent
+const { detectMode, verifySchema, ensureCoreTables, seedDefaults } =
+  await import('../db/SchemaManager.js');
+```
+This pattern also helps avoid circular dependencies.
 
-All Waves 1-5 components are complete. The porting project has reached production-ready status:
+**19. Idempotent Schema Operations (Wave 6)**
+All schema creation operations use `IF NOT EXISTS` for safe re-running:
+```typescript
+// Safe to call multiple times
+await execute(`CREATE TABLE IF NOT EXISTS CHANNEL (...)`);
+await execute(`CREATE INDEX IF NOT EXISTS idx_name ON table (...)`);
+```
 
-**Completed (Waves 1-5):**
+**20. Java Mirth Password Hash Compatibility (Wave 6)**
+To allow login in standalone mode with default credentials:
+```typescript
+// Java Mirth's default admin password hash - MUST match exactly
+const DEFAULT_PASSWORD_HASH = 'YzKZIAnbQ5m+3llggrZvNtf5fg69yX7pAplfYg0Dngn/fESH93OktQ==';
+```
+
+**21. Stub vs Full Implementation Merge Conflicts (Wave 6)**
+When one agent creates a stub and another creates the full implementation:
+```bash
+# Keep the full implementation (ours = current branch, theirs = incoming)
+git checkout --ours src/db/SchemaManager.ts
+git add src/db/SchemaManager.ts
+```
+
+### Wave 6: Dual Operational Modes (2026-02-04)
+
+**The culmination of the port — enabling seamless Java → Node.js migration.**
+
+| Agent | Branch | Files | Tests | Duration |
+|-------|--------|-------|-------|----------|
+| SchemaManager | `feature/schema-manager` | SchemaManager.ts | 13 | 3.6 min |
+| DonkeyDao | `feature/donkey-dao` | DonkeyDao.ts | - | 2.5 min |
+| Mode Integration | `feature/mode-integration` | Mirth.ts, EngineController.ts | - | 4.3 min |
+| Validation | `feature/validation-modes` | scenarios/06-modes/* | 3 | 1.7 min |
+
+**Key deliverables:**
+- `MIRTH_MODE` environment variable (takeover/standalone/auto)
+- SchemaManager with detectMode(), verifySchema(), ensureCoreTables(), seedDefaults()
+- Auto-creation of channel tables on deployment
+- D_CHANNELS table for channel ID → local ID mapping
+- D_MCM table for custom metadata
+
+### Completion Status
+
+All Waves 1-6 are complete. The porting project has reached production-ready status:
+
+**Completed (Waves 1-6):**
 - ✅ 28/28 Userutil classes (100%)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
 - ✅ 15/15 Plugins (JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, XSLT, ServerLog, DashboardStatus, DataPruner, etc.)
-- ✅ All Priority 0-5 validation scenarios
+- ✅ All Priority 0-6 validation scenarios
+- ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 
 **Future Enhancements (Optional):**
 - Remote I/O Utils (S3Util, FtpUtil, SftpUtil) - File connector already supports these
