@@ -1,0 +1,30 @@
+{
+  "id": "3.6",
+  "name": "JMS Queue Messaging",
+  "description": "Tests JMS receiver and dispatcher with ActiveMQ via STOMP protocol",
+  "priority": 3,
+  "type": "jms",
+  "channelFile": "jms-channel.xml",
+  "inputType": "jms",
+  "inputMessage": "inputs/jms-message.txt",
+  "timeout": 30000,
+  "skipJavaComparison": true,
+  "ports": {
+    "stompPort": 61613,
+    "amqpPort": 5672,
+    "webConsole": 8161
+  },
+  "queues": {
+    "input": "/queue/mirth.input",
+    "output": "/queue/mirth.output"
+  },
+  "validationPoints": [
+    "Message received from input queue",
+    "Message sent to output queue",
+    "Message content preserved",
+    "Headers forwarded correctly"
+  ],
+  "requirements": {
+    "activemq": "docker run -d -p 61613:61613 -p 8161:8161 rmohr/activemq"
+  }
+}

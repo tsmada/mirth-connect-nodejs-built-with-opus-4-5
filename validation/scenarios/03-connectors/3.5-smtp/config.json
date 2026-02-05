@@ -1,0 +1,26 @@
+{
+  "id": "3.5",
+  "name": "SMTP Email Sending",
+  "description": "Tests SMTP connector email sending with HTML body and attachments via MailHog mock SMTP server",
+  "priority": 3,
+  "type": "smtp",
+  "channelFile": "smtp-channel.xml",
+  "inputType": "http",
+  "inputMessage": "inputs/email-request.json",
+  "timeout": 30000,
+  "skipJavaComparison": true,
+  "ports": {
+    "httpListener": 8085,
+    "smtpServer": 1025,
+    "mailhogApi": 8025
+  },
+  "validationPoints": [
+    "Email delivered to MailHog",
+    "To/From/Subject headers correct",
+    "HTML body preserved",
+    "Attachments included"
+  ],
+  "requirements": {
+    "mailhog": "docker run -d -p 1025:1025 -p 8025:8025 mailhog/mailhog"
+  }
+}

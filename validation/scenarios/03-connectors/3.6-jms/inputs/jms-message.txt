@@ -1,0 +1,13 @@
+{
+  "messageId": "MSG-12345",
+  "messageType": "ORDER",
+  "timestamp": "2026-02-04T12:00:00Z",
+  "payload": {
+    "orderId": "ORD-001",
+    "customer": "John Doe",
+    "items": [
+      {"sku": "ITEM-A", "qty": 2},
+      {"sku": "ITEM-B", "qty": 1}
+    ]
+  }
+}

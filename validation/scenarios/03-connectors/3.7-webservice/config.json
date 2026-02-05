@@ -1,0 +1,28 @@
+{
+  "id": "3.7",
+  "name": "SOAP Web Service",
+  "description": "Tests WebService receiver (SOAP endpoint) and dispatcher (SOAP client) with WSDL generation",
+  "priority": 3,
+  "type": "webservice",
+  "channelFile": "soap-channel.xml",
+  "inputType": "soap",
+  "inputMessage": "inputs/soap-request.xml",
+  "timeout": 30000,
+  "skipJavaComparison": true,
+  "ports": {
+    "soapListener": 8086,
+    "mockService": 8087
+  },
+  "validationPoints": [
+    "WSDL generation works",
+    "SOAP 1.1 request handled",
+    "SOAP 1.2 request handled",
+    "SOAP fault returned on error",
+    "MTOM attachment support"
+  ],
+  "wsdl": {
+    "endpoint": "/services/MirthService?wsdl",
+    "serviceName": "MirthService",
+    "portName": "MirthPort"
+  }
+}
