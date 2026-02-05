@@ -600,6 +600,22 @@ Parameters:
 
 See `agents/version-upgrader.md` for full specification.
 
+### subtle-bug-finder
+Detect Java→Node.js porting discrepancies focusing on state tracking, initialization bypass, and architectural drift.
+
+**Use for**: Post-porting validation, debugging unexpected API behavior, pre-release checks.
+
+**Quick start**:
+```
+Use the subtle-bug-finder agent to scan for porting issues.
+Parameters:
+- scope: full|changed|component
+- severity: critical|major|minor
+- bugCategories: ["dual-state", "initialization-bypass", "missing-registration", "singleton-issues", "circular-deps", "async-order"]
+```
+
+See `agents/subtle-bug-finder.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)

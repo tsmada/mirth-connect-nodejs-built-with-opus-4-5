@@ -15,6 +15,7 @@ import { ChannelController } from './ChannelController.js';
 import { Channel } from '../donkey/channel/Channel.js';
 import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
 import { ensureChannelTables } from '../db/SchemaManager.js';
+import { getDonkeyInstance } from '../server/Mirth.js';
 
 // In-memory channel state store
 interface ChannelState {
@@ -138,6 +139,7 @@ export class EngineController {
 
   /**
    * Deploy a single channel
+   * Registers the channel with both EngineController state AND Donkey engine
    */
   static async deployChannel(channelId: string): Promise<void> {
     const channelConfig = await ChannelController.getChannel(channelId);
@@ -159,6 +161,12 @@ export class EngineController {
     try {
       // Build runtime channel with connectors
       const runtimeChannel = buildChannel(channelConfig);
+
+      // Register with Donkey engine (if available)
+      const donkey = getDonkeyInstance();
+      if (donkey && !donkey.getChannel(channelId)) {
+        await donkey.deployChannel(runtimeChannel);
+      }
 
       // Determine initial state from channel properties
       const initialState = channelConfig.properties?.initialState || DeployedState.STARTED;

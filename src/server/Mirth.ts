@@ -14,9 +14,19 @@ import { Donkey } from '../donkey/Donkey.js';
 import { startServer } from '../api/server.js';
 import { initPool, closePool } from '../db/pool.js';
 import { ChannelController } from '../controllers/ChannelController.js';
-import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
-import { DeployedState } from '../api/models/DashboardStatus.js';
+import { EngineController } from '../controllers/EngineController.js';
 import type { Server } from 'http';
+
+// Global Donkey instance for EngineController to access
+let donkeyInstance: Donkey | null = null;
+
+/**
+ * Get the global Donkey engine instance
+ * Used by EngineController to register channels with the engine
+ */
+export function getDonkeyInstance(): Donkey | null {
+  return donkeyInstance;
+}
 
 export type OperationalMode = 'takeover' | 'standalone' | 'auto';
 
@@ -91,6 +101,7 @@ export class Mirth {
 
     // Initialize Donkey engine
     this.donkey = new Donkey();
+    donkeyInstance = this.donkey;  // Expose globally for EngineController
     await this.donkey.start();
 
     // Start REST API server
@@ -168,7 +179,8 @@ export class Mirth {
   }
 
   /**
-   * Load channels from database and deploy them to Donkey engine
+   * Load channels from database and deploy them via EngineController
+   * This ensures consistent state tracking across the API and runtime
    */
   private async loadAndDeployChannels(): Promise<void> {
     try {
@@ -176,26 +188,19 @@ export class Mirth {
       console.warn(`Found ${channelConfigs.length} channel(s) in database`);
 
       for (const channelConfig of channelConfigs) {
+        if (!channelConfig.enabled) {
+          console.warn(`Skipping disabled channel: ${channelConfig.name}`);
+          continue;
+        }
+
         try {
-          // Build runtime channel from config
-          const runtimeChannel = buildChannel(channelConfig);
-
-          // Deploy to Donkey engine
-          await this.donkey!.deployChannel(runtimeChannel);
+          // Use EngineController to deploy - this ensures state is tracked
+          // in both EngineController.channelStates AND Donkey engine
+          await EngineController.deployChannel(channelConfig.id);
           console.warn(`Deployed channel: ${channelConfig.name} (${channelConfig.id})`);
-
-          // Start channel if enabled and initial state is STARTED
-          const initialState = channelConfig.properties?.initialState;
-          if (channelConfig.enabled && initialState !== DeployedState.STOPPED) {
-            try {
-              await runtimeChannel.start();
-              console.warn(`Started channel: ${channelConfig.name}`);
-            } catch (startError) {
-              console.error(`Failed to start channel ${channelConfig.name}:`, startError);
-            }
-          }
         } catch (channelError) {
           console.error(`Failed to deploy channel ${channelConfig.name}:`, channelError);
+          // Continue with other channels
         }
       }
     } catch (error) {

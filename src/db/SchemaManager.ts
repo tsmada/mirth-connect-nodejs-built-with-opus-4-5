@@ -389,9 +389,10 @@ export async function ensureChannelTables(channelId: string): Promise<void> {
   console.warn(`[SchemaManager] Ensuring channel tables for ${channelId}...`);
 
   // Register in D_CHANNELS (INSERT IGNORE for idempotency)
+  // Note: execute() passes params to mysql2 which expects an array for ? placeholders
   await execute(
     `INSERT IGNORE INTO D_CHANNELS (CHANNEL_ID) VALUES (?)`,
-    { channelId }
+    [channelId] as unknown as Record<string, unknown>
   );
 
   // Create the actual message tables using DonkeyDao
