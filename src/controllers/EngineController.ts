@@ -14,6 +14,7 @@ import {
 import { ChannelController } from './ChannelController.js';
 import { Channel } from '../donkey/channel/Channel.js';
 import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
+import { ensureChannelTables } from '../db/SchemaManager.js';
 
 // In-memory channel state store
 interface ChannelState {
@@ -143,6 +144,10 @@ export class EngineController {
     if (!channelConfig) {
       throw new Error(`Channel not found: ${channelId}`);
     }
+
+    // Ensure channel tables exist before deployment
+    await ensureChannelTables(channelId);
+    console.log(`Channel tables verified for ${channelConfig.name}`);
 
     // Set state to deploying
     channelStates.set(channelId, {
