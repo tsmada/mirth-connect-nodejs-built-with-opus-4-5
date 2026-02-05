@@ -58,6 +58,13 @@ src/cli/
     └── index.ts                # CLI-specific types
 ```
 
+**Setup (required once):**
+```bash
+npm run cli:link      # Build and create global symlink
+which mirth-cli       # Verify: should show path in node bin directory
+mirth-cli --version   # Should output: 0.1.0
+```
+
 **Key Commands:**
 ```bash
 mirth-cli login --user admin      # Authenticate
@@ -66,6 +73,12 @@ mirth-cli channels start <name>   # Start by name (not just ID!)
 mirth-cli messages <channelId> --status E  # Find errors
 mirth-cli send hl7 localhost:6662 @test.hl7  # Send test message
 mirth-cli dashboard               # Interactive real-time view
+```
+
+**Alternative invocations (if not linked):**
+```bash
+node dist/cli/index.js <command>  # Direct invocation
+npm run cli -- <command>          # Via npm script (note the --)
 ```
 
 **Dependencies:** commander, chalk (v5+), ora (v8+), conf, ink, react

@@ -138,13 +138,24 @@ The `mirth-cli` command provides a terminal-based interface for monitoring and m
 ### CLI Installation
 
 ```bash
-# Build and link globally
-npm run build
-npm link
+# Option 1: Install globally (recommended for development)
+npm run cli:link
 
-# Or run directly with ts-node
+# Verify installation
+which mirth-cli        # Should show: ~/.nvm/versions/node/vX.X.X/bin/mirth-cli
+mirth-cli --version    # Should show: 0.1.0
+
+# Option 2: Run directly without global install
+node dist/cli/index.js <command>
+
+# Option 3: Run via npm script (requires -- to pass arguments)
 npm run cli -- <command>
+
+# To uninstall the global link
+npm run cli:unlink
 ```
+
+**Note**: `npm run cli:link` builds the project and creates a global symlink, so you can use `mirth-cli` from anywhere. Changes to the source code take effect immediately after rebuilding (`npm run build`).
 
 ### CLI Configuration
 
