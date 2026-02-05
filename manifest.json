@@ -8,7 +8,7 @@
     "phase4_connectors": "implemented",
     "phase5_datatypes": "implemented",
     "phase6_rest_api": "implemented",
-    "phase7_plugins": "pending"
+    "phase7_plugins": "implemented"
   },
   "components": {
     "database": {
@@ -96,6 +96,41 @@
         "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/tcp/",
         "files": ["src/connectors/tcp/TcpReceiver.ts", "src/connectors/tcp/TcpDispatcher.ts", "src/connectors/tcp/MLLPFraming.ts"],
         "tests": ["tests/unit/connectors/tcp/TcpReceiver.test.ts", "tests/unit/connectors/tcp/TcpDispatcher.test.ts", "tests/unit/connectors/tcp/MLLPFraming.test.ts"]
+      },
+      "vm": {
+        "status": "implemented",
+        "description": "VM connector for inter-channel routing",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/vm/",
+        "files": ["src/connectors/vm/VmReceiver.ts", "src/connectors/vm/VmDispatcher.ts", "src/connectors/vm/VmConnectorProperties.ts"],
+        "tests": ["tests/unit/connectors/vm/VmReceiver.test.ts", "tests/unit/connectors/vm/VmDispatcher.test.ts"]
+      },
+      "smtp": {
+        "status": "implemented",
+        "description": "SMTP email sending connector",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/smtp/",
+        "files": ["src/connectors/smtp/SmtpDispatcher.ts", "src/connectors/smtp/SmtpDispatcherProperties.ts"],
+        "tests": ["tests/unit/connectors/smtp/SmtpDispatcher.test.ts"]
+      },
+      "jms": {
+        "status": "implemented",
+        "description": "JMS queue/topic receiver and dispatcher via STOMP",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/jms/",
+        "files": ["src/connectors/jms/JmsReceiver.ts", "src/connectors/jms/JmsDispatcher.ts", "src/connectors/jms/JmsClient.ts", "src/connectors/jms/JmsConnectorProperties.ts"],
+        "tests": ["tests/unit/connectors/jms/JmsReceiver.test.ts", "tests/unit/connectors/jms/JmsDispatcher.test.ts"]
+      },
+      "webservice": {
+        "status": "implemented",
+        "description": "SOAP web service receiver and dispatcher",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/ws/",
+        "files": ["src/connectors/ws/WebServiceReceiver.ts", "src/connectors/ws/WebServiceDispatcher.ts", "src/connectors/ws/WebServiceReceiverProperties.ts", "src/connectors/ws/WebServiceDispatcherProperties.ts", "src/connectors/ws/SoapBuilder.ts", "src/connectors/ws/WsdlParser.ts"],
+        "tests": ["tests/unit/connectors/ws/WebServiceReceiver.test.ts", "tests/unit/connectors/ws/WebServiceDispatcher.test.ts"]
+      },
+      "dicom": {
+        "status": "implemented",
+        "description": "DICOM medical imaging receiver and dispatcher",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/dimse/",
+        "files": ["src/connectors/dicom/DICOMReceiver.ts", "src/connectors/dicom/DICOMDispatcher.ts", "src/connectors/dicom/DICOMReceiverProperties.ts", "src/connectors/dicom/DICOMDispatcherProperties.ts", "src/connectors/dicom/DicomConnection.ts"],
+        "tests": ["tests/unit/connectors/dicom/DICOMReceiver.test.ts", "tests/unit/connectors/dicom/DICOMDispatcher.test.ts"]
       }
     },
     "datatypes": {
@@ -119,6 +154,48 @@
         "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/json/",
         "files": ["src/datatypes/json/JSONDataType.ts"],
         "tests": ["tests/unit/datatypes/json/JSONDataType.test.ts"]
+      },
+      "raw": {
+        "status": "implemented",
+        "description": "Raw pass-through data type",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/raw/",
+        "files": ["src/datatypes/raw/RawDataType.ts"],
+        "tests": ["tests/unit/datatypes/raw/RawDataType.test.ts"]
+      },
+      "delimited": {
+        "status": "implemented",
+        "description": "Delimited text data type (CSV, pipe, tab)",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/delimited/",
+        "files": ["src/datatypes/delimited/DelimitedSerializer.ts", "src/datatypes/delimited/DelimitedProperties.ts"],
+        "tests": ["tests/unit/datatypes/delimited/DelimitedSerializer.test.ts"]
+      },
+      "edi": {
+        "status": "implemented",
+        "description": "EDI/X12 healthcare transaction data type",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/edi/",
+        "files": ["src/datatypes/edi/EDISerializer.ts", "src/datatypes/edi/EDIProperties.ts"],
+        "tests": ["tests/unit/datatypes/edi/EDISerializer.test.ts"]
+      },
+      "hl7v3": {
+        "status": "implemented",
+        "description": "HL7v3 CDA XML data type",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/hl7v3/",
+        "files": ["src/datatypes/hl7v3/HL7V3Serializer.ts", "src/datatypes/hl7v3/HL7V3Properties.ts", "src/datatypes/hl7v3/HL7V3BatchAdaptor.ts"],
+        "tests": ["tests/unit/datatypes/hl7v3/HL7V3Serializer.test.ts"]
+      },
+      "ncpdp": {
+        "status": "implemented",
+        "description": "NCPDP pharmacy claims data type",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/ncpdp/",
+        "files": ["src/datatypes/ncpdp/NCPDPSerializer.ts", "src/datatypes/ncpdp/NCPDPReader.ts", "src/datatypes/ncpdp/NCPDPReference.ts", "src/datatypes/ncpdp/NCPDPProperties.ts"],
+        "tests": ["tests/unit/datatypes/ncpdp/NCPDPSerializer.test.ts"]
+      },
+      "dicom": {
+        "status": "implemented",
+        "description": "DICOM medical imaging data type",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/dicom/",
+        "files": ["src/datatypes/dicom/DICOMSerializer.ts", "src/datatypes/dicom/DICOMDataTypeProperties.ts"],
+        "tests": ["tests/unit/datatypes/dicom/DICOMSerializer.test.ts"]
       }
     },
     "api": {
@@ -164,27 +241,76 @@
         "tests": []
       },
       "messages": {
-        "status": "pending",
-        "description": "Message search and retrieval API",
+        "status": "implemented",
+        "description": "Message search, retrieval, import/export API",
         "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/client/core/api/servlets/MessageServletInterface.java",
-        "tests": []
+        "files": ["src/api/servlets/MessageServlet.ts"],
+        "tests": ["tests/integration/api/MessageServlet.integration.test.ts"]
       }
     },
     "plugins": {
       "code_templates": {
-        "status": "pending",
+        "status": "implemented",
         "description": "Code templates library plugin",
-        "tests": []
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/codetemplates/",
+        "files": ["src/plugins/codetemplates/CodeTemplateServlet.ts", "src/plugins/codetemplates/CodeTemplateController.ts"],
+        "tests": ["tests/integration/plugins/CodeTemplateServlet.integration.test.ts"]
       },
       "data_pruner": {
-        "status": "pending",
-        "description": "Message pruning plugin",
-        "tests": []
+        "status": "implemented",
+        "description": "Message pruning and archival plugin",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/datapruner/",
+        "files": ["src/plugins/datapruner/DataPruner.ts", "src/plugins/datapruner/DataPrunerController.ts", "src/plugins/datapruner/DataPrunerServlet.ts", "src/plugins/datapruner/DataPrunerStatus.ts", "src/plugins/datapruner/MessageArchiver.ts"],
+        "tests": ["tests/integration/plugins/DataPruner.integration.test.ts"]
       },
       "xslt": {
-        "status": "pending",
-        "description": "XSLT transformer plugin",
-        "tests": []
+        "status": "implemented",
+        "description": "XSLT transformer step plugin",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/xsltstep/",
+        "files": ["src/plugins/xsltstep/XsltStep.ts", "src/plugins/xsltstep/XsltStepProperties.ts"],
+        "tests": ["tests/integration/plugins/XsltStep.integration.test.ts"]
+      },
+      "javascript_rule": {
+        "status": "implemented",
+        "description": "JavaScript filter rule plugin",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/javascriptrule/",
+        "files": ["src/plugins/javascriptrule/JavaScriptRule.ts"],
+        "tests": ["tests/unit/plugins/javascriptrule/JavaScriptRule.test.ts"]
+      },
+      "javascript_step": {
+        "status": "implemented",
+        "description": "JavaScript transformer step plugin",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/javascriptstep/",
+        "files": ["src/plugins/javascriptstep/JavaScriptStep.ts"],
+        "tests": ["tests/unit/plugins/javascriptstep/JavaScriptStep.test.ts"]
+      },
+      "mapper": {
+        "status": "implemented",
+        "description": "Variable mapping transformer plugin",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/mapper/",
+        "files": ["src/plugins/mapper/Mapper.ts"],
+        "tests": ["tests/unit/plugins/mapper/Mapper.test.ts"]
+      },
+      "message_builder": {
+        "status": "implemented",
+        "description": "Message segment builder plugin",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/messagebuilder/",
+        "files": ["src/plugins/messagebuilder/MessageBuilder.ts"],
+        "tests": ["tests/unit/plugins/messagebuilder/MessageBuilder.test.ts"]
+      },
+      "server_log": {
+        "status": "implemented",
+        "description": "Real-time server log streaming via WebSocket",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/serverlog/",
+        "files": ["src/plugins/serverlog/ServerLogPlugin.ts", "src/plugins/serverlog/ServerLogServlet.ts"],
+        "tests": ["tests/unit/plugins/serverlog/ServerLogPlugin.test.ts"]
+      },
+      "dashboard_status": {
+        "status": "implemented",
+        "description": "Real-time channel status via WebSocket",
+        "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/plugins/dashboardstatus/",
+        "files": ["src/plugins/dashboardstatus/DashboardStatusPlugin.ts", "src/plugins/dashboardstatus/DashboardStatusServlet.ts"],
+        "tests": ["tests/unit/plugins/dashboardstatus/DashboardStatusPlugin.test.ts"]
       }
     },
     "core": {
