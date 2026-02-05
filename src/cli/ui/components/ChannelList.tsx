@@ -7,7 +7,7 @@
 import React, { FC, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { ChannelStatus, ChannelGroup as ChannelGroupType } from '../../types/index.js';
-import { ChannelRow } from './ChannelRow.js';
+import { ChannelRow, COLUMN_WIDTHS, calculateNameWidth } from './ChannelRow.js';
 import { ChannelGroup } from './ChannelGroup.js';
 
 export interface ListItem {
@@ -157,6 +157,25 @@ export const ChannelList: FC<ChannelListProps> = ({
     );
   }
 
+  // Calculate layout dimensions matching ChannelRow
+  const hasGroups = groups.length > 0;
+  const headerIndent = hasGroups ? 1 : 0;
+  const nameWidth = calculateNameWidth(width, headerIndent);
+
+  // Build header string matching row layout exactly
+  const selectorPad = ' '.repeat(COLUMN_WIDTHS.selector + (COLUMN_WIDTHS.indentPer * headerIndent));
+  const nameHeader = 'NAME'.padEnd(nameWidth);
+  const statusHeader = 'STATUS'.padEnd(COLUMN_WIDTHS.status);
+  const portHeader = 'PORT'.padStart(COLUMN_WIDTHS.port);
+  // Stats header: matches row format "  R:" + 5 + " F:" + 4 + " Q:" + 4 + " S:" + 5 + " E:" + 4
+  // Each column: label chars + digit chars, right-aligned headers
+  const statsHeader =
+    'RECV'.padStart(9) +  // "  R:" (4) + 5 digits
+    'FILT'.padStart(7) +  // " F:" (3) + 4 digits
+    'QUE'.padStart(7) +   // " Q:" (3) + 4 digits
+    'SENT'.padStart(8) +  // " S:" (3) + 5 digits
+    'ERR'.padStart(7);    // " E:" (3) + 4 digits
+
   return React.createElement(
     Box,
     { flexDirection: 'column' },
@@ -167,13 +186,13 @@ export const ChannelList: FC<ChannelListProps> = ({
       React.createElement(
         Text,
         { color: 'gray', bold: true },
-        '  NAME'.padEnd(Math.min(32, width - 60)) + 'STATUS      RECV   FILT  QUEUE   SENT   ERR'
+        selectorPad + nameHeader + ' ' + statusHeader + portHeader + statsHeader
       )
     ),
     React.createElement(
       Box,
       { flexDirection: 'row' },
-      React.createElement(Text, { color: 'gray' }, '─'.repeat(Math.min(width - 2, 90)))
+      React.createElement(Text, { color: 'gray' }, '─'.repeat(Math.min(width - 2, 100)))
     ),
     // Items
     ...items.map((item, index) => {

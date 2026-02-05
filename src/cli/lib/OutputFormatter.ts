@@ -243,8 +243,8 @@ export function formatChannelStatusTable(statuses: ChannelStatus[]): string {
       stateColor(status.state),
       formatNumber(status.statistics?.received || 0),
       formatNumber(status.statistics?.sent || 0),
-      status.statistics?.errored
-        ? chalk.red(formatNumber(status.statistics.errored))
+      status.statistics?.error
+        ? chalk.red(formatNumber(status.statistics.error))
         : '0',
     ];
   });
@@ -356,7 +356,7 @@ export function formatChannelDetails(status: ChannelStatus): string {
     `  ${chalk.gray('Filtered:')}   ${formatNumber(status.statistics?.filtered || 0)}`,
     `  ${chalk.gray('Queued:')}     ${formatNumber(status.statistics?.queued || 0)}`,
     `  ${chalk.gray('Sent:')}       ${formatNumber(status.statistics?.sent || 0)}`,
-    `  ${chalk.gray('Errored:')}    ${status.statistics?.errored ? chalk.red(formatNumber(status.statistics.errored)) : '0'}`,
+    `  ${chalk.gray('Errored:')}    ${status.statistics?.error ? chalk.red(formatNumber(status.statistics.error)) : '0'}`,
   ];
 
   // Add connector statuses if available

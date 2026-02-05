@@ -213,8 +213,8 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
               React.createElement(Text, { color: 'gray' }, 'Errored:   '),
               React.createElement(
                 Text,
-                { color: stats.errored > 0 ? 'red' : 'gray' },
-                String(stats.errored)
+                { color: stats.error > 0 ? 'red' : 'gray' },
+                String(stats.error)
               )
             )
           ),

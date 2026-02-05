@@ -290,4 +290,80 @@ describe('TcpReceiver', () => {
       expect(receiver.getProperties().bufferSize).toBe(131072);
     });
   });
+
+  describe('getListenerInfo', () => {
+    it('should return null when not running', () => {
+      const receiver = new TcpReceiver({
+        name: 'Test Receiver',
+        properties: {
+          port: 6661,
+        },
+      });
+
+      expect(receiver.getListenerInfo()).toBeNull();
+    });
+
+    it('should return null for client mode (non-listener)', () => {
+      const receiver = new TcpReceiver({
+        name: 'Client Mode Receiver',
+        properties: {
+          serverMode: ServerMode.CLIENT,
+          host: 'remotehost.example.com',
+          port: 6661,
+        },
+      });
+
+      // Even if it's "running" conceptually, client mode isn't a listener
+      expect(receiver.getListenerInfo()).toBeNull();
+    });
+
+    it('should return listener info with MLLP transport type when running in server mode', async () => {
+      const receiver = new TcpReceiver({
+        name: 'MLLP Receiver',
+        properties: {
+          serverMode: ServerMode.SERVER,
+          host: '0.0.0.0',
+          port: 16661, // Use high port to avoid conflicts
+          transmissionMode: TransmissionMode.MLLP,
+          maxConnections: 10,
+        },
+      });
+
+      await receiver.start();
+
+      try {
+        const info = receiver.getListenerInfo();
+        expect(info).not.toBeNull();
+        expect(info!.port).toBe(16661);
+        expect(info!.host).toBe('0.0.0.0');
+        expect(info!.connectionCount).toBe(0);
+        expect(info!.maxConnections).toBe(10);
+        expect(info!.transportType).toBe('MLLP');
+        expect(info!.listening).toBe(true);
+      } finally {
+        await receiver.stop();
+      }
+    });
+
+    it('should return TCP transport type for RAW mode', async () => {
+      const receiver = new TcpReceiver({
+        name: 'TCP Receiver',
+        properties: {
+          serverMode: ServerMode.SERVER,
+          port: 16662, // Use high port to avoid conflicts
+          transmissionMode: TransmissionMode.RAW,
+        },
+      });
+
+      await receiver.start();
+
+      try {
+        const info = receiver.getListenerInfo();
+        expect(info).not.toBeNull();
+        expect(info!.transportType).toBe('TCP');
+      } finally {
+        await receiver.stop();
+      }
+    });
+  });
 });

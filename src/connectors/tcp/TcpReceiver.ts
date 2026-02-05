@@ -13,6 +13,7 @@
 
 import * as net from 'net';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import {
   TcpReceiverProperties,
   getDefaultTcpReceiverProperties,
@@ -351,5 +352,29 @@ export class TcpReceiver extends SourceConnector {
    */
   getConnectionCount(): number {
     return this.connections.size;
+  }
+
+  /**
+   * Get listener information for dashboard display.
+   * Returns null if the connector is not in server mode or not running.
+   */
+  getListenerInfo(): ListenerInfo | null {
+    // Only provide listener info for server mode connectors that are running
+    if (this.properties.serverMode !== ServerMode.SERVER) {
+      return null;
+    }
+
+    if (!this.running || !this.server) {
+      return null;
+    }
+
+    return {
+      port: this.properties.port,
+      host: this.properties.host || '0.0.0.0',
+      connectionCount: this.connections.size,
+      maxConnections: this.properties.maxConnections,
+      transportType: this.properties.transmissionMode === TransmissionMode.MLLP ? 'MLLP' : 'TCP',
+      listening: this.server.listening,
+    };
   }
 }

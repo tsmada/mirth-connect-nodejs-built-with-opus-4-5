@@ -34,6 +34,11 @@ const STATE_SYMBOLS: Record<ChannelState, string> = {
 };
 
 /**
+ * Fixed width for status display (longest: "○ UNDEPLOYED" = 12 chars)
+ */
+const STATUS_WIDTH = 12;
+
+/**
  * Status indicator component
  */
 export const StatusIndicator: FC<StatusIndicatorProps> = ({ state, compact = false }) => {
@@ -44,7 +49,9 @@ export const StatusIndicator: FC<StatusIndicatorProps> = ({ state, compact = fal
     return React.createElement(Text, { color }, symbol);
   }
 
-  return React.createElement(Text, { color }, `${symbol} ${state}`);
+  // Pad to fixed width for column alignment
+  const display = `${symbol} ${state}`.padEnd(STATUS_WIDTH);
+  return React.createElement(Text, { color }, display);
 };
 
 export default StatusIndicator;

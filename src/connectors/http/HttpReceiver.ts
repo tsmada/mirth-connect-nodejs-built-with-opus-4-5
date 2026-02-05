@@ -16,6 +16,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import { Server } from 'http';
 import { gunzipSync, gzipSync } from 'zlib';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import {
   HttpReceiverProperties,
   getDefaultHttpReceiverProperties,
@@ -347,5 +348,24 @@ export class HttpReceiver extends SourceConnector {
    */
   getHost(): string {
     return this.properties.host;
+  }
+
+  /**
+   * Get listener information for dashboard display.
+   * Returns null if the connector is not running.
+   */
+  getListenerInfo(): ListenerInfo | null {
+    if (!this.running || !this.server) {
+      return null;
+    }
+
+    return {
+      port: this.properties.port,
+      host: this.properties.host || '0.0.0.0',
+      connectionCount: 0, // Express doesn't track connections the same way
+      maxConnections: 0,  // No limit by default
+      transportType: 'HTTP',
+      listening: this.server.listening,
+    };
   }
 }

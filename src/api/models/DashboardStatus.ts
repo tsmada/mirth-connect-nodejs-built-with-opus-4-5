@@ -4,6 +4,25 @@
  * Ported from: ~/Projects/connect/server/src/com/mirth/connect/model/DashboardStatus.java
  */
 
+/**
+ * Listener information for socket-based source connectors.
+ * Provides real-time visibility into port and connection status.
+ */
+export interface ListenerInfo {
+  /** The port number the connector is listening on */
+  port: number;
+  /** The host/interface the connector is bound to */
+  host: string;
+  /** Current number of active connections */
+  connectionCount: number;
+  /** Maximum allowed connections (0 = unlimited) */
+  maxConnections: number;
+  /** Transport type identifier (TCP, MLLP, HTTP, WS, DICOM) */
+  transportType: string;
+  /** Whether the server socket is actively listening */
+  listening: boolean;
+}
+
 export enum DeployedState {
   DEPLOYING = 'DEPLOYING',
   UNDEPLOYING = 'UNDEPLOYING',
@@ -29,6 +48,8 @@ export interface DashboardStatus {
   queueEnabled?: boolean;
   queued?: number;
   waitForPrevious?: boolean;
+  /** Listener info for socket-based source connectors (TCP, MLLP, HTTP, WS, DICOM) */
+  listenerInfo?: ListenerInfo;
 }
 
 export interface ChannelStatistics {

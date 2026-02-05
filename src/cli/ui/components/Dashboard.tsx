@@ -180,7 +180,7 @@ export const Dashboard: FC<DashboardProps> = ({
         undeploy: 'Undeploying',
       };
 
-      const actionMethods: Record<string, (id: string) => Promise<void>> = {
+      const actionMethods: Record<string, (id: string, skipRefresh?: boolean) => Promise<void>> = {
         start: channels.startChannel,
         stop: channels.stopChannel,
         pause: channels.pauseChannel,
@@ -191,16 +191,38 @@ export const Dashboard: FC<DashboardProps> = ({
       const actionLabel = actionLabels[action] ?? action;
       showMessage(`${actionLabel} ${targetIds.length} channel(s)...`, 'info');
 
-      try {
-        const actionMethod = actionMethods[action];
-        if (actionMethod) {
-          for (const id of targetIds) {
-            await actionMethod(id);
-          }
+      const actionMethod = actionMethods[action];
+      if (!actionMethod) return;
+
+      // For batch operations (more than 1 channel), skip individual refreshes
+      const isBatch = targetIds.length > 1;
+
+      // Process all channels, collecting errors instead of stopping on first failure
+      const errors: string[] = [];
+      let successCount = 0;
+
+      for (const id of targetIds) {
+        try {
+          // Pass skipRefresh=true for batch operations to avoid overwhelming Ink
+          await actionMethod(id, isBatch);
+          successCount++;
+        } catch (error) {
+          errors.push((error as Error).message);
         }
-        showMessage(`${actionLabel.replace('ing', 'ed')} ${targetIds.length} channel(s)`, 'success');
-      } catch (error) {
-        showMessage(`Error: ${(error as Error).message}`, 'error');
+      }
+
+      // Single refresh after batch operation completes
+      if (isBatch) {
+        await channels.refresh();
+      }
+
+      // Report results
+      if (errors.length === 0) {
+        showMessage(`${actionLabel.replace('ing', 'ed')} ${successCount} channel(s)`, 'success');
+      } else if (successCount > 0) {
+        showMessage(`${successCount} succeeded, ${errors.length} failed: ${errors[0]}`, 'warning');
+      } else {
+        showMessage(`Error: ${errors[0]}`, 'error');
       }
     },
     [selectedChannelIds, selectedChannel, channels, showMessage]
@@ -242,24 +264,24 @@ export const Dashboard: FC<DashboardProps> = ({
           });
         }
       }
-      // Channel actions
+      // Channel actions - use .catch() to prevent unhandled rejections from corrupting display
       else if (input === 's' || input === 'S') {
-        handleChannelAction('start');
+        handleChannelAction('start').catch(() => {});
       } else if (input === 't' || input === 'T') {
-        handleChannelAction('stop');
+        handleChannelAction('stop').catch(() => {});
       } else if (input === 'p' || input === 'P') {
-        handleChannelAction('pause');
+        handleChannelAction('pause').catch(() => {});
       } else if (input === 'd' || input === 'D') {
-        handleChannelAction('deploy');
+        handleChannelAction('deploy').catch(() => {});
       } else if (input === 'u' || input === 'U') {
-        handleChannelAction('undeploy');
+        handleChannelAction('undeploy').catch(() => {});
       }
       // Refresh
       else if (input === 'r' || input === 'R') {
         showMessage('Refreshing...', 'info');
-        channels.refresh().then(() => {
-          showMessage('Refreshed', 'success');
-        });
+        channels.refresh()
+          .then(() => showMessage('Refreshed', 'success'))
+          .catch((err) => showMessage(`Refresh failed: ${err.message}`, 'error'));
       }
       // Search
       else if (input === '/') {

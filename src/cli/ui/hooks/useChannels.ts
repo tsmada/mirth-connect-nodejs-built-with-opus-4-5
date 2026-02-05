@@ -92,51 +92,51 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
     };
   }, [refresh, refreshInterval, enablePolling]);
 
-  // Channel operations
+  // Channel operations - skipRefresh option for batch operations
   const startChannel = useCallback(
-    async (channelId: string) => {
+    async (channelId: string, skipRefresh = false) => {
       await client.startChannel(channelId);
-      await refresh();
+      if (!skipRefresh) await refresh();
     },
     [client, refresh]
   );
 
   const stopChannel = useCallback(
-    async (channelId: string) => {
+    async (channelId: string, skipRefresh = false) => {
       await client.stopChannel(channelId);
-      await refresh();
+      if (!skipRefresh) await refresh();
     },
     [client, refresh]
   );
 
   const pauseChannel = useCallback(
-    async (channelId: string) => {
+    async (channelId: string, skipRefresh = false) => {
       await client.pauseChannel(channelId);
-      await refresh();
+      if (!skipRefresh) await refresh();
     },
     [client, refresh]
   );
 
   const resumeChannel = useCallback(
-    async (channelId: string) => {
+    async (channelId: string, skipRefresh = false) => {
       await client.resumeChannel(channelId);
-      await refresh();
+      if (!skipRefresh) await refresh();
     },
     [client, refresh]
   );
 
   const deployChannel = useCallback(
-    async (channelId: string) => {
+    async (channelId: string, skipRefresh = false) => {
       await client.deployChannel(channelId);
-      await refresh();
+      if (!skipRefresh) await refresh();
     },
     [client, refresh]
   );
 
   const undeployChannel = useCallback(
-    async (channelId: string) => {
+    async (channelId: string, skipRefresh = false) => {
       await client.undeployChannel(channelId);
-      await refresh();
+      if (!skipRefresh) await refresh();
     },
     [client, refresh]
   );

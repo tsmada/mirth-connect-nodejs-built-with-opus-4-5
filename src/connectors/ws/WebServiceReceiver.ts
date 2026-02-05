@@ -14,6 +14,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import { createServer, Server as HttpServer } from 'http';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import {
   WebServiceReceiverProperties,
   getDefaultWebServiceReceiverProperties,
@@ -539,5 +540,24 @@ export class WebServiceReceiver extends SourceConnector {
    */
   getWsdlUrl(): string {
     return `${this.getEndpointUrl()}?wsdl`;
+  }
+
+  /**
+   * Get listener information for dashboard display.
+   * Returns null if the connector is not running.
+   */
+  getListenerInfo(): ListenerInfo | null {
+    if (!this.running || !this.server) {
+      return null;
+    }
+
+    return {
+      port: this.properties.port,
+      host: this.properties.host || '0.0.0.0',
+      connectionCount: this.processingCount, // Number of requests being processed
+      maxConnections: 0,  // No limit by default
+      transportType: 'WS',
+      listening: this.server.listening,
+    };
   }
 }

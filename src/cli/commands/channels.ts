@@ -180,7 +180,7 @@ export function registerChannelCommands(program: Command): void {
             console.log(`  ${chalk.gray('Filtered:')}  ${formatNumber(stats.filtered)}`);
             console.log(`  ${chalk.gray('Queued:')}    ${formatNumber(stats.queued)}`);
             console.log(`  ${chalk.gray('Sent:')}      ${formatNumber(stats.sent)}`);
-            console.log(`  ${chalk.gray('Errored:')}   ${stats.errored ? chalk.red(formatNumber(stats.errored)) : '0'}`);
+            console.log(`  ${chalk.gray('Errored:')}   ${stats.error ? chalk.red(formatNumber(stats.error)) : '0'}`);
           }
         } else {
           // Get all channel stats
@@ -213,7 +213,7 @@ export function registerChannelCommands(program: Command): void {
               formatNumber(s.statistics?.filtered || 0),
               formatNumber(s.statistics?.queued || 0),
               formatNumber(s.statistics?.sent || 0),
-              s.statistics?.errored ? chalk.red(formatNumber(s.statistics.errored)) : '0',
+              s.statistics?.error ? chalk.red(formatNumber(s.statistics.error)) : '0',
             ]);
 
             console.log(createTable(data, { columns }));

@@ -15,6 +15,7 @@ import * as net from 'net';
 import * as tls from 'tls';
 import * as fs from 'fs';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import {
   DICOMReceiverProperties,
   getDefaultDICOMReceiverProperties,
@@ -1092,5 +1093,27 @@ export class DICOMReceiver extends SourceConnector {
    */
   getAssociationCount(): number {
     return this.associations.size;
+  }
+
+  /**
+   * Get listener information for dashboard display.
+   * Returns null if the connector is not running.
+   */
+  getListenerInfo(): ListenerInfo | null {
+    if (!this.running || !this.server) {
+      return null;
+    }
+
+    const port = parseInt(this.properties.listenerConnectorProperties.port, 10);
+    const host = this.properties.listenerConnectorProperties.host;
+
+    return {
+      port,
+      host: host || '0.0.0.0',
+      connectionCount: this.associations.size,
+      maxConnections: 0,  // DICOM doesn't limit associations the same way
+      transportType: 'DICOM',
+      listening: this.server.listening,
+    };
   }
 }

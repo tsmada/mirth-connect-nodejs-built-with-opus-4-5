@@ -15,6 +15,7 @@ import {
   DashboardStatus,
   DashboardChannelInfo,
   DeployedState,
+  ListenerInfo,
   createDashboardStatus,
   createEmptyStatistics,
 } from '../api/models/DashboardStatus.js';
@@ -410,6 +411,21 @@ export class EngineController {
    * Queries Channel.currentState as the single source of truth for state
    */
   private static createStatusFromDeployment(deployment: DeploymentInfo): DashboardStatus {
+    // Query listener info from source connector if available
+    let listenerInfo: ListenerInfo | undefined;
+    const sourceConnector = deployment.runtimeChannel.getSourceConnector();
+
+    if (sourceConnector) {
+      // Duck-type check for getListenerInfo method (not all connectors have it)
+      const connectorWithListener = sourceConnector as { getListenerInfo?: () => ListenerInfo | null };
+      if (typeof connectorWithListener.getListenerInfo === 'function') {
+        const info = connectorWithListener.getListenerInfo();
+        if (info) {
+          listenerInfo = info;
+        }
+      }
+    }
+
     return {
       channelId: deployment.channelId,
       name: deployment.name,
@@ -418,6 +434,7 @@ export class EngineController {
       deployedDate: deployment.deployedDate,
       deployedRevisionDelta: 0,
       statistics: createEmptyStatistics(),
+      listenerInfo,
     };
   }
 
