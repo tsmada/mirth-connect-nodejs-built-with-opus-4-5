@@ -203,7 +203,7 @@ export function registerServerCommands(program: Command): void {
     .description('Display server statistics')
     .option('-w, --watch', 'Watch stats (refresh every 2 seconds)')
     .option('-i, --interval <seconds>', 'Refresh interval when watching', '2')
-    .action(async (options, _, cmd) => {
+    .action(async (options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 

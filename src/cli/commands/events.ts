@@ -157,7 +157,7 @@ export function registerEventCommands(program: Command): void {
     .option('--ip <ipAddress>', 'Filter by IP address')
     .option('-l, --limit <n>', 'Limit results', '50')
     .option('-o, --offset <n>', 'Skip first N results', '0')
-    .action(async (options, _, cmd) => {
+    .action(async (options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 
@@ -208,7 +208,7 @@ export function registerEventCommands(program: Command): void {
     .option('--from <datetime>', 'Events from date/time')
     .option('--to <datetime>', 'Events to date/time')
     .option('--level <level>', 'Filter by level')
-    .action(async (options, _, cmd) => {
+    .action(async (options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 
@@ -244,7 +244,7 @@ export function registerEventCommands(program: Command): void {
     .command('errors')
     .description('Show recent error events')
     .option('-l, --limit <n>', 'Limit results', '20')
-    .action(async (options, _, cmd) => {
+    .action(async (options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 

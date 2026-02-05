@@ -90,7 +90,7 @@ export function registerChannelCommands(program: Command): void {
     .description('List all channels with status')
     .option('-f, --filter <name>', 'Filter channels by name')
     .option('--undeployed', 'Include undeployed channels')
-    .action(async (options, _, cmd) => {
+    .action(async (options, cmd) => {
       // Delegate to parent action
       await cmd.parent?.parseAsync(['channels', '--filter', options.filter || '']);
     });
@@ -101,7 +101,7 @@ export function registerChannelCommands(program: Command): void {
   channelsCmd
     .command('get <identifier>')
     .description('Get channel details by ID or name')
-    .action(async (identifier: string, _, cmd) => {
+    .action(async (identifier: string, _options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 
@@ -241,7 +241,7 @@ export function registerChannelCommands(program: Command): void {
     channelsCmd
       .command(`${name} <identifier>`)
       .description(description)
-      .action(async (identifier: string, _, cmd) => {
+      .action(async (identifier: string, _options, cmd) => {
         const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
         const formatter = new OutputFormatter(globalOpts.json);
 

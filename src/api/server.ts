@@ -96,10 +96,13 @@ export function createApp(options: ServerOptions = {}): Express {
   app.use('/api/users', userRouter);
 
   // Protected routes (auth required)
-  app.use('/api/channels', authMiddleware({ required: true }), channelRouter);
+  // NOTE: Route order matters! More specific routes must come BEFORE parameterized routes.
+  // channelStatusRouter, channelStatisticsRouter, and engineRouter have routes like /statuses
+  // which must be matched BEFORE channelRouter's /:channelId route.
   app.use('/api/channels', authMiddleware({ required: true }), channelStatusRouter);
   app.use('/api/channels', authMiddleware({ required: true }), channelStatisticsRouter);
   app.use('/api/channels', authMiddleware({ required: true }), engineRouter);
+  app.use('/api/channels', authMiddleware({ required: true }), channelRouter);
   app.use('/api/channels/:channelId/messages', authMiddleware({ required: true }), messageRouter);
   app.use('/api/channelgroups', authMiddleware({ required: true }), channelGroupRouter);
   app.use('/api/server', authMiddleware({ required: true }), configurationRouter);

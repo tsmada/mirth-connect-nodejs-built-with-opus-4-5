@@ -102,6 +102,21 @@ channelRouter.post('/_getChannels', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /channels/idsAndNames
+ * Get map of channel IDs to names
+ * NOTE: This MUST come before /:channelId to avoid being matched as a channelId
+ */
+channelRouter.get('/idsAndNames', async (_req: Request, res: Response) => {
+  try {
+    const idsAndNames = await ChannelController.getChannelIdsAndNames();
+    res.sendData(idsAndNames);
+  } catch (error) {
+    console.error('Get channel IDs and names error:', error);
+    res.status(500).json({ error: 'Failed to retrieve channel IDs and names' });
+  }
+});
+
+/**
  * GET /channels/:channelId
  * Get a single channel by ID
  */
@@ -111,11 +126,6 @@ channelRouter.get('/:channelId', async (req: Request<ChannelParams>, res: Respon
     const includeCodeTemplateLibraries = req.query.includeCodeTemplateLibraries === 'true';
     const accept = req.get('Accept') || '';
     const wantsXml = accept.includes('application/xml') || accept.includes('text/xml');
-
-    // Skip status and statuses routes
-    if (channelId === 'statuses' || channelId === 'idsAndNames') {
-      return;
-    }
 
     // For XML requests, return raw XML from database to preserve original structure
     if (wantsXml) {
@@ -144,20 +154,6 @@ channelRouter.get('/:channelId', async (req: Request<ChannelParams>, res: Respon
   } catch (error) {
     console.error('Get channel error:', error);
     res.status(500).json({ error: 'Failed to retrieve channel' });
-  }
-});
-
-/**
- * GET /channels/idsAndNames
- * Get map of channel IDs to names
- */
-channelRouter.get('/idsAndNames', async (_req: Request, res: Response) => {
-  try {
-    const idsAndNames = await ChannelController.getChannelIdsAndNames();
-    res.sendData(idsAndNames);
-  } catch (error) {
-    console.error('Get channel IDs and names error:', error);
-    res.status(500).json({ error: 'Failed to retrieve channel IDs and names' });
   }
 });
 

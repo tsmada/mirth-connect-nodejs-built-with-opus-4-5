@@ -32,7 +32,7 @@ export function registerSendCommands(program: Command): void {
     .description('Send a message via MLLP')
     .option('-t, --timeout <ms>', 'Connection timeout in milliseconds', '30000')
     .option('-r, --raw', 'Show raw response')
-    .action(async (hostPort: string, message: string, options, _, cmd) => {
+    .action(async (hostPort: string, message: string, options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 
@@ -99,7 +99,7 @@ export function registerSendCommands(program: Command): void {
     .option('-H, --header <header>', 'Additional header (format: key:value)', (v, prev: string[]) => [...prev, v], [])
     .option('-t, --timeout <ms>', 'Request timeout in milliseconds', '30000')
     .option('-r, --raw', 'Show raw response')
-    .action(async (url: string, message: string, options, _, cmd) => {
+    .action(async (url: string, message: string, options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 
@@ -182,7 +182,7 @@ export function registerSendCommands(program: Command): void {
     .description('Send an HL7 message (shorthand for mllp with default test message)')
     .option('-t, --timeout <ms>', 'Connection timeout in milliseconds', '30000')
     .option('-r, --raw', 'Show raw response')
-    .action(async (hostPort: string, message: string | undefined, options, _, cmd) => {
+    .action(async (hostPort: string, message: string | undefined, options, cmd) => {
       const globalOpts = cmd.parent?.parent?.opts() as GlobalOptions;
       const formatter = new OutputFormatter(globalOpts.json);
 
