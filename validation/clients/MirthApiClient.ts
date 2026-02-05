@@ -390,20 +390,50 @@ export class MirthApiClient {
 
   // ==================== Utility Methods ====================
 
+  /**
+   * Wait for a channel to reach a target state with exponential backoff.
+   * Designed for slow environments like QEMU emulation on Apple Silicon.
+   *
+   * @param channelId - The channel ID to monitor
+   * @param targetState - The target state (e.g., 'STARTED', 'STOPPED')
+   * @param timeoutMs - Maximum time to wait (default: 120000ms for QEMU compatibility)
+   * @param initialPollIntervalMs - Starting poll interval (default: 1000ms)
+   * @param maxPollIntervalMs - Maximum poll interval for backoff (default: 5000ms)
+   * @returns true if state reached, false if timeout
+   */
   async waitForChannelState(
     channelId: string,
     targetState: string,
-    timeoutMs = 30000,
-    pollIntervalMs = 1000
+    timeoutMs = 120000,
+    initialPollIntervalMs = 1000,
+    maxPollIntervalMs = 5000
   ): Promise<boolean> {
     const startTime = Date.now();
+    let pollInterval = initialPollIntervalMs;
+    let consecutiveErrors = 0;
+    const maxConsecutiveErrors = 5;
 
     while (Date.now() - startTime < timeoutMs) {
-      const status = await this.getChannelStatus(channelId);
-      if (status && status.state === targetState) {
-        return true;
+      try {
+        const status = await this.getChannelStatus(channelId);
+        if (status && status.state === targetState) {
+          return true;
+        }
+        consecutiveErrors = 0; // Reset on successful poll
+      } catch (error) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          console.error(`waitForChannelState: ${maxConsecutiveErrors} consecutive errors, giving up`);
+          return false;
+        }
+        // Increase backoff on errors
+        pollInterval = Math.min(pollInterval * 1.5, maxPollIntervalMs);
       }
-      await this.delay(pollIntervalMs);
+
+      await this.delay(pollInterval);
+
+      // Exponential backoff with cap
+      pollInterval = Math.min(pollInterval * 1.2, maxPollIntervalMs);
     }
 
     return false;
