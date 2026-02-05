@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel version="3.9.1">
+  <id>76100001-0002-0001-0001-000000000005</id>
+  <nextMetaDataId>2</nextMetaDataId>
+  <name>Multi-Template Test Channel</name>
+  <description>Tests using multiple code template functions from a single library</description>
+  <revision>1</revision>
+  <sourceConnector version="3.9.1">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.tcp.TcpReceiverProperties" version="3.9.1">
+      <pluginProperties/>
+      <listenerConnectorProperties version="3.9.1">
+        <host>0.0.0.0</host>
+        <port>{{MLLP_PORT}}</port>
+      </listenerConnectorProperties>
+      <sourceConnectorProperties version="3.9.1">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+      <transmissionModeProperties class="com.mirth.connect.model.transmission.framemode.FrameModeProperties" version="3.9.1">
+        <pluginPointName>MLLP</pluginPointName>
+        <startOfMessageBytes>0B</startOfMessageBytes>
+        <endOfMessageBytes>1C0D</endOfMessageBytes>
+      </transmissionModeProperties>
+      <serverMode>true</serverMode>
+      <remoteAddress></remoteAddress>
+      <remotePort></remotePort>
+      <overrideLocalBinding>false</overrideLocalBinding>
+      <reconnectInterval>5000</reconnectInterval>
+      <receiveTimeout>0</receiveTimeout>
+      <bufferSize>65536</bufferSize>
+      <maxConnections>10</maxConnections>
+      <keepConnectionOpen>true</keepConnectionOpen>
+      <dataTypeBinary>false</dataTypeBinary>
+      <charsetEncoding>DEFAULT_ENCODING</charsetEncoding>
+      <respondOnNewConnection>EACH_MESSAGE</respondOnNewConnection>
+      <responseAddress></responseAddress>
+      <responsePort></responsePort>
+    </properties>
+    <transformer version="3.9.1">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>Use All Template Functions</name>
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script>// Test all three code template functions from multi-function-library
+
+// 1. Format date from PID-7 (DOB)
+var dob = msg['PID']['PID.7']['PID.7.1'].toString();
+var formattedDOB = formatDate(dob);
+$c('formattedDOB', formattedDOB);
+
+// 2. Format phone from PID-13
+var phone = msg['PID']['PID.13']['PID.13.1'].toString();
+var formattedPhone = formatPhone(phone);
+$c('formattedPhone', formattedPhone);
+
+// 3. Format address from PID-11
+var street = msg['PID']['PID.11']['PID.11.1'].toString();
+var city = msg['PID']['PID.11']['PID.11.3'].toString();
+var state = msg['PID']['PID.11']['PID.11.4'].toString();
+var zip = msg['PID']['PID.11']['PID.11.5'].toString();
+var formattedAddress = formatAddress(street, city, state, zip);
+$c('formattedAddress', formattedAddress);
+
+// Count how many template functions were used
+$c('templateFunctionsUsed', 3);
+$c('allTemplatesLoaded', true);
+
+logger.info('Multi-template test results:');
+logger.info('  DOB: ' + formattedDOB);
+logger.info('  Phone: ' + formattedPhone);
+logger.info('  Address: ' + formattedAddress);</script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+      </elements>
+      <inboundDataType>HL7V2</inboundDataType>
+      <outboundDataType>HL7V2</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="3.9.1">
+        <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="3.9.1">
+          <handleRepetitions>true</handleRepetitions>
+          <handleSubcomponents>true</handleSubcomponents>
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <stripNamespaces>true</stripNamespaces>
+          <segmentDelimiter>\r</segmentDelimiter>
+          <convertLineBreaks>true</convertLineBreaks>
+        </serializationProperties>
+        <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="3.9.1">
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <segmentDelimiter>\r</segmentDelimiter>
+        </deserializationProperties>
+        <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="3.9.1">
+          <splitType>MSH_Segment</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+        <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="3.9.1">
+          <segmentDelimiter>\r</segmentDelimiter>
+          <successfulACKCode>AA</successfulACKCode>
+          <successfulACKMessage></successfulACKMessage>
+          <errorACKCode>AE</errorACKCode>
+          <errorACKMessage></errorACKMessage>
+          <rejectedACKCode>AR</rejectedACKCode>
+          <rejectedACKMessage></rejectedACKMessage>
+          <msh15ACKAccept>false</msh15ACKAccept>
+          <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+        </responseGenerationProperties>
+        <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="3.9.1">
+          <successfulACKCode>AA,CA</successfulACKCode>
+          <errorACKCode>AE,CE</errorACKCode>
+          <rejectedACKCode>AR,CR</rejectedACKCode>
+          <validateMessageControlId>true</validateMessageControlId>
+          <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+          <originalIdMapVariable></originalIdMapVariable>
+        </responseValidationProperties>
+      </inboundProperties>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="3.9.1">
+        <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="3.9.1">
+          <handleRepetitions>true</handleRepetitions>
+          <handleSubcomponents>true</handleSubcomponents>
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <stripNamespaces>true</stripNamespaces>
+          <segmentDelimiter>\r</segmentDelimiter>
+          <convertLineBreaks>true</convertLineBreaks>
+        </serializationProperties>
+        <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="3.9.1">
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <segmentDelimiter>\r</segmentDelimiter>
+        </deserializationProperties>
+        <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="3.9.1">
+          <splitType>MSH_Segment</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+        <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="3.9.1">
+          <segmentDelimiter>\r</segmentDelimiter>
+          <successfulACKCode>AA</successfulACKCode>
+          <successfulACKMessage></successfulACKMessage>
+          <errorACKCode>AE</errorACKCode>
+          <errorACKMessage></errorACKMessage>
+          <rejectedACKCode>AR</rejectedACKCode>
+          <rejectedACKMessage></rejectedACKMessage>
+          <msh15ACKAccept>false</msh15ACKAccept>
+          <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+        </responseGenerationProperties>
+        <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="3.9.1">
+          <successfulACKCode>AA,CA</successfulACKCode>
+          <errorACKCode>AE,CE</errorACKCode>
+          <rejectedACKCode>AR,CR</rejectedACKCode>
+          <validateMessageControlId>true</validateMessageControlId>
+          <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+          <originalIdMapVariable></originalIdMapVariable>
+        </responseValidationProperties>
+      </outboundProperties>
+    </transformer>
+    <filter version="3.9.1">
+      <elements/>
+    </filter>
+    <transportName>TCP Listener</transportName>
+    <mode>SOURCE</mode>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="3.9.1">
+      <metaDataId>1</metaDataId>
+      <name>Sink</name>
+      <properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <channelId>sink</channelId>
+        <channelTemplate>${message.encodedData}</channelTemplate>
+        <mapVariables/>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>HL7V2</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+      </transformer>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>HL7V2</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+      </responseTransformer>
+      <filter version="3.9.1">
+        <elements/>
+      </filter>
+      <transportName>Channel Writer</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>return message;</preprocessingScript>
+  <postprocessingScript>return;</postprocessingScript>
+  <deployScript>return;</deployScript>
+  <undeployScript>return;</undeployScript>
+  <properties version="3.9.1">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>true</storeAttachments>
+    <metaDataColumns/>
+    <archiveEnabled>true</archiveEnabled>
+    <attachmentProperties version="3.9.1">
+      <type>None</type>
+      <properties/>
+    </attachmentProperties>
+    <resourceIds class="linked-hash-map">
+      <entry>
+        <string>Default Resource</string>
+        <string>[Default Resource]</string>
+      </entry>
+    </resourceIds>
+  </properties>
+  <exportData>
+    <metadata>
+      <enabled>true</enabled>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <pruningSettings>
+        <pruneMetaDataDays>-1</pruneMetaDataDays>
+        <pruneContentDays>-1</pruneContentDays>
+        <archiveEnabled>true</archiveEnabled>
+      </pruningSettings>
+    </metadata>
+    <dependentIds/>
+    <dependencyIds/>
+    <channelTags/>
+  </exportData>
+</channel>

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "7.7.1",
+    "name": "Deploy Script Execution",
+    "description": "Verify deploy script runs on channel start and sets $gc values",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "deploy-script-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.7.2",
+    "name": "Undeploy Script Execution",
+    "description": "Verify undeploy script runs on channel stop and sets $g values",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "undeploy-script-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.7.3",
+    "name": "Preprocessor Message Modification",
+    "description": "Verify preprocessor can modify raw message before processing",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "preprocessor-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.7.4",
+    "name": "Postprocessor Execution",
+    "description": "Verify postprocessor runs after all destinations complete",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "postprocessor-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.7.5",
+    "name": "Full Lifecycle Script Order",
+    "description": "Verify all scripts run in correct order: deploy -> pre -> post -> undeploy",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "full-lifecycle-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 45000
+  },
+  {
+    "id": "7.7.6",
+    "name": "Script Scope Variable Availability",
+    "description": "Verify each script type has access to correct scope variables",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "script-scope-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  }
+]

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>76100001-0001-0001-0001-000000000001</id>
+  <name>Utility Functions Library</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>Common utility functions for HL7 processing</description>
+  <includeNewChannels>false</includeNewChannels>
+  <enabledChannelIds>
+    <string>76100001-0001-0001-0001-000000000002</string>
+  </enabledChannelIds>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0001-0001-0001-000000000003</id>
+      <name>formatPatientName</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Formats a patient name from HL7v2 PID-5 components
+ * @param {string} family - Family name
+ * @param {string} given - Given name
+ * @param {string} middle - Middle name (optional)
+ * @return {string} Formatted name as "FAMILY, GIVEN M."
+ */
+function formatPatientName(family, given, middle) {
+    var result = family.toUpperCase() + ', ' + given;
+    if (middle &amp;&amp; middle.length > 0) {
+        result += ' ' + middle.charAt(0).toUpperCase() + '.';
+    }
+    return result;
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "7.6.1",
+    "name": "Code Template Function Call",
+    "description": "Verify code template functions are accessible from channel scripts",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "template-function-channel.xml",
+    "codeTemplateLibrary": "utility-library.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.6.2",
+    "name": "Code Template Library Association",
+    "description": "Verify library-channel associations work correctly",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "library-association-channel.xml",
+    "codeTemplateLibrary": "restricted-library.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.6.3",
+    "name": "Multiple Templates in Library",
+    "description": "Verify multiple code templates in a single library all load correctly",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "multi-template-channel.xml",
+    "codeTemplateLibrary": "multi-function-library.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.6.4",
+    "name": "Code Template with Dependencies",
+    "description": "Verify code templates can call functions from other templates",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "dependent-template-channel.xml",
+    "codeTemplateLibrary": "dependent-library.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "timeout": 30000
+  }
+]

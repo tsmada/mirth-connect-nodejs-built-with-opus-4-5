@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>76100001-0004-0001-0001-000000000001</id>
+  <name>Restricted Library</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>Library enabled only for specific channel to test association</description>
+  <includeNewChannels>false</includeNewChannels>
+  <enabledChannelIds>
+    <string>76100001-0004-0001-0001-000000000003</string>
+  </enabledChannelIds>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0004-0001-0001-000000000002</id>
+      <name>getLibraryInfo</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Returns info about this library for testing associations
+ * @return {object} Library info object
+ */
+function getLibraryInfo() {
+    return {
+        libraryName: 'Restricted Library',
+        libraryId: '76100001-0004-0001-0001-000000000001',
+        isRestricted: true,
+        enabledChannels: ['76100001-0004-0001-0001-000000000003']
+    };
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0004-0001-0001-000000000004</id>
+      <name>validatePatientId</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Validates a patient ID format (8 digits)
+ * @param {string} patientId - Patient ID to validate
+ * @return {object} Validation result
+ */
+function validatePatientId(patientId) {
+    var id = String(patientId || '').trim();
+    var isValid = /^\d{8}$/.test(id);
+
+    return {
+        original: patientId,
+        cleaned: id,
+        isValid: isValid,
+        errorMessage: isValid ? null : 'Patient ID must be exactly 8 digits'
+    };
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>

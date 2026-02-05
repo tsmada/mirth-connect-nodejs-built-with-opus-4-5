@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>76100001-0002-0001-0001-000000000001</id>
+  <name>Multi-Function Library</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>Library with multiple utility functions for testing multi-template loading</description>
+  <includeNewChannels>false</includeNewChannels>
+  <enabledChannelIds>
+    <string>76100001-0002-0001-0001-000000000005</string>
+  </enabledChannelIds>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0002-0001-0001-000000000002</id>
+      <name>formatDate</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Converts HL7 date format (YYYYMMDD) to ISO format (YYYY-MM-DD)
+ * @param {string} hl7Date - Date in HL7 format
+ * @return {string} Date in ISO format
+ */
+function formatDate(hl7Date) {
+    if (!hl7Date || hl7Date.length &lt; 8) {
+        return '';
+    }
+    var year = hl7Date.substring(0, 4);
+    var month = hl7Date.substring(4, 6);
+    var day = hl7Date.substring(6, 8);
+    return year + '-' + month + '-' + day;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0002-0001-0001-000000000003</id>
+      <name>formatPhone</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Formats a phone number as (XXX) XXX-XXXX
+ * @param {string} phone - Raw phone number
+ * @return {string} Formatted phone number
+ */
+function formatPhone(phone) {
+    // Strip non-numeric characters
+    var digits = (phone || '').replace(/\D/g, '');
+    if (digits.length === 10) {
+        return '(' + digits.substring(0, 3) + ') ' + digits.substring(3, 6) + '-' + digits.substring(6);
+    }
+    return phone || '';
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0002-0001-0001-000000000004</id>
+      <name>formatAddress</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Formats an address from HL7 components
+ * @param {string} street - Street address
+ * @param {string} city - City
+ * @param {string} state - State
+ * @param {string} zip - ZIP code
+ * @return {string} Formatted single-line address
+ */
+function formatAddress(street, city, state, zip) {
+    var parts = [];
+    if (street) parts.push(street);
+    if (city) parts.push(city);
+    if (state) parts.push(state);
+    if (zip) parts.push(zip);
+    return parts.join(', ');
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>

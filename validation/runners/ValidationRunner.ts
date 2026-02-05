@@ -220,45 +220,68 @@ export class ValidationRunner {
       }
 
       const scenarioDir = path.join(scenariosDir, dir);
+      this.loadScenariosFromDir(scenarioDir, scenarios);
 
-      // Load all config*.json files in the directory
-      const configFiles = fs.readdirSync(scenarioDir).filter((f) => {
-        return f.startsWith('config') && f.endsWith('.json');
+      // Also check for nested subdirectories (e.g., 07-deep-validation/7.1-sftp-hl7v2/)
+      const subdirs = fs.readdirSync(scenarioDir).filter((d) => {
+        const fullPath = path.join(scenarioDir, d);
+        return fs.statSync(fullPath).isDirectory() && !d.startsWith('.') && d !== 'inputs' && d !== 'expected';
       });
 
-      for (const configFile of configFiles) {
-        const configPath = path.join(scenarioDir, configFile);
-        try {
-          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-
-          // Support array of scenarios in a single file
-          if (Array.isArray(config)) {
-            for (const c of config) {
-              scenarios.push({
-                ...c,
-                basePath: scenarioDir,
-              });
-            }
-          } else {
-            scenarios.push({
-              ...config,
-              basePath: scenarioDir,
-            });
-          }
-        } catch (error) {
-          console.warn(`Warning: Failed to load scenario config from ${configPath}`);
-        }
+      for (const subdir of subdirs) {
+        const subScenarioDir = path.join(scenarioDir, subdir);
+        this.loadScenariosFromDir(subScenarioDir, scenarios);
       }
     }
 
-    // Sort by scenario ID (e.g., "0.1" < "1.1" < "1.2")
+    // Sort by scenario ID (e.g., "0.1" < "1.1" < "1.2" < "7.7.1")
     scenarios.sort((a, b) => {
-      const [aMajor, aMinor] = a.id.split('.').map((n) => parseInt(n, 10) || 0);
-      const [bMajor, bMinor] = b.id.split('.').map((n) => parseInt(n, 10) || 0);
-      return aMajor !== bMajor ? aMajor - bMajor : aMinor - bMinor;
+      const aParts = a.id.split('.').map((n) => parseInt(n, 10) || 0);
+      const bParts = b.id.split('.').map((n) => parseInt(n, 10) || 0);
+      for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+        const aVal = aParts[i] || 0;
+        const bVal = bParts[i] || 0;
+        if (aVal !== bVal) return aVal - bVal;
+      }
+      return 0;
     });
 
     return scenarios;
+  }
+
+  /**
+   * Load scenarios from a single directory.
+   * Helper method used by loadScenarios to avoid code duplication.
+   */
+  private loadScenariosFromDir(scenarioDir: string, scenarios: ScenarioConfig[]): void {
+    // Load all config*.json files in the directory
+    const configFiles = fs.readdirSync(scenarioDir).filter((f) => {
+      return f.startsWith('config') && f.endsWith('.json');
+    });
+
+    for (const configFile of configFiles) {
+      const configPath = path.join(scenarioDir, configFile);
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+        // Support array of scenarios in a single file
+        if (Array.isArray(config)) {
+          for (const c of config) {
+            scenarios.push({
+              ...c,
+              basePath: scenarioDir,
+            });
+          }
+        } else {
+          scenarios.push({
+            ...config,
+            basePath: scenarioDir,
+          });
+        }
+      } catch (error) {
+        console.warn(`Warning: Failed to load scenario config from ${configPath}`);
+      }
+    }
   }
 
   /**

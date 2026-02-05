@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>76100001-0003-0001-0001-000000000001</id>
+  <name>Dependent Functions Library</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>Library with functions that depend on each other</description>
+  <includeNewChannels>false</includeNewChannels>
+  <enabledChannelIds>
+    <string>76100001-0003-0001-0001-000000000005</string>
+  </enabledChannelIds>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0003-0001-0001-000000000002</id>
+      <name>cleanString</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Base utility: Cleans and trims a string
+ * @param {string} str - String to clean
+ * @return {string} Cleaned string
+ */
+function cleanString(str) {
+    if (str === null || str === undefined) {
+        return '';
+    }
+    return String(str).trim();
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0003-0001-0001-000000000003</id>
+      <name>normalizeCase</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Normalizes case: First letter uppercase, rest lowercase
+ * DEPENDS ON: cleanString()
+ * @param {string} str - String to normalize
+ * @return {string} Normalized string
+ */
+function normalizeCase(str) {
+    var cleaned = cleanString(str);
+    if (cleaned.length === 0) {
+        return '';
+    }
+    return cleaned.charAt(0).toUpperCase() + cleaned.substring(1).toLowerCase();
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>76100001-0003-0001-0001-000000000004</id>
+      <name>buildFullName</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Builds a properly formatted full name
+ * DEPENDS ON: normalizeCase() -&gt; cleanString()
+ * @param {string} given - Given/first name
+ * @param {string} middle - Middle name
+ * @param {string} family - Family/last name
+ * @return {string} Full name with proper capitalization
+ */
+function buildFullName(given, middle, family) {
+    var parts = [];
+
+    var normalizedGiven = normalizeCase(given);
+    if (normalizedGiven) parts.push(normalizedGiven);
+
+    var normalizedMiddle = normalizeCase(middle);
+    if (normalizedMiddle) parts.push(normalizedMiddle);
+
+    var normalizedFamily = normalizeCase(family);
+    if (normalizedFamily) parts.push(normalizedFamily);
+
+    return parts.join(' ');
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>

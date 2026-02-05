@@ -77,6 +77,11 @@ export interface ScenarioConfig {
     java?: SftpConfig;
     node?: SftpConfig;
   };
+  /**
+   * Code template library file to deploy before the channel.
+   * Library functions will be available to the channel's scripts.
+   */
+  codeTemplateLibrary?: string;
 }
 
 export interface ScenarioStep {
@@ -274,11 +279,17 @@ export class ScenarioRunner {
     const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
     let javaChannelId: string | null = null;
     let nodeChannelId: string | null = null;
+    let javaLibraryId: string | null = null;
+    let nodeLibraryId: string | null = null;
+    let originalChannelId: string | null = null;
     const shouldDeploy = !config.skipDeployment;
 
     // Load channel and deploy to both engines with engine-specific configurations
     if (config.channelFile) {
       const channelXml = this.loadChannelFile(config.channelFile, basePath);
+
+      // Extract original channel ID before transformation
+      originalChannelId = this.extractChannelId(channelXml);
 
       // Prepare separate channel XMLs for each engine
       const javaChannel = this.prepareChannelForEngine(channelXml, 'java', config);
@@ -289,6 +300,19 @@ export class ScenarioRunner {
       nodeChannelId = config.preDeployedChannelIds?.node || nodeChannel.channelId;
 
       if (shouldDeploy) {
+        // Deploy code template library first if specified
+        if (config.codeTemplateLibrary && originalChannelId) {
+          const libraryIds = await this.deployCodeTemplateLibrary(
+            config.codeTemplateLibrary,
+            basePath,
+            javaChannelId,
+            nodeChannelId,
+            originalChannelId
+          );
+          javaLibraryId = libraryIds.javaLibraryId;
+          nodeLibraryId = libraryIds.nodeLibraryId;
+        }
+
         // Delete existing channels first
         try {
           await this.javaClient.undeployChannel(javaChannelId);
@@ -377,6 +401,9 @@ export class ScenarioRunner {
           // Ignore cleanup errors
         }
       }
+
+      // Clean up code template libraries
+      await this.cleanupCodeTemplateLibraries(javaLibraryId, nodeLibraryId);
     }
 
     return {
@@ -750,6 +777,103 @@ export class ScenarioRunner {
     // Simple regex extraction
     const match = xml.match(/<id>([^<]+)<\/id>/);
     return match ? match[1] : null;
+  }
+
+  /**
+   * Extract code template library ID from library XML
+   */
+  private extractLibraryId(xml: string): string | null {
+    const match = xml.match(/<codeTemplateLibrary[^>]*>[\s\S]*?<id>([^<]+)<\/id>/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Deploy code template library to both engines
+   *
+   * This prepares engine-specific versions of the library with updated channel IDs
+   * in the enabledChannelIds list to match the engine-specific channel IDs.
+   */
+  private async deployCodeTemplateLibrary(
+    libraryFile: string,
+    basePath: string,
+    javaChannelId: string,
+    nodeChannelId: string,
+    originalChannelId: string
+  ): Promise<{ javaLibraryId: string; nodeLibraryId: string }> {
+    // Load library XML
+    const libraryPath = path.join(basePath, libraryFile);
+    if (!fs.existsSync(libraryPath)) {
+      throw new Error(`Code template library not found: ${libraryFile}`);
+    }
+    const libraryXml = fs.readFileSync(libraryPath, 'utf8');
+
+    // Extract library ID
+    const libraryId = this.extractLibraryId(libraryXml);
+    if (!libraryId) {
+      throw new Error('Could not extract library ID from XML');
+    }
+
+    // Generate engine-specific library IDs
+    const javaLibraryId = this.generateEngineChannelId(libraryId, 'java');
+    const nodeLibraryId = this.generateEngineChannelId(libraryId, 'node');
+
+    // Prepare Java library XML - update library ID and channel association
+    let javaLibraryXml = libraryXml
+      .replace(new RegExp(`<id>${libraryId}</id>`), `<id>${javaLibraryId}</id>`)
+      .replace(
+        new RegExp(`<string>${originalChannelId}</string>`, 'g'),
+        `<string>${javaChannelId}</string>`
+      );
+
+    // Prepare Node library XML - update library ID and channel association
+    let nodeLibraryXml = libraryXml
+      .replace(new RegExp(`<id>${libraryId}</id>`), `<id>${nodeLibraryId}</id>`)
+      .replace(
+        new RegExp(`<string>${originalChannelId}</string>`, 'g'),
+        `<string>${nodeChannelId}</string>`
+      );
+
+    // Delete existing libraries first
+    try {
+      await this.javaClient.deleteCodeTemplateLibrary(javaLibraryId);
+    } catch {
+      // Ignore - library may not exist
+    }
+    try {
+      await this.nodeClient.deleteCodeTemplateLibrary(nodeLibraryId);
+    } catch {
+      // Ignore - library may not exist
+    }
+    await this.delay(500);
+
+    // Import libraries to both engines
+    await this.javaClient.importCodeTemplateLibrary(javaLibraryXml);
+    await this.nodeClient.importCodeTemplateLibrary(nodeLibraryXml);
+
+    return { javaLibraryId, nodeLibraryId };
+  }
+
+  /**
+   * Clean up code template libraries from both engines
+   */
+  private async cleanupCodeTemplateLibraries(
+    javaLibraryId: string | null,
+    nodeLibraryId: string | null
+  ): Promise<void> {
+    if (javaLibraryId) {
+      try {
+        await this.javaClient.deleteCodeTemplateLibrary(javaLibraryId);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    if (nodeLibraryId) {
+      try {
+        await this.nodeClient.deleteCodeTemplateLibrary(nodeLibraryId);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   }
 
   /**

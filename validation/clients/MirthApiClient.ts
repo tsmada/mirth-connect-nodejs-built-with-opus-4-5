@@ -316,6 +316,92 @@ export class MirthApiClient {
     return response.status === 200 || response.status === 204;
   }
 
+  // ==================== Code Template Libraries ====================
+
+  /**
+   * Import a code template library.
+   * The library XML should contain the full codeTemplateLibrary structure.
+   */
+  async importCodeTemplateLibrary(libraryXml: string): Promise<boolean> {
+    const response = await this.client.put(
+      '/api/codeTemplateLibraries',
+      `<list>${libraryXml}</list>`,
+      {
+        headers: {
+          'Content-Type': 'application/xml',
+          Accept: '*/*',
+        },
+        params: {
+          override: true,
+        },
+      }
+    );
+
+    if (response.status !== 200 && response.status !== 204) {
+      console.error(
+        `Code template library import failed with status ${response.status}: ${JSON.stringify(response.data).substring(0, 500)}`
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Delete a code template library by ID.
+   */
+  async deleteCodeTemplateLibrary(libraryId: string): Promise<boolean> {
+    // First get all libraries, filter out the one to delete, then PUT back
+    const response = await this.client.get('/api/codeTemplateLibraries');
+    if (response.status !== 200) {
+      return false;
+    }
+
+    const parsed = this.xmlParser.parse(response.data);
+    let libraries = parsed.list?.codeTemplateLibrary || [];
+    if (!Array.isArray(libraries)) {
+      libraries = [libraries];
+    }
+
+    // Filter out the library to delete
+    const filteredLibraries = libraries.filter((lib: { id: string }) => lib.id !== libraryId);
+
+    // If nothing was filtered, library doesn't exist - that's OK
+    if (filteredLibraries.length === libraries.length) {
+      return true;
+    }
+
+    // Rebuild the XML and PUT it back
+    const updatedXml = this.xmlBuilder.build({
+      list: {
+        codeTemplateLibrary: filteredLibraries,
+      },
+    });
+
+    const putResponse = await this.client.put('/api/codeTemplateLibraries', updatedXml, {
+      headers: {
+        'Content-Type': 'application/xml',
+      },
+      params: {
+        override: true,
+      },
+    });
+
+    return putResponse.status === 200 || putResponse.status === 204;
+  }
+
+  /**
+   * Get all code template libraries.
+   */
+  async getCodeTemplateLibraries(): Promise<unknown[]> {
+    const response = await this.client.get('/api/codeTemplateLibraries');
+    if (response.status !== 200) return [];
+
+    const parsed = this.xmlParser.parse(response.data);
+    const libraries = parsed.list?.codeTemplateLibrary || [];
+    return Array.isArray(libraries) ? libraries : [libraries];
+  }
+
   // ==================== Channel Status/Control ====================
 
   async getChannelStatuses(): Promise<DashboardStatus[]> {
