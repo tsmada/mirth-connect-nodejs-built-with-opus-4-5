@@ -42,6 +42,10 @@ function sequenceTable(channelId: string): string {
   return `D_MSQ${channelId.replace(/-/g, '_')}`;
 }
 
+function customMetadataTable(channelId: string): string {
+  return `D_MCM${channelId.replace(/-/g, '_')}`;
+}
+
 // Row interfaces
 export interface MessageRow extends RowDataPacket {
   ID: number;
@@ -74,6 +78,41 @@ export interface ContentRow extends RowDataPacket {
   CONTENT: string;
   DATA_TYPE: string;
   IS_ENCRYPTED: number;
+}
+
+/**
+ * Register a channel in D_CHANNELS table and get its local ID
+ * Creates D_CHANNELS table if needed
+ */
+export async function registerChannel(channelId: string): Promise<number> {
+  const pool = getPool();
+
+  // Ensure D_CHANNELS table exists
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS D_CHANNELS (
+      LOCAL_CHANNEL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      CHANNEL_ID VARCHAR(36) NOT NULL UNIQUE
+    ) ENGINE=InnoDB
+  `);
+
+  // Insert or get existing
+  await pool.execute(`INSERT IGNORE INTO D_CHANNELS (CHANNEL_ID) VALUES (?)`, [channelId]);
+
+  // Get the local ID
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT LOCAL_CHANNEL_ID FROM D_CHANNELS WHERE CHANNEL_ID = ?`,
+    [channelId]
+  );
+
+  return rows[0]!.LOCAL_CHANNEL_ID as number;
+}
+
+/**
+ * Unregister a channel from D_CHANNELS table
+ */
+export async function unregisterChannel(channelId: string): Promise<void> {
+  const pool = getPool();
+  await pool.execute(`DELETE FROM D_CHANNELS WHERE CHANNEL_ID = ?`, [channelId]);
 }
 
 /**
@@ -166,6 +205,40 @@ export async function createChannelTables(channelId: string): Promise<void> {
     await connection.query(`
       INSERT IGNORE INTO ${sequenceTable(channelId)} (ID, LOCAL_CHANNEL_ID) VALUES (1, 1)
     `);
+
+    // D_MCM - Custom metadata table (for user-defined message metadata columns)
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS ${customMetadataTable(channelId)} (
+        MESSAGE_ID BIGINT NOT NULL,
+        METADATA_ID INT NOT NULL,
+        PRIMARY KEY (MESSAGE_ID, METADATA_ID)
+      )
+    `);
+
+    // Add indexes for common queries (ignore duplicate key errors)
+    try {
+      await connection.query(`
+        CREATE INDEX IDX_MM_STATUS ON ${connectorMessageTable(channelId)} (STATUS)
+      `);
+    } catch {
+      // Index may already exist
+    }
+
+    try {
+      await connection.query(`
+        CREATE INDEX IDX_M_RECEIVED ON ${messageTable(channelId)} (RECEIVED_DATE)
+      `);
+    } catch {
+      // Index may already exist
+    }
+
+    try {
+      await connection.query(`
+        CREATE INDEX IDX_MC_TYPE ON ${contentTable(channelId)} (CONTENT_TYPE)
+      `);
+    } catch {
+      // Index may already exist
+    }
   });
 }
 
@@ -180,6 +253,7 @@ export async function dropChannelTables(channelId: string): Promise<void> {
     await connection.query(`DROP TABLE IF EXISTS ${attachmentTable(channelId)}`);
     await connection.query(`DROP TABLE IF EXISTS ${statisticsTable(channelId)}`);
     await connection.query(`DROP TABLE IF EXISTS ${sequenceTable(channelId)}`);
+    await connection.query(`DROP TABLE IF EXISTS ${customMetadataTable(channelId)}`);
   });
 }
 
