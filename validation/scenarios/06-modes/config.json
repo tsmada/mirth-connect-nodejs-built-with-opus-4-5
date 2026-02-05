@@ -1,0 +1,47 @@
+{
+  "id": "6",
+  "name": "Operational Modes",
+  "description": "Test takeover and standalone modes for Node.js Mirth",
+  "scenarios": [
+    {
+      "id": "6.1",
+      "name": "Takeover Mode",
+      "description": "Node.js connects to existing Java Mirth database",
+      "type": "mode",
+      "mode": "takeover",
+      "prerequisites": ["java-mirth-running"],
+      "steps": [
+        "Verify schema exists",
+        "Connect without creating tables",
+        "Deploy existing channel",
+        "Process test message"
+      ]
+    },
+    {
+      "id": "6.2",
+      "name": "Standalone Mode",
+      "description": "Node.js creates schema from scratch",
+      "type": "mode",
+      "mode": "standalone",
+      "prerequisites": ["empty-database"],
+      "steps": [
+        "Create core tables",
+        "Seed default data",
+        "Login with admin/admin",
+        "Import and deploy channel",
+        "Process test message"
+      ]
+    },
+    {
+      "id": "6.3",
+      "name": "Auto Detection",
+      "description": "Mode auto-detection based on database state",
+      "type": "mode",
+      "mode": "auto",
+      "steps": [
+        "Empty DB → detects standalone",
+        "After init → detects takeover on restart"
+      ]
+    }
+  ]
+}
