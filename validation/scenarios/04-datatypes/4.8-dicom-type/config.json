@@ -1,0 +1,24 @@
+{
+  "id": "4.8",
+  "name": "DICOM Metadata Parsing",
+  "description": "Tests DICOM data type for parsing and extracting metadata from DICOM objects",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "dicom",
+  "channelFile": "dicom-datatype-channel.xml",
+  "inputMessage": "dicom/sample-metadata.json",
+  "timeout": 30000,
+  "validationPoints": [
+    "DICOM tag extraction",
+    "VR (Value Representation) handling",
+    "Patient/Study/Series metadata",
+    "Private tag support",
+    "JSON serialization"
+  ],
+  "extractedFields": [
+    "PatientID",
+    "PatientName",
+    "StudyInstanceUID",
+    "Modality"
+  ]
+}

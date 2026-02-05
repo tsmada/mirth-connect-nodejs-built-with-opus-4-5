@@ -1,0 +1,19 @@
+{
+  "id": "4.7",
+  "name": "NCPDP Pharmacy Claims",
+  "description": "Tests NCPDP pharmacy claims parsing and serialization for D.0 and 5.1 formats",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "ncpdp",
+  "channelFile": "ncpdp-channel.xml",
+  "inputMessage": "ncpdp/sample-claim-d0.txt",
+  "timeout": 30000,
+  "validationPoints": [
+    "D.0 segment parsing",
+    "5.1 format handling",
+    "Field separation correct",
+    "Signed overpunch encoding",
+    "Code lookups work"
+  ],
+  "formats": ["D.0", "5.1"]
+}
