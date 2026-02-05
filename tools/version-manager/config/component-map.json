@@ -1,0 +1,399 @@
+{
+  "_comment": "Maps Java source paths to TypeScript files in the Node.js port",
+  "mappings": {
+    "connectors": {
+      "http": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/http/HttpReceiver.java",
+          "server/src/com/mirth/connect/connectors/http/HttpDispatcher.java",
+          "server/src/com/mirth/connect/connectors/http/HttpReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/http/HttpDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/http/HttpReceiver.ts",
+          "src/connectors/http/HttpDispatcher.ts"
+        ]
+      },
+      "tcp_mllp": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/tcp/TcpReceiver.java",
+          "server/src/com/mirth/connect/connectors/tcp/TcpDispatcher.java",
+          "server/src/com/mirth/connect/connectors/tcp/TcpReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/tcp/TcpDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/tcp/TcpReceiver.ts",
+          "src/connectors/tcp/TcpDispatcher.ts",
+          "src/connectors/tcp/MLLPFraming.ts"
+        ]
+      },
+      "jdbc": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/jdbc/DatabaseReceiver.java",
+          "server/src/com/mirth/connect/connectors/jdbc/DatabaseDispatcher.java",
+          "server/src/com/mirth/connect/connectors/jdbc/DatabaseReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/jdbc/DatabaseDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/jdbc/DatabaseReceiver.ts",
+          "src/connectors/jdbc/DatabaseDispatcher.ts"
+        ]
+      },
+      "file": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/file/FileReceiver.java",
+          "server/src/com/mirth/connect/connectors/file/FileDispatcher.java",
+          "server/src/com/mirth/connect/connectors/file/FileReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/file/FileDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/file/FileReceiver.ts",
+          "src/connectors/file/FileDispatcher.ts"
+        ]
+      },
+      "vm": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/vm/VmReceiver.java",
+          "server/src/com/mirth/connect/connectors/vm/VmDispatcher.java",
+          "server/src/com/mirth/connect/connectors/vm/VmReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/vm/VmDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/vm/VmReceiver.ts",
+          "src/connectors/vm/VmDispatcher.ts",
+          "src/connectors/vm/VmConnectorProperties.ts"
+        ]
+      },
+      "smtp": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/smtp/SmtpDispatcher.java",
+          "server/src/com/mirth/connect/connectors/smtp/SmtpDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/smtp/SmtpDispatcher.ts",
+          "src/connectors/smtp/SmtpDispatcherProperties.ts"
+        ]
+      },
+      "jms": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/jms/JmsReceiver.java",
+          "server/src/com/mirth/connect/connectors/jms/JmsDispatcher.java",
+          "server/src/com/mirth/connect/connectors/jms/JmsReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/jms/JmsDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/jms/JmsReceiver.ts",
+          "src/connectors/jms/JmsDispatcher.ts",
+          "src/connectors/jms/JmsClient.ts",
+          "src/connectors/jms/JmsConnectorProperties.ts"
+        ]
+      },
+      "webservice": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/ws/WebServiceReceiver.java",
+          "server/src/com/mirth/connect/connectors/ws/WebServiceDispatcher.java",
+          "server/src/com/mirth/connect/connectors/ws/WebServiceReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/ws/WebServiceDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/ws/WebServiceReceiver.ts",
+          "src/connectors/ws/WebServiceDispatcher.ts",
+          "src/connectors/ws/WebServiceReceiverProperties.ts",
+          "src/connectors/ws/WebServiceDispatcherProperties.ts",
+          "src/connectors/ws/SoapBuilder.ts",
+          "src/connectors/ws/WsdlParser.ts"
+        ]
+      },
+      "dicom": {
+        "java": [
+          "server/src/com/mirth/connect/connectors/dimse/DICOMReceiver.java",
+          "server/src/com/mirth/connect/connectors/dimse/DICOMDispatcher.java",
+          "server/src/com/mirth/connect/connectors/dimse/DICOMReceiverProperties.java",
+          "server/src/com/mirth/connect/connectors/dimse/DICOMDispatcherProperties.java"
+        ],
+        "node": [
+          "src/connectors/dicom/DICOMReceiver.ts",
+          "src/connectors/dicom/DICOMDispatcher.ts",
+          "src/connectors/dicom/DICOMReceiverProperties.ts",
+          "src/connectors/dicom/DICOMDispatcherProperties.ts",
+          "src/connectors/dicom/DicomConnection.ts"
+        ]
+      }
+    },
+    "datatypes": {
+      "hl7v2": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/hl7v2/HL7v2DataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/hl7v2/HL7v2Serializer.java",
+          "server/src/com/mirth/connect/plugins/datatypes/hl7v2/ER7Serializer.java"
+        ],
+        "node": [
+          "src/datatypes/hl7v2/HL7v2Parser.ts",
+          "src/datatypes/hl7v2/HL7v2Serializer.ts",
+          "src/datatypes/hl7v2/HL7v2Properties.ts",
+          "src/datatypes/hl7v2/HL7v2MetaData.ts",
+          "src/datatypes/hl7v2/HL7v2Ack.ts"
+        ]
+      },
+      "xml": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/xml/XMLDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/xml/XMLSerializer.java"
+        ],
+        "node": [
+          "src/datatypes/xml/XMLDataType.ts"
+        ]
+      },
+      "json": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/json/JSONDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/json/JSONSerializer.java"
+        ],
+        "node": [
+          "src/datatypes/json/JSONDataType.ts"
+        ]
+      },
+      "raw": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/raw/RawDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/raw/RawSerializer.java"
+        ],
+        "node": [
+          "src/datatypes/raw/RawDataType.ts"
+        ]
+      },
+      "delimited": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/delimited/DelimitedDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/delimited/DelimitedSerializer.java"
+        ],
+        "node": [
+          "src/datatypes/delimited/DelimitedSerializer.ts",
+          "src/datatypes/delimited/DelimitedProperties.ts"
+        ]
+      },
+      "edi": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/edi/EDIDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/edi/EDISerializer.java"
+        ],
+        "node": [
+          "src/datatypes/edi/EDISerializer.ts",
+          "src/datatypes/edi/EDIProperties.ts"
+        ]
+      },
+      "hl7v3": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/hl7v3/HL7V3DataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/hl7v3/HL7V3Serializer.java"
+        ],
+        "node": [
+          "src/datatypes/hl7v3/HL7V3Serializer.ts",
+          "src/datatypes/hl7v3/HL7V3Properties.ts",
+          "src/datatypes/hl7v3/HL7V3BatchAdaptor.ts"
+        ]
+      },
+      "ncpdp": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/ncpdp/NCPDPDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/ncpdp/NCPDPSerializer.java"
+        ],
+        "node": [
+          "src/datatypes/ncpdp/NCPDPSerializer.ts",
+          "src/datatypes/ncpdp/NCPDPReader.ts",
+          "src/datatypes/ncpdp/NCPDPReference.ts",
+          "src/datatypes/ncpdp/NCPDPProperties.ts"
+        ]
+      },
+      "dicom": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datatypes/dicom/DICOMDataTypeDelegate.java",
+          "server/src/com/mirth/connect/plugins/datatypes/dicom/DICOMSerializer.java"
+        ],
+        "node": [
+          "src/datatypes/dicom/DICOMSerializer.ts",
+          "src/datatypes/dicom/DICOMDataTypeProperties.ts"
+        ]
+      }
+    },
+    "javascript": {
+      "e4x_transpiler": {
+        "java": [
+          "server/src/org/mozilla/javascript/xmlimpl/XMLLibImpl.java"
+        ],
+        "node": [
+          "src/javascript/e4x/E4XTranspiler.ts",
+          "src/javascript/e4x/E4XParser.ts"
+        ]
+      },
+      "xml_proxy": {
+        "java": [],
+        "node": [
+          "src/javascript/e4x/XMLProxy.ts",
+          "src/javascript/e4x/XMLList.ts"
+        ]
+      },
+      "scope_builder": {
+        "java": [
+          "server/src/com/mirth/connect/server/util/javascript/JavaScriptScopeUtil.java"
+        ],
+        "node": [
+          "src/javascript/runtime/ScopeBuilder.ts"
+        ]
+      },
+      "script_builder": {
+        "java": [
+          "server/src/com/mirth/connect/server/builders/JavaScriptBuilder.java"
+        ],
+        "node": [
+          "src/javascript/runtime/ScriptBuilder.ts"
+        ]
+      }
+    },
+    "plugins": {
+      "javascript_rule": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/javascriptrule/JavaScriptRule.java"
+        ],
+        "node": [
+          "src/plugins/javascriptrule/JavaScriptRule.ts"
+        ]
+      },
+      "javascript_step": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/javascriptstep/JavaScriptStep.java"
+        ],
+        "node": [
+          "src/plugins/javascriptstep/JavaScriptStep.ts"
+        ]
+      },
+      "mapper": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/mapper/MapperStep.java"
+        ],
+        "node": [
+          "src/plugins/mapper/Mapper.ts"
+        ]
+      },
+      "message_builder": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/messagebuilder/MessageBuilderStep.java"
+        ],
+        "node": [
+          "src/plugins/messagebuilder/MessageBuilder.ts"
+        ]
+      },
+      "xslt": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/xsltstep/XsltStep.java"
+        ],
+        "node": [
+          "src/plugins/xsltstep/XsltStep.ts",
+          "src/plugins/xsltstep/XsltStepProperties.ts"
+        ]
+      },
+      "data_pruner": {
+        "java": [
+          "server/src/com/mirth/connect/plugins/datapruner/DataPruner.java",
+          "server/src/com/mirth/connect/plugins/datapruner/DataPrunerController.java"
+        ],
+        "node": [
+          "src/plugins/datapruner/DataPruner.ts",
+          "src/plugins/datapruner/DataPrunerController.ts",
+          "src/plugins/datapruner/DataPrunerServlet.ts",
+          "src/plugins/datapruner/DataPrunerStatus.ts",
+          "src/plugins/datapruner/MessageArchiver.ts"
+        ]
+      }
+    },
+    "core": {
+      "server": {
+        "java": [
+          "server/src/com/mirth/connect/server/Mirth.java"
+        ],
+        "node": [
+          "src/server/Mirth.ts",
+          "src/index.ts"
+        ]
+      },
+      "donkey_engine": {
+        "java": [
+          "donkey/src/main/java/com/mirth/connect/donkey/server/Donkey.java",
+          "donkey/src/main/java/com/mirth/connect/donkey/server/channel/Channel.java"
+        ],
+        "node": [
+          "src/donkey/Donkey.ts",
+          "src/donkey/channel/Channel.ts",
+          "src/donkey/channel/SourceConnector.ts",
+          "src/donkey/channel/DestinationConnector.ts",
+          "src/donkey/channel/FilterTransformerExecutor.ts"
+        ]
+      }
+    },
+    "api": {
+      "channels": {
+        "java": [
+          "server/src/com/mirth/connect/client/core/api/servlets/ChannelServletInterface.java",
+          "server/src/com/mirth/connect/server/api/servlets/ChannelServlet.java"
+        ],
+        "node": [
+          "src/api/servlets/ChannelServlet.ts",
+          "src/api/models/Channel.ts",
+          "src/controllers/ChannelController.ts"
+        ]
+      },
+      "engine": {
+        "java": [
+          "server/src/com/mirth/connect/client/core/api/servlets/EngineServletInterface.java",
+          "server/src/com/mirth/connect/server/api/servlets/EngineServlet.java"
+        ],
+        "node": [
+          "src/api/servlets/EngineServlet.ts",
+          "src/controllers/EngineController.ts"
+        ]
+      },
+      "messages": {
+        "java": [
+          "server/src/com/mirth/connect/client/core/api/servlets/MessageServletInterface.java",
+          "server/src/com/mirth/connect/server/api/servlets/MessageServlet.java"
+        ],
+        "node": [
+          "src/api/servlets/MessageServlet.ts"
+        ]
+      },
+      "users": {
+        "java": [
+          "server/src/com/mirth/connect/client/core/api/servlets/UserServletInterface.java",
+          "server/src/com/mirth/connect/server/api/servlets/UserServlet.java"
+        ],
+        "node": [
+          "src/api/servlets/UserServlet.ts",
+          "src/api/models/User.ts"
+        ]
+      },
+      "configuration": {
+        "java": [
+          "server/src/com/mirth/connect/client/core/api/servlets/ConfigurationServletInterface.java",
+          "server/src/com/mirth/connect/server/api/servlets/ConfigurationServlet.java"
+        ],
+        "node": [
+          "src/api/servlets/ConfigurationServlet.ts",
+          "src/api/models/ServerSettings.ts",
+          "src/controllers/ConfigurationController.ts"
+        ]
+      }
+    }
+  },
+  "packagePrefixes": {
+    "com.mirth.connect.connectors": "connectors",
+    "com.mirth.connect.plugins.datatypes": "datatypes",
+    "com.mirth.connect.plugins": "plugins",
+    "com.mirth.connect.server.userutil": "javascript/userutil",
+    "com.mirth.connect.server.util.javascript": "javascript/runtime",
+    "com.mirth.connect.server.builders": "javascript/runtime",
+    "com.mirth.connect.server.api": "api",
+    "com.mirth.connect.client.core.api": "api",
+    "com.mirth.connect.donkey": "donkey",
+    "com.mirth.connect.server": "server"
+  }
+}

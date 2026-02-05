@@ -28,7 +28,8 @@
     "tech-debt": "npm run lint && npm outdated",
     "tech-debt:dupes": "jscpd src --reporters console",
     "tech-debt:unused": "knip --reporter compact",
-    "postinstall": "node scripts/fix-xslt-processor.js"
+    "postinstall": "node scripts/fix-xslt-processor.js",
+    "version-manager": "cd tools/version-manager && npx ts-node index.ts"
   },
   "keywords": [
     "mirth",

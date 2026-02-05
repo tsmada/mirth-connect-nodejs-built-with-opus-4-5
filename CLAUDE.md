@@ -571,6 +571,22 @@ Parameters:
 
 See `agents/mirth-porter.md` for full specification.
 
+### version-upgrader
+Orchestrate version upgrades with parallel agents and git worktrees.
+
+**Use for**: Upgrading to new Mirth versions (e.g., 3.9.1 → 3.10.0).
+
+**Quick start**:
+```
+Use the version-upgrader agent to upgrade from 3.9.1 to 3.10.0.
+Parameters:
+- fromVersion: 3.9.1
+- toVersion: 3.10.0
+- parallelWaves: true
+```
+
+See `agents/version-upgrader.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)
@@ -981,3 +997,60 @@ All Waves 1-6 are complete. The porting project has reached production-ready sta
 - Additional servlet test coverage
 - Performance optimization for high-volume channels
 - Kubernetes deployment manifests
+
+---
+
+## Version Management
+
+### Tracking Versions
+
+The Node.js port tracks which Java Mirth version each component was ported from:
+
+| Field | Location | Purpose |
+|-------|----------|---------|
+| `mirthCompatibility.current` | manifest.json | Current target version |
+| `component.javaVersion` | manifest.json | Source version for component |
+| `versionMetadata` | manifest.json | Branch/tag mapping per version |
+
+### Version Manager CLI
+
+```bash
+# Check current status
+npm run version-manager -- status
+
+# Compare versions
+npm run version-manager -- diff 3.9.1 3.10.0
+
+# Generate upgrade tasks
+npm run version-manager -- upgrade tasks 3.10.0
+
+# Validate against specific version
+npm run version-manager -- validate 3.10.0
+```
+
+### Upgrade Workflow
+
+1. **Analyze**: `npm run version-manager -- diff 3.9.1 3.10.0 --impact`
+2. **Plan**: `npm run version-manager -- upgrade tasks 3.10.0 --parallel-agents`
+3. **Branch**: `npm run version-manager -- branch create 3.10.0`
+4. **Execute**: Work through generated tasks (optionally with parallel agents)
+5. **Validate**: `npm run version-manager -- validate 3.10.0 --deploy-java`
+6. **Merge**: `git checkout master && git merge feature/3.10.x`
+
+### Java Version Tags
+
+| Version | Tag | Migration Class | Notes |
+|---------|-----|-----------------|-------|
+| 3.9.0 | 3.9.0 | Migrate3_9_0.java | |
+| 3.9.1 | 3.9.1 | (none) | **Current** |
+| 3.10.0 | 3.10.0 | Migrate3_10_0.java | |
+| 3.11.0 | 3.11.0 | Migrate3_11_0.java | |
+| 4.0.0 | 4.0.0 | Migrate4_0_0.java | Major version |
+| 4.5.2 | 4.5.2 | Migrate4_5_0.java | Latest |
+
+### Available Skills
+
+- `/version-status` - Show current version and component breakdown
+- `/version-diff <from> <to>` - Compare Java versions
+- `/version-upgrade <target>` - Plan version upgrade
+- `/version-validate <version>` - Run version-specific validation

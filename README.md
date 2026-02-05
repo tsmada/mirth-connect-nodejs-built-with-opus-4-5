@@ -590,6 +590,62 @@ npm run validate -- --scenario 1.1
 
 **Total Tests: 2,559 passing**
 
+## Version Management
+
+This project includes tooling to track and manage porting across Mirth Connect versions.
+
+### Current Version
+
+- **Node.js Port**: Targets Mirth Connect **3.9.1**
+- **Tested Versions**: 3.9.0, 3.9.1
+- **Planned Versions**: 3.10.x, 4.x
+
+### Version Manager CLI
+
+```bash
+# Check current version status
+npm run version-manager -- status
+
+# Compare two Java Mirth versions
+npm run version-manager -- diff 3.9.1 3.10.0
+
+# Generate upgrade tasks
+npm run version-manager -- upgrade tasks 3.10.0
+
+# Create version branch
+npm run version-manager -- branch create 3.10.0
+```
+
+### Upgrading to a New Version
+
+```bash
+# 1. See what changed
+npm run version-manager -- diff 3.9.1 3.10.0 --impact
+
+# 2. Generate upgrade tasks
+npm run version-manager -- upgrade tasks 3.10.0 --parallel-agents
+
+# 3. Create version branch
+npm run version-manager -- branch create 3.10.0
+
+# 4. Work through tasks in tasks/upgrade-3.10.0.md
+
+# 5. Validate
+npm run version-manager -- validate 3.10.0
+
+# 6. Merge when ready
+git checkout master && git merge feature/3.10.x
+```
+
+### Version Compatibility Matrix
+
+| Node.js Port | Java Mirth | Status |
+|--------------|------------|--------|
+| master | 3.9.1 | ✅ Validated |
+| feature/3.10.x | 3.10.0 | 📋 Planned |
+| feature/4.0.x | 4.0.0 | 📋 Planned |
+| feature/4.5.x | 4.5.2 | 📋 Planned |
+
 ## Database
 
 This project uses the **existing Mirth MySQL schema** — no modifications required in takeover mode.

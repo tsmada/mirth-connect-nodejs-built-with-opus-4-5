@@ -16,6 +16,7 @@ Agents are reusable AI assistants with specific expertise. They follow documente
 | Agent | Purpose | When to Use |
 |-------|---------|-------------|
 | [mirth-porter](./mirth-porter.md) | Port Java Mirth code to TypeScript | New connectors, API endpoints, plugins, validation gaps |
+| [version-upgrader](./version-upgrader.md) | Orchestrate version upgrades with parallel agents | Upgrading to new Mirth versions (3.9.1 → 3.10.0, etc.) |
 
 ## How to Invoke an Agent
 

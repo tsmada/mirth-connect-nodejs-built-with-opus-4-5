@@ -1,6 +1,19 @@
 {
-  "version": "0.1.0",
-  "mirthCompatibility": "3.9.x",
+  "version": "0.2.0",
+  "mirthCompatibility": {
+    "current": "3.9.1",
+    "minimum": "3.9.0",
+    "tested": ["3.9.0", "3.9.1"]
+  },
+  "versionMetadata": {
+    "3.9.1": {
+      "nodeBranch": "master",
+      "javaTag": "3.9.1",
+      "status": "validated",
+      "ported": "2026-02-04",
+      "notes": "Initial Node.js port with 95+ components, 2,559 tests"
+    }
+  },
   "phaseProgress": {
     "phase1_foundation": "implemented",
     "phase2_javascript_runtime": "implemented",
@@ -73,6 +86,7 @@
         "status": "implemented",
         "description": "HTTP/REST receiver and dispatcher",
         "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/http/",
+        "javaVersion": "3.9.1",
         "files": ["src/connectors/http/HttpReceiver.ts", "src/connectors/http/HttpDispatcher.ts"],
         "tests": ["tests/unit/connectors/http/HttpReceiver.test.ts", "tests/unit/connectors/http/HttpDispatcher.test.ts"]
       },
@@ -80,6 +94,7 @@
         "status": "implemented",
         "description": "Database receiver and dispatcher",
         "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/jdbc/",
+        "javaVersion": "3.9.1",
         "files": ["src/connectors/jdbc/DatabaseReceiver.ts", "src/connectors/jdbc/DatabaseDispatcher.ts"],
         "tests": ["tests/unit/connectors/jdbc/DatabaseReceiver.test.ts", "tests/unit/connectors/jdbc/DatabaseDispatcher.test.ts"]
       },
@@ -94,6 +109,7 @@
         "status": "implemented",
         "description": "TCP/MLLP receiver and dispatcher",
         "javaSource": "/Users/adamstruthers/Projects/connect/server/src/com/mirth/connect/connectors/tcp/",
+        "javaVersion": "3.9.1",
         "files": ["src/connectors/tcp/TcpReceiver.ts", "src/connectors/tcp/TcpDispatcher.ts", "src/connectors/tcp/MLLPFraming.ts"],
         "tests": ["tests/unit/connectors/tcp/TcpReceiver.test.ts", "tests/unit/connectors/tcp/TcpDispatcher.test.ts", "tests/unit/connectors/tcp/MLLPFraming.test.ts"]
       },

@@ -1,0 +1,18 @@
+{
+  "repoPath": "~/Projects/connect",
+  "serverSrc": "server/src/com/mirth/connect",
+  "donkeySrc": "donkey/src/main/java/com/mirth/connect/donkey",
+  "migrationPath": "server/src/com/mirth/connect/server/migration",
+  "defaultBranch": "development",
+  "tagPrefix": "",
+  "paths": {
+    "connectors": "server/src/com/mirth/connect/connectors",
+    "plugins": "server/src/com/mirth/connect/plugins",
+    "server": "server/src/com/mirth/connect/server",
+    "client": "server/src/com/mirth/connect/client",
+    "donkey": "donkey/src/main/java/com/mirth/connect/donkey",
+    "datatypes": "server/src/com/mirth/connect/plugins/datatypes",
+    "userutil": "server/src/com/mirth/connect/server/userutil",
+    "api": "server/src/com/mirth/connect/client/core/api"
+  }
+}
