@@ -1,0 +1,22 @@
+{
+  "id": "4.6",
+  "name": "HL7v3 CDA Parsing",
+  "description": "Tests HL7v3 CDA (Clinical Document Architecture) document parsing, XML transformation, and serialization",
+  "priority": 4,
+  "type": "datatype",
+  "dataType": "hl7v3",
+  "channelFile": "hl7v3-channel.xml",
+  "inputMessage": "hl7v3/sample-cda.xml",
+  "timeout": 30000,
+  "validationPoints": [
+    "CDA document parsed correctly",
+    "Patient demographics extracted",
+    "Clinical sections preserved",
+    "XML namespace handling",
+    "Template IDs validated"
+  ],
+  "xmlNamespaces": {
+    "cda": "urn:hl7-org:v3",
+    "sdtc": "urn:hl7-org:sdtc"
+  }
+}

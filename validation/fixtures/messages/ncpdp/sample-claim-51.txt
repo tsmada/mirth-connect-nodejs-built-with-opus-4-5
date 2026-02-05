@@ -1,0 +1,43 @@
+<Message xmlns="http://www.ncpdp.org/schema/SCRIPT" version="5.1">
+  <Header>
+    <To>PHARMACY123</To>
+    <From>PRESCRIBER456</From>
+    <MessageID>MSG-001</MessageID>
+    <SentTime>2026-02-04T12:00:00</SentTime>
+  </Header>
+  <Body>
+    <NewRx>
+      <Patient>
+        <Name>
+          <FirstName>John</FirstName>
+          <LastName>Doe</LastName>
+        </Name>
+        <DateOfBirth>1980-01-15</DateOfBirth>
+        <Gender>M</Gender>
+        <Address>
+          <AddressLine1>123 Main Street</AddressLine1>
+          <City>Anytown</City>
+          <State>CA</State>
+          <ZipCode>90210</ZipCode>
+        </Address>
+      </Patient>
+      <Prescriber>
+        <Identification>
+          <NPI>1234567890</NPI>
+        </Identification>
+        <Name>
+          <FirstName>Jane</FirstName>
+          <LastName>Smith</LastName>
+        </Name>
+      </Prescriber>
+      <MedicationPrescribed>
+        <DrugDescription>Lisinopril 10mg Tablet</DrugDescription>
+        <NDC>12345678901</NDC>
+        <Quantity>30</Quantity>
+        <DaysSupply>30</DaysSupply>
+        <Directions>Take one tablet by mouth daily</Directions>
+        <Refills>5</Refills>
+      </MedicationPrescribed>
+    </NewRx>
+  </Body>
+</Message>
