@@ -17,6 +17,7 @@ import {
   SystemStats,
   ChannelStatus,
   Channel,
+  ChannelGroup,
   Message,
   MessageFilter,
   AttachmentInfo,
@@ -291,6 +292,31 @@ export class ApiClient {
   async getAllChannelStatistics(): Promise<Record<string, ChannelStatistics>> {
     const response = await this.axios.get('/api/channels/statistics');
     return handleResponse<Record<string, ChannelStatistics>>(response);
+  }
+
+  // ===========================================================================
+  // Channel Groups
+  // ===========================================================================
+
+  /**
+   * Get all channel groups
+   */
+  async getChannelGroups(): Promise<ChannelGroup[]> {
+    const response = await this.axios.get('/api/channelgroups');
+    const result = handleResponse<ChannelGroup[] | { channelGroup: ChannelGroup[] }>(response);
+    // Handle both array and wrapped response formats
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return result.channelGroup || [];
+  }
+
+  /**
+   * Get a specific channel group
+   */
+  async getChannelGroup(groupId: string): Promise<ChannelGroup> {
+    const response = await this.axios.get(`/api/channelgroups/${groupId}`);
+    return handleResponse<ChannelGroup>(response);
   }
 
   // ===========================================================================

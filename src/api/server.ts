@@ -6,6 +6,7 @@
  */
 
 import express, { Express, Request, Response, NextFunction } from 'express';
+import { createServer, Server as HttpServer } from 'http';
 import { authMiddleware, contentNegotiationMiddleware } from './middleware/index.js';
 import { userRouter } from './servlets/UserServlet.js';
 import { channelRouter } from './servlets/ChannelServlet.js';
@@ -25,6 +26,10 @@ import { usageRouter } from './servlets/UsageServlet.js';
 // Plugin routes
 import { codeTemplateRouter } from '../plugins/codetemplates/index.js';
 import { dataPrunerRouter } from '../plugins/datapruner/index.js';
+
+// WebSocket handlers
+import { dashboardStatusWebSocket } from '../plugins/dashboardstatus/DashboardStatusWebSocket.js';
+import { serverLogWebSocket } from '../plugins/serverlog/ServerLogWebSocket.js';
 
 export interface ServerOptions {
   port?: number;
@@ -138,18 +143,26 @@ export function createApp(options: ServerOptions = {}): Express {
 }
 
 /**
- * Start the API server
+ * Start the API server with WebSocket support
  */
-export async function startServer(options: ServerOptions = {}): Promise<ReturnType<Express['listen']>> {
+export async function startServer(options: ServerOptions = {}): Promise<HttpServer> {
   const config = { ...DEFAULT_OPTIONS, ...options };
   const app = createApp(options);
 
+  // Create HTTP server (required for WebSocket attachment)
+  const server = createServer(app);
+
+  // Attach WebSocket handlers
+  dashboardStatusWebSocket.attach(server, '/ws/dashboardstatus');
+  serverLogWebSocket.attach(server, '/ws/serverlog');
+
   return new Promise((resolve) => {
-    const server = app.listen(config.port!, config.host!, () => {
+    server.listen(config.port!, config.host!, () => {
       console.log(`Mirth Connect API server listening on http://${config.host}:${config.port}`);
+      console.log(`WebSocket endpoints available at /ws/dashboardstatus and /ws/serverlog`);
       resolve(server);
     });
   });
 }
 
-export { Express };
+export { Express, HttpServer };

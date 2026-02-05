@@ -45,11 +45,30 @@ src/cli/
 │   ├── server.ts               # info, status, stats
 │   ├── events.ts               # list, search, errors
 │   ├── config.ts               # get, set, list, reset
-│   └── dashboard.ts            # Interactive Ink-based dashboard
-├── ui/
-│   └── (Ink React components for dashboard)
+│   └── dashboard.ts            # Interactive Ink-based dashboard (thin wrapper)
+├── ui/                         # Dashboard component architecture
+│   ├── components/             # React/Ink UI components
+│   │   ├── Dashboard.tsx       # Main orchestrator (~280 lines)
+│   │   ├── Header.tsx          # Title, WS status, refresh indicator
+│   │   ├── ChannelList.tsx     # Grouped channel table with search
+│   │   ├── ChannelGroup.tsx    # Collapsible group header (▼/▶)
+│   │   ├── ChannelRow.tsx      # Individual channel row with stats
+│   │   ├── ChannelDetails.tsx  # Detail overlay with tabs
+│   │   ├── StatusIndicator.tsx # Color-coded state display (●/○/◐)
+│   │   ├── HelpBar.tsx         # Contextual keyboard shortcuts
+│   │   ├── StatusBar.tsx       # Server info, messages
+│   │   ├── SearchInput.tsx     # Filter input box (/)
+│   │   └── HelpOverlay.tsx     # Full keyboard reference (?)
+│   ├── hooks/                  # Business logic hooks
+│   │   ├── useWebSocket.ts     # WebSocket connection management
+│   │   ├── useChannels.ts      # Channel data & CRUD operations
+│   │   ├── useChannelGroups.ts # Group expand/collapse state
+│   │   └── useKeyboardShortcuts.ts
+│   └── context/
+│       └── DashboardContext.tsx # Shared state provider
 ├── lib/
 │   ├── ApiClient.ts            # REST API client
+│   ├── WebSocketClient.ts      # Real-time WebSocket client
 │   ├── ConfigManager.ts        # ~/.mirth-cli.json management
 │   ├── OutputFormatter.ts      # Table/JSON output formatting
 │   ├── ChannelResolver.ts      # Channel name → ID resolution
@@ -81,7 +100,82 @@ node dist/cli/index.js <command>  # Direct invocation
 npm run cli -- <command>          # Via npm script (note the --)
 ```
 
-**Dependencies:** commander, chalk (v5+), ora (v8+), conf, ink, react
+**Dependencies:** commander, chalk (v5+), ora (v8+), conf, ink, react, ws
+
+### Interactive Dashboard (`mirth-cli dashboard`)
+
+Real-time channel monitoring with WebSocket updates and keyboard navigation.
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Enhanced Dashboard                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  Header (ws status) │ ChannelList (groups) │ Details │ HelpBar     │
+├─────────────────────────────────────────────────────────────────────┤
+│  useWebSocket ←→ WebSocketClient ←→ /ws/dashboardstatus             │
+│  useChannels  ←→ ApiClient       ←→ /api/channels/*                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Real-Time Updates:**
+- Primary: WebSocket connection to `/ws/dashboardstatus`
+- Fallback: HTTP polling when WebSocket unavailable
+- Status shown in header: `[WS: Connected]` or `[Polling]`
+
+**Keyboard Shortcuts:**
+
+| Key | Action | Context |
+|-----|--------|---------|
+| `↑`/`k` | Move up | List |
+| `↓`/`j` | Move down | List |
+| `Enter` | Expand group / Show details | List |
+| `Space` | Multi-select toggle | List |
+| `s` | Start channel(s) | List |
+| `t` | Stop channel(s) | List |
+| `p` | Pause/resume | List |
+| `d` | Deploy | List |
+| `u` | Undeploy | List |
+| `r` | Manual refresh | Global |
+| `/` | Search mode | List |
+| `?` | Help overlay | Global |
+| `a` | Select all | List |
+| `c` | Clear selection | List |
+| `e` | Expand all groups | List |
+| `w` | Collapse all groups | List |
+| `Escape` | Exit mode/close | Search/Details |
+| `q` | Quit | Global |
+
+**Usage:**
+```bash
+# Default: WebSocket with polling fallback
+mirth-cli dashboard
+
+# Polling only (no WebSocket)
+mirth-cli dashboard --no-websocket
+
+# Custom refresh interval (for polling fallback)
+mirth-cli dashboard --refresh 10
+```
+
+**WebSocket Protocol (for custom integrations):**
+```typescript
+// Connect
+ws://localhost:8081/ws/dashboardstatus
+
+// Subscribe to all channel updates
+{ type: 'subscribe' }
+
+// Subscribe to specific channel
+{ type: 'subscribe', channelId: 'abc-123' }
+
+// Request current states
+{ type: 'getStates' }
+
+// Server broadcasts:
+{ type: 'stateChange', connectorId: '...', data: { channelId, connected, ... } }
+{ type: 'connectionLog', data: { channelId, event, timestamp, ... } }
+```
 
 ## Critical Patterns
 

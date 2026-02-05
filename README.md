@@ -247,11 +247,42 @@ mirth-cli events errors             # Show only error events
 
 #### Interactive Dashboard
 ```bash
-mirth-cli dashboard                 # Launch interactive dashboard
-mirth-cli dashboard --refresh 5     # Set refresh interval (seconds)
+mirth-cli dashboard                 # Launch interactive dashboard with WebSocket
+mirth-cli dashboard --no-websocket  # Polling-only mode
+mirth-cli dashboard --refresh 10    # Custom polling interval (seconds)
 ```
 
-The dashboard provides real-time channel status monitoring with keyboard navigation.
+The dashboard provides **real-time channel status monitoring** with WebSocket updates and comprehensive keyboard navigation.
+
+**Features:**
+- ✅ Real-time updates via WebSocket (`/ws/dashboardstatus`)
+- ✅ Automatic polling fallback when WebSocket unavailable
+- ✅ Channel groups with expand/collapse (▼/▶)
+- ✅ Multi-channel selection and batch operations
+- ✅ Search/filter mode (`/`)
+- ✅ Detail view panel with tabs
+- ✅ Vim-style navigation (`j`/`k`)
+- ✅ Help overlay (`?`)
+
+**Keyboard Shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `↑`/`k` | Move up |
+| `↓`/`j` | Move down |
+| `Enter` | Expand group / Show details |
+| `Space` | Toggle selection |
+| `s` | Start channel(s) |
+| `t` | Stop channel(s) |
+| `p` | Pause/resume |
+| `d` | Deploy |
+| `u` | Undeploy |
+| `/` | Search |
+| `?` | Help |
+| `a` | Select all |
+| `c` | Clear selection |
+| `r` | Refresh |
+| `q` | Quit |
 
 ### Global Options
 

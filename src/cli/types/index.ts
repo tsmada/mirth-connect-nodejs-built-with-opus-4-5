@@ -183,6 +183,18 @@ export interface Channel {
   }>;
 }
 
+/**
+ * Channel group
+ */
+export interface ChannelGroup {
+  id: string;
+  name: string;
+  description?: string;
+  revision?: number;
+  lastModified?: string;
+  channels: string[];
+}
+
 // =============================================================================
 // Message Types
 // =============================================================================
