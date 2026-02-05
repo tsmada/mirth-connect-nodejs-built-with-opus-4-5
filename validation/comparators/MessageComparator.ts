@@ -24,6 +24,20 @@ export interface ComparisonOptions {
   idFields?: string[];
 }
 
+/**
+ * Extended options for JSON comparison
+ */
+export interface JsonComparisonOptions extends ComparisonOptions {
+  /** Treat field order in objects as insignificant */
+  ignoreFieldOrder?: boolean;
+  /** Treat "123" as equal to 123 */
+  numericStringEquivalence?: boolean;
+  /** Treat null and undefined as equal */
+  ignoreNullVsUndefined?: boolean;
+  /** Ignore specific JSON paths (dot notation, e.g., "root.data.timestamp") */
+  ignorePaths?: string[];
+}
+
 const DEFAULT_OPTIONS: ComparisonOptions = {
   ignoreFields: [],
   ignoreWhitespace: true,
@@ -187,15 +201,23 @@ export class MessageComparator {
 
   /**
    * Compare two JSON documents
+   *
+   * @param expected Expected JSON string or object
+   * @param actual Actual JSON string or object
+   * @param options Extended comparison options for flexible matching
    */
-  compareJSON(expected: string, actual: string): ComparisonResult {
+  compareJSON(
+    expected: string | object,
+    actual: string | object,
+    options: JsonComparisonOptions = {}
+  ): ComparisonResult {
     const differences: Difference[] = [];
 
     try {
-      const obj1 = JSON.parse(expected);
-      const obj2 = JSON.parse(actual);
+      const obj1 = typeof expected === 'string' ? JSON.parse(expected) : expected;
+      const obj2 = typeof actual === 'string' ? JSON.parse(actual) : actual;
 
-      this.compareObjects(obj1, obj2, '', differences);
+      this.compareJsonObjects(obj1, obj2, '', differences, options);
     } catch (error) {
       differences.push({
         path: 'parse',
@@ -209,6 +231,159 @@ export class MessageComparator {
       differences,
       summary: this.generateSummary(differences),
     };
+  }
+
+  /**
+   * Compare JSON objects with extended options
+   */
+  private compareJsonObjects(
+    obj1: unknown,
+    obj2: unknown,
+    path: string,
+    differences: Difference[],
+    options: JsonComparisonOptions
+  ): void {
+    // Check if this path should be ignored
+    if (options.ignorePaths?.includes(path)) {
+      return;
+    }
+
+    // Handle null/undefined equivalence
+    if (options.ignoreNullVsUndefined) {
+      const isNull1 = obj1 === null || obj1 === undefined;
+      const isNull2 = obj2 === null || obj2 === undefined;
+      if (isNull1 && isNull2) {
+        return;
+      }
+    }
+
+    // Handle numeric string equivalence
+    if (options.numericStringEquivalence && this.isNumericEquivalent(obj1, obj2)) {
+      return;
+    }
+
+    // Type check
+    const type1 = typeof obj1;
+    const type2 = typeof obj2;
+
+    if (type1 !== type2) {
+      // Allow numeric string equivalence for type mismatch
+      if (options.numericStringEquivalence && this.isNumericEquivalent(obj1, obj2)) {
+        return;
+      }
+      differences.push({
+        path: path || 'root',
+        type: 'type_mismatch',
+        expected: `${type1} (${String(obj1)})`,
+        actual: `${type2} (${String(obj2)})`,
+        description: `Type mismatch at ${path || 'root'}: expected ${type1}, got ${type2}`,
+      });
+      return;
+    }
+
+    // Null check
+    if (obj1 === null || obj2 === null) {
+      if (obj1 !== obj2) {
+        differences.push({
+          path: path || 'root',
+          type: 'changed',
+          expected: obj1,
+          actual: obj2,
+          description: `Value mismatch at ${path || 'root'}: expected ${obj1}, got ${obj2}`,
+        });
+      }
+      return;
+    }
+
+    // Array comparison
+    if (Array.isArray(obj1) && Array.isArray(obj2)) {
+      if (obj1.length !== obj2.length) {
+        differences.push({
+          path: `${path}.length`,
+          type: 'changed',
+          expected: obj1.length,
+          actual: obj2.length,
+          description: `Array length mismatch at ${path}: expected ${obj1.length}, got ${obj2.length}`,
+        });
+      }
+
+      const maxLen = Math.max(obj1.length, obj2.length);
+      for (let i = 0; i < maxLen; i++) {
+        this.compareJsonObjects(obj1[i], obj2[i], `${path}[${i}]`, differences, options);
+      }
+      return;
+    }
+
+    // Check for array vs non-array mismatch
+    if (Array.isArray(obj1) !== Array.isArray(obj2)) {
+      differences.push({
+        path: path || 'root',
+        type: 'type_mismatch',
+        expected: Array.isArray(obj1) ? 'array' : 'object',
+        actual: Array.isArray(obj2) ? 'array' : 'object',
+        description: `Type mismatch at ${path || 'root'}: expected ${Array.isArray(obj1) ? 'array' : 'object'}, got ${Array.isArray(obj2) ? 'array' : 'object'}`,
+      });
+      return;
+    }
+
+    // Object comparison
+    if (type1 === 'object') {
+      const record1 = obj1 as Record<string, unknown>;
+      const record2 = obj2 as Record<string, unknown>;
+      const keys1 = Object.keys(record1);
+      const keys2 = Object.keys(record2);
+      const allKeys = new Set([...keys1, ...keys2]);
+
+      for (const key of allKeys) {
+        const newPath = path ? `${path}.${key}` : key;
+
+        if (!(key in record1)) {
+          differences.push({
+            path: newPath,
+            type: 'added',
+            actual: record2[key],
+            description: `Extra property at ${newPath}`,
+          });
+        } else if (!(key in record2)) {
+          differences.push({
+            path: newPath,
+            type: 'removed',
+            expected: record1[key],
+            description: `Missing property at ${newPath}`,
+          });
+        } else {
+          this.compareJsonObjects(record1[key], record2[key], newPath, differences, options);
+        }
+      }
+      return;
+    }
+
+    // Primitive comparison
+    if (obj1 !== obj2) {
+      differences.push({
+        path: path || 'root',
+        type: 'changed',
+        expected: obj1,
+        actual: obj2,
+        description: `Value mismatch at ${path || 'root'}: expected "${obj1}", got "${obj2}"`,
+      });
+    }
+  }
+
+  /**
+   * Check if two values are numerically equivalent
+   * e.g., "123" and 123 are considered equivalent
+   */
+  private isNumericEquivalent(a: unknown, b: unknown): boolean {
+    if (typeof a === 'number' && typeof b === 'string') {
+      const parsed = parseFloat(b);
+      return !isNaN(parsed) && a === parsed;
+    }
+    if (typeof a === 'string' && typeof b === 'number') {
+      const parsed = parseFloat(a);
+      return !isNaN(parsed) && parsed === b;
+    }
+    return false;
   }
 
   /**

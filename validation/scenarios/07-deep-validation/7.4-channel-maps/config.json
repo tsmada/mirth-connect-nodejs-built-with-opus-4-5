@@ -1,0 +1,59 @@
+[
+  {
+    "id": "7.4.1",
+    "name": "ChannelMap ($c) Set and Get",
+    "description": "Set values in $c and verify persistence through pipeline",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "map-test-channel.xml",
+    "inputMessage": "../inputs/map-test-message.hl7",
+    "mapAssertions": {
+      "channelMap": {
+        "patientMRN": "12345678",
+        "processedBy": "source-transformer"
+      }
+    },
+    "timeout": 30000
+  },
+  {
+    "id": "7.4.2",
+    "name": "SourceMap ($s) Read-Only",
+    "description": "Verify $s is read-only and warns on write attempt",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "sourcemap-readonly-channel.xml",
+    "inputMessage": "../inputs/map-test-message.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.4.3",
+    "name": "GlobalMap ($g) Cross-Message Persistence",
+    "description": "Set $g value, send second message, verify persistence",
+    "priority": 7,
+    "type": "mllp",
+    "multiMessage": true,
+    "channelFile": "globalmap-test-channel.xml",
+    "inputMessages": ["../inputs/msg1.hl7", "../inputs/msg2.hl7"],
+    "timeout": 45000
+  },
+  {
+    "id": "7.4.4",
+    "name": "GlobalChannelMap ($gc) Channel-Scoped",
+    "description": "Verify $gc persists within channel but isolated from others",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "globalchannelmap-test-channel.xml",
+    "inputMessage": "../inputs/map-test-message.hl7",
+    "timeout": 30000
+  },
+  {
+    "id": "7.4.5",
+    "name": "ConnectorMap ($co) Isolation",
+    "description": "Verify $co is isolated per connector",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "connectormap-test-channel.xml",
+    "inputMessage": "../inputs/map-test-message.hl7",
+    "timeout": 30000
+  }
+]

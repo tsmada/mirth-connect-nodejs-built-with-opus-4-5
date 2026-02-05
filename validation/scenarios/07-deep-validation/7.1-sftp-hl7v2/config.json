@@ -1,0 +1,24 @@
+[
+  {
+    "id": "7.1.1",
+    "name": "SFTP File Reader with HL7v2",
+    "description": "Read HL7v2 files from SFTP and process through transformer",
+    "priority": 7,
+    "type": "sftp",
+    "channelFile": "sftp-receiver-channel.xml",
+    "inputMessage": "../inputs/adt-for-sftp.hl7",
+    "outputFormat": "hl7",
+    "timeout": 60000
+  },
+  {
+    "id": "7.1.2",
+    "name": "SFTP File Writer with HL7v2",
+    "description": "Write HL7v2 to SFTP after transformation",
+    "priority": 7,
+    "type": "sftp",
+    "channelFile": "sftp-dispatcher-channel.xml",
+    "inputMessage": "../inputs/adt-for-sftp.hl7",
+    "outputFormat": "hl7",
+    "timeout": 60000
+  }
+]

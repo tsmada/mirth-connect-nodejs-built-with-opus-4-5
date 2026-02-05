@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<patient>
+  <mrn>98765432</mrn>
+  <name>
+    <family>SMITH</family>
+    <given>JANE</given>
+    <middle>ANN</middle>
+  </name>
+  <dob>19900315</dob>
+  <gender>F</gender>
+  <address>
+    <street>456 OAK AVE</street>
+    <city>SPRINGFIELD</city>
+    <state>IL</state>
+    <zip>62701</zip>
+  </address>
+  <phone>5559876543</phone>
+</patient>

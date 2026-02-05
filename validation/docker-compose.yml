@@ -106,7 +106,27 @@ services:
       timeout: 5s
       retries: 5
 
+  # SFTP Server - For file-based SFTP connector testing
+  sftp-server:
+    image: atmoz/sftp:latest
+    ports:
+      - "2222:22"      # SFTP port
+    volumes:
+      - sftp-java-data:/home/javauser/upload
+      - sftp-node-data:/home/nodeuser/upload
+    # Create users: username:password:uid with proper home directories
+    command: >
+      javauser:javapass:1001::input,output
+      nodeuser:nodepass:1002::input,output
+    healthcheck:
+      test: ["CMD", "pgrep", "sshd"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 volumes:
+  sftp-java-data:
+  sftp-node-data:
   mirth-db-data:
   mirth-appdata:
   soap-mock-data:

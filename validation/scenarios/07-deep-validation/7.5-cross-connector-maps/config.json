@@ -1,0 +1,33 @@
+[
+  {
+    "id": "7.5.1",
+    "name": "Multi-Destination Map Propagation",
+    "description": "Verify $c values from source available in all destinations",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "multi-destination-channel.xml",
+    "inputMessage": "../inputs/multi-dest-message.hl7",
+    "destinations": 3,
+    "timeout": 45000
+  },
+  {
+    "id": "7.5.2",
+    "name": "Destination Chain Map Accumulation",
+    "description": "Each destination adds to $c, later destinations see all values",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "chain-accumulation-channel.xml",
+    "inputMessage": "../inputs/multi-dest-message.hl7",
+    "timeout": 45000
+  },
+  {
+    "id": "7.5.3",
+    "name": "ResponseMap ($r) Aggregation",
+    "description": "Verify $r contains responses from all destinations",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "response-map-channel.xml",
+    "inputMessage": "../inputs/multi-dest-message.hl7",
+    "timeout": 45000
+  }
+]

@@ -1,0 +1,63 @@
+{
+  "patient": {
+    "mrn": "12345678",
+    "name": "DOE^JOHN^MICHAEL"
+  },
+  "order": {
+    "orderId": "ORD123",
+    "specimenId": "SPE456",
+    "testCode": "CBC",
+    "testName": "COMPLETE BLOOD COUNT",
+    "orderingProvider": "JONES^MARY^DR",
+    "collectionTime": "20260205130000",
+    "resultTime": "20260205140000",
+    "status": "F"
+  },
+  "results": [
+    {
+      "code": "WBC",
+      "name": "WHITE BLOOD CELL COUNT",
+      "value": 7.5,
+      "units": "10*9/L",
+      "referenceRange": "4.5-11.0",
+      "flag": "N",
+      "status": "F"
+    },
+    {
+      "code": "RBC",
+      "name": "RED BLOOD CELL COUNT",
+      "value": 4.8,
+      "units": "10*12/L",
+      "referenceRange": "4.0-5.5",
+      "flag": "N",
+      "status": "F"
+    },
+    {
+      "code": "HGB",
+      "name": "HEMOGLOBIN",
+      "value": 14.2,
+      "units": "g/dL",
+      "referenceRange": "12.0-16.0",
+      "flag": "N",
+      "status": "F"
+    },
+    {
+      "code": "HCT",
+      "name": "HEMATOCRIT",
+      "value": 42.5,
+      "units": "%",
+      "referenceRange": "36.0-46.0",
+      "flag": "N",
+      "status": "F"
+    },
+    {
+      "code": "PLT",
+      "name": "PLATELET COUNT",
+      "value": 250,
+      "units": "10*9/L",
+      "referenceRange": "150-400",
+      "flag": "N",
+      "status": "F"
+    }
+  ]
+}

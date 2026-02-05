@@ -5,9 +5,11 @@ import { MirthApiClient } from '../clients/MirthApiClient';
 import { MLLPClient } from '../clients/MLLPClient';
 import { HttpMessageClient } from '../clients/HttpMessageClient';
 import { FileClient } from '../clients/FileClient';
-import { MessageComparator, ComparisonResult, Difference } from '../comparators/MessageComparator';
+import { MessageComparator, ComparisonResult, Difference, JsonComparisonOptions } from '../comparators/MessageComparator';
 import { ResponseComparator } from '../comparators/ResponseComparator';
 import { ChannelExportComparator } from '../comparators/ChannelExportComparator';
+import { MapComparator, MapComparisonResult } from '../comparators/MapComparator';
+import { ValidationSftpClient, SftpConfig, DEFAULT_SFTP_CONFIG } from '../clients/SftpClient';
 
 // Get project root - process.cwd() should be validation directory when run via npm scripts
 function getProjectRoot(): string {
@@ -19,7 +21,7 @@ export interface ScenarioConfig {
   name: string;
   description: string;
   priority: number;
-  type: 'export' | 'mllp' | 'http' | 'file' | 'database';
+  type: 'export' | 'mllp' | 'http' | 'file' | 'database' | 'sftp';
   channelFile?: string;
   inputMessage?: string;
   expectedOutput?: string;
@@ -44,6 +46,37 @@ export interface ScenarioConfig {
     java?: string;
     node?: string;
   };
+  /**
+   * Output format for response comparison.
+   * Used to select the appropriate comparator.
+   */
+  outputFormat?: 'hl7' | 'xml' | 'json' | 'text';
+  /**
+   * Map assertions to validate channel map contents.
+   * Key is the map type (channelMap, sourceMap, etc.), value is key-value pairs to assert.
+   */
+  mapAssertions?: Record<string, Record<string, string>>;
+  /**
+   * Enable multi-message testing.
+   * When true, inputMessages array is used instead of inputMessage.
+   */
+  multiMessage?: boolean;
+  /**
+   * Array of input messages for multi-message testing.
+   */
+  inputMessages?: string[];
+  /**
+   * Number of destinations in multi-destination channels.
+   * Used for validation reporting.
+   */
+  destinations?: number;
+  /**
+   * SFTP configuration for SFTP scenarios.
+   */
+  sftpConfig?: {
+    java?: SftpConfig;
+    node?: SftpConfig;
+  };
 }
 
 export interface ScenarioStep {
@@ -67,6 +100,7 @@ export class ScenarioRunner {
   private messageComparator: MessageComparator;
   private responseComparator: ResponseComparator;
   private channelComparator: ChannelExportComparator;
+  private mapComparator: MapComparator;
 
   constructor(
     private javaClient: MirthApiClient,
@@ -76,6 +110,7 @@ export class ScenarioRunner {
     this.messageComparator = new MessageComparator();
     this.responseComparator = new ResponseComparator();
     this.channelComparator = new ChannelExportComparator();
+    this.mapComparator = new MapComparator();
   }
 
   /**
@@ -94,6 +129,8 @@ export class ScenarioRunner {
           return await this.runHttpScenario(config, startTime);
         case 'file':
           return await this.runFileScenario(config, startTime);
+        case 'sftp':
+          return await this.runSftpScenario(config, startTime);
         default:
           return {
             scenarioId: config.id,
@@ -492,6 +529,194 @@ export class ScenarioRunner {
       differences: [],
       duration: Date.now() - startTime,
     };
+  }
+
+  /**
+   * Run SFTP file transfer scenario
+   *
+   * Tests File connectors that use SFTP protocol for reading/writing files.
+   * Uploads test files via SFTP, triggers channel processing, and compares outputs.
+   */
+  private async runSftpScenario(
+    config: ScenarioConfig,
+    startTime: number
+  ): Promise<ScenarioResult> {
+    // Get SFTP configuration
+    const javaSftpConfig = config.sftpConfig?.java || DEFAULT_SFTP_CONFIG.java;
+    const nodeSftpConfig = config.sftpConfig?.node || DEFAULT_SFTP_CONFIG.node;
+
+    const javaSftp = new ValidationSftpClient(javaSftpConfig);
+    const nodeSftp = new ValidationSftpClient(nodeSftpConfig);
+
+    const basePath = config.basePath || path.join(getProjectRoot(), 'scenarios', config.id);
+    let javaChannelId: string | null = null;
+    let nodeChannelId: string | null = null;
+    const shouldDeploy = !config.skipDeployment;
+
+    try {
+      // Load and deploy channel with engine-specific configurations
+      if (config.channelFile) {
+        const channelXml = this.loadChannelFile(config.channelFile, basePath);
+
+        const javaChannel = this.prepareChannelForEngine(channelXml, 'java', config);
+        const nodeChannel = this.prepareChannelForEngine(channelXml, 'node', config);
+
+        javaChannelId = config.preDeployedChannelIds?.java || javaChannel.channelId;
+        nodeChannelId = config.preDeployedChannelIds?.node || nodeChannel.channelId;
+
+        if (shouldDeploy) {
+          // Delete existing channels first
+          try {
+            await this.javaClient.undeployChannel(javaChannelId);
+            await this.javaClient.deleteChannel(javaChannelId);
+          } catch {
+            // Ignore - channel may not exist
+          }
+          try {
+            await this.nodeClient.undeployChannel(nodeChannelId);
+            await this.nodeClient.deleteChannel(nodeChannelId);
+          } catch {
+            // Ignore - channel may not exist
+          }
+          await this.delay(500);
+
+          // Import engine-specific channels
+          await this.javaClient.importChannel(javaChannel.xml, true);
+          await this.nodeClient.importChannel(nodeChannel.xml, true);
+
+          // Deploy and wait for start
+          await this.javaClient.deployChannel(javaChannelId);
+          await this.nodeClient.deployChannel(nodeChannelId);
+          await this.javaClient.waitForChannelState(javaChannelId, 'STARTED', 120000);
+          await this.nodeClient.waitForChannelState(nodeChannelId, 'STARTED', 120000);
+        }
+      }
+
+      // Read input message
+      let inputContent: string;
+      if (config.inputMessage) {
+        const messagePath = path.join(basePath, config.inputMessage);
+        if (fs.existsSync(messagePath)) {
+          inputContent = fs.readFileSync(messagePath, 'utf8');
+        } else {
+          const fixturesPath = path.join(getProjectRoot(), 'fixtures', 'messages', config.inputMessage);
+          if (fs.existsSync(fixturesPath)) {
+            inputContent = fs.readFileSync(fixturesPath, 'utf8');
+          } else {
+            throw new Error(`Input message not found: ${config.inputMessage}`);
+          }
+        }
+      } else {
+        throw new Error('SFTP scenario requires inputMessage');
+      }
+
+      // Set up directories
+      const javaInputDir = '/home/javauser/input';
+      const nodeInputDir = '/home/nodeuser/input';
+      const javaOutputDir = '/home/javauser/output';
+      const nodeOutputDir = '/home/nodeuser/output';
+      const filename = `test-${Date.now()}.hl7`;
+      const outputFilename = filename.replace('.hl7', '.out');
+
+      await javaSftp.ensureDirectory(javaInputDir);
+      await javaSftp.ensureDirectory(javaOutputDir);
+      await nodeSftp.ensureDirectory(nodeInputDir);
+      await nodeSftp.ensureDirectory(nodeOutputDir);
+
+      // Upload input files to both engines
+      await javaSftp.uploadContent(inputContent, `${javaInputDir}/${filename}`);
+      await nodeSftp.uploadContent(inputContent, `${nodeInputDir}/${filename}`);
+
+      // Wait for output files
+      const timeout = config.timeout || 60000;
+      const javaOutputFound = await javaSftp.waitForFile(`${javaOutputDir}/${outputFilename}`, timeout);
+      const nodeOutputFound = await nodeSftp.waitForFile(`${nodeOutputDir}/${outputFilename}`, timeout);
+
+      if (!javaOutputFound || !nodeOutputFound) {
+        return {
+          scenarioId: config.id,
+          scenarioName: config.name,
+          passed: false,
+          error: `Output file not found: Java=${javaOutputFound}, Node=${nodeOutputFound}`,
+          differences: [],
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // Download and compare outputs
+      const javaOutput = await javaSftp.downloadFile(`${javaOutputDir}/${outputFilename}`);
+      const nodeOutput = await nodeSftp.downloadFile(`${nodeOutputDir}/${outputFilename}`);
+
+      const comparison = this.compareOutputs(javaOutput, nodeOutput, config.outputFormat || 'hl7');
+
+      // Cleanup input/output files
+      try {
+        await javaSftp.deleteFile(`${javaInputDir}/${filename}`);
+        await javaSftp.deleteFile(`${javaOutputDir}/${outputFilename}`);
+        await nodeSftp.deleteFile(`${nodeInputDir}/${filename}`);
+        await nodeSftp.deleteFile(`${nodeOutputDir}/${outputFilename}`);
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      return {
+        scenarioId: config.id,
+        scenarioName: config.name,
+        passed: comparison.match,
+        differences: comparison.differences,
+        javaResponse: javaOutput,
+        nodeResponse: nodeOutput,
+        duration: Date.now() - startTime,
+      };
+
+    } finally {
+      // Cleanup - undeploy and delete channels
+      if (shouldDeploy) {
+        if (javaChannelId) {
+          try {
+            await this.javaClient.undeployChannel(javaChannelId);
+            await this.javaClient.deleteChannel(javaChannelId);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+        if (nodeChannelId) {
+          try {
+            await this.nodeClient.undeployChannel(nodeChannelId);
+            await this.nodeClient.deleteChannel(nodeChannelId);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+      }
+
+      // Disconnect SFTP clients
+      await javaSftp.disconnect();
+      await nodeSftp.disconnect();
+    }
+  }
+
+  /**
+   * Compare outputs based on format
+   */
+  private compareOutputs(
+    javaOutput: string,
+    nodeOutput: string,
+    format: string
+  ): ComparisonResult {
+    switch (format) {
+      case 'json':
+        return this.messageComparator.compareJSON(javaOutput, nodeOutput, {
+          numericStringEquivalence: true,
+        });
+      case 'xml':
+        return this.messageComparator.compareXML(javaOutput, nodeOutput);
+      case 'text':
+        return this.messageComparator.compareText(javaOutput, nodeOutput);
+      case 'hl7':
+      default:
+        return this.messageComparator.compareHL7(javaOutput, nodeOutput);
+    }
   }
 
   /**

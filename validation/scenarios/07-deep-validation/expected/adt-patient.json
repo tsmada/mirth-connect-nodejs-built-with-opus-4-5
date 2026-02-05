@@ -1,0 +1,16 @@
+{
+  "mrn": "12345678",
+  "lastName": "DOE",
+  "firstName": "JOHN",
+  "middleName": "MICHAEL",
+  "dob": "19800101",
+  "gender": "M",
+  "address": {
+    "street": "123 MAIN ST",
+    "city": "ANYTOWN",
+    "state": "NY",
+    "zip": "12345"
+  },
+  "phone": "5551234567",
+  "ssn": "111-22-3333"
+}

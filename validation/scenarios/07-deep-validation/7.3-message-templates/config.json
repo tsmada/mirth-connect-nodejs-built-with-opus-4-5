@@ -1,0 +1,25 @@
+[
+  {
+    "id": "7.3.1",
+    "name": "Outbound Template - XML Builder",
+    "description": "Use outbound template (tmp) to build XML from HL7v2",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "outbound-template-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "expectedOutput": "../expected/patient-output.xml",
+    "outputFormat": "xml",
+    "timeout": 30000
+  },
+  {
+    "id": "7.3.2",
+    "name": "No Template - tmp equals msg",
+    "description": "Verify tmp starts as copy of msg when no template",
+    "priority": 7,
+    "type": "mllp",
+    "channelFile": "no-template-channel.xml",
+    "inputMessage": "../inputs/simple-adt.hl7",
+    "outputFormat": "hl7",
+    "timeout": 30000
+  }
+]
