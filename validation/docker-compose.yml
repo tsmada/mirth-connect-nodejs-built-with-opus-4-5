@@ -1,0 +1,117 @@
+version: '3.8'
+
+# Validation Docker Compose
+# Includes mock services for testing enterprise connectors (SMTP, JMS, WebService, DICOM)
+# Usage: docker-compose -f docker-compose.yml up -d
+
+services:
+  # MySQL database (shared with main docker-compose)
+  mirth-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: mirthroot
+      MYSQL_DATABASE: mirthdb
+      MYSQL_USER: mirth
+      MYSQL_PASSWORD: mirth
+    ports:
+      - "3306:3306"
+    volumes:
+      - mirth-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Java Mirth Connect (for comparison testing)
+  mirth-connect-java:
+    image: nextgenhealthcare/connect:3.9
+    depends_on:
+      mirth-db:
+        condition: service_healthy
+    ports:
+      - "8443:8443"    # HTTPS API
+      - "6661:6661"    # MLLP test port
+      - "8082:8082"    # HTTP test port
+    environment:
+      - DATABASE=mysql
+      - DATABASE_URL=jdbc:mysql://mirth-db:3306/mirthdb
+      - DATABASE_USERNAME=mirth
+      - DATABASE_PASSWORD=mirth
+    volumes:
+      - mirth-appdata:/opt/connect/appdata
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "https://localhost:8443/api/server/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # MailHog - Mock SMTP server for email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"    # SMTP port
+      - "8025:8025"    # Web UI & API
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "1025"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ActiveMQ - JMS broker for queue/topic testing
+  activemq:
+    image: rmohr/activemq:latest
+    ports:
+      - "61613:61613"  # STOMP port
+      - "61616:61616"  # OpenWire port
+      - "5672:5672"    # AMQP port
+      - "8161:8161"    # Web console
+    environment:
+      - ACTIVEMQ_REMOVE_DEFAULT_ACCOUNT=true
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8161/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock SOAP Service - For WebService testing
+  soap-mock:
+    image: castlemock/castlemock:latest
+    ports:
+      - "8087:8080"    # Web UI & mock endpoints
+    volumes:
+      - soap-mock-data:/root/.castlemock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Orthanc - DICOM server for PACS testing
+  orthanc:
+    image: jodogne/orthanc:latest
+    ports:
+      - "8042:8042"    # Web interface
+      - "4242:4242"    # DICOM port
+      - "11113:11112"  # Alt DICOM port for mock PACS
+    environment:
+      - ORTHANC__NAME=MirthTestPacs
+      - ORTHANC__DICOM_AET=ORTHANC
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8042/system"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mirth-db-data:
+  mirth-appdata:
+  soap-mock-data:
+
+# Network configuration
+networks:
+  default:
+    name: mirth-validation-net

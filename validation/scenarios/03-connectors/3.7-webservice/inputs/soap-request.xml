@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+               xmlns:mirth="http://mirth.example.com/services">
+  <soap:Header>
+    <mirth:AuthToken>test-token-12345</mirth:AuthToken>
+  </soap:Header>
+  <soap:Body>
+    <mirth:ProcessMessage>
+      <mirth:messageId>MSG-001</mirth:messageId>
+      <mirth:messageType>HL7</mirth:messageType>
+      <mirth:content>
+        <![CDATA[MSH|^~\&|SENDER|FAC|RECEIVER|FAC|202602041200||ADT^A01|MSG001|P|2.5]]>
+      </mirth:content>
+    </mirth:ProcessMessage>
+  </soap:Body>
+</soap:Envelope>

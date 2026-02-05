@@ -1,0 +1,14 @@
+{
+  "to": "recipient@example.com",
+  "from": "sender@mirth.local",
+  "subject": "Test Email from Mirth Connect",
+  "body": "<html><body><h1>Test Email</h1><p>This is a test email sent via the SMTP connector.</p></body></html>",
+  "contentType": "text/html",
+  "attachments": [
+    {
+      "filename": "test.txt",
+      "content": "VGhpcyBpcyBhIHRlc3QgYXR0YWNobWVudA==",
+      "contentType": "text/plain"
+    }
+  ]
+}

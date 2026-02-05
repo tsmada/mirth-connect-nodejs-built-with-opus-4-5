@@ -1,0 +1,30 @@
+{
+  "id": "3.8",
+  "name": "DICOM C-STORE",
+  "description": "Tests DICOM receiver (SCP) and dispatcher (SCU) with C-STORE and C-ECHO operations",
+  "priority": 3,
+  "type": "dicom",
+  "channelFile": "dicom-channel.xml",
+  "inputType": "dicom",
+  "inputMessage": "inputs/test-image.dcm",
+  "timeout": 60000,
+  "skipJavaComparison": true,
+  "ports": {
+    "dicomListener": 11112,
+    "mockPacs": 11113
+  },
+  "dicom": {
+    "callingAE": "MIRTH_SCU",
+    "calledAE": "MIRTH_SCP",
+    "transferSyntax": [
+      "1.2.840.10008.1.2",
+      "1.2.840.10008.1.2.1"
+    ]
+  },
+  "validationPoints": [
+    "C-ECHO verification succeeds",
+    "C-STORE transfers image",
+    "DICOM tags preserved",
+    "Association negotiation works"
+  ]
+}
