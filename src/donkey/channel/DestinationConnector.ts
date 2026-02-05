@@ -8,6 +8,7 @@
  * - Send messages to external systems
  * - Handle responses
  * - Queue management for retry
+ * - Track deployed state with event dispatching
  */
 
 import type { Channel } from './Channel.js';
@@ -16,6 +17,7 @@ import { ContentType } from '../../model/ContentType.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DestinationQueue } from '../queue/DestinationQueue.js';
+import { DeployedState } from '../../api/models/DashboardStatus.js';
 
 export interface DestinationConnectorConfig {
   name: string;
@@ -50,6 +52,12 @@ export abstract class DestinationConnector {
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
   protected responseTransformerExecutor: FilterTransformerExecutor | null = null;
   protected queue: DestinationQueue | null = null;
+
+  /**
+   * Current deployed state of this connector.
+   * Matches Java Mirth Connector.java:27
+   */
+  protected currentState: DeployedState = DeployedState.STOPPED;
 
   constructor(config: DestinationConnectorConfig) {
     this.name = config.name;
@@ -142,6 +150,40 @@ export abstract class DestinationConnector {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Get the current deployed state of this connector.
+   * Matches Java Mirth Connector.getCurrentState()
+   */
+  getCurrentState(): DeployedState {
+    return this.currentState;
+  }
+
+  /**
+   * Set the current state (without event dispatch).
+   * Matches Java Mirth Connector.setCurrentState()
+   */
+  setCurrentState(state: DeployedState): void {
+    this.currentState = state;
+  }
+
+  /**
+   * Update current state and dispatch event via channel.
+   * Matches Java Mirth DestinationConnector.updateCurrentState() in DestinationConnector.java:270-273
+   */
+  updateCurrentState(newState: DeployedState): void {
+    this.setCurrentState(newState);
+    // Dispatch state change event through channel's event emitter
+    if (this.channel) {
+      this.channel.emit('connectorStateChange', {
+        channelId: this.channel.getId(),
+        channelName: this.channel.getName(),
+        metaDataId: this.metaDataId,
+        connectorName: this.name,
+        state: newState,
+      });
+    }
   }
 
   isQueueEnabled(): boolean {

@@ -8,8 +8,10 @@
  * - Filter/transformer execution
  * - Pre/post processor execution
  * - Status tracking and persistence
+ * - Event-driven state changes via EventEmitter
  */
 
+import { EventEmitter } from 'events';
 import { Message, MessageData } from '../../model/Message.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status } from '../../model/Status.js';
@@ -21,6 +23,7 @@ import {
   getDefaultExecutor,
 } from '../../javascript/runtime/JavaScriptExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
+import { DeployedState } from '../../api/models/DashboardStatus.js';
 
 export interface ChannelConfig {
   id: string;
@@ -33,14 +36,31 @@ export interface ChannelConfig {
   undeployScript?: string;
 }
 
+/**
+ * @deprecated Use DeployedState enum instead
+ */
 export type ChannelState = 'STOPPED' | 'STARTING' | 'STARTED' | 'PAUSING' | 'PAUSED' | 'STOPPING';
 
-export class Channel {
+/**
+ * State change event data emitted when channel state changes
+ */
+export interface StateChangeEvent {
+  channelId: string;
+  channelName: string;
+  state: DeployedState;
+  previousState: DeployedState;
+}
+
+/**
+ * Channel runtime class - manages message flow and connector lifecycle.
+ * Extends EventEmitter to broadcast state changes to listeners (dashboard, WebSocket, etc.)
+ */
+export class Channel extends EventEmitter {
   private id: string;
   private name: string;
   private description: string;
   private enabled: boolean;
-  private state: ChannelState = 'STOPPED';
+  private currentState: DeployedState = DeployedState.STOPPED;
   private serverId: string = 'node-1';
 
   private sourceConnector: SourceConnector | null = null;
@@ -59,6 +79,7 @@ export class Channel {
   private nextMessageId = 1;
 
   constructor(config: ChannelConfig) {
+    super(); // Initialize EventEmitter
     this.id = config.id;
     this.name = config.name;
     this.description = config.description ?? '';
@@ -103,8 +124,60 @@ export class Channel {
     return this.enabled;
   }
 
+  /**
+   * @deprecated Use getCurrentState() instead
+   */
   getState(): ChannelState {
-    return this.state;
+    // Map DeployedState to legacy ChannelState for backwards compatibility
+    const stateMap: Record<DeployedState, ChannelState> = {
+      [DeployedState.STOPPED]: 'STOPPED',
+      [DeployedState.STARTING]: 'STARTING',
+      [DeployedState.STARTED]: 'STARTED',
+      [DeployedState.PAUSING]: 'PAUSING',
+      [DeployedState.PAUSED]: 'PAUSED',
+      [DeployedState.STOPPING]: 'STOPPING',
+      [DeployedState.DEPLOYING]: 'STOPPED',
+      [DeployedState.UNDEPLOYING]: 'STOPPING',
+      [DeployedState.SYNCING]: 'STARTED',
+      [DeployedState.UNKNOWN]: 'STOPPED',
+    };
+    return stateMap[this.currentState];
+  }
+
+  /**
+   * Get the current deployed state of the channel
+   */
+  getCurrentState(): DeployedState {
+    return this.currentState;
+  }
+
+  /**
+   * Update the current state and emit a stateChange event.
+   * This is the single source of truth for channel state.
+   *
+   * Matches Java Mirth pattern in Channel.java:217-220
+   */
+  updateCurrentState(newState: DeployedState): void {
+    const previousState = this.currentState;
+    this.currentState = newState;
+
+    const event: StateChangeEvent = {
+      channelId: this.id,
+      channelName: this.name,
+      state: newState,
+      previousState,
+    };
+
+    this.emit('stateChange', event);
+  }
+
+  /**
+   * Check if the channel is active (not stopped/stopping)
+   * Matches Java Mirth Channel.isActive()
+   */
+  isActive(): boolean {
+    return this.currentState !== DeployedState.STOPPED &&
+           this.currentState !== DeployedState.STOPPING;
   }
 
   setSourceConnector(connector: SourceConnector): void {
@@ -125,45 +198,87 @@ export class Channel {
     return this.destinationConnectors;
   }
 
+  /**
+   * Start the channel and all of its connectors.
+   *
+   * Implements proper rollback on partial failure - if any connector fails to start,
+   * all previously started connectors are stopped before throwing the error.
+   *
+   * Matches Java Mirth pattern in Channel.java:664-762
+   */
   async start(): Promise<void> {
-    if (this.state !== 'STOPPED' && this.state !== 'PAUSED') {
-      throw new Error(`Cannot start channel in state: ${this.state}`);
+    if (this.currentState !== DeployedState.STOPPED &&
+        this.currentState !== DeployedState.PAUSED &&
+        this.currentState !== DeployedState.DEPLOYING) {
+      throw new Error(`Cannot start channel in state: ${this.currentState}`);
     }
 
-    this.state = 'STARTING';
+    // Track what we've started for rollback on failure
+    const startedConnectors: Array<SourceConnector | DestinationConnector> = [];
 
     try {
+      this.updateCurrentState(DeployedState.STARTING);
+
       // Execute deploy script
       if (this.deployScript) {
         await this.executeScript(this.deployScript, 'deploy');
       }
 
-      // Start source connector
-      if (this.sourceConnector) {
-        await this.sourceConnector.start();
-      }
-
-      // Start destination connectors
+      // Start destination connectors first (they need to be ready to receive)
       for (const dest of this.destinationConnectors) {
         await dest.start();
+        startedConnectors.push(dest);
       }
 
-      this.state = 'STARTED';
+      // Start source connector last
+      if (this.sourceConnector) {
+        await this.sourceConnector.start();
+        startedConnectors.push(this.sourceConnector);
+      }
+
+      this.updateCurrentState(DeployedState.STARTED);
     } catch (error) {
-      this.state = 'STOPPED';
+      // Rollback: stop all connectors that were started (in reverse order)
+      try {
+        this.updateCurrentState(DeployedState.STOPPING);
+
+        // Stop in reverse order (LIFO) - source first, then destinations
+        for (let i = startedConnectors.length - 1; i >= 0; i--) {
+          const connector = startedConnectors[i];
+          try {
+            if (connector) {
+              await connector.stop();
+            }
+          } catch (stopError) {
+            // Log but continue stopping other connectors
+            console.error(`Error stopping connector during rollback: ${stopError}`);
+          }
+        }
+
+        this.updateCurrentState(DeployedState.STOPPED);
+      } catch (rollbackError) {
+        // Even if rollback fails, ensure we end up in STOPPED state
+        this.updateCurrentState(DeployedState.STOPPED);
+      }
+
       throw error;
     }
   }
 
+  /**
+   * Stop the channel and all of its connectors.
+   *
+   * Matches Java Mirth pattern in Channel.java:766-785
+   */
   async stop(): Promise<void> {
-    if (this.state === 'STOPPED') {
+    if (this.currentState === DeployedState.STOPPED) {
       return;
     }
 
-    this.state = 'STOPPING';
-
     try {
-      // Stop source connector first
+      this.updateCurrentState(DeployedState.STOPPING);
+
+      // Stop source connector first (stop receiving new messages)
       if (this.sourceConnector) {
         await this.sourceConnector.stop();
       }
@@ -177,35 +292,75 @@ export class Channel {
       if (this.undeployScript) {
         await this.executeScript(this.undeployScript, 'undeploy');
       }
-    } finally {
-      this.state = 'STOPPED';
+
+      this.updateCurrentState(DeployedState.STOPPED);
+    } catch (error) {
+      // Even on error, ensure we end up in STOPPED state
+      this.updateCurrentState(DeployedState.STOPPED);
+      throw error;
     }
   }
 
+  /**
+   * Pause the channel (stop receiving new messages but keep destinations running).
+   *
+   * Matches Java Mirth pattern in Channel.java:857-876
+   */
   async pause(): Promise<void> {
-    if (this.state !== 'STARTED') {
-      throw new Error(`Cannot pause channel in state: ${this.state}`);
+    if (this.currentState !== DeployedState.STARTED) {
+      if (this.currentState === DeployedState.PAUSED) {
+        console.warn(`Channel ${this.name} (${this.id}) is already paused.`);
+        return;
+      }
+      throw new Error(`Cannot pause channel in state: ${this.currentState}`);
     }
 
-    this.state = 'PAUSING';
+    try {
+      this.updateCurrentState(DeployedState.PAUSING);
 
-    if (this.sourceConnector) {
-      await this.sourceConnector.stop();
+      if (this.sourceConnector) {
+        await this.sourceConnector.stop();
+      }
+
+      this.updateCurrentState(DeployedState.PAUSED);
+    } catch (error) {
+      // On failure, try to remain in STARTED state
+      this.updateCurrentState(DeployedState.STARTED);
+      throw error;
     }
-
-    this.state = 'PAUSED';
   }
 
+  /**
+   * Resume the channel (start receiving messages again).
+   *
+   * Matches Java Mirth pattern in Channel.java:879-904
+   */
   async resume(): Promise<void> {
-    if (this.state !== 'PAUSED') {
-      throw new Error(`Cannot resume channel in state: ${this.state}`);
+    if (this.currentState !== DeployedState.PAUSED) {
+      throw new Error(`Cannot resume channel in state: ${this.currentState}`);
     }
 
-    if (this.sourceConnector) {
-      await this.sourceConnector.start();
-    }
+    try {
+      this.updateCurrentState(DeployedState.STARTING);
 
-    this.state = 'STARTED';
+      if (this.sourceConnector) {
+        await this.sourceConnector.start();
+      }
+
+      this.updateCurrentState(DeployedState.STARTED);
+    } catch (error) {
+      // On failure, try to return to PAUSED state
+      try {
+        this.updateCurrentState(DeployedState.PAUSING);
+        if (this.sourceConnector) {
+          await this.sourceConnector.stop();
+        }
+        this.updateCurrentState(DeployedState.PAUSED);
+      } catch {
+        // Ignore errors during rollback
+      }
+      throw error;
+    }
   }
 
   /**

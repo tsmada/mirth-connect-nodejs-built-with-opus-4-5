@@ -1,9 +1,10 @@
-import { Channel, ChannelConfig } from '../../../../src/donkey/channel/Channel';
+import { Channel, ChannelConfig, StateChangeEvent } from '../../../../src/donkey/channel/Channel';
 import { SourceConnector } from '../../../../src/donkey/channel/SourceConnector';
 import { DestinationConnector } from '../../../../src/donkey/channel/DestinationConnector';
 import { ConnectorMessage } from '../../../../src/model/ConnectorMessage';
 import { Message } from '../../../../src/model/Message';
 import { Status } from '../../../../src/model/Status';
+import { DeployedState } from '../../../../src/api/models/DashboardStatus';
 import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
 
@@ -322,6 +323,259 @@ describe('Channel', () => {
       const destMsg = message.getConnectorMessage(1);
       expect(destMsg?.getStatus()).toBe(Status.ERROR);
       expect(destMsg?.getProcessingError()).toContain('Send failed');
+    });
+  });
+
+  describe('state architecture', () => {
+    describe('getCurrentState', () => {
+      it('should return STOPPED initially', () => {
+        expect(channel.getCurrentState()).toBe(DeployedState.STOPPED);
+      });
+
+      it('should return STARTED after start', async () => {
+        await channel.start();
+        expect(channel.getCurrentState()).toBe(DeployedState.STARTED);
+        await channel.stop();
+      });
+
+      it('should return PAUSED after pause', async () => {
+        await channel.start();
+        await channel.pause();
+        expect(channel.getCurrentState()).toBe(DeployedState.PAUSED);
+        await channel.stop();
+      });
+    });
+
+    describe('updateCurrentState', () => {
+      it('should emit stateChange event', () => {
+        const events: StateChangeEvent[] = [];
+        channel.on('stateChange', (event: StateChangeEvent) => {
+          events.push(event);
+        });
+
+        channel.updateCurrentState(DeployedState.DEPLOYING);
+        channel.updateCurrentState(DeployedState.STOPPED);
+
+        expect(events).toHaveLength(2);
+        expect(events[0]?.state).toBe(DeployedState.DEPLOYING);
+        expect(events[0]?.previousState).toBe(DeployedState.STOPPED);
+        expect(events[1]?.state).toBe(DeployedState.STOPPED);
+        expect(events[1]?.previousState).toBe(DeployedState.DEPLOYING);
+      });
+
+      it('should include channel info in event', () => {
+        let receivedEvent: StateChangeEvent | undefined;
+        channel.on('stateChange', (event: StateChangeEvent) => {
+          receivedEvent = event;
+        });
+
+        channel.updateCurrentState(DeployedState.STARTING);
+
+        expect(receivedEvent?.channelId).toBe('test-channel-1');
+        expect(receivedEvent?.channelName).toBe('Test Channel');
+      });
+    });
+
+    describe('isActive', () => {
+      it('should return false when STOPPED', () => {
+        expect(channel.isActive()).toBe(false);
+      });
+
+      it('should return true when STARTED', async () => {
+        await channel.start();
+        expect(channel.isActive()).toBe(true);
+        await channel.stop();
+      });
+
+      it('should return true when PAUSED', async () => {
+        await channel.start();
+        await channel.pause();
+        expect(channel.isActive()).toBe(true);
+        await channel.stop();
+      });
+
+      it('should return false when STOPPING', () => {
+        channel.updateCurrentState(DeployedState.STOPPING);
+        expect(channel.isActive()).toBe(false);
+      });
+    });
+
+    describe('getState (legacy)', () => {
+      it('should map DeployedState to ChannelState', () => {
+        expect(channel.getState()).toBe('STOPPED');
+
+        channel.updateCurrentState(DeployedState.STARTING);
+        expect(channel.getState()).toBe('STARTING');
+
+        channel.updateCurrentState(DeployedState.STARTED);
+        expect(channel.getState()).toBe('STARTED');
+
+        channel.updateCurrentState(DeployedState.PAUSING);
+        expect(channel.getState()).toBe('PAUSING');
+
+        channel.updateCurrentState(DeployedState.PAUSED);
+        expect(channel.getState()).toBe('PAUSED');
+
+        channel.updateCurrentState(DeployedState.STOPPING);
+        expect(channel.getState()).toBe('STOPPING');
+
+        channel.updateCurrentState(DeployedState.STOPPED);
+        expect(channel.getState()).toBe('STOPPED');
+      });
+    });
+  });
+
+  describe('rollback on partial start failure', () => {
+    it('should stop started connectors on source start failure', async () => {
+      // Create a source connector that fails to start
+      class FailingSourceConnector extends SourceConnector {
+        constructor() {
+          super({ name: 'Failing Source', transportName: 'TEST' });
+        }
+        async start(): Promise<void> {
+          throw new Error('Source start failed');
+        }
+        async stop(): Promise<void> {
+          this.running = false;
+        }
+      }
+
+      // Track destination stop calls
+      let destStopCalled = false;
+      class TrackingDestinationConnector extends DestinationConnector {
+        constructor() {
+          super({ name: 'Tracking Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+        async start(): Promise<void> {
+          this.running = true;
+        }
+        async stop(): Promise<void> {
+          destStopCalled = true;
+          this.running = false;
+        }
+        async send(): Promise<void> {}
+        async getResponse(): Promise<string | null> { return null; }
+      }
+
+      const rollbackChannel = new Channel({
+        id: 'rollback-test',
+        name: 'Rollback Test',
+        enabled: true,
+      });
+
+      const dest = new TrackingDestinationConnector();
+      rollbackChannel.addDestinationConnector(dest);
+      rollbackChannel.setSourceConnector(new FailingSourceConnector());
+
+      // Attempt to start - should fail and rollback
+      await expect(rollbackChannel.start()).rejects.toThrow('Source start failed');
+
+      // Verify destination was stopped during rollback
+      expect(destStopCalled).toBe(true);
+
+      // Verify channel is in STOPPED state
+      expect(rollbackChannel.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+
+    it('should stop started connectors on destination start failure', async () => {
+      // Track what connectors were stopped
+      const stopOrder: string[] = [];
+
+      class TrackingSource extends SourceConnector {
+        constructor() {
+          super({ name: 'Tracking Source', transportName: 'TEST' });
+        }
+        async start(): Promise<void> {
+          this.running = true;
+        }
+        async stop(): Promise<void> {
+          stopOrder.push('source');
+          this.running = false;
+        }
+      }
+
+      class SuccessDestination extends DestinationConnector {
+        constructor() {
+          super({ name: 'Success Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+        async start(): Promise<void> {
+          this.running = true;
+        }
+        async stop(): Promise<void> {
+          stopOrder.push('dest1');
+          this.running = false;
+        }
+        async send(): Promise<void> {}
+        async getResponse(): Promise<string | null> { return null; }
+      }
+
+      class FailingDestination extends DestinationConnector {
+        constructor() {
+          super({ name: 'Failing Dest', metaDataId: 2, transportName: 'TEST' });
+        }
+        async start(): Promise<void> {
+          throw new Error('Destination start failed');
+        }
+        async stop(): Promise<void> {
+          stopOrder.push('dest2');
+          this.running = false;
+        }
+        async send(): Promise<void> {}
+        async getResponse(): Promise<string | null> { return null; }
+      }
+
+      const rollbackChannel = new Channel({
+        id: 'rollback-test-2',
+        name: 'Rollback Test 2',
+        enabled: true,
+      });
+
+      rollbackChannel.setSourceConnector(new TrackingSource());
+      rollbackChannel.addDestinationConnector(new SuccessDestination());
+      rollbackChannel.addDestinationConnector(new FailingDestination());
+
+      // Attempt to start - should fail and rollback
+      await expect(rollbackChannel.start()).rejects.toThrow('Destination start failed');
+
+      // Verify first destination was stopped (second didn't start, source didn't start)
+      expect(stopOrder).toContain('dest1');
+
+      // Verify channel is in STOPPED state
+      expect(rollbackChannel.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+
+    it('should emit correct state transitions during failed start', async () => {
+      class FailingSource extends SourceConnector {
+        constructor() {
+          super({ name: 'Failing', transportName: 'TEST' });
+        }
+        async start(): Promise<void> {
+          throw new Error('Failed');
+        }
+        async stop(): Promise<void> {}
+      }
+
+      const stateHistory: DeployedState[] = [];
+      const failChannel = new Channel({
+        id: 'state-test',
+        name: 'State Test',
+        enabled: true,
+      });
+
+      failChannel.on('stateChange', (event: StateChangeEvent) => {
+        stateHistory.push(event.state);
+      });
+
+      failChannel.setSourceConnector(new FailingSource());
+
+      await expect(failChannel.start()).rejects.toThrow();
+
+      // Should have gone: STARTING -> STOPPING -> STOPPED
+      expect(stateHistory).toEqual([
+        DeployedState.STARTING,
+        DeployedState.STOPPING,
+        DeployedState.STOPPED,
+      ]);
     });
   });
 });

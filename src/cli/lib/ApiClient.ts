@@ -134,6 +134,26 @@ export class ApiClient {
     this.axios = createAxiosInstance({ ...options, sessionToken });
   }
 
+  /**
+   * Extract error message from API response data
+   * The API returns errors in { error: "message" } format when returnErrors=true
+   */
+  private extractErrorMessage(data: unknown, fallback: string): string {
+    if (typeof data === 'object' && data !== null) {
+      const obj = data as Record<string, unknown>;
+      if (typeof obj.error === 'string') {
+        return obj.error;
+      }
+      if (typeof obj.message === 'string') {
+        return obj.message;
+      }
+    }
+    if (typeof data === 'string' && data.length > 0) {
+      return data;
+    }
+    return fallback;
+  }
+
   // ===========================================================================
   // Authentication
   // ===========================================================================
@@ -325,71 +345,85 @@ export class ApiClient {
 
   /**
    * Deploy a channel
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async deployChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_deploy`);
+    const response = await this.axios.post(`/api/channels/${channelId}/_deploy?returnErrors=true`);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to deploy channel: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to deploy channel');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 
   /**
    * Deploy multiple channels
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async deployChannels(channelIds: string[]): Promise<void> {
-    const response = await this.axios.post('/api/channels/_deploy', channelIds);
+    const response = await this.axios.post('/api/channels/_deploy?returnErrors=true', channelIds);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to deploy channels: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to deploy channels');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 
   /**
    * Undeploy a channel
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async undeployChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_undeploy`);
+    const response = await this.axios.post(`/api/channels/${channelId}/_undeploy?returnErrors=true`);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to undeploy channel: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to undeploy channel');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 
   /**
    * Start a channel
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async startChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_start`);
+    const response = await this.axios.post(`/api/channels/${channelId}/_start?returnErrors=true`);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to start channel: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to start channel');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 
   /**
    * Stop a channel
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async stopChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_stop`);
+    const response = await this.axios.post(`/api/channels/${channelId}/_stop?returnErrors=true`);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to stop channel: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to stop channel');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 
   /**
    * Pause a channel
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async pauseChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_pause`);
+    const response = await this.axios.post(`/api/channels/${channelId}/_pause?returnErrors=true`);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to pause channel: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to pause channel');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 
   /**
    * Resume a channel
+   * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async resumeChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_resume`);
+    const response = await this.axios.post(`/api/channels/${channelId}/_resume?returnErrors=true`);
     if (response.status >= 400) {
-      throw new ApiError(`Failed to resume channel: ${response.statusText}`, response.status);
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to resume channel');
+      throw new ApiError(errorMsg, response.status);
     }
   }
 

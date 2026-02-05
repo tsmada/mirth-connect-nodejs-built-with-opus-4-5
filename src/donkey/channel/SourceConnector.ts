@@ -7,12 +7,14 @@
  * - Receive messages and dispatch to channel
  * - Execute source filter and transformer
  * - Generate responses
+ * - Track deployed state with event dispatching
  */
 
 import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
+import { DeployedState } from '../../api/models/DashboardStatus.js';
 
 export interface SourceConnectorConfig {
   name: string;
@@ -31,6 +33,12 @@ export abstract class SourceConnector {
   protected queueSendFirst: boolean;
 
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
+
+  /**
+   * Current deployed state of this connector.
+   * Matches Java Mirth Connector.java:27
+   */
+  protected currentState: DeployedState = DeployedState.STOPPED;
 
   constructor(config: SourceConnectorConfig) {
     this.name = config.name;
@@ -91,6 +99,40 @@ export abstract class SourceConnector {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Get the current deployed state of this connector.
+   * Matches Java Mirth Connector.getCurrentState()
+   */
+  getCurrentState(): DeployedState {
+    return this.currentState;
+  }
+
+  /**
+   * Set the current state (without event dispatch).
+   * Matches Java Mirth Connector.setCurrentState()
+   */
+  setCurrentState(state: DeployedState): void {
+    this.currentState = state;
+  }
+
+  /**
+   * Update current state and dispatch event via channel.
+   * Matches Java Mirth SourceConnector.updateCurrentState() in SourceConnector.java:86-88
+   */
+  updateCurrentState(newState: DeployedState): void {
+    this.setCurrentState(newState);
+    // Dispatch state change event through channel's event emitter
+    if (this.channel) {
+      this.channel.emit('connectorStateChange', {
+        channelId: this.channel.getId(),
+        channelName: this.channel.getName(),
+        metaDataId: 0, // Source connector is always metaDataId 0
+        connectorName: this.name,
+        state: newState,
+      });
+    }
   }
 
   /**

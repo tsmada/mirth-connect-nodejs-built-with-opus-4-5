@@ -2,6 +2,13 @@
  * Engine Controller
  *
  * Business logic for channel deployment and status operations.
+ *
+ * ARCHITECTURE NOTE:
+ * The Channel.currentState is the SINGLE SOURCE OF TRUTH for channel state.
+ * This controller stores only deployment metadata (date, revision) and the runtime
+ * channel reference. All state queries go directly to the Channel instance.
+ *
+ * This matches Java Mirth's architecture where the Channel class owns its state.
  */
 
 import {
@@ -17,29 +24,40 @@ import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
 import { ensureChannelTables } from '../db/SchemaManager.js';
 import { getDonkeyInstance } from '../server/Mirth.js';
 
-// In-memory channel state store
-interface ChannelState {
+/**
+ * Deployment metadata for a channel.
+ * Note: State is NOT stored here - it comes from Channel.currentState
+ */
+interface DeploymentInfo {
   channelId: string;
   name: string;
-  state: DeployedState;
-  deployedDate?: Date;
+  deployedDate: Date;
   deployedRevision?: number;
-  runtimeChannel?: Channel;  // Runtime channel instance with connectors
+  runtimeChannel: Channel;  // Runtime channel instance - source of truth for state
 }
 
-const channelStates = new Map<string, ChannelState>();
+/**
+ * Map of deployed channels by ID.
+ * The Channel.currentState within each entry is the authoritative state.
+ */
+const deployedChannels = new Map<string, DeploymentInfo>();
 
 /**
  * Engine Controller - manages channel deployment and runtime state
+ *
+ * Key Design Principle:
+ * - Channel.currentState is the single source of truth
+ * - This controller only stores deployment metadata
+ * - State operations delegate to Channel methods which handle their own state
  */
 export class EngineController {
   /**
    * Get status for a single channel
    */
   static async getChannelStatus(channelId: string): Promise<DashboardStatus | null> {
-    const state = channelStates.get(channelId);
-    if (state) {
-      return this.createStatusFromState(state);
+    const deployment = deployedChannels.get(channelId);
+    if (deployment) {
+      return this.createStatusFromDeployment(deployment);
     }
 
     // Check if channel exists but isn't deployed
@@ -76,10 +94,10 @@ export class EngineController {
       const allChannels = await ChannelController.getAllChannels();
 
       for (const channel of allChannels) {
-        const state = channelStates.get(channel.id);
+        const deployment = deployedChannels.get(channel.id);
 
-        if (state) {
-          const status = this.createStatusFromState(state);
+        if (deployment) {
+          const status = this.createStatusFromDeployment(deployment);
           if (this.matchesFilter(status, filter)) {
             statuses.push(status);
           }
@@ -106,9 +124,9 @@ export class EngineController {
     const allStatuses: DashboardStatus[] = [];
 
     for (const channel of allChannels) {
-      const state = channelStates.get(channel.id);
-      const status = state
-        ? this.createStatusFromState(state)
+      const deployment = deployedChannels.get(channel.id);
+      const status = deployment
+        ? this.createStatusFromDeployment(deployment)
         : createDashboardStatus(channel.id, channel.name, DeployedState.STOPPED);
 
       if (this.matchesFilter(status, filter)) {
@@ -139,7 +157,7 @@ export class EngineController {
 
   /**
    * Deploy a single channel
-   * Registers the channel with both EngineController state AND Donkey engine
+   * Registers the channel with both EngineController and Donkey engine
    */
   static async deployChannel(channelId: string): Promise<void> {
     const channelConfig = await ChannelController.getChannel(channelId);
@@ -151,16 +169,12 @@ export class EngineController {
     await ensureChannelTables(channelId);
     console.log(`Channel tables verified for ${channelConfig.name}`);
 
-    // Set state to deploying
-    channelStates.set(channelId, {
-      channelId,
-      name: channelConfig.name,
-      state: DeployedState.DEPLOYING,
-    });
-
     try {
       // Build runtime channel with connectors
       const runtimeChannel = buildChannel(channelConfig);
+
+      // Channel starts in DEPLOYING state
+      runtimeChannel.updateCurrentState(DeployedState.DEPLOYING);
 
       // Register with Donkey engine (if available)
       const donkey = getDonkeyInstance();
@@ -168,32 +182,32 @@ export class EngineController {
         await donkey.deployChannel(runtimeChannel);
       }
 
-      // Determine initial state from channel properties
-      const initialState = channelConfig.properties?.initialState || DeployedState.STARTED;
-
-      // Store state with runtime channel
-      channelStates.set(channelId, {
+      // Store deployment info (state comes from runtimeChannel.currentState)
+      const deploymentInfo: DeploymentInfo = {
         channelId,
         name: channelConfig.name,
-        state: DeployedState.STOPPED,
         deployedDate: new Date(),
         deployedRevision: channelConfig.revision,
         runtimeChannel,
-      });
+      };
+      deployedChannels.set(channelId, deploymentInfo);
+
+      // Set to STOPPED after successful deployment build
+      runtimeChannel.updateCurrentState(DeployedState.STOPPED);
+
+      // Determine initial state from channel properties
+      const initialState = channelConfig.properties?.initialState || DeployedState.STARTED;
 
       // Start the channel if initial state is STARTED
+      // Channel.start() will manage its own state transitions
       if (initialState === DeployedState.STARTED) {
         await runtimeChannel.start();
-        const state = channelStates.get(channelId);
-        if (state) {
-          state.state = DeployedState.STARTED;
-        }
       }
 
-      console.log(`Channel ${channelConfig.name} deployed with state ${initialState}`);
+      console.log(`Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`);
     } catch (error) {
       console.error(`Failed to deploy channel ${channelConfig.name}:`, error);
-      channelStates.delete(channelId);
+      deployedChannels.delete(channelId);
       throw error;
     }
   }
@@ -202,7 +216,7 @@ export class EngineController {
    * Undeploy all channels
    */
   static async undeployAllChannels(): Promise<void> {
-    for (const channelId of channelStates.keys()) {
+    for (const channelId of deployedChannels.keys()) {
       await this.undeployChannel(channelId);
     }
   }
@@ -211,26 +225,24 @@ export class EngineController {
    * Undeploy a single channel
    */
   static async undeployChannel(channelId: string): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       return;
     }
 
-    // Set state to undeploying
-    state.state = DeployedState.UNDEPLOYING;
+    const { runtimeChannel, name } = deployment;
 
     try {
-      // Stop the runtime channel if it exists
-      if (state.runtimeChannel) {
-        await state.runtimeChannel.stop();
-      }
+      // Channel manages its own state during undeploy
+      runtimeChannel.updateCurrentState(DeployedState.UNDEPLOYING);
+      await runtimeChannel.stop();
     } catch (error) {
-      console.error(`Error stopping channel ${state.name}:`, error);
+      console.error(`Error stopping channel ${name}:`, error);
     }
 
-    // Remove from state
-    channelStates.delete(channelId);
-    console.log(`Channel ${state.name} undeployed`);
+    // Remove from deployed channels
+    deployedChannels.delete(channelId);
+    console.log(`Channel ${name} undeployed`);
   }
 
   /**
@@ -243,149 +255,123 @@ export class EngineController {
 
   /**
    * Start a channel
+   * Delegates to Channel.start() which manages its own state transitions
    */
   static async startChannel(channelId: string): Promise<void> {
-    let state = channelStates.get(channelId);
+    let deployment = deployedChannels.get(channelId);
 
-    if (!state) {
+    if (!deployment) {
       // Auto-deploy if not deployed
       await this.deployChannel(channelId);
-      state = channelStates.get(channelId);
+      deployment = deployedChannels.get(channelId);
     }
 
-    if (state) {
-      state.state = DeployedState.STARTING;
-      try {
-        if (state.runtimeChannel) {
-          await state.runtimeChannel.start();
-        }
-        state.state = DeployedState.STARTED;
-        console.log(`Channel ${state.name} started`);
-      } catch (error) {
-        state.state = DeployedState.STOPPED;
-        console.error(`Failed to start channel ${state.name}:`, error);
-        throw error;
-      }
+    if (deployment) {
+      const { runtimeChannel, name } = deployment;
+      // Channel.start() handles STARTING -> STARTED state transitions
+      // and rollback on failure (STOPPING -> STOPPED)
+      await runtimeChannel.start();
+      console.log(`Channel ${name} started`);
     }
   }
 
   /**
    * Stop a channel
+   * Delegates to Channel.stop() which manages its own state transitions
    */
   static async stopChannel(channelId: string): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
 
-    state.state = DeployedState.STOPPING;
-    try {
-      if (state.runtimeChannel) {
-        await state.runtimeChannel.stop();
-      }
-      state.state = DeployedState.STOPPED;
-      console.log(`Channel ${state.name} stopped`);
-    } catch (error) {
-      console.error(`Error stopping channel ${state.name}:`, error);
-      state.state = DeployedState.STOPPED;
-    }
+    const { runtimeChannel, name } = deployment;
+    // Channel.stop() handles STOPPING -> STOPPED state transitions
+    await runtimeChannel.stop();
+    console.log(`Channel ${name} stopped`);
   }
 
   /**
    * Halt a channel (force stop)
    */
   static async haltChannel(channelId: string): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
 
-    if (state.runtimeChannel) {
-      await state.runtimeChannel.stop();
-    }
-    state.state = DeployedState.STOPPED;
-    console.log(`Channel ${state.name} halted`);
+    const { runtimeChannel, name } = deployment;
+    await runtimeChannel.stop();
+    console.log(`Channel ${name} halted`);
   }
 
   /**
    * Pause a channel
+   * Delegates to Channel.pause() which manages its own state transitions
    */
   static async pauseChannel(channelId: string): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
 
-    state.state = DeployedState.PAUSING;
-    try {
-      if (state.runtimeChannel) {
-        await state.runtimeChannel.pause();
-      }
-      state.state = DeployedState.PAUSED;
-      console.log(`Channel ${state.name} paused`);
-    } catch (error) {
-      console.error(`Error pausing channel ${state.name}:`, error);
-      state.state = DeployedState.STARTED;
-    }
+    const { runtimeChannel, name } = deployment;
+    // Channel.pause() handles PAUSING -> PAUSED state transitions
+    await runtimeChannel.pause();
+    console.log(`Channel ${name} paused`);
   }
 
   /**
    * Resume a channel
+   * Delegates to Channel.resume() which manages its own state transitions
    */
   static async resumeChannel(channelId: string): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
 
-    state.state = DeployedState.STARTING;
-    try {
-      if (state.runtimeChannel) {
-        await state.runtimeChannel.resume();
-      }
-      state.state = DeployedState.STARTED;
-      console.log(`Channel ${state.name} resumed`);
-    } catch (error) {
-      console.error(`Error resuming channel ${state.name}:`, error);
-      state.state = DeployedState.PAUSED;
-    }
+    const { runtimeChannel, name } = deployment;
+    // Channel.resume() handles STARTING -> STARTED state transitions
+    await runtimeChannel.resume();
+    console.log(`Channel ${name} resumed`);
   }
 
   /**
    * Start a connector
    */
   static async startConnector(channelId: string, metaDataId: number): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
-    console.log(`Connector ${metaDataId} on channel ${state.name} started`);
+    console.log(`Connector ${metaDataId} on channel ${deployment.name} started`);
   }
 
   /**
    * Stop a connector
    */
   static async stopConnector(channelId: string, metaDataId: number): Promise<void> {
-    const state = channelStates.get(channelId);
-    if (!state) {
+    const deployment = deployedChannels.get(channelId);
+    if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
-    console.log(`Connector ${metaDataId} on channel ${state.name} stopped`);
+    console.log(`Connector ${metaDataId} on channel ${deployment.name} stopped`);
   }
 
   /**
    * Check if channel is deployed
    */
   static isDeployed(channelId: string): boolean {
-    return channelStates.has(channelId);
+    return deployedChannels.has(channelId);
   }
 
   /**
    * Get the runtime channel instance for a deployed channel
    */
   static getDeployedChannel(channelId: string): Channel | null {
-    const state = channelStates.get(channelId);
-    return state?.runtimeChannel ?? null;
+    const deployment = deployedChannels.get(channelId);
+    return deployment?.runtimeChannel ?? null;
   }
 
   /**
@@ -416,18 +402,20 @@ export class EngineController {
    * Get deployed channel count
    */
   static getDeployedCount(): number {
-    return channelStates.size;
+    return deployedChannels.size;
   }
 
   /**
-   * Create DashboardStatus from ChannelState
+   * Create DashboardStatus from DeploymentInfo
+   * Queries Channel.currentState as the single source of truth for state
    */
-  private static createStatusFromState(state: ChannelState): DashboardStatus {
+  private static createStatusFromDeployment(deployment: DeploymentInfo): DashboardStatus {
     return {
-      channelId: state.channelId,
-      name: state.name,
-      state: state.state,
-      deployedDate: state.deployedDate,
+      channelId: deployment.channelId,
+      name: deployment.name,
+      // STATE COMES FROM CHANNEL - Single Source of Truth
+      state: deployment.runtimeChannel.getCurrentState(),
+      deployedDate: deployment.deployedDate,
       deployedRevisionDelta: 0,
       statistics: createEmptyStatistics(),
     };

@@ -5,6 +5,7 @@ import { Status } from '../../../../src/model/Status';
 import { ContentType } from '../../../../src/model/ContentType';
 import { FilterTransformerScripts } from '../../../../src/donkey/channel/FilterTransformerExecutor';
 import { SerializationType } from '../../../../src/javascript/runtime/ScriptBuilder';
+import { DeployedState } from '../../../../src/api/models/DashboardStatus';
 import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
 
@@ -213,6 +214,64 @@ describe('SourceConnector', () => {
 
       await connector.executeTransformer(connectorMessage);
       // Should complete without error
+    });
+  });
+
+  describe('state tracking', () => {
+    it('should have STOPPED state initially', () => {
+      expect(connector.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+
+    it('should allow setting current state', () => {
+      connector.setCurrentState(DeployedState.STARTING);
+      expect(connector.getCurrentState()).toBe(DeployedState.STARTING);
+
+      connector.setCurrentState(DeployedState.STARTED);
+      expect(connector.getCurrentState()).toBe(DeployedState.STARTED);
+
+      connector.setCurrentState(DeployedState.STOPPED);
+      expect(connector.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+
+    it('should emit connectorStateChange event on updateCurrentState', () => {
+      const channel = new Channel({
+        id: 'test-channel',
+        name: 'Test Channel',
+        enabled: true,
+      });
+
+      connector.setChannel(channel);
+
+      interface ConnectorStateChangeEvent {
+        channelId: string;
+        channelName: string;
+        metaDataId: number;
+        connectorName: string;
+        state: DeployedState;
+      }
+
+      const events: ConnectorStateChangeEvent[] = [];
+      channel.on('connectorStateChange', (event: ConnectorStateChangeEvent) => {
+        events.push(event);
+      });
+
+      connector.updateCurrentState(DeployedState.STARTING);
+      connector.updateCurrentState(DeployedState.STARTED);
+
+      expect(events).toHaveLength(2);
+      expect(events[0]?.state).toBe(DeployedState.STARTING);
+      expect(events[0]?.metaDataId).toBe(0); // Source connector is metaDataId 0
+      expect(events[0]?.connectorName).toBe('Test Source');
+      expect(events[1]?.state).toBe(DeployedState.STARTED);
+    });
+
+    it('should not emit event when no channel attached', () => {
+      // Should not throw even without channel
+      expect(() => {
+        connector.updateCurrentState(DeployedState.STARTING);
+      }).not.toThrow();
+
+      expect(connector.getCurrentState()).toBe(DeployedState.STARTING);
     });
   });
 });

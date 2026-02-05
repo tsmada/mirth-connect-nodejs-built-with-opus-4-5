@@ -177,6 +177,26 @@ ws://localhost:8081/ws/dashboardstatus
 { type: 'connectionLog', data: { channelId, event, timestamp, ... } }
 ```
 
+### CLI API Behavior Deviation from Java Mirth
+
+**Important**: The `mirth-cli` tool deviates from Java Mirth API default behavior for better UX:
+
+| Aspect | Java Mirth API Default | mirth-cli Behavior |
+|--------|------------------------|-------------------|
+| Error Reporting | Returns HTTP 204 (success) even on failure | Passes `?returnErrors=true` to surface errors |
+| Silent Failures | Errors swallowed unless explicitly requested | Errors always surfaced to user |
+
+**Why this matters:**
+- Java Mirth Administrator (GUI) also uses `returnErrors=true` internally
+- The API default is for backward compatibility with legacy integrations
+- Our CLI needs errors to provide useful feedback to users
+
+**Affected operations:** deploy, undeploy, start, stop, pause, resume
+
+**If you see "success" but channel state doesn't change:**
+1. Check server logs for the actual error
+2. Common causes: unsupported connector type, missing dependencies, invalid configuration
+
 ## Critical Patterns
 
 ### E4X Transpilation
