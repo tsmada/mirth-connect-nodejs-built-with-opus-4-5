@@ -6,7 +6,7 @@
  */
 
 import React, { FC, useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import { ApiClient } from '../../lib/ApiClient.js';
 import { ConfigManager } from '../../lib/ConfigManager.js';
 import { ChannelStatus } from '../../types/index.js';
@@ -20,6 +20,13 @@ import { StatusBar } from './StatusBar.js';
 import { SearchInput } from './SearchInput.js';
 import { HelpOverlay } from './HelpOverlay.js';
 import { ChannelDetails } from './ChannelDetails.js';
+import { TraceInput } from './TraceInput.js';
+import { TraceTreeView } from './TraceTreeView.js';
+import { MessageList } from './MessageList.js';
+import { MessageDetail } from './MessageDetail.js';
+import { useTrace } from '../hooks/useTrace.js';
+import { useMessages } from '../hooks/useMessages.js';
+import { Message } from '../../types/index.js';
 import { ConnectionStatus, DashboardMessage, ViewMode } from '../context/DashboardContext.js';
 
 export interface DashboardProps {
@@ -39,6 +46,18 @@ function wsStatusToConnectionStatus(wsStatus: WebSocketStatus, polling: boolean)
 }
 
 /**
+ * Minimal component to handle Escape key in trace error/fallback states
+ */
+const TraceErrorHandler: FC<{ onClose: () => void }> = ({ onClose }) => {
+  useInput((_input, key) => {
+    if (key.escape) {
+      onClose();
+    }
+  });
+  return null;
+};
+
+/**
  * Main Dashboard component
  */
 export const Dashboard: FC<DashboardProps> = ({
@@ -55,6 +74,19 @@ export const Dashboard: FC<DashboardProps> = ({
   const [selectedChannelIds, setSelectedChannelIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [message, setMessage] = useState<DashboardMessage | null>(null);
+  const [traceChannelId, setTraceChannelId] = useState<string | null>(null);
+  const [traceVerbose, setTraceVerbose] = useState(false);
+  const [messagesChannelId, setMessagesChannelId] = useState<string | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [fullMessage, setFullMessage] = useState<Message | null>(null);
+  const [fullMessageLoading, setFullMessageLoading] = useState(false);
+  const [fullMessageError, setFullMessageError] = useState<string | null>(null);
+
+  // Trace hook
+  const trace = useTrace({ client });
+
+  // Messages hook
+  const messages = useMessages({ client });
 
   // WebSocket connection
   const ws = useWebSocket({
@@ -232,7 +264,7 @@ export const Dashboard: FC<DashboardProps> = ({
   useInput(
     (input, key) => {
       // Skip if in overlay mode
-      if (viewMode === 'help' || viewMode === 'details' || viewMode === 'search') {
+      if (viewMode === 'help' || viewMode === 'details' || viewMode === 'search' || viewMode === 'traceInput' || viewMode === 'trace' || viewMode === 'messages' || viewMode === 'messageDetail') {
         return;
       }
 
@@ -310,10 +342,20 @@ export const Dashboard: FC<DashboardProps> = ({
       else if (input === 'w' || input === 'W') {
         groups.collapseAll();
       }
+      // Trace message
+      else if (input === 'x' || input === 'X') {
+        if (selectedChannel) {
+          setTraceChannelId(selectedChannel.channelId);
+          trace.clear();
+          setViewMode('traceInput');
+        }
+      }
       // Messages view
       else if (input === 'm' || input === 'M') {
         if (selectedChannel) {
-          showMessage('Messages view not yet implemented', 'warning');
+          setMessagesChannelId(selectedChannel.channelId);
+          setViewMode('messages');
+          messages.loadMessages(selectedChannel.channelId).catch(() => {});
         }
       }
       // Quit
@@ -344,10 +386,187 @@ export const Dashboard: FC<DashboardProps> = ({
       onDeploy: async () => handleChannelAction('deploy', selectedChannel.channelId),
       onUndeploy: async () => handleChannelAction('undeploy', selectedChannel.channelId),
       onViewMessages: () => {
-        showMessage('Messages view not yet implemented', 'warning');
+        setMessagesChannelId(selectedChannel.channelId);
+        setViewMode('messages');
+        messages.loadMessages(selectedChannel.channelId).catch(() => {});
+      },
+      onTrace: (channelId: string) => {
+        setTraceChannelId(channelId);
+        trace.clear();
+        setViewMode('traceInput');
+      },
+    });
+  }
+
+  if (viewMode === 'messages' && messagesChannelId) {
+    const msgsChannel = channels.channels.find((ch) => ch.channelId === messagesChannelId);
+    const msgsChannelName = msgsChannel?.name ?? messagesChannelId;
+
+    return React.createElement(MessageList, {
+      messages: messages.messages,
+      totalCount: messages.totalCount,
+      loading: messages.loading,
+      error: messages.error,
+      page: messages.page,
+      pageSize: messages.pageSize,
+      statusFilter: messages.statusFilter,
+      channelName: msgsChannelName,
+      onClose: () => {
+        messages.clear();
+        setMessagesChannelId(null);
+        setViewMode('list');
+      },
+      onSelectMessage: (msg: Message) => {
+        setSelectedMessage(msg);
+        setFullMessage(null);
+        setFullMessageLoading(true);
+        setFullMessageError(null);
+        setViewMode('messageDetail');
+        client
+          .getMessage(msg.channelId, msg.messageId, true)
+          .then((full) => {
+            setFullMessage(full);
+            setFullMessageLoading(false);
+          })
+          .catch((err) => {
+            setFullMessageError(err instanceof Error ? err.message : String(err));
+            setFullMessageLoading(false);
+          });
+      },
+      onTrace: (channelId: string, messageId: number) => {
+        setTraceChannelId(channelId);
+        trace.clear();
+        setViewMode('trace');
+        trace
+          .execute(channelId, messageId, {
+            includeContent: true,
+            maxContentLength: traceVerbose ? 2000 : 500,
+          })
+          .catch(() => {});
+      },
+      onCycleFilter: () => {
+        messages.cycleStatusFilter().catch(() => {});
+      },
+      onNextPage: () => {
+        messages.nextPage().catch(() => {});
+      },
+      onPrevPage: () => {
+        messages.prevPage().catch(() => {});
+      },
+      onRefresh: () => {
+        messages.refresh().catch(() => {});
+      },
+    });
+  }
+
+  if (viewMode === 'messageDetail' && selectedMessage) {
+    const detailChannel = channels.channels.find(
+      (ch) => ch.channelId === selectedMessage.channelId
+    );
+    const detailChannelName = detailChannel?.name ?? selectedMessage.channelId;
+
+    return React.createElement(MessageDetail, {
+      message: selectedMessage,
+      channelName: detailChannelName,
+      fullMessage,
+      loading: fullMessageLoading,
+      error: fullMessageError,
+      onClose: () => {
+        setSelectedMessage(null);
+        setFullMessage(null);
+        setFullMessageError(null);
+        setViewMode('messages');
+      },
+      onTrace: (channelId: string, messageId: number) => {
+        setTraceChannelId(channelId);
+        trace.clear();
+        setViewMode('trace');
+        trace
+          .execute(channelId, messageId, {
+            includeContent: true,
+            maxContentLength: traceVerbose ? 2000 : 500,
+          })
+          .catch(() => {});
+      },
+    });
+  }
+
+  if (viewMode === 'traceInput' && traceChannelId) {
+    const traceChannel = channels.channels.find((ch) => ch.channelId === traceChannelId);
+    const traceChannelName = traceChannel?.name ?? traceChannelId;
+
+    return React.createElement(TraceInput, {
+      channelName: traceChannelName,
+      onSubmit: (messageId: number) => {
+        setViewMode('trace');
+        trace.execute(traceChannelId, messageId, {
+          includeContent: true,
+          maxContentLength: traceVerbose ? 2000 : 500,
+        }).catch(() => {});
+      },
+      onCancel: () => {
+        setTraceChannelId(null);
         setViewMode('list');
       },
     });
+  }
+
+  if (viewMode === 'trace') {
+    if (trace.loading) {
+      return React.createElement(
+        Box,
+        { flexDirection: 'column', paddingX: 2, paddingY: 1 },
+        React.createElement(Text, { color: 'cyan' }, 'Tracing message... please wait.')
+      );
+    }
+
+    if (trace.error) {
+      return React.createElement(
+        Box,
+        { flexDirection: 'column', paddingX: 2, paddingY: 1 },
+        React.createElement(Text, { color: 'red', bold: true }, 'Trace Error'),
+        React.createElement(Text, { color: 'red' }, trace.error),
+        React.createElement(
+          Box,
+          { marginTop: 1 },
+          React.createElement(Text, { color: 'gray' }, '[Escape] Back to list')
+        ),
+        React.createElement(TraceErrorHandler, {
+          onClose: () => {
+            trace.clear();
+            setTraceChannelId(null);
+            setViewMode('list');
+          },
+        })
+      );
+    }
+
+    if (trace.traceData) {
+      return React.createElement(TraceTreeView, {
+        traceData: trace.traceData,
+        verbose: traceVerbose,
+        onClose: () => {
+          trace.clear();
+          setTraceChannelId(null);
+          setViewMode('list');
+        },
+        onToggleVerbose: () => setTraceVerbose((v) => !v),
+      });
+    }
+
+    // Fallback (shouldn't happen - but handle gracefully)
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 2, paddingY: 1 },
+      React.createElement(Text, { color: 'gray' }, 'No trace data available.'),
+      React.createElement(TraceErrorHandler, {
+        onClose: () => {
+          trace.clear();
+          setTraceChannelId(null);
+          setViewMode('list');
+        },
+      })
+    );
   }
 
   // Main list view

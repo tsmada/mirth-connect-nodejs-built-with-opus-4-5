@@ -7,7 +7,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { ChannelStatus, ChannelGroup } from '../../types/index.js';
 
-export type ViewMode = 'list' | 'details' | 'messages' | 'help' | 'search';
+export type ViewMode = 'list' | 'details' | 'messages' | 'messageDetail' | 'help' | 'search' | 'traceInput' | 'trace';
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'polling';
 
 export interface DashboardMessage {

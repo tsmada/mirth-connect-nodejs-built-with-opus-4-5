@@ -28,6 +28,7 @@ const LIST_SHORTCUTS: ShortcutHint[] = [
   { key: 'R', label: 'Refresh' },
   { key: '/', label: 'Search' },
   { key: '?', label: 'Help' },
+  { key: 'X', label: 'Trace' },
   { key: 'Q', label: 'Quit' },
 ];
 
@@ -51,6 +52,7 @@ const DETAILS_SHORTCUTS: ShortcutHint[] = [
   { key: 'S', label: 'Start' },
   { key: 'T', label: 'Stop' },
   { key: 'M', label: 'Messages' },
+  { key: 'X', label: 'Trace' },
   { key: 'Esc', label: 'Close' },
 ];
 
@@ -61,6 +63,28 @@ const HELP_SHORTCUTS: ShortcutHint[] = [
 const MESSAGES_SHORTCUTS: ShortcutHint[] = [
   { key: '↑↓', label: 'Navigate' },
   { key: 'Enter', label: 'View' },
+  { key: 'X', label: 'Trace' },
+  { key: 'F', label: 'Filter' },
+  { key: 'N·B', label: 'Page' },
+  { key: 'R', label: 'Refresh' },
+  { key: 'Esc', label: 'Back' },
+];
+
+const MESSAGE_DETAIL_SHORTCUTS: ShortcutHint[] = [
+  { key: 'Tab', label: 'Switch Tab' },
+  { key: '↑↓', label: 'Navigate' },
+  { key: 'X', label: 'Trace' },
+  { key: 'Esc', label: 'Back' },
+];
+
+const TRACE_INPUT_SHORTCUTS: ShortcutHint[] = [
+  { key: 'Enter', label: 'Trace' },
+  { key: 'Esc', label: 'Cancel' },
+];
+
+const TRACE_SHORTCUTS: ShortcutHint[] = [
+  { key: '↑↓', label: 'Scroll' },
+  { key: 'V', label: 'Verbose' },
   { key: 'Esc', label: 'Back' },
 ];
 
@@ -74,6 +98,12 @@ function getShortcuts(viewMode: ViewMode, hasSelection: boolean): ShortcutHint[]
       return HELP_SHORTCUTS;
     case 'messages':
       return MESSAGES_SHORTCUTS;
+    case 'messageDetail':
+      return MESSAGE_DETAIL_SHORTCUTS;
+    case 'traceInput':
+      return TRACE_INPUT_SHORTCUTS;
+    case 'trace':
+      return TRACE_SHORTCUTS;
     case 'list':
     default:
       return hasSelection ? LIST_WITH_SELECTION_SHORTCUTS : LIST_SHORTCUTS;

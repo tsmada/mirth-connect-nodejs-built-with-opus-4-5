@@ -51,6 +51,31 @@ const HELP_CATEGORIES: ShortcutCategory[] = [
       { key: 'm', description: 'Messages view' },
       { key: '/', description: 'Search / Filter' },
       { key: '?', description: 'Show this help' },
+      { key: 'x', description: 'Trace message journey' },
+    ],
+  },
+  {
+    title: 'Messages',
+    shortcuts: [
+      { key: 'm', description: 'Open messages view' },
+      { key: '↑ / k', description: 'Move up' },
+      { key: '↓ / j', description: 'Move down' },
+      { key: 'Enter', description: 'View message detail' },
+      { key: 'x', description: 'Trace selected message' },
+      { key: 'f', description: 'Cycle status filter' },
+      { key: 'n', description: 'Next page' },
+      { key: 'b', description: 'Previous page' },
+      { key: 'Escape', description: 'Back to list' },
+    ],
+  },
+  {
+    title: 'Trace',
+    shortcuts: [
+      { key: 'x', description: 'Trace across channels' },
+      { key: '↑ / k', description: 'Scroll up' },
+      { key: '↓ / j', description: 'Scroll down' },
+      { key: 'v', description: 'Toggle verbose' },
+      { key: 'Escape', description: 'Close' },
     ],
   },
   {

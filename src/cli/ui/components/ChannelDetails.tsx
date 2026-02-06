@@ -20,6 +20,7 @@ export interface ChannelDetailsProps {
   onDeploy: () => Promise<void>;
   onUndeploy: () => Promise<void>;
   onViewMessages: () => void;
+  onTrace?: (channelId: string) => void;
 }
 
 /**
@@ -34,6 +35,7 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
   onDeploy,
   onUndeploy,
   onViewMessages,
+  onTrace,
 }) => {
   const [activeTab, setActiveTab] = useState<DetailsTab>('info');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -99,6 +101,8 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
       }
     } else if (input === 'm' || input === 'M') {
       onViewMessages();
+    } else if (input === 'x' || input === 'X') {
+      onTrace?.(channel.channelId);
     }
   });
 
@@ -260,7 +264,7 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
       React.createElement(
         Text,
         { color: 'gray' },
-        '[S] Start  [T] Stop  [P] Pause  [D] Deploy  [U] Undeploy  [M] Messages'
+        '[S] Start  [T] Stop  [P] Pause  [D] Deploy  [U] Undeploy  [M] Messages  [X] Trace'
       )
     )
   );
