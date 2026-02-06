@@ -123,8 +123,8 @@ export class WebSocketClient extends EventEmitter {
       const onOpen = () => {
         this.reconnectAttempts = 0;
         this.startPing();
-        cleanup();
-        // Wait for 'connected' message from server
+        // Don't cleanup yet — we still need onMessage to receive
+        // the server's 'connected' welcome message and resolve the promise.
       };
 
       const onMessage = (data: WebSocket.Data) => {
