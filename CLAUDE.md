@@ -28,6 +28,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 | Database Task | DatabaseTaskServlet.ts | Maintenance tasks |
 | System | SystemServlet.ts | System info/stats |
 | Usage | UsageServlet.ts | Usage data reporting |
+| Trace | TraceServlet.ts | Cross-channel message tracing (Node.js-only) |
 
 ### CLI Monitor Utility (`src/cli/`)
 
@@ -41,6 +42,7 @@ src/cli/
 │   ├── auth.ts                 # login, logout, whoami
 │   ├── channels.ts             # list, get, deploy, start, stop, pause, resume, stats
 │   ├── messages.ts             # list, search, get, export
+│   ├── trace.ts                # cross-channel message tracing
 │   ├── send.ts                 # mllp, http, hl7 message sending
 │   ├── server.ts               # info, status, stats
 │   ├── events.ts               # list, search, errors
@@ -71,6 +73,7 @@ src/cli/
 │   ├── WebSocketClient.ts      # Real-time WebSocket client
 │   ├── ConfigManager.ts        # ~/.mirth-cli.json management
 │   ├── OutputFormatter.ts      # Table/JSON output formatting
+│   ├── TraceFormatter.ts       # Cross-channel trace tree rendering
 │   ├── ChannelResolver.ts      # Channel name → ID resolution
 │   └── MessageSender.ts        # MLLP/HTTP sending utilities
 └── types/
@@ -91,6 +94,7 @@ mirth-cli channels                 # List channels with status
 mirth-cli channels start <name>   # Start by name (not just ID!)
 mirth-cli messages <channelId> --status E  # Find errors
 mirth-cli send hl7 localhost:6662 @test.hl7  # Send test message
+mirth-cli trace "Channel A" 123    # Trace message across VM-connected channels
 mirth-cli dashboard               # Interactive real-time view
 ```
 
@@ -196,6 +200,85 @@ ws://localhost:8081/ws/dashboardstatus
 **If you see "success" but channel state doesn't change:**
 1. Check server logs for the actual error
 2. Common causes: unsupported connector type, missing dependencies, invalid configuration
+
+### Engine Behavior Deviations from Java Mirth
+
+#### SourceMap Persistence (Additive)
+
+**Change**: Node.js Mirth now persists `sourceMap` data to `D_MC` tables (`CONTENT_TYPE=14`, `METADATA_ID=0`) after each message completes processing in `Channel.dispatchRawMessage()`.
+
+**Java behavior**: Java Mirth's Donkey engine also writes sourceMap to `D_MC` tables as part of its pipeline storage manager. Our behavior matches — the data format (JSON-serialized map) and content type (14) are identical.
+
+**Impact**: This is an **additive write** — new rows appear in `D_MC` that wouldn't have existed before. It does not modify existing rows. If running in takeover mode against a Java Mirth database:
+- The extra `D_MC` rows are harmless — Java Mirth also writes these
+- If the Node.js engine is later replaced with Java Mirth, the rows are compatible
+
+**Why**: Required for the cross-channel trace feature. Without persisted sourceMap data, the trace service cannot reconstruct message chains across VM-connected channels.
+
+#### Cross-Channel Trace API (Node.js-Only)
+
+**Endpoint**: `GET /api/messages/trace/:channelId/:messageId`
+
+**This endpoint does NOT exist in Java Mirth.** It is a Node.js-only extension.
+
+The trace feature uses VM Connector chain-tracking data (`sourceChannelIds[]`, `sourceMessageIds[]`) already present in the sourceMap to reconstruct message journeys across channels. It also builds a dependency graph from Channel Writer destination configurations to scope forward-trace queries.
+
+| Aspect | Java Mirth | Node.js Mirth |
+|--------|------------|---------------|
+| SourceMap persistence | Written by Donkey StorageManager | Written by `Channel.dispatchRawMessage()` |
+| Trace API endpoint | Does not exist | `GET /api/messages/trace/:channelId/:messageId` |
+| Trace CLI command | Does not exist | `mirth-cli trace <channel> <messageId>` |
+| D_MC content type 14 | SOURCE_MAP | SOURCE_MAP (identical) |
+| D_MC data format | JSON map | JSON map (identical) |
+
+#### ContentType Enum Fix (Bug Fix)
+
+**Fixed**: `src/api/models/MessageFilter.ts` had an incorrect `RESPONSE_ERROR = 14, SOURCE_MAP = 15` which did not match Java Mirth or the donkey engine model (`src/model/ContentType.ts`). Java Mirth has no `RESPONSE_ERROR` content type — it stops at `SOURCE_MAP = 14`. The inline content type maps in `MessageServlet.ts` had the same error. Both were corrected to match Java Mirth exactly.
+
+### Cross-Channel Message Trace (`mirth-cli trace`)
+
+Traces a message across VM-connected channels (Channel Writer/Reader), showing the complete journey from source to final destination(s).
+
+**Architecture:**
+```
+TraceService.ts
+├── buildChannelDependencyGraph()  — Reads all channel configs, extracts Channel Writer targets
+├── traceBackward()                — Follows sourceMap chain to find root message
+├── traceForward()                 — Uses dependency graph + D_MC queries to find downstream
+└── traceMessage()                 — Entry point: backward to root, then forward to build tree
+```
+
+**How it works:**
+1. The VM Connector already tracks `sourceChannelId`, `sourceMessageId`, `sourceChannelIds[]`, `sourceMessageIds[]` in the sourceMap as messages flow between channels
+2. `Channel.dispatchRawMessage()` persists the sourceMap to `D_MC` (`CONTENT_TYPE=14`)
+3. The trace service queries `D_MC` tables to follow chains backward (sourceMap → parent) and forward (dependency graph → `LIKE` query on downstream channel tables)
+4. Results are assembled into a tree structure with content snapshots at each hop
+
+**Usage:**
+```bash
+mirth-cli trace "ADT Receiver" 123              # Full trace (backward + forward)
+mirth-cli trace "ADT Receiver" 123 --verbose     # Full content (2000 char previews)
+mirth-cli trace "ADT Receiver" 123 --direction backward  # Only upstream chain
+mirth-cli trace "ADT Receiver" 123 --no-content  # Tree structure only
+mirth-cli trace "ADT Receiver" 123 --json         # Raw JSON output
+```
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-v, --verbose` | false | Full content (2000 char limit vs 200) |
+| `-c, --content <types>` | `raw,transformed,response,error` | Content types to show |
+| `--max-depth <n>` | 10 | Max trace depth |
+| `--direction <dir>` | `both` | `both`, `backward`, `forward` |
+| `--no-content` | - | Hide content, show tree structure only |
+| `--json` | - | Output raw JSON |
+
+**Performance:**
+- Dependency graph computed once per trace, scopes forward queries
+- Forward trace queries run in parallel via `Promise.all()`
+- Content truncated at server side (default 500 chars, 2000 with `--verbose`)
+- Circular reference guard prevents infinite loops
 
 ## Critical Patterns
 
@@ -485,6 +568,13 @@ npm run validate -- --priority 1
 | ACK sender/receiver | Swapped from message | Always `MIRTH\|MIRTH` | Minor |
 | ACK message type | `ACK^A01^ACK` | `ACK` | Minor |
 | Timestamp precision | With milliseconds | Without milliseconds | Minor |
+
+### Node.js-Only Extensions (Not in Java Mirth)
+
+| Feature | Endpoint / Command | Description |
+|---------|-------------------|-------------|
+| Message Trace API | `GET /api/messages/trace/:channelId/:messageId` | Cross-channel message tracing |
+| Message Trace CLI | `mirth-cli trace <channel> <messageId>` | Terminal tree view of message journey |
 
 ---
 
@@ -819,10 +909,11 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 - ResponseSelector - Select response from multiple destinations
 - ResponseTransformerExecutor - Execute response transformers
 
-**VM Connector (4 components):**
+**VM Connector (4 components — fully wired for cross-channel routing):**
 - VmConnectorProperties - Receiver/dispatcher configuration
-- VmReceiver - Receive messages routed from other channels
-- VmDispatcher - Route messages to other channels
+- VmReceiver - Receive messages routed from other channels (Channel Reader source in ChannelBuilder)
+- VmDispatcher - Route messages to other channels (Channel Writer destination in ChannelBuilder)
+- EngineController adapter wired during deployment for runtime dispatch
 
 **Data Types (3 types):**
 - Raw - Pass-through data type
@@ -1104,6 +1195,30 @@ When one agent creates a stub and another creates the full implementation:
 git checkout --ours src/db/SchemaManager.ts
 git add src/db/SchemaManager.ts
 ```
+
+**22. Duplicate Enum Definitions Across Layers (Trace Feature)**
+When the same concept (ContentType) exists in both the donkey engine model and the API layer, they can drift out of sync. The API layer's `MessageFilter.ts` had `RESPONSE_ERROR = 14, SOURCE_MAP = 15` while the canonical donkey model had `SOURCE_MAP = 14` (matching Java Mirth). Always treat the donkey engine model (`src/model/`) as the single source of truth — the API layer should import or mirror it exactly. Inline maps in servlets that duplicate enum values are especially prone to this:
+```typescript
+// ❌ Wrong - inline map can drift from enum
+const contentTypeMap: Record<string, number> = {
+  RESPONSE_ERROR: 14,  // Doesn't exist in Java Mirth!
+  SOURCE_MAP: 15,      // Wrong value!
+};
+
+// ✅ Correct - use the canonical enum or match it exactly
+import { ContentType } from '../../model/ContentType.js';
+// ContentType.SOURCE_MAP === 14
+```
+
+**23. Connector Wiring Must Be End-to-End (VM Routing Bug)**
+When porting connectors that depend on runtime references (engine controller, template replacer, etc.),
+the port is not complete until the wiring code is also implemented. Check:
+- Constructor creates the connector
+- Builder function instantiates it
+- **Deployment code wires runtime dependencies** -- Often missed
+- **Source connector builder handles the transport type** -- Often missed
+- Startup code initializes singletons -- Often missed
+Always trace the full lifecycle: construction -> wiring -> start -> runtime use.
 
 ### Wave 6: Dual Operational Modes (2026-02-04)
 

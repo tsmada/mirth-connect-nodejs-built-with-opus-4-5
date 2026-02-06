@@ -245,6 +245,52 @@ mirth-cli events search             # Search with filters
 mirth-cli events errors             # Show only error events
 ```
 
+#### Cross-Channel Message Trace
+```bash
+# Trace a message across VM-connected channels
+mirth-cli trace "ADT Receiver" 123
+
+# Verbose mode (full content, 2000 char limit)
+mirth-cli trace "ADT Receiver" 123 --verbose
+
+# Trace only backward (find root) or forward (find destinations)
+mirth-cli trace "ADT Receiver" 123 --direction backward
+mirth-cli trace "ADT Receiver" 123 --direction forward
+
+# Hide message content, show tree structure only
+mirth-cli trace "ADT Receiver" 123 --no-content
+
+# JSON output for scripting
+mirth-cli trace "ADT Receiver" 123 --json
+```
+
+The trace command reconstructs the complete message journey across VM-connected channels (Channel Writer/Reader), showing every hop from source to final destination(s).
+
+**Example output:**
+```
+Message Trace: ADT Receiver → HL7 Router → EMR Writer, Audit Log
+Hops: 4 | Depth: 2 | Latency: 222ms | Errors: 1
+
+● [SENT] ADT Receiver (msg #123)  14:30:45.123
+│  RAW: MSH|^~\&|EPIC|... (2,450 chars)
+│
+├──► [SENT] HL7 Router (msg #456)  +111ms
+│    │
+│    └──► [SENT] EMR Writer (msg #789)  +222ms
+│
+└──► [ERROR] Audit Log (msg #101)  +177ms
+     ERROR: Connection refused: localhost:5432
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-v, --verbose` | false | Full content display (2000 char limit vs 200) |
+| `-c, --content <types>` | `raw,transformed,response,error` | Content types to show |
+| `--max-depth <n>` | 10 | Maximum trace depth |
+| `--direction <dir>` | `both` | `both`, `backward`, or `forward` |
+| `--no-content` | - | Hide content, show tree structure only |
+| `--json` | - | Output raw JSON |
+
 #### Interactive Dashboard
 ```bash
 mirth-cli dashboard                 # Launch interactive dashboard with WebSocket
@@ -358,7 +404,7 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 | Component | Location | Description |
 |-----------|----------|-------------|
 | **Donkey Engine** | `src/donkey/` | Message processing pipeline (Statistics, Queues, DestinationChain, ResponseSelector) |
-| **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM, SMTP, JMS, WebService, DICOM) |
+| **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM (fully wired cross-channel routing), SMTP, JMS, WebService, DICOM) |
 | **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 28 userutil classes |
 | **Userutil Classes** | `src/javascript/userutil/` | VMRouter, FileUtil, HTTPUtil, DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, DICOMUtil |
 | **Data Types** | `src/datatypes/` | 9 types: HL7v2, XML, JSON, Raw, Delimited, EDI/X12, HL7v3, NCPDP, DICOM |
@@ -382,6 +428,13 @@ The REST API mirrors the Mirth Connect Server API with **14 fully-implemented se
 | `/api/channels/{id}/messages` | GET, POST, DELETE | Message operations |
 | `/api/channels/{id}/messages/_search` | POST | Search with filters |
 | `/api/channels/{id}/messages/_reprocess` | POST | Reprocess messages |
+
+### Message Tracing (Node.js Extension)
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/messages/trace/{channelId}/{messageId}` | GET | Trace message across VM-connected channels |
+
+Query parameters: `includeContent`, `contentTypes`, `maxContentLength`, `maxDepth`, `maxChildren`, `direction`
 
 ### Server & Configuration
 | Endpoint | Methods | Description |
@@ -729,6 +782,46 @@ Each channel creates dynamic tables when deployed:
 | `D_MCM{id}` | Custom metadata (user-defined fields) |
 
 **Note**: In takeover mode, existing channel tables are reused. In standalone mode, tables are created automatically when a channel is deployed.
+
+## Engine Behavior Differences from Java Mirth
+
+The Node.js engine maintains 100% API compatibility with the Java Mirth Administrator, but includes a few behavioral differences and extensions. These are documented here for compatibility awareness.
+
+### Additive Changes (Backward Compatible)
+
+| Change | Behavior | Compatibility |
+|--------|----------|---------------|
+| **SourceMap Persistence** | Node.js persists `sourceMap` data to the `D_MC` table (as `CONTENT_TYPE=14`) after message processing. Java Mirth keeps sourceMap in memory only. | Additive — Java Mirth ignores the extra `D_MC` rows. Does not affect message processing. |
+| **Trace API** | New endpoint `GET /api/messages/trace/:channelId/:messageId` for cross-channel message tracing. | Extension — does not exist in Java Mirth. Does not affect existing API endpoints. |
+| **Error Surfacing** | CLI passes `?returnErrors=true` on deploy/undeploy/start/stop operations. | Same as Java Mirth Administrator GUI behavior. Java API default (no param) silently swallows errors. |
+
+### Bug Fixes Applied
+
+| Fix | Java Mirth Behavior | Node.js Behavior | Impact |
+|-----|---------------------|-------------------|--------|
+| **ContentType Enum** | `SOURCE_MAP = 14` in the engine (correct) | Fixed API layer to also use `SOURCE_MAP = 14` (was incorrectly `15` in the API models layer) | Ensures sourceMap content queries work correctly. The Java engine was not affected because its API layer uses a different code path. |
+
+### Node.js-Only Extensions
+
+These features exist only in the Node.js engine and have no Java Mirth equivalent:
+
+| Feature | Description | API Endpoint |
+|---------|-------------|-------------|
+| Cross-Channel Trace | Reconstructs complete message journey across VM-connected channels | `GET /api/messages/trace/:channelId/:messageId` |
+| Interactive Dashboard | Terminal-based real-time channel monitoring via Ink/React | CLI: `mirth-cli dashboard` |
+| Message Trace CLI | CLI command to trace messages with tree visualization | CLI: `mirth-cli trace <channel> <messageId>` |
+
+### How SourceMap Tracing Works
+
+When messages flow through VM-connected channels (Channel Writer/Reader), the VM connector stores chain-tracking data in the sourceMap:
+- `sourceChannelIds[]` — ordered list of channel IDs the message has traversed
+- `sourceMessageIds[]` — corresponding message IDs at each hop
+
+The Node.js engine persists this sourceMap to the `D_MC` table after message processing, enabling the trace API to reconstruct the full message journey by following these references backward (to find the root) and forward (to find all downstream destinations).
+
+**Dependency graph**: The trace service builds a channel dependency graph by scanning all channel configurations for `transportName === 'Channel Writer'` destinations, scoping forward-trace queries to only relevant downstream channels.
+
+**VM cross-channel routing** is fully operational: `ChannelBuilder` wires both `VmReceiver` (Channel Reader source) and `VmDispatcher` (Channel Writer destination), and the `EngineController` adapter is connected during deployment to enable runtime message dispatch between channels.
 
 ## Troubleshooting
 

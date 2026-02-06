@@ -296,6 +296,12 @@ export const MESSAGE_UPDATE_CONTENT = createOperation(
   P.MESSAGES_IMPORT
 );
 
+export const MESSAGE_TRACE = createOperation(
+  'traceMessage',
+  'Trace message across channels',
+  P.MESSAGES_VIEW
+);
+
 // ============================================================================
 // Event Operations
 // ============================================================================
@@ -683,6 +689,7 @@ const allOperations: Operation[] = [
   MESSAGE_REPROCESS_BULK,
   MESSAGE_GET_CONTENT,
   MESSAGE_UPDATE_CONTENT,
+  MESSAGE_TRACE,
   // Events
   EVENT_GET,
   EVENT_GET_MAX_ID,

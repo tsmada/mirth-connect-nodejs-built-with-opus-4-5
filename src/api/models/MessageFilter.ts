@@ -33,8 +33,7 @@ export enum ContentType {
   RESPONSE_MAP = 11,
   PROCESSING_ERROR = 12,
   POSTPROCESSOR_ERROR = 13,
-  RESPONSE_ERROR = 14,
-  SOURCE_MAP = 15,
+  SOURCE_MAP = 14,
 }
 
 /**
@@ -60,7 +59,7 @@ export enum MessageStatus {
  * Ported from: ~/Projects/connect/model/filters/elements/ContentSearchElement.java
  */
 export interface ContentSearchElement {
-  /** Content type code (1-15) */
+  /** Content type code (1-14) */
   contentCode: ContentType;
   /** Search strings (multiple strings are AND'd together) */
   searches: string[];

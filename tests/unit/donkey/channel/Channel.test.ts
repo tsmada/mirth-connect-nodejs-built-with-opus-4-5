@@ -1,12 +1,32 @@
+jest.mock('../../../../src/db/DonkeyDao.js', () => ({
+  insertMessage: jest.fn().mockResolvedValue(undefined),
+  insertConnectorMessage: jest.fn().mockResolvedValue(undefined),
+  insertContent: jest.fn().mockResolvedValue(undefined),
+  updateConnectorMessageStatus: jest.fn().mockResolvedValue(undefined),
+  updateMessageProcessed: jest.fn().mockResolvedValue(undefined),
+  updateStatistics: jest.fn().mockResolvedValue(undefined),
+  getNextMessageId: jest.fn().mockImplementation(() => {
+    return Promise.resolve(mockNextMessageId++);
+  }),
+  channelTablesExist: jest.fn().mockResolvedValue(true),
+}));
+let mockNextMessageId = 1;
+
 import { Channel, ChannelConfig, StateChangeEvent } from '../../../../src/donkey/channel/Channel';
 import { SourceConnector } from '../../../../src/donkey/channel/SourceConnector';
 import { DestinationConnector } from '../../../../src/donkey/channel/DestinationConnector';
 import { ConnectorMessage } from '../../../../src/model/ConnectorMessage';
 import { Message } from '../../../../src/model/Message';
 import { Status } from '../../../../src/model/Status';
+import { ContentType } from '../../../../src/model/ContentType';
 import { DeployedState } from '../../../../src/api/models/DashboardStatus';
 import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
+import {
+  insertMessage, insertConnectorMessage, insertContent,
+  updateConnectorMessageStatus, updateMessageProcessed,
+  updateStatistics, getNextMessageId, channelTablesExist,
+} from '../../../../src/db/DonkeyDao';
 
 // Test source connector implementation
 class TestSourceConnector extends SourceConnector {
@@ -64,6 +84,18 @@ describe('Channel', () => {
   let destConnector: TestDestinationConnector;
 
   beforeEach(() => {
+    // Reset mocks and re-setup default behavior
+    mockNextMessageId = 1;
+    jest.clearAllMocks();
+    (channelTablesExist as jest.Mock).mockResolvedValue(true);
+    (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+    (insertMessage as jest.Mock).mockResolvedValue(undefined);
+    (insertConnectorMessage as jest.Mock).mockResolvedValue(undefined);
+    (insertContent as jest.Mock).mockResolvedValue(undefined);
+    (updateConnectorMessageStatus as jest.Mock).mockResolvedValue(undefined);
+    (updateMessageProcessed as jest.Mock).mockResolvedValue(undefined);
+    (updateStatistics as jest.Mock).mockResolvedValue(undefined);
+
     // Reset singletons
     GlobalMap.resetInstance();
     ConfigurationMap.resetInstance();
@@ -323,6 +355,153 @@ describe('Channel', () => {
       const destMsg = message.getConnectorMessage(1);
       expect(destMsg?.getStatus()).toBe(Status.ERROR);
       expect(destMsg?.getProcessingError()).toContain('Send failed');
+    });
+  });
+
+  describe('message persistence', () => {
+    beforeEach(async () => {
+      await channel.start();
+    });
+
+    afterEach(async () => {
+      await channel.stop();
+    });
+
+    it('should persist message to D_M on dispatch', async () => {
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(insertMessage).toHaveBeenCalledWith(
+        'test-channel-1',
+        message.getMessageId(),
+        expect.any(String), // serverId
+        expect.any(Date)    // receivedDate
+      );
+    });
+
+    it('should persist source connector message to D_MM', async () => {
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(insertConnectorMessage).toHaveBeenCalledWith(
+        'test-channel-1',
+        message.getMessageId(),
+        0,                   // metaDataId for source
+        'Test Source',       // connector name
+        expect.any(Date),    // receivedDate
+        Status.RECEIVED
+      );
+    });
+
+    it('should persist RAW content to D_MC', async () => {
+      await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(insertContent).toHaveBeenCalledWith(
+        'test-channel-1',
+        expect.any(Number),  // messageId
+        0,                   // metaDataId for source
+        ContentType.RAW,
+        '<test>hello</test>',
+        expect.any(String),  // dataType
+        false                // encrypted
+      );
+    });
+
+    it('should persist destination connector message', async () => {
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      // Should be called for destination with metaDataId=1
+      expect(insertConnectorMessage).toHaveBeenCalledWith(
+        'test-channel-1',
+        message.getMessageId(),
+        1,                    // metaDataId for destination
+        'Test Destination',   // connector name
+        expect.any(Date),
+        expect.any(String)    // status
+      );
+    });
+
+    it('should update destination status to SENT on success', async () => {
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(updateConnectorMessageStatus).toHaveBeenCalledWith(
+        'test-channel-1',
+        message.getMessageId(),
+        1,             // destination metaDataId
+        Status.SENT
+      );
+    });
+
+    it('should update statistics on RECEIVED and SENT', async () => {
+      await channel.dispatchRawMessage('<test>hello</test>');
+
+      // Verify RECEIVED statistics for source (metaDataId=0)
+      expect(updateStatistics).toHaveBeenCalledWith(
+        'test-channel-1',
+        0,                   // source metaDataId
+        expect.any(String),  // serverId
+        Status.RECEIVED
+      );
+
+      // Verify SENT statistics for destination (metaDataId=1)
+      expect(updateStatistics).toHaveBeenCalledWith(
+        'test-channel-1',
+        1,                   // destination metaDataId
+        expect.any(String),  // serverId
+        Status.SENT
+      );
+    });
+
+    it('should use DB-backed message IDs when tables exist', async () => {
+      mockNextMessageId = 42;
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(getNextMessageId).toHaveBeenCalled();
+      expect(message.getMessageId()).toBe(42);
+    });
+
+    it('should skip persistence when tables do not exist', async () => {
+      (channelTablesExist as jest.Mock).mockResolvedValue(false);
+
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(insertMessage).not.toHaveBeenCalled();
+      expect(insertConnectorMessage).not.toHaveBeenCalled();
+      expect(message.isProcessed()).toBe(true);
+    });
+
+    it('should complete message processing even when DB fails', async () => {
+      (insertMessage as jest.Mock).mockRejectedValue(new Error('DB connection lost'));
+
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(message.isProcessed()).toBe(true);
+    });
+
+    it('should persist SOURCE_MAP content', async () => {
+      const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
+
+      await channel.dispatchRawMessage('<test>hello</test>', sourceMap);
+
+      expect(insertContent).toHaveBeenCalledWith(
+        'test-channel-1',
+        expect.any(Number),  // messageId
+        0,                   // metaDataId
+        ContentType.SOURCE_MAP,
+        expect.stringContaining('key1'),
+        'JSON',
+        false
+      );
+    });
+
+    it('should update processed flag', async () => {
+      const message = await channel.dispatchRawMessage('<test>hello</test>');
+
+      expect(updateMessageProcessed).toHaveBeenCalledWith(
+        'test-channel-1',
+        message.getMessageId(),
+        true
+      );
     });
   });
 

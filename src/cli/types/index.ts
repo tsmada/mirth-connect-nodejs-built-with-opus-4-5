@@ -358,6 +358,62 @@ export interface EventFilter {
 }
 
 // =============================================================================
+// Trace Types
+// =============================================================================
+
+/**
+ * Content snapshot at a point in the message pipeline
+ */
+export interface ContentSnapshot {
+  content: string;
+  dataType: string;
+  truncated: boolean;
+  fullLength: number;
+}
+
+/**
+ * Content at various pipeline stages for a trace node
+ */
+export interface TraceNodeContent {
+  raw?: ContentSnapshot;
+  transformed?: ContentSnapshot;
+  encoded?: ContentSnapshot;
+  sent?: ContentSnapshot;
+  response?: ContentSnapshot;
+  processingError?: string;
+}
+
+/**
+ * A single node in the message trace tree
+ */
+export interface TraceNode {
+  channelId: string;
+  channelName: string;
+  messageId: number;
+  receivedDate: string;
+  status: string;
+  connectorName: string;
+  parentDestinationName?: string;
+  latencyMs?: number;
+  depth: number;
+  content?: TraceNodeContent;
+  error?: string;
+  children: TraceNode[];
+}
+
+/**
+ * Complete trace result
+ */
+export interface TraceResult {
+  root: TraceNode;
+  totalNodes: number;
+  maxDepth: number;
+  totalLatencyMs: number;
+  hasErrors: boolean;
+  truncated: boolean;
+}
+
+// =============================================================================
 // MLLP/HTTP Send Types
 // =============================================================================
 

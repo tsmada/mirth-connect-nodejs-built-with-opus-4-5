@@ -24,6 +24,16 @@ import {
 } from '../../javascript/runtime/JavaScriptExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState, ChannelStatistics } from '../../api/models/DashboardStatus.js';
+import {
+  insertMessage,
+  insertConnectorMessage,
+  insertContent,
+  updateConnectorMessageStatus,
+  updateMessageProcessed,
+  updateStatistics,
+  getNextMessageId,
+  channelTablesExist,
+} from '../../db/DonkeyDao.js';
 
 export interface ChannelConfig {
   id: string;
@@ -77,6 +87,9 @@ export class Channel extends EventEmitter {
 
   // Message ID sequence
   private nextMessageId = 1;
+
+  // Cached flag: do D_M/D_MM/D_MC/D_MS tables exist for this channel?
+  private tablesExist: boolean | null = null;
 
   // In-memory statistics counters (matches Java Mirth Statistics.java)
   private stats: ChannelStatistics = {
@@ -388,14 +401,40 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Safely execute a database persistence operation.
+   * Never throws — logs errors and returns silently so the message pipeline continues.
+   */
+  private async persistToDb(operation: () => Promise<void>): Promise<void> {
+    try {
+      if (this.tablesExist === null) {
+        this.tablesExist = await channelTablesExist(this.id);
+      }
+      if (!this.tablesExist) return;
+      await operation();
+    } catch (err) {
+      console.error(`[${this.name}] DB persist error: ${err}`);
+    }
+  }
+
+  /**
    * Dispatch a raw message through the channel pipeline
    */
   async dispatchRawMessage(
     rawData: string,
     sourceMapData?: Map<string, unknown>
   ): Promise<Message> {
-    const messageId = this.nextMessageId++;
     const serverId = this.serverId;
+
+    // Get message ID from DB sequence if tables exist, else use in-memory counter
+    let messageId: number;
+    try {
+      if (this.tablesExist === null) {
+        this.tablesExist = await channelTablesExist(this.id);
+      }
+      messageId = this.tablesExist ? await getNextMessageId(this.id) : this.nextMessageId++;
+    } catch {
+      messageId = this.nextMessageId++;
+    }
 
     // Create message
     const messageData: MessageData = {
@@ -406,6 +445,9 @@ export class Channel extends EventEmitter {
       processed: false,
     };
     const message = new Message(messageData);
+
+    // Persist message row
+    await this.persistToDb(() => insertMessage(this.id, messageId, serverId, messageData.receivedDate));
 
     // Create source connector message
     const sourceMessage = new ConnectorMessage({
@@ -419,6 +461,9 @@ export class Channel extends EventEmitter {
       status: Status.RECEIVED,
     });
 
+    // Persist source connector message
+    await this.persistToDb(() => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED));
+
     // Set raw content
     sourceMessage.setContent({
       contentType: ContentType.RAW,
@@ -426,6 +471,9 @@ export class Channel extends EventEmitter {
       dataType: 'RAW', // TODO: Get from source connector config
       encrypted: false,
     });
+
+    // Persist RAW content
+    await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, 'RAW', false));
 
     // Copy source map data
     if (sourceMapData) {
@@ -438,6 +486,7 @@ export class Channel extends EventEmitter {
 
     // Increment received counter as soon as message enters the pipeline
     this.stats.received++;
+    await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.RECEIVED));
 
     try {
       // Execute preprocessor
@@ -450,6 +499,9 @@ export class Channel extends EventEmitter {
           dataType: 'RAW',
           encrypted: false,
         });
+
+        // Persist PROCESSED_RAW content
+        await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, 'RAW', false));
       }
 
       // Execute source filter/transformer
@@ -458,12 +510,15 @@ export class Channel extends EventEmitter {
         if (filtered) {
           sourceMessage.setStatus(Status.FILTERED);
           this.stats.filtered++;
+          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.FILTERED));
+          await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.FILTERED));
           message.setProcessed(true);
           return message;
         }
 
         await this.sourceConnector.executeTransformer(sourceMessage);
         sourceMessage.setStatus(Status.TRANSFORMED);
+        await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.TRANSFORMED));
       }
 
       // Dispatch to destinations
@@ -474,28 +529,38 @@ export class Channel extends EventEmitter {
         const destMessage = sourceMessage.clone(i + 1, dest.getName());
         message.setConnectorMessage(i + 1, destMessage);
 
+        // Persist destination connector message
+        await this.persistToDb(() => insertConnectorMessage(this.id, messageId, i + 1, dest.getName(), destMessage.getReceivedDate(), Status.RECEIVED));
+
         try {
           // Execute destination filter
           const filtered = await dest.executeFilter(destMessage);
           if (filtered) {
             destMessage.setStatus(Status.FILTERED);
             this.stats.filtered++;
+            await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED));
+            await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.FILTERED));
             continue;
           }
 
           // Execute destination transformer
           await dest.executeTransformer(destMessage);
           destMessage.setStatus(Status.TRANSFORMED);
+          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED));
 
           // Send to destination
           await dest.send(destMessage);
           destMessage.setStatus(Status.SENT);
           destMessage.setSendDate(new Date());
           this.stats.sent++;
+          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT));
+          await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.SENT));
         } catch (error) {
           destMessage.setStatus(Status.ERROR);
           destMessage.setProcessingError(String(error));
           this.stats.error++;
+          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR));
+          await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.ERROR));
         }
       }
 
@@ -505,10 +570,20 @@ export class Channel extends EventEmitter {
       }
 
       message.setProcessed(true);
+      await this.persistToDb(() => updateMessageProcessed(this.id, messageId, true));
     } catch (error) {
       sourceMessage.setStatus(Status.ERROR);
       sourceMessage.setProcessingError(String(error));
       this.stats.error++;
+      await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR));
+      await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.ERROR));
+    }
+
+    // Persist source map to D_MC table for cross-channel tracing
+    const srcMap = sourceMessage.getSourceMap();
+    if (srcMap.size > 0) {
+      const mapObj = Object.fromEntries(srcMap);
+      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
 
     return message;

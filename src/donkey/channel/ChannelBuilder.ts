@@ -18,6 +18,7 @@ import { FileDispatcher } from '../../connectors/file/FileDispatcher.js';
 import { FileDispatcherProperties } from '../../connectors/file/FileConnectorProperties.js';
 import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js';
 import { VmDispatcher } from '../../connectors/vm/VmDispatcher.js';
+import { VmReceiver } from '../../connectors/vm/VmReceiver.js';
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 
 /**
@@ -72,6 +73,8 @@ function buildSourceConnector(channelConfig: ChannelModel): SourceConnector | nu
       return buildTcpReceiver(sourceConfig.properties);
     case 'HTTP Listener':
       return buildHttpReceiver(sourceConfig.properties);
+    case 'Channel Reader':
+      return buildVmReceiver(sourceConfig.properties);
     default:
       console.warn(`Unsupported source connector transport: ${transportName}`);
       return null;
@@ -453,6 +456,19 @@ function buildVmDispatcher(destConfig: Connector): VmDispatcher {
       channelId: String(props?.channelId || ''),
       channelTemplate: String(props?.channelTemplate || props?.template || '${message.encodedData}'),
       mapVariables: Array.isArray(props?.mapVariables) ? props.mapVariables as string[] : [],
+    },
+  });
+}
+
+/**
+ * Build VM receiver (Channel Reader) from properties
+ */
+function buildVmReceiver(properties: unknown): VmReceiver {
+  const props = properties as Record<string, unknown>;
+  return new VmReceiver({
+    name: 'sourceConnector',
+    properties: {
+      canBatch: String(props?.canBatch) === 'true',
     },
   });
 }

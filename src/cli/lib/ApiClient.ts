@@ -24,6 +24,7 @@ import {
   ServerEvent,
   EventFilter,
   ChannelStatistics,
+  TraceResult,
 } from '../types/index.js';
 
 /**
@@ -514,6 +515,39 @@ export class ApiClient {
     const url = `/api/channels/${channelId}/messages/_export?${params.toString()}`;
     const response = await this.axios.post(url, filter);
     return handleResponse<Message[] | string>(response);
+  }
+
+  // ===========================================================================
+  // Trace
+  // ===========================================================================
+
+  /**
+   * Trace a message across VM-connected channels
+   */
+  async traceMessage(
+    channelId: string,
+    messageId: number,
+    options?: {
+      includeContent?: boolean;
+      contentTypes?: string;
+      maxContentLength?: number;
+      maxDepth?: number;
+      maxChildren?: number;
+      direction?: string;
+    }
+  ): Promise<TraceResult> {
+    const params = new URLSearchParams();
+    if (options?.includeContent !== undefined) params.set('includeContent', String(options.includeContent));
+    if (options?.contentTypes) params.set('contentTypes', options.contentTypes);
+    if (options?.maxContentLength) params.set('maxContentLength', String(options.maxContentLength));
+    if (options?.maxDepth) params.set('maxDepth', String(options.maxDepth));
+    if (options?.maxChildren) params.set('maxChildren', String(options.maxChildren));
+    if (options?.direction) params.set('direction', options.direction);
+
+    const qs = params.toString();
+    const url = `/api/messages/trace/${channelId}/${messageId}${qs ? `?${qs}` : ''}`;
+    const response = await this.axios.get(url);
+    return handleResponse<TraceResult>(response);
   }
 
   // ===========================================================================

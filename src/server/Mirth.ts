@@ -16,6 +16,11 @@ import { initPool, closePool } from '../db/pool.js';
 import { ChannelController } from '../controllers/ChannelController.js';
 import { EngineController } from '../controllers/EngineController.js';
 import type { Server } from 'http';
+import {
+  setEngineController as setVmRouterEngineController,
+  setChannelController as setVmRouterChannelController,
+} from '../javascript/userutil/VMRouter.js';
+import { Response } from '../model/Response.js';
 
 // Global Donkey instance for EngineController to access
 let donkeyInstance: Donkey | null = null;
@@ -109,6 +114,37 @@ export class Mirth {
 
     // Load channels from database and deploy them
     await this.loadAndDeployChannels();
+
+    // Initialize VMRouter singletons for user scripts (router.routeMessage())
+    setVmRouterEngineController({
+      dispatchRawMessage: async (channelId, rawMessageObj, _force, _storeRawResponse) => {
+        const channel = EngineController.getDeployedChannel(channelId);
+        if (!channel) throw new Error(`Channel not deployed: ${channelId}`);
+        const message = await channel.dispatchRawMessage(
+          rawMessageObj.rawData,
+          rawMessageObj.sourceMap
+        );
+        // Extract response from the first destination connector message
+        let selectedResponse: Response | undefined;
+        for (const [metaDataId, cm] of message.getConnectorMessages()) {
+          if (metaDataId > 0) {
+            const responseContent = cm.getResponseContent();
+            if (responseContent?.content) {
+              selectedResponse = new Response({
+                status: cm.getStatus(),
+                message: responseContent.content,
+              });
+              break;
+            }
+          }
+        }
+        return { selectedResponse };
+      },
+    });
+    setVmRouterChannelController({
+      getDeployedChannelByName: (name) => EngineController.getDeployedChannelByName(name),
+    });
+    console.warn('VMRouter singletons initialized');
 
     this.running = true;
     console.warn(

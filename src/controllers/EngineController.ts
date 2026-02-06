@@ -23,6 +23,9 @@ import { Channel } from '../donkey/channel/Channel.js';
 import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
 import { ensureChannelTables } from '../db/SchemaManager.js';
 import { getDonkeyInstance } from '../server/Mirth.js';
+import { RawMessage } from '../model/RawMessage.js';
+import { VmDispatcher, EngineController as IVmEngineController, DispatchResult } from '../connectors/vm/VmDispatcher.js';
+import { Status } from '../model/Status.js';
 
 /**
  * Deployment metadata for a channel.
@@ -172,6 +175,13 @@ export class EngineController {
     try {
       // Build runtime channel with connectors
       const runtimeChannel = buildChannel(channelConfig);
+
+      // Wire VM dispatchers to engine controller
+      for (const dest of runtimeChannel.getDestinationConnectors()) {
+        if (dest instanceof VmDispatcher) {
+          dest.setEngineController(engineControllerAdapter);
+        }
+      }
 
       // Channel starts in DEPLOYING state
       runtimeChannel.updateCurrentState(DeployedState.DEPLOYING);
@@ -375,6 +385,16 @@ export class EngineController {
   }
 
   /**
+   * Find a deployed channel by name
+   */
+  static getDeployedChannelByName(name: string): { id: string; name: string } | null {
+    for (const [channelId, info] of deployedChannels) {
+      if (info.name === name) return { id: channelId, name: info.name };
+    }
+    return null;
+  }
+
+  /**
    * Dispatch a raw message to a channel for processing
    * @param channelId - The channel ID to dispatch to
    * @param rawMessage - The raw message content
@@ -395,6 +415,45 @@ export class EngineController {
     return {
       messageId: message.getMessageId(),
       processed: message.isProcessed(),
+    };
+  }
+
+  /**
+   * Dispatch a RawMessage to a channel (used by VmDispatcher and VMRouter).
+   * Bridges the model RawMessage to channel.dispatchRawMessage().
+   */
+  static async dispatchRawMessage(
+    channelId: string,
+    rawMessage: RawMessage,
+    _force?: boolean,
+    _waitForCompletion?: boolean
+  ): Promise<DispatchResult | null> {
+    const channel = this.getDeployedChannel(channelId);
+    if (!channel) {
+      throw new Error(`Channel not deployed: ${channelId}`);
+    }
+    const message = await channel.dispatchRawMessage(
+      rawMessage.getRawData(),
+      rawMessage.getSourceMap()
+    );
+    // Extract a response from the first destination connector message that has one
+    let selectedResponse: { message: string; status?: Status } | undefined;
+    const connectorMessages = message.getConnectorMessages();
+    for (const [metaDataId, cm] of connectorMessages) {
+      if (metaDataId > 0) {
+        const responseContent = cm.getResponseContent();
+        if (responseContent?.content) {
+          selectedResponse = {
+            message: responseContent.content,
+            status: cm.getStatus(),
+          };
+          break;
+        }
+      }
+    }
+    return {
+      messageId: message.getMessageId(),
+      selectedResponse,
     };
   }
 
@@ -451,3 +510,12 @@ export class EngineController {
     );
   }
 }
+
+/**
+ * Adapter that implements VmDispatcher's EngineController interface,
+ * bridging the static class to the instance interface VmDispatcher expects.
+ */
+export const engineControllerAdapter: IVmEngineController = {
+  dispatchRawMessage: (channelId, rawMessage, force, waitForCompletion) =>
+    EngineController.dispatchRawMessage(channelId, rawMessage, force, waitForCompletion),
+};

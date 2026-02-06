@@ -17,6 +17,24 @@ import { getPool, transaction } from './pool.js';
 import { Status } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
 
+/**
+ * Map Status enum values to D_MS statistics table column names.
+ * D_MS columns: RECEIVED, FILTERED, TRANSFORMED, PENDING, SENT, ERROR
+ * Note: QUEUED maps to SENT (Java Mirth tracks queued under sent column).
+ */
+function statusToColumn(status: Status): string {
+  switch (status) {
+    case Status.RECEIVED:    return 'RECEIVED';
+    case Status.FILTERED:    return 'FILTERED';
+    case Status.TRANSFORMED: return 'TRANSFORMED';
+    case Status.SENT:        return 'SENT';
+    case Status.QUEUED:      return 'SENT';
+    case Status.ERROR:       return 'ERROR';
+    case Status.PENDING:     return 'PENDING';
+    default:                 throw new Error(`Unknown status for statistics: ${status}`);
+  }
+}
+
 // Table name helpers
 function messageTable(channelId: string): string {
   return `D_M${channelId.replace(/-/g, '_')}`;
@@ -434,7 +452,7 @@ export async function updateStatistics(
   status: Status,
   increment: number = 1
 ): Promise<void> {
-  const statusColumn = status.toLowerCase();
+  const statusColumn = statusToColumn(status);
   const pool = getPool();
 
   await pool.execute(

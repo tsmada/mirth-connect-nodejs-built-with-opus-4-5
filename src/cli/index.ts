@@ -20,6 +20,7 @@ import { registerMessageCommands } from './commands/messages.js';
 import { registerSendCommands } from './commands/send.js';
 import { registerEventCommands } from './commands/events.js';
 import { registerDashboardCommand } from './commands/dashboard.js';
+import { registerTraceCommand } from './commands/trace.js';
 import { ConfigManager } from './lib/ConfigManager.js';
 
 // Package version - would normally read from package.json
@@ -66,6 +67,7 @@ function createProgram(): Command {
   registerSendCommands(program);
   registerEventCommands(program);
   registerDashboardCommand(program);
+  registerTraceCommand(program);
 
   // Custom help with banner
   program.addHelpText('before', BANNER);
@@ -92,6 +94,9 @@ ${chalk.bold('Examples:')}
 
   ${chalk.gray('# Send an MLLP message')}
   $ mirth-cli send mllp localhost:6662 @message.hl7
+
+  ${chalk.gray('# Trace a message across channels')}
+  $ mirth-cli trace "ADT Receiver" 123
 
   ${chalk.gray('# Start interactive dashboard')}
   $ mirth-cli dashboard
