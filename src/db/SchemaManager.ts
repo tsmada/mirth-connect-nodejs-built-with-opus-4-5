@@ -10,7 +10,7 @@
  */
 
 import { RowDataPacket } from 'mysql2/promise';
-import { getPool, execute, transaction } from './pool.js';
+import { getPool, transaction } from './pool.js';
 import { createChannelTables, channelTablesExist as donkeyChannelTablesExist } from './DonkeyDao.js';
 
 export type OperationalMode = 'takeover' | 'standalone';
@@ -389,11 +389,23 @@ export async function ensureChannelTables(channelId: string): Promise<void> {
   console.warn(`[SchemaManager] Ensuring channel tables for ${channelId}...`);
 
   // Register in D_CHANNELS (INSERT IGNORE for idempotency)
-  // Note: execute() passes params to mysql2 which expects an array for ? placeholders
-  await execute(
-    `INSERT IGNORE INTO D_CHANNELS (CHANNEL_ID) VALUES (?)`,
-    [channelId] as unknown as Record<string, unknown>
+  // Explicitly provide LOCAL_CHANNEL_ID to handle both AUTO_INCREMENT and
+  // non-AUTO_INCREMENT schemas (takeover mode may have legacy table without AUTO_INCREMENT)
+  const pool = getPool();
+  const [existing] = await pool.query<RowDataPacket[]>(
+    `SELECT LOCAL_CHANNEL_ID FROM D_CHANNELS WHERE CHANNEL_ID = ?`,
+    [channelId]
   );
+  if (existing.length === 0) {
+    const [maxRow] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(MAX(LOCAL_CHANNEL_ID), -1) + 1 AS next_id FROM D_CHANNELS`
+    );
+    const nextId = maxRow[0]?.next_id ?? 0;
+    await pool.execute(
+      `INSERT IGNORE INTO D_CHANNELS (LOCAL_CHANNEL_ID, CHANNEL_ID) VALUES (?, ?)`,
+      [nextId, channelId]
+    );
+  }
 
   // Create the actual message tables using DonkeyDao
   await createChannelTables(channelId);

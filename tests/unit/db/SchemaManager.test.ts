@@ -20,7 +20,7 @@ import {
   ensureChannelTables,
   channelTablesExist,
 } from '../../../src/db/SchemaManager.js';
-import { getPool, execute } from '../../../src/db/pool.js';
+import { getPool } from '../../../src/db/pool.js';
 import {
   createChannelTables,
   channelTablesExist as donkeyChannelTablesExist,
@@ -28,7 +28,6 @@ import {
 
 // Type helpers for mocks
 const mockGetPool = getPool as jest.MockedFunction<typeof getPool>;
-const mockExecute = execute as jest.MockedFunction<typeof execute>;
 const mockCreateChannelTables = createChannelTables as jest.MockedFunction<typeof createChannelTables>;
 const mockDonkeyChannelTablesExist = donkeyChannelTablesExist as jest.MockedFunction<typeof donkeyChannelTablesExist>;
 
@@ -218,16 +217,49 @@ describe('SchemaManager', () => {
 
   describe('ensureChannelTables', () => {
     it('should register channel and create tables', async () => {
-      mockExecute.mockResolvedValue({ affectedRows: 1 } as unknown as Awaited<ReturnType<typeof execute>>);
+      const mockPool = {
+        query: jest.fn<() => Promise<unknown>>()
+          // First call: check if channel exists (empty = not found)
+          .mockResolvedValueOnce([[]])
+          // Second call: get max LOCAL_CHANNEL_ID
+          .mockResolvedValueOnce([[{ next_id: 3 }]]),
+        execute: jest.fn<() => Promise<unknown>>()
+          .mockResolvedValue([{ affectedRows: 1 }]),
+      };
+      mockGetPool.mockReturnValue(mockPool as unknown as ReturnType<typeof getPool>);
       mockCreateChannelTables.mockResolvedValue(undefined);
 
       await ensureChannelTables('test-channel-123');
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        'INSERT IGNORE INTO D_CHANNELS (CHANNEL_ID) VALUES (?)',
-        { channelId: 'test-channel-123' }
+      // Should check if channel exists
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT LOCAL_CHANNEL_ID FROM D_CHANNELS'),
+        ['test-channel-123']
+      );
+      // Should INSERT with explicit LOCAL_CHANNEL_ID
+      expect(mockPool.execute).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT IGNORE INTO D_CHANNELS'),
+        [3, 'test-channel-123']
       );
       expect(mockCreateChannelTables).toHaveBeenCalledWith('test-channel-123');
+    });
+
+    it('should skip INSERT if channel already registered', async () => {
+      const mockPool = {
+        query: jest.fn<() => Promise<unknown>>()
+          // First call: channel already exists
+          .mockResolvedValueOnce([[{ LOCAL_CHANNEL_ID: 5 }]]),
+        execute: jest.fn<() => Promise<unknown>>(),
+      };
+      mockGetPool.mockReturnValue(mockPool as unknown as ReturnType<typeof getPool>);
+      mockCreateChannelTables.mockResolvedValue(undefined);
+
+      await ensureChannelTables('existing-channel');
+
+      // Should NOT call execute (no INSERT needed)
+      expect(mockPool.execute).not.toHaveBeenCalled();
+      // Should still create channel tables
+      expect(mockCreateChannelTables).toHaveBeenCalledWith('existing-channel');
     });
   });
 

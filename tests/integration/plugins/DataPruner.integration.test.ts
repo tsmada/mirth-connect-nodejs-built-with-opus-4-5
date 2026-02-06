@@ -8,9 +8,17 @@
 import { initPool, closePool, getPool } from '../../../src/db/pool';
 import * as MirthDao from '../../../src/db/MirthDao';
 import * as DonkeyDao from '../../../src/db/DonkeyDao';
+import { Status } from '../../../src/model/Status';
+import { ContentType } from '../../../src/model/ContentType';
 
 // Test channel ID (valid UUID format)
 const TEST_CHANNEL_ID = 'test0000-0000-0000-0000-pruner000001';
+
+// Simple auto-incrementing message ID
+let nextMessageId = 1;
+function getNextMessageId(): number {
+  return nextMessageId++;
+}
 
 // Check if DB is available
 const isDbAvailable = async (): Promise<boolean> => {
@@ -123,73 +131,65 @@ describe('DataPruner Integration Tests', () => {
         return;
       }
 
-      // Insert old messages (simulate messages from 10 days ago)
+      // Insert old message (simulate message from 10 days ago)
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 10);
 
-      const messageId = await DonkeyDao.insertMessage(TEST_CHANNEL_ID, {
-        serverId: 'test-server',
-        received: oldDate,
-        processed: true,
-      });
+      const messageId = getNextMessageId();
+      await DonkeyDao.insertMessage(TEST_CHANNEL_ID, messageId, 'test-server', oldDate);
+      await DonkeyDao.updateMessageProcessed(TEST_CHANNEL_ID, messageId, true);
 
-      // Query for messages older than 7 days
+      // Query for messages older than 7 days using getMessagesToPrune
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 7);
 
-      const messagesToPrune = await DonkeyDao.searchMessages(TEST_CHANNEL_ID, {
-        maxDate: cutoffDate,
-        processed: true,
-        limit: 100,
-        offset: 0,
-      });
+      const messagesToPrune = await DonkeyDao.getMessagesToPrune(
+        TEST_CHANNEL_ID,
+        cutoffDate,
+        100
+      );
 
-      expect(messagesToPrune.some((m) => m.id === messageId)).toBe(true);
+      expect(messagesToPrune.some((m) => m.messageId === messageId)).toBe(true);
     });
 
-    it('should delete messages by age', async () => {
+    it('should delete messages by age using pruneMessages', async () => {
       if (!dbAvailable) {
         console.warn('Skipping: DB not available');
         return;
       }
 
       // Insert messages with different ages
-      const dates = [
-        { daysOld: 1, shouldDelete: false },
-        { daysOld: 5, shouldDelete: false },
-        { daysOld: 15, shouldDelete: true },
-      ];
+      const recentId = getNextMessageId();
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 1);
+      await DonkeyDao.insertMessage(TEST_CHANNEL_ID, recentId, 'test-server', recentDate);
+      await DonkeyDao.updateMessageProcessed(TEST_CHANNEL_ID, recentId, true);
 
-      const messageIds: number[] = [];
-      for (const d of dates) {
-        const date = new Date();
-        date.setDate(date.getDate() - d.daysOld);
+      const oldId = getNextMessageId();
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 15);
+      await DonkeyDao.insertMessage(TEST_CHANNEL_ID, oldId, 'test-server', oldDate);
+      await DonkeyDao.updateMessageProcessed(TEST_CHANNEL_ID, oldId, true);
 
-        const id = await DonkeyDao.insertMessage(TEST_CHANNEL_ID, {
-          serverId: 'test-server',
-          received: date,
-          processed: true,
-        });
-        messageIds.push(id);
-      }
-
-      // Delete messages older than 10 days
+      // Get messages to prune (older than 10 days)
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 10);
 
-      const deleted = await DonkeyDao.deleteMessagesOlderThan(
-        TEST_CHANNEL_ID,
-        cutoffDate
-      );
+      const toPrune = await DonkeyDao.getMessagesToPrune(TEST_CHANNEL_ID, cutoffDate, 100);
+      const pruneIds = toPrune.map(m => m.messageId);
 
-      expect(deleted).toBeGreaterThanOrEqual(1);
+      if (pruneIds.length > 0) {
+        // Prune the messages
+        const deleted = await DonkeyDao.pruneMessages(TEST_CHANNEL_ID, pruneIds);
+        expect(deleted).toBeGreaterThanOrEqual(1);
+      }
 
       // Verify older message was deleted
-      const oldMessage = await DonkeyDao.getMessageById(TEST_CHANNEL_ID, messageIds[2]);
+      const oldMessage = await DonkeyDao.getMessage(TEST_CHANNEL_ID, oldId);
       expect(oldMessage).toBeNull();
 
-      // Verify newer messages still exist
-      const newMessage = await DonkeyDao.getMessageById(TEST_CHANNEL_ID, messageIds[0]);
+      // Verify newer message still exists
+      const newMessage = await DonkeyDao.getMessage(TEST_CHANNEL_ID, recentId);
       expect(newMessage).not.toBeNull();
     });
   });
@@ -202,37 +202,44 @@ describe('DataPruner Integration Tests', () => {
       }
 
       // Insert message with content
-      const messageId = await DonkeyDao.insertMessage(TEST_CHANNEL_ID, {
-        serverId: 'test-server',
-        received: new Date(),
-        processed: true,
-      });
+      const messageId = getNextMessageId();
+      await DonkeyDao.insertMessage(TEST_CHANNEL_ID, messageId, 'test-server', new Date());
+      await DonkeyDao.updateMessageProcessed(TEST_CHANNEL_ID, messageId, true);
 
-      await DonkeyDao.insertConnectorMessage(TEST_CHANNEL_ID, {
+      await DonkeyDao.insertConnectorMessage(
+        TEST_CHANNEL_ID,
         messageId,
-        metaDataId: 0,
-        connectorName: 'Source',
-        receivedDate: new Date(),
-        status: 'RECEIVED',
-      });
+        0,
+        'Source',
+        new Date(),
+        Status.RECEIVED
+      );
 
-      await DonkeyDao.insertMessageContent(TEST_CHANNEL_ID, {
+      await DonkeyDao.insertContent(
+        TEST_CHANNEL_ID,
         messageId,
-        metaDataId: 0,
-        contentType: 1,
-        content: 'Large content that should be pruned',
-        encrypted: false,
-      });
+        0,
+        ContentType.RAW,
+        'Large content that should be pruned',
+        'HL7V2',
+        false
+      );
 
-      // Prune content only
-      await DonkeyDao.pruneMessageContent(TEST_CHANNEL_ID, messageId);
+      // Prune content only (takes array of message IDs)
+      const pruned = await DonkeyDao.pruneMessageContent(TEST_CHANNEL_ID, [messageId]);
+      expect(pruned).toBeGreaterThan(0);
 
       // Verify metadata still exists
-      const message = await DonkeyDao.getMessageById(TEST_CHANNEL_ID, messageId);
+      const message = await DonkeyDao.getMessage(TEST_CHANNEL_ID, messageId);
       expect(message).not.toBeNull();
 
       // Verify content was pruned
-      const content = await DonkeyDao.getMessageContent(TEST_CHANNEL_ID, messageId, 0);
+      const content = await DonkeyDao.getContent(
+        TEST_CHANNEL_ID,
+        messageId,
+        0,
+        ContentType.RAW
+      );
       expect(content).toBeNull();
     });
   });

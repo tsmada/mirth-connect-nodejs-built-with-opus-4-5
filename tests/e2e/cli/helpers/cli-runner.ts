@@ -5,6 +5,7 @@
  */
 
 import { spawn, SpawnOptions } from 'child_process';
+import * as http from 'http';
 import * as path from 'path';
 
 /**
@@ -148,6 +149,26 @@ export async function login(
  */
 export async function logout(): Promise<CliResult> {
   return runCli(['logout']);
+}
+
+/**
+ * Check if the Mirth server is available for E2E tests
+ */
+export async function isServerAvailable(
+  url: string = 'http://localhost:8081/api/server/version'
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: 3000 }, (res) => {
+      // Any response means the server is up
+      res.resume();
+      resolve(true);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
 }
 
 /**

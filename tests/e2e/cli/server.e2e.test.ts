@@ -2,6 +2,7 @@
  * CLI Server E2E Tests
  *
  * Tests server status, info, and stats commands.
+ * Requires a running Mirth server at localhost:8081.
  */
 
 import {
@@ -9,19 +10,31 @@ import {
   login,
   logout,
   stripAnsi,
+  isServerAvailable,
 } from './helpers/cli-runner.js';
 
 describe('CLI Server Commands', () => {
+  let serverUp = false;
+
+  beforeAll(async () => {
+    serverUp = await isServerAvailable();
+    if (!serverUp) {
+      console.warn('Skipping E2E server tests: Mirth server not available at localhost:8081');
+    }
+  });
+
   beforeEach(async () => {
-    await login();
+    if (serverUp) await login();
   });
 
   afterEach(async () => {
-    await logout();
+    if (serverUp) await logout();
   });
 
   describe('server status command', () => {
     it('should show server online status', async () => {
+      if (!serverUp) return;
+
       const result = await runCliExpectSuccess(['server', 'status']);
 
       const output = stripAnsi(result.stdout);
@@ -31,6 +44,8 @@ describe('CLI Server Commands', () => {
     });
 
     it('should output JSON when --json flag is used', async () => {
+      if (!serverUp) return;
+
       const result = await runCliExpectSuccess(['--json', 'server', 'status']);
 
       const json = JSON.parse(stripAnsi(result.stdout));
@@ -42,6 +57,8 @@ describe('CLI Server Commands', () => {
 
   describe('server info command', () => {
     it('should display server information', async () => {
+      if (!serverUp) return;
+
       const result = await runCliExpectSuccess(['server', 'info']);
 
       const output = stripAnsi(result.stdout);
@@ -53,6 +70,8 @@ describe('CLI Server Commands', () => {
     });
 
     it('should output JSON when --json flag is used', async () => {
+      if (!serverUp) return;
+
       const result = await runCliExpectSuccess(['--json', 'server', 'info']);
 
       const json = JSON.parse(stripAnsi(result.stdout));
@@ -65,6 +84,8 @@ describe('CLI Server Commands', () => {
 
   describe('server stats command', () => {
     it('should display system statistics', async () => {
+      if (!serverUp) return;
+
       const result = await runCliExpectSuccess(['server', 'stats']);
 
       const output = stripAnsi(result.stdout);
@@ -75,6 +96,8 @@ describe('CLI Server Commands', () => {
     });
 
     it('should output JSON when --json flag is used', async () => {
+      if (!serverUp) return;
+
       const result = await runCliExpectSuccess(['--json', 'server', 'stats']);
 
       const json = JSON.parse(stripAnsi(result.stdout));

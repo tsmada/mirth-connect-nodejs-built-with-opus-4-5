@@ -140,7 +140,7 @@ describe('ChannelList', () => {
     channelId: id,
     name,
     state,
-    statistics: { received: 0, filtered: 0, queued: 0, sent: 0, errored: 0 },
+    statistics: { received: 0, filtered: 0, queued: 0, sent: 0, error: 0 },
   });
 
   const createGroup = (id: string, name: string, channelIds: string[]): ChannelGroup => ({
