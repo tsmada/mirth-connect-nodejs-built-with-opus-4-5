@@ -81,12 +81,15 @@ export class DashboardStatusWebSocketHandler {
   }
 
   /**
-   * Attach to an HTTP server
+   * Attach to an HTTP server.
+   * Uses noServer mode — the caller must route upgrade requests
+   * via handleUpgrade() to avoid conflicts with other WebSocketServers
+   * on the same HTTP server.
    */
-  attach(server: HttpServer, path: string = '/ws/dashboardstatus'): void {
+  attach(_server: HttpServer, path: string = '/ws/dashboardstatus'): void {
     this.wss = new WebSocketServer({
-      server,
-      path,
+      noServer: true,
+      perMessageDeflate: false,
     });
 
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
@@ -100,10 +103,21 @@ export class DashboardStatusWebSocketHandler {
   }
 
   /**
+   * Handle an HTTP upgrade request.
+   * Called by the shared upgrade dispatcher in server.ts.
+   */
+  handleUpgrade(request: IncomingMessage, socket: import('stream').Duplex, head: Buffer): void {
+    if (!this.wss) return;
+    this.wss.handleUpgrade(request, socket, head, (ws) => {
+      this.wss!.emit('connection', ws, request);
+    });
+  }
+
+  /**
    * Create a standalone WebSocket server
    */
   listen(port: number): void {
-    this.wss = new WebSocketServer({ port });
+    this.wss = new WebSocketServer({ port, perMessageDeflate: false });
 
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
 

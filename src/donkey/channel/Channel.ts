@@ -23,7 +23,7 @@ import {
   getDefaultExecutor,
 } from '../../javascript/runtime/JavaScriptExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
-import { DeployedState } from '../../api/models/DashboardStatus.js';
+import { DeployedState, ChannelStatistics } from '../../api/models/DashboardStatus.js';
 
 export interface ChannelConfig {
   id: string;
@@ -77,6 +77,15 @@ export class Channel extends EventEmitter {
 
   // Message ID sequence
   private nextMessageId = 1;
+
+  // In-memory statistics counters (matches Java Mirth Statistics.java)
+  private stats: ChannelStatistics = {
+    received: 0,
+    sent: 0,
+    error: 0,
+    filtered: 0,
+    queued: 0,
+  };
 
   constructor(config: ChannelConfig) {
     super(); // Initialize EventEmitter
@@ -178,6 +187,21 @@ export class Channel extends EventEmitter {
   isActive(): boolean {
     return this.currentState !== DeployedState.STOPPED &&
            this.currentState !== DeployedState.STOPPING;
+  }
+
+  /**
+   * Get current message processing statistics.
+   * Matches Java Mirth Statistics.getStats() pattern.
+   */
+  getStatistics(): ChannelStatistics {
+    return { ...this.stats };
+  }
+
+  /**
+   * Reset all statistics counters to zero.
+   */
+  resetStatistics(): void {
+    this.stats = { received: 0, sent: 0, error: 0, filtered: 0, queued: 0 };
   }
 
   setSourceConnector(connector: SourceConnector): void {
@@ -412,6 +436,9 @@ export class Channel extends EventEmitter {
 
     message.setConnectorMessage(0, sourceMessage);
 
+    // Increment received counter as soon as message enters the pipeline
+    this.stats.received++;
+
     try {
       // Execute preprocessor
       let processedData = rawData;
@@ -430,6 +457,7 @@ export class Channel extends EventEmitter {
         const filtered = await this.sourceConnector.executeFilter(sourceMessage);
         if (filtered) {
           sourceMessage.setStatus(Status.FILTERED);
+          this.stats.filtered++;
           message.setProcessed(true);
           return message;
         }
@@ -451,6 +479,7 @@ export class Channel extends EventEmitter {
           const filtered = await dest.executeFilter(destMessage);
           if (filtered) {
             destMessage.setStatus(Status.FILTERED);
+            this.stats.filtered++;
             continue;
           }
 
@@ -462,9 +491,11 @@ export class Channel extends EventEmitter {
           await dest.send(destMessage);
           destMessage.setStatus(Status.SENT);
           destMessage.setSendDate(new Date());
+          this.stats.sent++;
         } catch (error) {
           destMessage.setStatus(Status.ERROR);
           destMessage.setProcessingError(String(error));
+          this.stats.error++;
         }
       }
 
@@ -477,6 +508,7 @@ export class Channel extends EventEmitter {
     } catch (error) {
       sourceMessage.setStatus(Status.ERROR);
       sourceMessage.setProcessingError(String(error));
+      this.stats.error++;
     }
 
     return message;

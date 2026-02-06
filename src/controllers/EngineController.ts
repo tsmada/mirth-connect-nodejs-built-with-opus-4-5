@@ -17,7 +17,6 @@ import {
   DeployedState,
   ListenerInfo,
   createDashboardStatus,
-  createEmptyStatistics,
 } from '../api/models/DashboardStatus.js';
 import { ChannelController } from './ChannelController.js';
 import { Channel } from '../donkey/channel/Channel.js';
@@ -433,7 +432,7 @@ export class EngineController {
       state: deployment.runtimeChannel.getCurrentState(),
       deployedDate: deployment.deployedDate,
       deployedRevisionDelta: 0,
-      statistics: createEmptyStatistics(),
+      statistics: deployment.runtimeChannel.getStatistics(),
       listenerInfo,
     };
   }

@@ -23,9 +23,10 @@ import {
   hasCompleteMessage,
   unframeMessage,
   frameMessage,
-  generateAck,
-  extractControlId,
 } from './TcpConnectorProperties.js';
+import { ACKGenerator } from '../../util/ACKGenerator.js';
+import type { Message } from '../../model/Message.js';
+import { Status } from '../../model/Status.js';
 
 export interface TcpReceiverConfig {
   name?: string;
@@ -303,31 +304,56 @@ export class TcpReceiver extends SourceConnector {
       sourceMapData.set('localAddress', socket.localAddress);
       sourceMapData.set('localPort', socket.localPort);
 
-      // Dispatch message
-      await this.dispatchRawMessage(message, sourceMapData);
+      // Dispatch message and capture result for response generation
+      const dispatchResult = await this.dispatchRawMessageWithResult(message, sourceMapData);
 
       // Send response if configured
-      await this.sendResponse(socket, message);
+      await this.sendResponse(socket, message, dispatchResult);
     } catch (error) {
       console.error('Error processing TCP message:', error);
+      // Send error ACK if response is configured
+      try {
+        await this.sendResponse(socket, message, null);
+      } catch {
+        // Ignore response send errors
+      }
     }
   }
 
   /**
-   * Send response to client
+   * Dispatch raw message and return the Message result.
+   * Wraps SourceConnector.dispatchRawMessage() to capture the return value.
+   */
+  private async dispatchRawMessageWithResult(
+    rawData: string,
+    sourceMap?: Map<string, unknown>
+  ): Promise<Message | null> {
+    if (!this.channel) {
+      throw new Error('Source connector is not attached to a channel');
+    }
+    return this.channel.dispatchRawMessage(rawData, sourceMap);
+  }
+
+  /**
+   * Send response to client.
+   * Uses the full ACKGenerator which properly swaps sender/receiver from the
+   * incoming message MSH fields, matching Java Mirth behavior.
    */
   private async sendResponse(
     socket: net.Socket,
-    message: string
+    message: string,
+    dispatchResult: Message | null
   ): Promise<void> {
     if (this.properties.responseMode === ResponseMode.NONE) {
       return;
     }
 
     if (this.properties.responseMode === ResponseMode.AUTO) {
-      // Generate automatic ACK for HL7 messages
-      const controlId = extractControlId(message) || 'UNKNOWN';
-      const ack = generateAck(controlId, 'AA');
+      // Determine ACK code based on processing result
+      const ackCode = this.determineAckCode(dispatchResult);
+
+      // Use full ACKGenerator which swaps sender/receiver from MSH
+      const ack = ACKGenerator.generateAckResponse(message, ackCode);
       const framedAck = frameMessage(
         ack,
         this.properties.transmissionMode,
@@ -337,7 +363,65 @@ export class TcpReceiver extends SourceConnector {
       socket.write(framedAck);
     }
 
-    // For DESTINATION mode, the channel pipeline would send the response
+    if (this.properties.responseMode === ResponseMode.DESTINATION) {
+      // Use the selected destination's response from the channel pipeline
+      const responseData = this.getDestinationResponse(dispatchResult);
+      if (responseData) {
+        const framedResponse = frameMessage(
+          responseData,
+          this.properties.transmissionMode,
+          this.properties.startOfMessageBytes,
+          this.properties.endOfMessageBytes
+        );
+        socket.write(framedResponse);
+      }
+    }
+  }
+
+  /**
+   * Determine the ACK code based on message processing result.
+   * AA = all destinations succeeded, AE = any had errors, AR = filtered at source.
+   */
+  private determineAckCode(dispatchResult: Message | null): 'AA' | 'AE' | 'AR' {
+    if (!dispatchResult) {
+      return 'AE'; // No result means processing failed
+    }
+
+    // Check source connector message (metaDataId 0)
+    const sourceMsg = dispatchResult.getConnectorMessage(0);
+    if (sourceMsg) {
+      if (sourceMsg.getStatus() === Status.ERROR) return 'AE';
+      if (sourceMsg.getStatus() === Status.FILTERED) return 'AR';
+    }
+
+    // Check all destination connector messages for errors
+    const connectorMessages = dispatchResult.getConnectorMessages();
+    for (const [metaDataId, connMsg] of connectorMessages) {
+      if (metaDataId === 0) continue; // Skip source
+      if (connMsg.getStatus() === Status.ERROR) return 'AE';
+    }
+
+    return 'AA';
+  }
+
+  /**
+   * Extract the response data from a destination connector message.
+   * Used for ResponseMode.DESTINATION to return the destination's actual response.
+   */
+  private getDestinationResponse(dispatchResult: Message | null): string | null {
+    if (!dispatchResult) return null;
+
+    const connectorMessages = dispatchResult.getConnectorMessages();
+    for (const [metaDataId, connMsg] of connectorMessages) {
+      if (metaDataId === 0) continue; // Skip source
+      // Return the first destination's response content
+      const responseContent = connMsg.getResponseContent();
+      if (responseContent) {
+        return responseContent.content;
+      }
+    }
+
+    return null;
   }
 
   /**

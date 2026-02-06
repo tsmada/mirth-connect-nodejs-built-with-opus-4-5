@@ -6,15 +6,18 @@
  */
 
 import { Channel, ChannelConfig } from './Channel.js';
+import { SourceConnector } from './SourceConnector.js';
 import { DestinationConnector } from './DestinationConnector.js';
 import { TcpReceiver } from '../../connectors/tcp/TcpReceiver.js';
 import { TcpDispatcher } from '../../connectors/tcp/TcpDispatcher.js';
 import { TcpReceiverProperties, TcpDispatcherProperties, ServerMode, TransmissionMode, ResponseMode } from '../../connectors/tcp/TcpConnectorProperties.js';
+import { HttpReceiver } from '../../connectors/http/HttpReceiver.js';
 import { HttpDispatcher } from '../../connectors/http/HttpDispatcher.js';
-import { HttpDispatcherProperties } from '../../connectors/http/HttpConnectorProperties.js';
+import { HttpReceiverProperties, HttpDispatcherProperties } from '../../connectors/http/HttpConnectorProperties.js';
 import { FileDispatcher } from '../../connectors/file/FileDispatcher.js';
 import { FileDispatcherProperties } from '../../connectors/file/FileConnectorProperties.js';
 import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js';
+import { VmDispatcher } from '../../connectors/vm/VmDispatcher.js';
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 
 /**
@@ -55,7 +58,7 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
 /**
  * Build source connector from configuration
  */
-function buildSourceConnector(channelConfig: ChannelModel): TcpReceiver | null {
+function buildSourceConnector(channelConfig: ChannelModel): SourceConnector | null {
   const sourceConfig = channelConfig.sourceConnector;
   if (!sourceConfig) {
     return null;
@@ -67,6 +70,8 @@ function buildSourceConnector(channelConfig: ChannelModel): TcpReceiver | null {
     case 'TCP Listener':
     case 'MLLP Listener':
       return buildTcpReceiver(sourceConfig.properties);
+    case 'HTTP Listener':
+      return buildHttpReceiver(sourceConfig.properties);
     default:
       console.warn(`Unsupported source connector transport: ${transportName}`);
       return null;
@@ -130,13 +135,29 @@ function buildTcpReceiver(properties: unknown): TcpReceiver {
     reconnectInterval: parseInt(String(props?.reconnectInterval || '5000'), 10),
     bufferSize: parseInt(String(props?.bufferSize || '65536'), 10),
     keepConnectionOpen: String(props?.keepConnectionOpen) !== 'false',
-    responseMode: ResponseMode.AUTO, // Auto-generate ACK for HL7
+    responseMode: parseResponseMode(String(props?.responseMode || 'AUTO')),
   };
 
   return new TcpReceiver({
     name: 'sourceConnector',
     properties: tcpProperties,
   });
+}
+
+/**
+ * Parse response mode string into ResponseMode enum.
+ * Channel XML may contain "DESTINATION", "AUTO", or "NONE".
+ */
+function parseResponseMode(mode: string): ResponseMode {
+  switch (mode.toUpperCase()) {
+    case 'DESTINATION':
+      return ResponseMode.DESTINATION;
+    case 'NONE':
+      return ResponseMode.NONE;
+    case 'AUTO':
+    default:
+      return ResponseMode.AUTO;
+  }
 }
 
 /**
@@ -176,9 +197,7 @@ function buildDestinationConnector(destConfig: Connector): DestinationConnector 
     case 'Database Writer':
       return buildDatabaseDispatcher(destConfig);
     case 'Channel Writer':
-      // Channel writer routes to another channel - log warning for now
-      console.warn(`Channel Writer not yet implemented for destination: ${destConfig.name}`);
-      return null;
+      return buildVmDispatcher(destConfig);
     default:
       console.warn(`Unsupported destination connector transport: ${transportName}`);
       return null;
@@ -378,6 +397,62 @@ function buildDatabaseDispatcher(destConfig: Connector): DatabaseDispatcher {
       username: String(props?.username || ''),
       password: String(props?.password || ''),
       query: String(props?.query || ''),
+    },
+  });
+}
+
+/**
+ * Build HTTP receiver from properties
+ */
+function buildHttpReceiver(properties: unknown): HttpReceiver {
+  const props = properties as Record<string, unknown>;
+  const listenerProps = (props?.listenerConnectorProperties || props) as Record<string, unknown>;
+
+  // Parse host and port
+  let host = String(listenerProps?.host || '0.0.0.0');
+  let port = parseInt(String(listenerProps?.port || '8083'), 10);
+
+  // Handle variable references
+  if (host.startsWith('${')) {
+    host = '0.0.0.0';
+  }
+  if (isNaN(port) || String(listenerProps?.port || '').startsWith('${')) {
+    port = parseInt(process.env['NODE_HTTP_PORT'] || '8083', 10);
+  }
+
+  const httpProperties: Partial<HttpReceiverProperties> = {
+    host,
+    port,
+    contextPath: String(props?.contextPath || '/'),
+    timeout: parseInt(String(props?.timeout || '30000'), 10),
+    charset: String(props?.charset || 'UTF-8'),
+    xmlBody: String(props?.xmlBody) === 'true',
+    parseMultipart: String(props?.parseMultipart) === 'true',
+    includeMetadata: String(props?.includeMetadata) !== 'false',
+  };
+
+  return new HttpReceiver({
+    name: 'sourceConnector',
+    properties: httpProperties,
+  });
+}
+
+/**
+ * Build VM dispatcher (Channel Writer) from configuration
+ */
+function buildVmDispatcher(destConfig: Connector): VmDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  return new VmDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    properties: {
+      channelId: String(props?.channelId || ''),
+      channelTemplate: String(props?.channelTemplate || props?.template || '${message.encodedData}'),
+      mapVariables: Array.isArray(props?.mapVariables) ? props.mapVariables as string[] : [],
     },
   });
 }

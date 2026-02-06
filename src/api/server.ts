@@ -152,9 +152,23 @@ export async function startServer(options: ServerOptions = {}): Promise<HttpServ
   // Create HTTP server (required for WebSocket attachment)
   const server = createServer(app);
 
-  // Attach WebSocket handlers
+  // Attach WebSocket handlers (noServer mode — they create their own WebSocketServer instances)
   dashboardStatusWebSocket.attach(server, '/ws/dashboardstatus');
   serverLogWebSocket.attach(server, '/ws/serverlog');
+
+  // Single upgrade dispatcher to avoid multiple WebSocketServers
+  // independently handling (and aborting) upgrade requests on the same socket.
+  server.on('upgrade', (request, socket, head) => {
+    const { pathname } = new URL(request.url || '/', `http://${request.headers.host}`);
+
+    if (pathname === '/ws/dashboardstatus') {
+      dashboardStatusWebSocket.handleUpgrade(request, socket, head);
+    } else if (pathname === '/ws/serverlog') {
+      serverLogWebSocket.handleUpgrade(request, socket, head);
+    } else {
+      socket.destroy();
+    }
+  });
 
   return new Promise((resolve) => {
     server.listen(config.port!, config.host!, () => {
