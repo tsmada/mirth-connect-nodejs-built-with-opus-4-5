@@ -16,6 +16,7 @@ import { RowDataPacket, Pool, PoolConnection } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
 import { Status, parseStatus } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
+import { getEncryptor } from './Encryptor.js';
 
 export type DbConnection = Pool | PoolConnection;
 
@@ -615,7 +616,19 @@ export async function getContent(
      WHERE MESSAGE_ID = ? AND METADATA_ID = ? AND CONTENT_TYPE = ?`,
     [messageId, metaDataId, contentType]
   );
-  return rows[0] ?? null;
+  const row = rows[0] ?? null;
+
+  // Decrypt content if marked as encrypted
+  if (row && row.IS_ENCRYPTED) {
+    try {
+      row.CONTENT = getEncryptor().decrypt(row.CONTENT);
+      row.IS_ENCRYPTED = 0;
+    } catch (err) {
+      console.error(`[DonkeyDao] Failed to decrypt content (messageId=${messageId}, metaDataId=${metaDataId}, contentType=${contentType}): ${err}`);
+    }
+  }
+
+  return row;
 }
 
 /**
