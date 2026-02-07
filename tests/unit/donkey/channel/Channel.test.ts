@@ -425,7 +425,15 @@ describe('Channel', () => {
         expect.any(Date),    // receivedDate
         Status.RECEIVED,
         0,                   // chainId
-        undefined,           // options
+        // storeMaps options — rawDurable defaults to true so maps are passed
+        expect.objectContaining({
+          storeMaps: expect.objectContaining({
+            sourceMap: expect.any(Map),
+            connectorMap: expect.any(Map),
+            channelMap: expect.any(Map),
+            responseMap: expect.any(Map),
+          }),
+        }),
         mockPoolConnection   // conn from transaction
       );
     });

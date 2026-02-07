@@ -120,6 +120,10 @@ export class ConnectorMessage {
     return this.sendAttempts;
   }
 
+  setSendAttempts(attempts: number): void {
+    this.sendAttempts = attempts;
+  }
+
   incrementSendAttempts(): void {
     this.sendAttempts++;
   }

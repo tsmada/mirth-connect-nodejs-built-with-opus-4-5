@@ -680,9 +680,20 @@ export class Channel extends EventEmitter {
     }
 
     // Transaction 1: Source intake — persist message + source connector + raw content + stats
+    // Pass maps during source insert when rawDurable or storeMaps is set (matches Java Mirth's storeMaps=true behavior)
+    const sourceInsertOptions = (this.storageSettings.rawDurable || this.storageSettings.storeMaps)
+      ? {
+          storeMaps: {
+            sourceMap: sourceMessage.getSourceMap(),
+            connectorMap: sourceMessage.getConnectorMap(),
+            channelMap: sourceMessage.getChannelMap(),
+            responseMap: sourceMessage.getResponseMap(),
+          },
+        }
+      : undefined;
     await this.persistInTransaction([
       (conn) => insertMessage(this.id, messageId, serverId, messageData.receivedDate, conn),
-      (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, undefined, conn),
+      (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, sourceInsertOptions, conn),
       ...(this.storageSettings.storeRaw ? [
         (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, sourceDataType, false, conn),
       ] : []),
@@ -968,6 +979,20 @@ export class Channel extends EventEmitter {
             }
           }
         }
+      }
+
+      // finishDispatch equivalent: update source connector metadata
+      // Java Mirth's SourceConnector.finishDispatch() sets sendAttempts=1, sendDate, responseDate
+      const sourceFinishDate = new Date();
+      sourceMessage.setSendAttempts(1);
+      sourceMessage.setSendDate(sourceFinishDate);
+      sourceMessage.setResponseDate(sourceFinishDate);
+      txn4Ops.push((conn) => updateSendAttempts(this.id, messageId, 0, 1, sourceFinishDate, sourceFinishDate, conn));
+
+      // Persist source response error if present
+      if (sourceMessage.getResponseError()) {
+        txn4Ops.push((conn) => updateErrors(this.id, messageId, 0,
+          undefined, undefined, sourceMessage.updateErrorCode(), sourceMessage.getResponseError(), conn));
       }
 
       // Execute postprocessor (runs outside transaction — errors caught separately)
@@ -1476,6 +1501,19 @@ export class Channel extends EventEmitter {
             }
           }
         }
+      }
+
+      // finishDispatch equivalent: update source connector metadata
+      const sourceFinishDate2 = new Date();
+      sourceMessage.setSendAttempts(1);
+      sourceMessage.setSendDate(sourceFinishDate2);
+      sourceMessage.setResponseDate(sourceFinishDate2);
+      txn4Ops.push((conn) => updateSendAttempts(this.id, messageId, 0, 1, sourceFinishDate2, sourceFinishDate2, conn));
+
+      // Persist source response error if present
+      if (sourceMessage.getResponseError()) {
+        txn4Ops.push((conn) => updateErrors(this.id, messageId, 0,
+          undefined, undefined, sourceMessage.updateErrorCode(), sourceMessage.getResponseError(), conn));
       }
 
       if (this.postprocessorScript) {
