@@ -21,6 +21,7 @@ export interface SourceConnectorConfig {
   transportName: string;
   waitForDestinations?: boolean;
   queueSendFirst?: boolean;
+  respondAfterProcessing?: boolean;
 }
 
 export abstract class SourceConnector {
@@ -31,6 +32,7 @@ export abstract class SourceConnector {
 
   protected waitForDestinations: boolean;
   protected queueSendFirst: boolean;
+  protected respondAfterProcessing: boolean;
 
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
 
@@ -45,6 +47,15 @@ export abstract class SourceConnector {
     this.transportName = config.transportName;
     this.waitForDestinations = config.waitForDestinations ?? false;
     this.queueSendFirst = config.queueSendFirst ?? false;
+    this.respondAfterProcessing = config.respondAfterProcessing ?? true;
+  }
+
+  getRespondAfterProcessing(): boolean {
+    return this.respondAfterProcessing;
+  }
+
+  setRespondAfterProcessing(value: boolean): void {
+    this.respondAfterProcessing = value;
   }
 
   getName(): string {

@@ -64,6 +64,13 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
   const sourceConnector = buildSourceConnector(channelConfig);
   if (sourceConnector) {
     channel.setSourceConnector(sourceConnector);
+
+    // Wire respondAfterProcessing from source connector properties
+    const sourceProps = channelConfig.sourceConnector?.properties as Record<string, unknown>;
+    if (sourceProps?.respondAfterProcessing === false ||
+        String(sourceProps?.respondAfterProcessing) === 'false') {
+      sourceConnector.setRespondAfterProcessing(false);
+    }
   }
 
   // Build destination connectors
