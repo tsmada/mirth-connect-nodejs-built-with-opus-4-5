@@ -15,6 +15,7 @@ import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
+import type { BatchAdaptor } from '../message/BatchAdaptor.js';
 
 export interface SourceConnectorConfig {
   name: string;
@@ -196,5 +197,36 @@ export abstract class SourceConnector {
     if (result.transformedData !== undefined) {
       connectorMessage.setTransformedData(result.transformedData, result.transformedDataType ?? 'XML');
     }
+  }
+
+  /**
+   * Dispatch a batch of messages through the channel using a BatchAdaptor.
+   *
+   * Ported from Java Mirth SourceConnector.dispatchBatchMessage().
+   * The adaptor splits a single raw payload into individual sub-messages,
+   * each dispatched independently through the full channel pipeline.
+   * The sourceMap for each sub-message receives batchSequenceId and batchComplete metadata.
+   */
+  async dispatchBatchMessage(
+    _rawData: string,
+    batchAdaptor: BatchAdaptor,
+    sourceMap?: Map<string, unknown>
+  ): Promise<void> {
+    if (!this.channel) {
+      throw new Error('Source connector is not attached to a channel');
+    }
+
+    while (!batchAdaptor.isBatchComplete()) {
+      const subMessage = await batchAdaptor.getMessage();
+      if (subMessage === null) break;
+
+      const batchSourceMap = new Map<string, unknown>(sourceMap);
+      batchSourceMap.set('batchSequenceId', batchAdaptor.getBatchSequenceId());
+      batchSourceMap.set('batchComplete', batchAdaptor.isBatchComplete());
+
+      await this.channel.dispatchRawMessage(subMessage, batchSourceMap);
+    }
+
+    batchAdaptor.cleanup();
   }
 }
