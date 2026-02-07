@@ -398,6 +398,130 @@ export async function insertContent(
 }
 
 /**
+ * Store (upsert) message content — tries UPDATE first, falls back to INSERT.
+ * Ported from JdbcDao.storeMessageContent() (lines 261-340).
+ *
+ * Used for content types that may already have a row (e.g., SENT on retry,
+ * RESPONSE on re-send). The primary key is (MESSAGE_ID, METADATA_ID, CONTENT_TYPE).
+ */
+export async function storeContent(
+  channelId: string,
+  messageId: number,
+  metaDataId: number,
+  contentType: ContentType,
+  content: string,
+  dataType: string,
+  encrypted: boolean
+): Promise<void> {
+  const pool = getPool();
+  const [result] = await pool.execute(
+    `UPDATE ${contentTable(channelId)}
+     SET CONTENT = ?, DATA_TYPE = ?, IS_ENCRYPTED = ?
+     WHERE METADATA_ID = ? AND MESSAGE_ID = ? AND CONTENT_TYPE = ?`,
+    [content, dataType, encrypted ? 1 : 0, metaDataId, messageId, contentType]
+  );
+  if ((result as { affectedRows: number }).affectedRows === 0) {
+    await insertContent(channelId, messageId, metaDataId, contentType, content, dataType, encrypted);
+  }
+}
+
+/**
+ * Persist processing error and postprocessor error content to D_MC.
+ * Ported from JdbcDao.updateErrors() (lines 955-975).
+ *
+ * Also updates the ERROR_CODE column in D_MM if an error code is provided.
+ */
+export async function updateErrors(
+  channelId: string,
+  messageId: number,
+  metaDataId: number,
+  processingError?: string,
+  postProcessorError?: string,
+  errorCode?: number
+): Promise<void> {
+  if (processingError) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.PROCESSING_ERROR,
+      processingError, 'text/plain', false);
+  }
+  if (postProcessorError) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.POSTPROCESSOR_ERROR,
+      postProcessorError, 'text/plain', false);
+  }
+  if (errorCode !== undefined) {
+    const pool = getPool();
+    await pool.execute(
+      `UPDATE ${connectorMessageTable(channelId)} SET ERROR_CODE = ? WHERE MESSAGE_ID = ? AND METADATA_ID = ?`,
+      [errorCode, messageId, metaDataId]
+    );
+  }
+}
+
+/**
+ * Persist connector, channel, and response maps to D_MC.
+ * Ported from JdbcDao.updateMaps() (lines 1016-1051).
+ *
+ * Each map is serialized as JSON and stored as the corresponding ContentType.
+ */
+export async function updateMaps(
+  channelId: string,
+  messageId: number,
+  metaDataId: number,
+  connectorMap?: Map<string, unknown>,
+  channelMap?: Map<string, unknown>,
+  responseMap?: Map<string, unknown>
+): Promise<void> {
+  if (connectorMap && connectorMap.size > 0) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.CONNECTOR_MAP,
+      JSON.stringify(Object.fromEntries(connectorMap)), 'JSON', false);
+  }
+  if (channelMap && channelMap.size > 0) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.CHANNEL_MAP,
+      JSON.stringify(Object.fromEntries(channelMap)), 'JSON', false);
+  }
+  if (responseMap && responseMap.size > 0) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
+      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false);
+  }
+}
+
+/**
+ * Persist only the response map to D_MC.
+ * Ported from JdbcDao.updateResponseMap() (lines 1064-1068).
+ */
+export async function updateResponseMap(
+  channelId: string,
+  messageId: number,
+  metaDataId: number,
+  responseMap: Map<string, unknown>
+): Promise<void> {
+  if (responseMap.size > 0) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
+      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false);
+  }
+}
+
+/**
+ * Update send attempts, send date, and response date on a connector message.
+ * Ported from JdbcDao.updateSendAttempts() (lines 172-193).
+ */
+export async function updateSendAttempts(
+  channelId: string,
+  messageId: number,
+  metaDataId: number,
+  sendAttempts: number,
+  sendDate?: Date,
+  responseDate?: Date
+): Promise<void> {
+  const pool = getPool();
+  await pool.execute(
+    `UPDATE ${connectorMessageTable(channelId)}
+     SET SEND_ATTEMPTS = ?, SEND_DATE = ?, RESPONSE_DATE = ?
+     WHERE MESSAGE_ID = ? AND METADATA_ID = ?`,
+    [sendAttempts, sendDate ?? null, responseDate ?? null, messageId, metaDataId]
+  );
+}
+
+/**
  * Get message content
  */
 export async function getContent(

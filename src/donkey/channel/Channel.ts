@@ -24,6 +24,7 @@ import {
 } from '../../javascript/runtime/JavaScriptExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState, ChannelStatistics } from '../../api/models/DashboardStatus.js';
+import { StorageSettings } from './StorageSettings.js';
 import {
   insertMessage,
   insertConnectorMessage,
@@ -31,6 +32,9 @@ import {
   updateConnectorMessageStatus,
   updateMessageProcessed,
   updateStatistics,
+  updateErrors,
+  updateMaps,
+  updateSendAttempts,
   getNextMessageId,
   channelTablesExist,
 } from '../../db/DonkeyDao.js';
@@ -44,6 +48,7 @@ export interface ChannelConfig {
   postprocessorScript?: string;
   deployScript?: string;
   undeployScript?: string;
+  storageSettings?: StorageSettings;
 }
 
 /**
@@ -82,6 +87,9 @@ export class Channel extends EventEmitter {
   private deployScript?: string;
   private undeployScript?: string;
 
+  // Storage settings — controls which content types are persisted
+  private storageSettings: StorageSettings;
+
   // JavaScript executor
   private executor: JavaScriptExecutor;
 
@@ -110,6 +118,7 @@ export class Channel extends EventEmitter {
     this.postprocessorScript = config.postprocessorScript;
     this.deployScript = config.deployScript;
     this.undeployScript = config.undeployScript;
+    this.storageSettings = config.storageSettings ?? new StorageSettings();
     this.executor = getDefaultExecutor();
   }
 
@@ -144,6 +153,10 @@ export class Channel extends EventEmitter {
 
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  getStorageSettings(): StorageSettings {
+    return this.storageSettings;
   }
 
   /**
@@ -473,7 +486,9 @@ export class Channel extends EventEmitter {
     });
 
     // Persist RAW content
-    await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, 'RAW', false));
+    if (this.storageSettings.storeRaw) {
+      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, 'RAW', false));
+    }
 
     // Copy source map data
     if (sourceMapData) {
@@ -501,7 +516,9 @@ export class Channel extends EventEmitter {
         });
 
         // Persist PROCESSED_RAW content
-        await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, 'RAW', false));
+        if (this.storageSettings.storeProcessedRaw) {
+          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, 'RAW', false));
+        }
       }
 
       // Execute source filter/transformer
@@ -519,6 +536,24 @@ export class Channel extends EventEmitter {
         await this.sourceConnector.executeTransformer(sourceMessage);
         sourceMessage.setStatus(Status.TRANSFORMED);
         await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.TRANSFORMED));
+
+        // Persist source TRANSFORMED content (ContentType=3)
+        if (this.storageSettings.storeTransformed) {
+          const transformedContent = sourceMessage.getTransformedContent();
+          if (transformedContent) {
+            await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
+              transformedContent.content, transformedContent.dataType, false));
+          }
+        }
+
+        // Persist source ENCODED content (ContentType=4)
+        if (this.storageSettings.storeSourceEncoded) {
+          const encodedContent = sourceMessage.getEncodedContent();
+          if (encodedContent) {
+            await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.ENCODED,
+              encodedContent.content, encodedContent.dataType, false));
+          }
+        }
       }
 
       // Dispatch to destinations
@@ -548,25 +583,93 @@ export class Channel extends EventEmitter {
           destMessage.setStatus(Status.TRANSFORMED);
           await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED));
 
+          // Persist destination ENCODED content (ContentType=4)
+          if (this.storageSettings.storeDestinationEncoded) {
+            const destEncoded = destMessage.getEncodedContent();
+            if (destEncoded) {
+              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.ENCODED,
+                destEncoded.content, destEncoded.dataType, false));
+            }
+          }
+
           // Send to destination
+          destMessage.incrementSendAttempts();
           await dest.send(destMessage);
+          const sendDate = new Date();
           destMessage.setStatus(Status.SENT);
-          destMessage.setSendDate(new Date());
+          destMessage.setSendDate(sendDate);
           this.stats.sent++;
           await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT));
           await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.SENT));
+
+          // Persist SENT content (ContentType=5) — what was actually sent
+          if (this.storageSettings.storeSent) {
+            const sentData = destMessage.getEncodedContent();
+            if (sentData) {
+              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.SENT,
+                sentData.content, sentData.dataType, false));
+            }
+          }
+
+          // Capture and persist RESPONSE content (ContentType=6)
+          if (this.storageSettings.storeResponse) {
+            const responseData = await dest.getResponse(destMessage);
+            if (responseData) {
+              destMessage.setContent({
+                contentType: ContentType.RESPONSE,
+                content: responseData,
+                dataType: 'RAW',
+                encrypted: false,
+              });
+              destMessage.setResponseDate(new Date());
+              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.RESPONSE,
+                responseData, 'RAW', false));
+            }
+          }
+
+          // Update send attempts and dates in D_MM
+          await this.persistToDb(() => updateSendAttempts(this.id, messageId, i + 1,
+            destMessage.getSendAttempts(), sendDate, destMessage.getResponseDate()));
+
+          // Persist destination maps after send
+          if (this.storageSettings.storeMaps) {
+            await this.persistToDb(() => updateMaps(this.id, messageId, i + 1,
+              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap()));
+          }
         } catch (error) {
           destMessage.setStatus(Status.ERROR);
           destMessage.setProcessingError(String(error));
           this.stats.error++;
           await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR));
           await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.ERROR));
+
+          // Persist PROCESSING_ERROR (ContentType=12)
+          await this.persistToDb(() => updateErrors(this.id, messageId, i + 1,
+            String(error), undefined, undefined));
+
+          // Persist destination maps even on error
+          if (this.storageSettings.storeMaps) {
+            await this.persistToDb(() => updateMaps(this.id, messageId, i + 1,
+              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap()));
+          }
         }
       }
 
       // Execute postprocessor
       if (this.postprocessorScript) {
-        await this.executePostprocessor(message);
+        try {
+          await this.executePostprocessor(message);
+        } catch (postError) {
+          sourceMessage.setPostProcessorError(String(postError));
+          await this.persistToDb(() => updateErrors(this.id, messageId, 0,
+            undefined, String(postError), undefined));
+        }
+      }
+
+      // Persist source maps
+      if (this.storageSettings.storeMaps) {
+        await this.persistToDb(() => updateMaps(this.id, messageId, 0,
+          sourceMessage.getConnectorMap(), sourceMessage.getChannelMap(), sourceMessage.getResponseMap()));
       }
 
       message.setProcessed(true);
@@ -577,9 +680,14 @@ export class Channel extends EventEmitter {
       this.stats.error++;
       await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR));
       await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.ERROR));
+
+      // Persist source PROCESSING_ERROR (ContentType=12)
+      await this.persistToDb(() => updateErrors(this.id, messageId, 0,
+        String(error), undefined, undefined));
     }
 
     // Persist source map to D_MC table for cross-channel tracing
+    // SOURCE_MAP is always persisted regardless of storeMaps flag — it's needed for trace feature
     const srcMap = sourceMessage.getSourceMap();
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);

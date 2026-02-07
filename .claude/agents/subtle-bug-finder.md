@@ -1,3 +1,10 @@
+---
+name: subtle-bug-finder
+description: Detect Java-to-Node.js porting discrepancies focusing on dual state tracking, initialization bypass, missing registration, and architectural drift. Read-only analysis.
+tools: Read, Glob, Grep, Bash
+disallowedTools: Write, Edit, NotebookEdit
+---
+
 # Subtle Bug Finder Agent
 
 ## Purpose

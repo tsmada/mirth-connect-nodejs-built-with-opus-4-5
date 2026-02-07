@@ -771,7 +771,7 @@ with the pattern
 
 ## Available Agents
 
-Specialized subagents for complex workflows. See `agents/README.md` for full documentation.
+Specialized subagents for complex workflows. See `.claude/agents/README.md` for full documentation.
 
 ### mirth-porter
 Port Java Mirth Connect code to TypeScript following TDD methodology.
@@ -786,7 +786,7 @@ Parameters:
 - targetCategory: connectors|javascript|api|plugins|donkey
 ```
 
-See `agents/mirth-porter.md` for full specification.
+See `.claude/agents/mirth-porter.md` for full specification.
 
 ### version-upgrader
 Orchestrate version upgrades with parallel agents and git worktrees.
@@ -802,7 +802,7 @@ Parameters:
 - parallelWaves: true
 ```
 
-See `agents/version-upgrader.md` for full specification.
+See `.claude/agents/version-upgrader.md` for full specification.
 
 ### subtle-bug-finder
 Detect Java→Node.js porting discrepancies focusing on state tracking, initialization bypass, and architectural drift.
@@ -818,7 +818,23 @@ Parameters:
 - bugCategories: ["dual-state", "initialization-bypass", "missing-registration", "singleton-issues", "circular-deps", "async-order"]
 ```
 
-See `agents/subtle-bug-finder.md` for full specification.
+See `.claude/agents/subtle-bug-finder.md` for full specification.
+
+### parity-checker
+Detect Java↔Node.js Donkey engine pipeline coverage gaps — missing DAO methods, unpersisted content types, and absent pipeline stages.
+
+**Use for**: DAO method gap analysis, content persistence audits, pipeline completeness checks, pre-takeover validation.
+
+**Quick start**:
+```
+Use the parity-checker agent to scan for all Java↔Node.js pipeline gaps.
+Parameters:
+- scope: full|dao|content|pipeline
+- severity: critical|major|minor
+- bugCategories: ["in-memory-only", "missing-dao-call", "stub-implementation", "missing-java-method", "hardcoded-value", "missing-content-persistence", "missing-pipeline-stage", "incomplete-error-handling", "missing-queue-recovery", "missing-transaction-boundary"]
+```
+
+See `.claude/agents/parity-checker.md` for full specification.
 
 ---
 
@@ -838,7 +854,7 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 └─────────────────────────────────────────────────────────────────────┘
          │
          ├──► [Worktree 1: feature/userutil-core]     → Agent 1 ✅
-         ├──► [Worktree 2: feature/userutil-db]       → Agent 2 ⚠️ (permission issues)
+         ├──► [Worktree 2: feature/userutil-db]       → Agent 2 ⚠️ (permission issues, retried in Wave 2 ✅)
          ├──► [Worktree 3: feature/userutil-io]       → Agent 3 ✅
          ├──► [Worktree 4: feature/donkey-engine]     → Agent 4 ✅
          ├──► [Worktree 5: feature/connectors-vm]     → Agent 5 ✅
@@ -1005,7 +1021,7 @@ git worktree add ../mirth-worktrees/feature-name -b feature/feature-name
 Each agent works in complete isolation - no merge conflicts until final integration.
 
 **2. Permission Issues in Background Agents**
-One agent (userutil-db) had "Permission to use Read has been auto-denied" errors. This can happen when agents run in background mode with limited prompts. Solution: retry with explicit permissions or port manually.
+One agent (userutil-db) had "Permission to use Read has been auto-denied" errors in Wave 1. This can happen when agents run in background mode with limited prompts. **Resolved in Wave 2** — all 3 DatabaseConnection classes were successfully ported (122 tests passing). Solution: retry with explicit permissions or port manually.
 
 **3. Merge Conflicts in Index Files**
 When multiple agents modify the same `index.ts` export file, expect merge conflicts. These are easy to resolve by combining export statements.

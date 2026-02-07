@@ -8,6 +8,7 @@
 import { Channel, ChannelConfig } from './Channel.js';
 import { SourceConnector } from './SourceConnector.js';
 import { DestinationConnector } from './DestinationConnector.js';
+import { getStorageSettings, parseMessageStorageMode } from './StorageSettings.js';
 import { TcpReceiver } from '../../connectors/tcp/TcpReceiver.js';
 import { TcpDispatcher } from '../../connectors/tcp/TcpDispatcher.js';
 import { TcpReceiverProperties, TcpDispatcherProperties, ServerMode, TransmissionMode, ResponseMode } from '../../connectors/tcp/TcpConnectorProperties.js';
@@ -25,6 +26,16 @@ import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js'
  * Build a runtime Channel from a channel configuration
  */
 export function buildChannel(channelConfig: ChannelModel): Channel {
+  // Build StorageSettings from channel properties' messageStorageMode
+  const channelProps = channelConfig.properties;
+  const storageMode = parseMessageStorageMode(channelProps?.messageStorageMode);
+  const storageSettings = getStorageSettings(storageMode, {
+    removeContentOnCompletion: channelProps?.removeContentOnCompletion,
+    removeOnlyFilteredOnCompletion: channelProps?.removeOnlyFilteredOnCompletion,
+    removeAttachmentsOnCompletion: channelProps?.removeAttachmentsOnCompletion,
+    storeAttachments: channelProps?.storeAttachments,
+  });
+
   // Create channel with basic config
   const config: ChannelConfig = {
     id: channelConfig.id,
@@ -35,6 +46,7 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     postprocessorScript: channelConfig.postprocessingScript,
     deployScript: channelConfig.deployScript,
     undeployScript: channelConfig.undeployScript,
+    storageSettings,
   };
 
   const channel = new Channel(config);

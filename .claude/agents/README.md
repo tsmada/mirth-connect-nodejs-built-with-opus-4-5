@@ -18,6 +18,7 @@ Agents are reusable AI assistants with specific expertise. They follow documente
 | [mirth-porter](./mirth-porter.md) | Port Java Mirth code to TypeScript | New connectors, API endpoints, plugins, validation gaps |
 | [version-upgrader](./version-upgrader.md) | Orchestrate version upgrades with parallel agents | Upgrading to new Mirth versions (3.9.1 → 3.10.0, etc.) |
 | [subtle-bug-finder](./subtle-bug-finder.md) | Detect Java→Node.js porting discrepancies | Post-porting validation, debugging unexpected API behavior, pre-release checks |
+| [parity-checker](./parity-checker.md) | Detect Java↔Node.js pipeline coverage gaps | DAO method gaps, missing content persistence, incomplete pipeline stages |
 
 ## How to Invoke an Agent
 
@@ -36,7 +37,7 @@ Parameters:
 Simply reference the agent specification in your prompt:
 
 ```
-Following the workflow in agents/mirth-porter.md, port the DatabaseReader connector.
+Following the workflow in .claude/agents/mirth-porter.md, port the DatabaseReader connector.
 ```
 
 ## Agent Design Principles
@@ -60,7 +61,7 @@ Agents update project tracking (manifest.json, todo.md, lessons.md).
 
 When a workflow becomes repetitive (3+ times), consider creating an agent:
 
-1. Create `agents/{agent-name}.md`
+1. Create `.claude/agents/{agent-name}.md`
 2. Document:
    - Purpose and when to use
    - Input parameters

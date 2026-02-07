@@ -1,3 +1,9 @@
+---
+name: mirth-porter
+description: Port Java Mirth Connect components to TypeScript following TDD methodology. Use when porting connectors, API endpoints, plugins, or resolving validation gaps.
+tools: Read, Glob, Grep, Bash, Write, Edit
+---
+
 # Mirth-Porter Agent
 
 ## Purpose

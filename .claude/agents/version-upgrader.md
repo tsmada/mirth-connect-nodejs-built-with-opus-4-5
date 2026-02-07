@@ -1,3 +1,9 @@
+---
+name: version-upgrader
+description: Orchestrate Mirth version upgrades with parallel agents and git worktrees. Use when upgrading the Node.js port to match a newer Java Mirth release.
+tools: Read, Glob, Grep, Bash, Write, Edit
+---
+
 # Version Upgrader Agent
 
 ## Purpose
