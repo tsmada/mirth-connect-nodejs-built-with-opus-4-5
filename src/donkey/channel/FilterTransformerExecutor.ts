@@ -60,6 +60,10 @@ export class FilterTransformerExecutor {
     this.template = scripts.template ?? '';
   }
 
+  getInboundDataType(): string {
+    return this.inboundDataType;
+  }
+
   setExecutor(executor: JavaScriptExecutor): void {
     this.executor = executor;
   }

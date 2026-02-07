@@ -350,6 +350,18 @@ export abstract class DestinationConnector {
   }
 
   /**
+   * Get the response data type from the response transformer's inbound configuration.
+   * Matches Java Mirth: responseTransformerExecutor.getInbound().getType()
+   * Falls back to 'RAW' if no response transformer is configured.
+   */
+  getResponseDataType(): string {
+    if (this.responseTransformerExecutor) {
+      return this.responseTransformerExecutor.getInboundDataType();
+    }
+    return 'RAW';
+  }
+
+  /**
    * Execute the response transformer
    */
   async executeResponseTransformer(connectorMessage: ConnectorMessage): Promise<void> {

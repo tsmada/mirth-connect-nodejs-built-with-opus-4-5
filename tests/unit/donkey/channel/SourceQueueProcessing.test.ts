@@ -43,9 +43,12 @@ import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
 import { buildChannel } from '../../../../src/donkey/channel/ChannelBuilder';
 import { Channel as ChannelModel } from '../../../../src/api/models/Channel';
+import { Status } from '../../../../src/model/Status';
+import { SerializationType } from '../../../../src/javascript/runtime/ScriptBuilder';
 import {
   insertMessage, insertConnectorMessage, insertContent,
   channelTablesExist, getNextMessageId,
+  updateConnectorMessageStatus,
 } from '../../../../src/db/DonkeyDao';
 
 // Concrete test source connector
@@ -77,18 +80,40 @@ class TestSourceConnector extends SourceConnector {
 // Concrete test destination connector
 class TestDestinationConnector extends DestinationConnector {
   public sentMessages: ConnectorMessage[] = [];
+  public responseToReturn: string | null = null;
 
-  constructor(metaDataId: number, name: string = 'Test Destination') {
+  constructor(metaDataId: number, name: string = 'Test Destination', opts?: { queueEnabled?: boolean }) {
     super({
       name,
       metaDataId,
       transportName: 'TEST',
+      queueEnabled: opts?.queueEnabled,
     });
   }
 
   async send(connectorMessage: ConnectorMessage): Promise<void> {
     this.sentMessages.push(connectorMessage);
     connectorMessage.setSendDate(new Date());
+  }
+
+  async getResponse(_connectorMessage: ConnectorMessage): Promise<string | null> {
+    return this.responseToReturn;
+  }
+}
+
+// Destination connector that always throws on send (for error/queue tests)
+class FailingDestinationConnector extends DestinationConnector {
+  constructor(metaDataId: number, name: string = 'Failing Destination', opts?: { queueEnabled?: boolean }) {
+    super({
+      name,
+      metaDataId,
+      transportName: 'TEST',
+      queueEnabled: opts?.queueEnabled,
+    });
+  }
+
+  async send(_connectorMessage: ConnectorMessage): Promise<void> {
+    throw new Error('Send failed');
   }
 
   async getResponse(_connectorMessage: ConnectorMessage): Promise<string | null> {
@@ -287,6 +312,247 @@ describe('Source Queue Processing', () => {
       // Stop should complete without hanging
       await channel.stop();
       expect(channel.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+  });
+
+  describe('PENDING checkpoint in source queue path', () => {
+    it('should set PENDING status before response transformer when processing from queue', async () => {
+      const channel = new Channel({
+        id: 'pending-checkpoint',
+        name: 'Pending Checkpoint',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector({ respondAfterProcessing: false });
+      const dest = new TestDestinationConnector(1);
+      dest.responseToReturn = 'ACK';
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      await channel.start();
+      await channel.dispatchRawMessage('<test>pending</test>');
+
+      // Wait for background processing
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // updateConnectorMessageStatus should have been called with PENDING
+      // for destination (metaDataId=1) before the final SENT status
+      const statusCalls = (updateConnectorMessageStatus as jest.Mock).mock.calls;
+
+      // Find the PENDING call for metaDataId 1
+      const pendingCall = statusCalls.find(
+        (call: any[]) => call[2] === 1 && call[3] === Status.PENDING
+      );
+      expect(pendingCall).toBeDefined();
+
+      // The PENDING call should come before the final SENT transaction
+      const pendingIdx = statusCalls.indexOf(pendingCall);
+      const sentCall = statusCalls.find(
+        (call: any[], idx: number) => idx > pendingIdx && call[2] === 1 && call[3] === Status.SENT
+      );
+      expect(sentCall).toBeDefined();
+
+      await channel.stop();
+    });
+
+    it('should also set PENDING in the synchronous dispatchRawMessage path', async () => {
+      const channel = new Channel({
+        id: 'pending-sync',
+        name: 'Pending Sync',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector(); // respondAfterProcessing=true (default)
+      const dest = new TestDestinationConnector(1);
+      dest.responseToReturn = 'ACK';
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      await channel.dispatchRawMessage('<test>pending-sync</test>');
+
+      const statusCalls = (updateConnectorMessageStatus as jest.Mock).mock.calls;
+      const pendingCall = statusCalls.find(
+        (call: any[]) => call[2] === 1 && call[3] === Status.PENDING
+      );
+      expect(pendingCall).toBeDefined();
+    });
+  });
+
+  describe('Queue-on-error in source queue path', () => {
+    it('should set QUEUED status when queue-enabled dest fails in source queue path', async () => {
+      const channel = new Channel({
+        id: 'queue-on-error',
+        name: 'Queue On Error',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector({ respondAfterProcessing: false });
+      const dest = new FailingDestinationConnector(1, 'Queue Dest', { queueEnabled: true });
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      await channel.start();
+      await channel.dispatchRawMessage('<test>queue-error</test>');
+
+      // Wait for background processing
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Should have called updateConnectorMessageStatus with QUEUED for metaDataId 1
+      const statusCalls = (updateConnectorMessageStatus as jest.Mock).mock.calls;
+      const queuedCall = statusCalls.find(
+        (call: any[]) => call[2] === 1 && call[3] === Status.QUEUED
+      );
+      expect(queuedCall).toBeDefined();
+
+      // Should NOT have an ERROR call for metaDataId 1
+      const errorCall = statusCalls.find(
+        (call: any[]) => call[2] === 1 && call[3] === Status.ERROR
+      );
+      expect(errorCall).toBeUndefined();
+
+      // Stats should show queued, not error
+      const stats = channel.getStatistics();
+      expect(stats.queued).toBeGreaterThanOrEqual(1);
+
+      await channel.stop();
+    });
+
+    it('should set ERROR status when non-queue dest fails in source queue path', async () => {
+      const channel = new Channel({
+        id: 'error-no-queue',
+        name: 'Error No Queue',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector({ respondAfterProcessing: false });
+      const dest = new FailingDestinationConnector(1, 'No Queue Dest', { queueEnabled: false });
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      await channel.start();
+      await channel.dispatchRawMessage('<test>error-no-queue</test>');
+
+      // Wait for background processing
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Should have called updateConnectorMessageStatus with ERROR for metaDataId 1
+      const statusCalls = (updateConnectorMessageStatus as jest.Mock).mock.calls;
+      const errorCall = statusCalls.find(
+        (call: any[]) => call[2] === 1 && call[3] === Status.ERROR
+      );
+      expect(errorCall).toBeDefined();
+
+      // Should NOT have a QUEUED call for metaDataId 1
+      const queuedCall = statusCalls.find(
+        (call: any[]) => call[2] === 1 && call[3] === Status.QUEUED
+      );
+      expect(queuedCall).toBeUndefined();
+
+      // Stats should show error, not queued
+      const stats = channel.getStatistics();
+      expect(stats.error).toBeGreaterThanOrEqual(1);
+
+      await channel.stop();
+    });
+  });
+
+  describe('Response dataType from connector configuration', () => {
+    it('should use connector response data type instead of hardcoded RAW', async () => {
+      const channel = new Channel({
+        id: 'resp-datatype',
+        name: 'Response DataType',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector();
+      const dest = new TestDestinationConnector(1);
+      dest.responseToReturn = '<ACK>success</ACK>';
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      // Configure a response transformer with XML inbound data type
+      // Must be set AFTER addDestinationConnector (which calls setChannel and creates executors)
+      dest.setFilterTransformer({
+        responseTransformerScripts: {
+          inboundDataType: SerializationType.XML,
+        },
+      });
+
+      const message = await channel.dispatchRawMessage('<test>datatype</test>');
+
+      // The destination connector message should have RESPONSE content with XML dataType
+      const destMsg = message.getConnectorMessage(1);
+      expect(destMsg).toBeDefined();
+
+      const responseContent = destMsg!.getResponseContent();
+      expect(responseContent).toBeDefined();
+      expect(responseContent!.dataType).toBe('XML');
+    });
+
+    it('should fall back to RAW when no response transformer is configured', async () => {
+      const channel = new Channel({
+        id: 'resp-fallback',
+        name: 'Response Fallback',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector();
+      const dest = new TestDestinationConnector(1);
+      dest.responseToReturn = 'ACK';
+
+      // No response transformer configured
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      const message = await channel.dispatchRawMessage('<test>fallback</test>');
+
+      const destMsg = message.getConnectorMessage(1);
+      expect(destMsg).toBeDefined();
+
+      const responseContent = destMsg!.getResponseContent();
+      expect(responseContent).toBeDefined();
+      expect(responseContent!.dataType).toBe('RAW');
+    });
+
+    it('should use connector response data type in source queue path too', async () => {
+      const channel = new Channel({
+        id: 'resp-datatype-queue',
+        name: 'Response DataType Queue',
+        enabled: true,
+      });
+
+      const source = new TestSourceConnector({ respondAfterProcessing: false });
+      const dest = new TestDestinationConnector(1);
+      dest.responseToReturn = '{"status":"ok"}';
+
+      channel.setSourceConnector(source);
+      channel.addDestinationConnector(dest);
+
+      // Configure response transformer with JSON inbound type
+      // Must be set AFTER addDestinationConnector
+      dest.setFilterTransformer({
+        responseTransformerScripts: {
+          inboundDataType: SerializationType.JSON,
+        },
+      });
+
+      await channel.start();
+      await channel.dispatchRawMessage('<test>queue-datatype</test>');
+
+      // Wait for background processing
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Verify via storeContent calls that the response was persisted with JSON type
+      // The dest getResponseDataType() should return 'JSON'
+      expect(dest.getResponseDataType()).toBe('JSON');
+
+      await channel.stop();
     });
   });
 

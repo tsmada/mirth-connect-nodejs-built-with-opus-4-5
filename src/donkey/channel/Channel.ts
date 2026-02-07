@@ -827,7 +827,7 @@ export class Channel extends EventEmitter {
               destMessage.setContent({
                 contentType: ContentType.RESPONSE,
                 content: responseData,
-                dataType: 'RAW',
+                dataType: dest.getResponseDataType(),
                 encrypted: false,
               });
               destMessage.setResponseDate(new Date());
@@ -1349,11 +1349,20 @@ export class Channel extends EventEmitter {
               destMessage.setContent({
                 contentType: ContentType.RESPONSE,
                 content: responseData,
-                dataType: 'RAW',
+                dataType: dest.getResponseDataType(),
                 encrypted: false,
               });
               destMessage.setResponseDate(new Date());
+
+              // PENDING checkpoint — crash recovery marker (matching dispatchRawMessage path)
+              destMessage.setStatus(Status.PENDING);
+              await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING));
+
+              // Execute response transformer
               await dest.executeResponseTransformer(destMessage);
+
+              // Restore SENT status after response transformer completes
+              destMessage.setStatus(Status.SENT);
             }
           }
 
@@ -1409,24 +1418,40 @@ export class Channel extends EventEmitter {
 
           await this.persistInTransaction(destOps);
         } catch (error) {
-          destMessage.setStatus(Status.ERROR);
-          destMessage.setProcessingError(String(error));
-          const errorCode = destMessage.updateErrorCode();
-          this.stats.error++;
+          if (dest.isQueueEnabled()) {
+            // Queue-enabled: set QUEUED status instead of ERROR (matching dispatchRawMessage path)
+            destMessage.setStatus(Status.QUEUED);
+            const queue = dest.getQueue();
+            if (queue) {
+              queue.add(destMessage);
+            }
+            this.stats.queued++;
 
-          const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
-            (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
-            (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
-            (conn) => updateErrors(this.id, messageId, i + 1,
-              String(error), undefined, errorCode, undefined, conn),
-          ];
+            await this.persistInTransaction([
+              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
+              (conn) => updateStatistics(this.id, i + 1, serverId, Status.QUEUED, 1, conn),
+            ]);
+          } else {
+            // Non-queue destination: ERROR handling
+            destMessage.setStatus(Status.ERROR);
+            destMessage.setProcessingError(String(error));
+            const errorCode = destMessage.updateErrorCode();
+            this.stats.error++;
 
-          if (this.storageSettings.storeMaps) {
-            errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
-              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+            const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
+              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
+              (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
+              (conn) => updateErrors(this.id, messageId, i + 1,
+                String(error), undefined, errorCode, undefined, conn),
+            ];
+
+            if (this.storageSettings.storeMaps) {
+              errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
+                destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+            }
+
+            await this.persistInTransaction(errOps);
           }
-
-          await this.persistInTransaction(errOps);
         }
       }
 
