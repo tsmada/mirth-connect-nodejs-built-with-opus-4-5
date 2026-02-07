@@ -186,7 +186,7 @@ export class VmReceiver extends SourceConnector {
    * @param messages Array of raw messages to dispatch
    * @returns True if all messages were dispatched successfully
    */
-  async dispatchBatchMessage(messages: RawMessage[]): Promise<boolean> {
+  async dispatchVmBatchMessages(messages: RawMessage[]): Promise<boolean> {
     if (!this.running) {
       throw new Error('VM Receiver is not running');
     }

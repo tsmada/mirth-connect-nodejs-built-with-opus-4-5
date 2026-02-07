@@ -248,7 +248,7 @@ describe('VmReceiver', () => {
     });
   });
 
-  describe('dispatchBatchMessage', () => {
+  describe('dispatchVmBatchMessages', () => {
     let receiver: VmReceiver;
     let channel: MockChannel;
 
@@ -270,7 +270,7 @@ describe('VmReceiver', () => {
         RawMessage.fromString('message 3'),
       ];
 
-      const result = await receiver.dispatchBatchMessage(messages);
+      const result = await receiver.dispatchVmBatchMessages(messages);
 
       expect(result).toBe(true);
       expect(channel.dispatchedMessages).toHaveLength(3);
@@ -284,7 +284,7 @@ describe('VmReceiver', () => {
 
       const messages = [RawMessage.fromString('message 1')];
 
-      await expect(receiver.dispatchBatchMessage(messages)).rejects.toThrow(
+      await expect(receiver.dispatchVmBatchMessages(messages)).rejects.toThrow(
         'does not support batch'
       );
     });
@@ -293,7 +293,7 @@ describe('VmReceiver', () => {
       await receiver.stop();
       const messages = [RawMessage.fromString('message 1')];
 
-      await expect(receiver.dispatchBatchMessage(messages)).rejects.toThrow('not running');
+      await expect(receiver.dispatchVmBatchMessages(messages)).rejects.toThrow('not running');
     });
   });
 
