@@ -17,6 +17,7 @@ import { ContentType } from '../../model/ContentType.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DestinationQueue } from '../queue/DestinationQueue.js';
+import { ResponseValidator } from '../message/ResponseValidator.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
 
 export interface DestinationConnectorConfig {
@@ -52,6 +53,7 @@ export abstract class DestinationConnector {
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
   protected responseTransformerExecutor: FilterTransformerExecutor | null = null;
   protected queue: DestinationQueue | null = null;
+  protected responseValidator: ResponseValidator | null = null;
 
   /**
    * Current deployed state of this connector.
@@ -209,6 +211,21 @@ export abstract class DestinationConnector {
    */
   setQueue(queue: DestinationQueue): void {
     this.queue = queue;
+  }
+
+  /**
+   * Get the response validator
+   */
+  getResponseValidator(): ResponseValidator | null {
+    return this.responseValidator;
+  }
+
+  /**
+   * Set the response validator.
+   * Used to validate responses after send() — e.g., HL7 NAK detection.
+   */
+  setResponseValidator(validator: ResponseValidator): void {
+    this.responseValidator = validator;
   }
 
   /**
