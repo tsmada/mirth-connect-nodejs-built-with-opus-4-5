@@ -1229,6 +1229,35 @@ export async function deleteMessageAttachments(
   return (result as { affectedRows: number }).affectedRows;
 }
 
+/**
+ * Delete a single message and all related rows.
+ * Ported from JdbcDao.deleteMessage() (single message variant).
+ */
+export async function deleteMessage(channelId: string, messageId: number): Promise<void> {
+  await transaction(async (conn) => {
+    await conn.execute(`DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
+    await conn.execute(`DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
+    await conn.execute(`DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
+    await conn.execute(`DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
+    await conn.execute(`DELETE FROM ${messageTable(channelId)} WHERE ID = ?`, [messageId]);
+  });
+}
+
+/**
+ * Get multiple messages by ID.
+ * Ported from JdbcDao.getMessages() (bulk variant).
+ */
+export async function getMessages(channelId: string, messageIds: number[]): Promise<MessageRow[]> {
+  if (messageIds.length === 0) return [];
+  const pool = getPool();
+  const placeholders = messageIds.map(() => '?').join(', ');
+  const [rows] = await pool.query<MessageRow[]>(
+    `SELECT * FROM ${messageTable(channelId)} WHERE ID IN (${placeholders}) ORDER BY ID`,
+    messageIds
+  );
+  return rows;
+}
+
 // ============================================================================
 // Query Methods
 // ============================================================================

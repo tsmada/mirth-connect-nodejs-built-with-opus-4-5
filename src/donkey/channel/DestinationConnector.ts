@@ -244,15 +244,27 @@ export abstract class DestinationConnector {
    * Start the destination connector
    */
   async start(): Promise<void> {
+    this.updateCurrentState(DeployedState.STARTING);
+    await this.onStart();
     this.running = true;
+    this.updateCurrentState(DeployedState.STARTED);
   }
 
   /**
    * Stop the destination connector
    */
   async stop(): Promise<void> {
+    this.updateCurrentState(DeployedState.STOPPING);
+    await this.onStop();
     this.running = false;
+    this.updateCurrentState(DeployedState.STOPPED);
   }
+
+  /** Override in subclasses for custom start logic */
+  protected async onStart(): Promise<void> {}
+
+  /** Override in subclasses for custom stop logic */
+  protected async onStop(): Promise<void> {}
 
   /**
    * Execute the destination filter

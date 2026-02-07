@@ -36,6 +36,8 @@ export abstract class SourceConnector {
 
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
 
+  protected inboundDataType: string = 'RAW';
+
   /**
    * Current deployed state of this connector.
    * Matches Java Mirth Connector.java:27
@@ -48,6 +50,14 @@ export abstract class SourceConnector {
     this.waitForDestinations = config.waitForDestinations ?? false;
     this.queueSendFirst = config.queueSendFirst ?? false;
     this.respondAfterProcessing = config.respondAfterProcessing ?? true;
+  }
+
+  getInboundDataType(): string {
+    return this.inboundDataType;
+  }
+
+  setInboundDataType(dataType: string): void {
+    this.inboundDataType = dataType;
   }
 
   getRespondAfterProcessing(): boolean {
@@ -155,6 +165,12 @@ export abstract class SourceConnector {
    * Stop the source connector
    */
   abstract stop(): Promise<void>;
+
+  /** Override in subclasses for custom start logic */
+  protected async onStart(): Promise<void> {}
+
+  /** Override in subclasses for custom stop logic */
+  protected async onStop(): Promise<void> {}
 
   /**
    * Dispatch a raw message to the channel
