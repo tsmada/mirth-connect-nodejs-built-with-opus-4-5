@@ -354,6 +354,13 @@ export class Channel extends EventEmitter {
         startedConnectors.push(dest);
       }
 
+      // Start queue processing for queue-enabled destinations
+      for (const dest of this.destinationConnectors) {
+        if (dest.isQueueEnabled()) {
+          dest.startQueueProcessing();
+        }
+      }
+
       // Start source connector last
       if (this.sourceConnector) {
         await this.sourceConnector.start();
@@ -405,6 +412,11 @@ export class Channel extends EventEmitter {
       // Stop source connector first (stop receiving new messages)
       if (this.sourceConnector) {
         await this.sourceConnector.stop();
+      }
+
+      // Stop queue processing first
+      for (const dest of this.destinationConnectors) {
+        await dest.stopQueueProcessing();
       }
 
       // Stop destination connectors
@@ -854,25 +866,41 @@ export class Channel extends EventEmitter {
 
           await this.persistInTransaction(destOps);
         } catch (error) {
-          destMessage.setStatus(Status.ERROR);
-          destMessage.setProcessingError(String(error));
-          const errorCode = destMessage.updateErrorCode();
-          this.stats.error++;
+          if (dest.isQueueEnabled()) {
+            // Queue-enabled: set QUEUED status instead of ERROR
+            destMessage.setStatus(Status.QUEUED);
+            const queue = dest.getQueue();
+            if (queue) {
+              queue.add(destMessage);
+            }
+            this.stats.queued++;
 
-          // Error transaction: status + stats + error content + maps
-          const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
-            (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
-            (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
-            (conn) => updateErrors(this.id, messageId, i + 1,
-              String(error), undefined, errorCode, undefined, conn),
-          ];
+            await this.persistInTransaction([
+              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
+              (conn) => updateStatistics(this.id, i + 1, serverId, Status.QUEUED, 1, conn),
+            ]);
+          } else {
+            // Non-queue destination: ERROR handling (original behavior)
+            destMessage.setStatus(Status.ERROR);
+            destMessage.setProcessingError(String(error));
+            const errorCode = destMessage.updateErrorCode();
+            this.stats.error++;
 
-          if (this.storageSettings.storeMaps) {
-            errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
-              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+            // Error transaction: status + stats + error content + maps
+            const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
+              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
+              (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
+              (conn) => updateErrors(this.id, messageId, i + 1,
+                String(error), undefined, errorCode, undefined, conn),
+            ];
+
+            if (this.storageSettings.storeMaps) {
+              errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
+                destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+            }
+
+            await this.persistInTransaction(errOps);
           }
-
-          await this.persistInTransaction(errOps);
         }
       }
 

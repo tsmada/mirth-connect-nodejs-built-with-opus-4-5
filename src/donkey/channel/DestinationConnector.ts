@@ -14,11 +14,20 @@
 import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
+import { Status } from '../../model/Status.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DestinationQueue } from '../queue/DestinationQueue.js';
 import { ResponseValidator } from '../message/ResponseValidator.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error('aborted')); return; }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')); }, { once: true });
+  });
+}
 
 export interface DestinationConnectorConfig {
   name: string;
@@ -54,6 +63,9 @@ export abstract class DestinationConnector {
   protected responseTransformerExecutor: FilterTransformerExecutor | null = null;
   protected queue: DestinationQueue | null = null;
   protected responseValidator: ResponseValidator | null = null;
+
+  private queueAbortController: AbortController | null = null;
+  private queueProcessingPromise: Promise<void> | null = null;
 
   /**
    * Current deployed state of this connector.
@@ -320,6 +332,137 @@ export abstract class DestinationConnector {
     }
 
     await this.responseTransformerExecutor.executeTransformer(connectorMessage);
+  }
+
+  /**
+   * Start the background queue processing loop.
+   * Replaces Java's Thread-based DestinationConnector.run().
+   */
+  startQueueProcessing(): void {
+    if (!this.queueEnabled || !this.queue) return;
+    this.queueAbortController = new AbortController();
+    this.queueProcessingPromise = this.processQueue(this.queueAbortController.signal);
+  }
+
+  /**
+   * Stop the background queue processing loop gracefully.
+   */
+  async stopQueueProcessing(): Promise<void> {
+    if (this.queueAbortController) {
+      this.queueAbortController.abort();
+      try {
+        await this.queueProcessingPromise;
+      } catch {
+        // Expected: abort error
+      }
+      this.queueAbortController = null;
+      this.queueProcessingPromise = null;
+    }
+  }
+
+  /**
+   * Background queue processing loop.
+   * Ported from Java DestinationConnector.run() (lines 299-878).
+   */
+  private async processQueue(signal: AbortSignal): Promise<void> {
+    while (!signal.aborted) {
+      let connectorMessage: ConnectorMessage | null = null;
+
+      try {
+        connectorMessage = this.queue!.acquire();
+
+        if (!connectorMessage) {
+          // No messages available, wait before polling again
+          await sleep(this.retryIntervalMillis, signal);
+          continue;
+        }
+
+        // Retry delay for messages that have been attempted before
+        if (connectorMessage.getSendAttempts() > 0) {
+          await sleep(this.retryIntervalMillis, signal);
+        }
+
+        // Increment send attempts
+        connectorMessage.incrementSendAttempts();
+
+        // Attempt to send
+        await this.send(connectorMessage);
+        const sendDate = new Date();
+
+        // Get and validate response
+        let response = await this.getResponse(connectorMessage);
+        if (this.responseValidator) {
+          response = this.responseValidator.validate(response, connectorMessage);
+        }
+
+        // If validator set status to ERROR, release for retry
+        if (connectorMessage.getStatus() === Status.ERROR) {
+          if (this.shouldPermanentlyFail(connectorMessage)) {
+            this.queue!.release(connectorMessage, true);
+          } else {
+            this.queue!.release(connectorMessage, false);
+          }
+          continue;
+        }
+
+        // Success
+        connectorMessage.setStatus(Status.SENT);
+        connectorMessage.setSendDate(sendDate);
+
+        // Persist status update
+        if (this.channel) {
+          const channelId = this.channel.getId();
+          const serverId = connectorMessage.getServerId();
+          const messageId = connectorMessage.getMessageId();
+          const metaDataId = connectorMessage.getMetaDataId();
+
+          try {
+            const { updateConnectorMessageStatus, updateSendAttempts, updateStatistics } = await import('../../db/DonkeyDao.js');
+            await updateConnectorMessageStatus(channelId, messageId, metaDataId, Status.SENT);
+            await updateSendAttempts(channelId, messageId, metaDataId, connectorMessage.getSendAttempts(), sendDate);
+            await updateStatistics(channelId, metaDataId, serverId, Status.SENT);
+          } catch (dbErr) {
+            console.error(`[${this.name}] Queue DB persist error: ${dbErr}`);
+          }
+        }
+
+        this.queue!.release(connectorMessage, true);
+
+      } catch (error) {
+        if (signal.aborted) break;
+
+        if (connectorMessage) {
+          if (this.shouldPermanentlyFail(connectorMessage)) {
+            // Max retries exceeded - permanent failure
+            connectorMessage.setStatus(Status.ERROR);
+            connectorMessage.setProcessingError(String(error));
+
+            if (this.channel) {
+              try {
+                const { updateConnectorMessageStatus, updateErrors, updateStatistics } = await import('../../db/DonkeyDao.js');
+                const channelId = this.channel.getId();
+                const messageId = connectorMessage.getMessageId();
+                const metaDataId = connectorMessage.getMetaDataId();
+                await updateConnectorMessageStatus(channelId, messageId, metaDataId, Status.ERROR);
+                await updateErrors(channelId, messageId, metaDataId, String(error));
+                await updateStatistics(channelId, metaDataId, connectorMessage.getServerId(), Status.ERROR);
+              } catch (dbErr) {
+                console.error(`[${this.name}] Queue error persist error: ${dbErr}`);
+              }
+            }
+
+            this.queue!.release(connectorMessage, true);
+          } else {
+            // Release for retry
+            this.queue!.release(connectorMessage, false);
+          }
+        }
+      }
+    }
+  }
+
+  private shouldPermanentlyFail(connectorMessage: ConnectorMessage): boolean {
+    return this.retryCount > 0 && connectorMessage.getSendAttempts() >= this.retryCount;
   }
 
   /**
