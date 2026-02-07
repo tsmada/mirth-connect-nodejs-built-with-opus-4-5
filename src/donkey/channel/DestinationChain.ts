@@ -309,15 +309,28 @@ export class DestinationChain {
       nextMessage.getResponseMap().set(key, value);
     }
 
-    // Copy raw content
-    const rawContent = currentMessage.getRawContent();
-    if (rawContent) {
+    // Copy current destination's ENCODED output as next destination's RAW input
+    // This matches Java Mirth DestinationChain.java behavior where each destination
+    // in a chain receives the previous destination's encoded output
+    const encodedContent = currentMessage.getEncodedContent();
+    if (encodedContent) {
       nextMessage.setContent({
         contentType: ContentType.RAW,
-        content: rawContent.content,
-        dataType: rawContent.dataType,
-        encrypted: rawContent.encrypted,
+        content: encodedContent.content,
+        dataType: encodedContent.dataType,
+        encrypted: encodedContent.encrypted,
       });
+    } else {
+      // Fallback to raw content if no encoded content exists (e.g., filter-only destination)
+      const rawContent = currentMessage.getRawContent();
+      if (rawContent) {
+        nextMessage.setContent({
+          contentType: ContentType.RAW,
+          content: rawContent.content,
+          dataType: rawContent.dataType,
+          encrypted: rawContent.encrypted,
+        });
+      }
     }
 
     return nextMessage;
