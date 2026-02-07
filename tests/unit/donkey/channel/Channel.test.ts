@@ -31,6 +31,7 @@ jest.mock('../../../../src/db/DonkeyDao.js', () => ({
   pruneMessageContent: jest.fn().mockResolvedValue(0),
   pruneMessageAttachments: jest.fn().mockResolvedValue(0),
   insertCustomMetaData: jest.fn().mockResolvedValue(undefined),
+  getConnectorMessageStatuses: jest.fn().mockResolvedValue(new Map()),
 }));
 let mockNextMessageId = 1;
 
@@ -51,7 +52,7 @@ import {
   updateStatistics, updateErrors, updateMaps, updateResponseMap, updateSendAttempts,
   getNextMessageId, channelTablesExist, getStatistics,
   pruneMessageContent, pruneMessageAttachments,
-  insertCustomMetaData,
+  insertCustomMetaData, getConnectorMessageStatuses,
 } from '../../../../src/db/DonkeyDao';
 import { StorageSettings } from '../../../../src/donkey/channel/StorageSettings';
 
@@ -1564,6 +1565,11 @@ describe('Channel', () => {
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
       (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      // DB check: all destinations in terminal state
+      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(new Map([
+        [0, Status.TRANSFORMED],
+        [1, Status.SENT],
+      ]));
 
       await cleanupChannel.dispatchRawMessage('<test/>');
       await cleanupChannel.stop();
