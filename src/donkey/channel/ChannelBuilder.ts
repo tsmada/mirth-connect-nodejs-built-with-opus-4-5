@@ -22,6 +22,7 @@ import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js'
 import { VmDispatcher } from '../../connectors/vm/VmDispatcher.js';
 import { VmReceiver } from '../../connectors/vm/VmReceiver.js';
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
+import { DefaultResponseValidator } from '../message/ResponseValidator.js';
 
 /**
  * Build a runtime Channel from a channel configuration
@@ -71,12 +72,19 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
         String(sourceProps?.respondAfterProcessing) === 'false') {
       sourceConnector.setRespondAfterProcessing(false);
     }
+
+    // Wire inboundDataType from source transformer config
+    const sourceTransformer = channelConfig.sourceConnector?.transformer;
+    if (sourceTransformer?.inboundDataType) {
+      sourceConnector.setInboundDataType(sourceTransformer.inboundDataType);
+    }
   }
 
   // Build destination connectors
   for (const destConfig of channelConfig.destinationConnectors || []) {
     const dest = buildDestinationConnector(destConfig);
     if (dest) {
+      dest.setResponseValidator(new DefaultResponseValidator());
       channel.addDestinationConnector(dest);
     }
   }
@@ -292,6 +300,9 @@ function buildTcpDispatcher(destConfig: Connector): TcpDispatcher {
     enabled: destConfig.enabled,
     waitForPrevious: destConfig.waitForPrevious,
     queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
     properties: tcpProperties,
   });
 }
@@ -361,6 +372,9 @@ function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
     enabled: destConfig.enabled,
     waitForPrevious: destConfig.waitForPrevious,
     queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
     properties: httpProperties,
   });
 }
@@ -398,6 +412,9 @@ function buildFileDispatcher(destConfig: Connector): FileDispatcher {
     enabled: destConfig.enabled,
     waitForPrevious: destConfig.waitForPrevious,
     queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
     properties: fileProperties,
   });
 }
@@ -422,6 +439,9 @@ function buildDatabaseDispatcher(destConfig: Connector): DatabaseDispatcher {
     enabled: destConfig.enabled,
     waitForPrevious: destConfig.waitForPrevious,
     queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
     properties: {
       url,
       driver: String(props?.driver || 'com.mysql.cj.jdbc.Driver'),
@@ -480,6 +500,9 @@ function buildVmDispatcher(destConfig: Connector): VmDispatcher {
     enabled: destConfig.enabled,
     waitForPrevious: destConfig.waitForPrevious,
     queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
     properties: {
       channelId: String(props?.channelId || ''),
       channelTemplate: String(props?.channelTemplate || props?.template || '${message.encodedData}'),

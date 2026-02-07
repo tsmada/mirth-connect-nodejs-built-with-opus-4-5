@@ -212,6 +212,20 @@ export abstract class DestinationConnector {
   }
 
   /**
+   * Get the retry count for queue processing
+   */
+  getRetryCount(): number {
+    return this.retryCount;
+  }
+
+  /**
+   * Get the retry interval in milliseconds for queue processing
+   */
+  getRetryIntervalMillis(): number {
+    return this.retryIntervalMillis;
+  }
+
+  /**
    * Get the destination queue
    */
   getQueue(): DestinationQueue | null {
