@@ -9,6 +9,7 @@ class TestDestinationConnector extends DestinationConnector {
   public sentMessages: ConnectorMessage[] = [];
   public shouldFail = false;
   public shouldFilter = false;
+  public transformSuffix = ''; // Appended to encoded content to make it distinguishable
 
   constructor(config: DestinationConnectorConfig) {
     super(config);
@@ -30,12 +31,12 @@ class TestDestinationConnector extends DestinationConnector {
   }
 
   async executeTransformer(connectorMessage: ConnectorMessage): Promise<void> {
-    // Set encoded content
+    // Set encoded content (optionally transformed with suffix)
     const raw = connectorMessage.getRawContent();
     if (raw) {
       connectorMessage.setContent({
         contentType: ContentType.ENCODED,
-        content: raw.content,
+        content: raw.content + this.transformSuffix,
         dataType: raw.dataType,
         encrypted: false,
       });
@@ -291,6 +292,109 @@ describe('DestinationChain', () => {
 
       expect(results[0]?.getStatus()).toBe(Status.SENT);
       expect(dest1.sentMessages.length).toBe(0); // Not sent again
+    });
+
+    it('should pass D1 encoded output as D2 raw input', async () => {
+      // D1 transforms raw content and appends '-D1' to encoded output
+      dest1.transformSuffix = '-D1';
+      const message = createTestMessage(1, 1);
+      chain.setMessage(message);
+
+      const results = await chain.call();
+
+      expect(results.length).toBe(2);
+      // D2's raw content should be D1's encoded output, not the original raw
+      const d2Message = results[1]!;
+      const d2Raw = d2Message.getRawContent();
+      expect(d2Raw).toBeDefined();
+      expect(d2Raw!.content).toBe('<test>data</test>-D1');
+      expect(d2Raw!.contentType).toBe(ContentType.RAW);
+    });
+
+    it('should fall back to raw content when no encoded content exists', async () => {
+      // D1 filters (no transformer runs), so no encoded content is set
+      dest1.shouldFilter = true;
+      const message = createTestMessage(1, 1);
+      chain.setMessage(message);
+
+      const results = await chain.call();
+
+      expect(results.length).toBe(2);
+      // D2 should fall back to D1's raw content since D1 has no encoded content
+      const d2Message = results[1]!;
+      const d2Raw = d2Message.getRawContent();
+      expect(d2Raw).toBeDefined();
+      expect(d2Raw!.content).toBe('<test>data</test>');
+    });
+
+    it('should chain through 3 destinations correctly', async () => {
+      // Set up 3-destination chain where each transforms the message
+      dest1.transformSuffix = '-D1';
+      dest2.transformSuffix = '-D2';
+      const dest3 = new TestDestinationConnector({
+        name: 'Destination 3',
+        metaDataId: 3,
+        transportName: 'TEST',
+      });
+      dest3.transformSuffix = '-D3';
+
+      const connectors = new Map<number, DestinationConnector>();
+      connectors.set(1, dest1);
+      connectors.set(2, dest2);
+      connectors.set(3, dest3);
+
+      const threeProvider = new MockChainProvider(connectors);
+      const threeChain = new DestinationChain(threeProvider);
+      const message = createTestMessage(1, 1);
+      threeChain.setMessage(message);
+
+      const results = await threeChain.call();
+
+      expect(results.length).toBe(3);
+      // D1 raw: '<test>data</test>', D1 encoded: '<test>data</test>-D1'
+      // D2 raw: '<test>data</test>-D1', D2 encoded: '<test>data</test>-D1-D2'
+      // D3 raw: '<test>data</test>-D1-D2'
+      const d2Raw = results[1]!.getRawContent();
+      expect(d2Raw!.content).toBe('<test>data</test>-D1');
+      const d3Raw = results[2]!.getRawContent();
+      expect(d3Raw!.content).toBe('<test>data</test>-D1-D2');
+    });
+
+    it('should still copy maps correctly with encoded content chaining', async () => {
+      dest1.transformSuffix = '-D1';
+      const message = createTestMessage(1, 1);
+      message.getSourceMap().set('sourceKey', 'sourceValue');
+      message.getChannelMap().set('channelKey', 'channelValue');
+      message.getResponseMap().set('responseKey', 'responseValue');
+      chain.setMessage(message);
+
+      const results = await chain.call();
+
+      const d2Message = results[1]!;
+      // Verify maps are still copied even with encoded content chaining
+      expect(d2Message.getSourceMap().get('sourceKey')).toBe('sourceValue');
+      expect(d2Message.getChannelMap().get('channelKey')).toBe('channelValue');
+      expect(d2Message.getResponseMap().get('responseKey')).toBe('responseValue');
+      // And encoded content was passed as raw
+      expect(d2Message.getRawContent()!.content).toBe('<test>data</test>-D1');
+    });
+
+    it('should handle destination that only filters (no encoded output)', async () => {
+      // D1 filters the message - no transformer runs, no encoded content
+      dest1.shouldFilter = true;
+      // D2 should still receive the original raw content and process normally
+      dest2.transformSuffix = '-D2';
+      const message = createTestMessage(1, 1);
+      chain.setMessage(message);
+
+      const results = await chain.call();
+
+      expect(results.length).toBe(2);
+      expect(results[0]!.getStatus()).toBe(Status.FILTERED);
+      expect(results[1]!.getStatus()).toBe(Status.SENT);
+      // D2 received original raw (fallback) and transformed it
+      const d2Encoded = results[1]!.getEncodedContent();
+      expect(d2Encoded!.content).toBe('<test>data</test>-D2');
     });
   });
 
