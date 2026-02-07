@@ -39,7 +39,6 @@ import {
   storeContent,
   updateConnectorMessageStatus,
   updateMessageProcessed,
-  updateStatistics,
   updateErrors,
   updateMaps,
   updateResponseMap,
@@ -53,6 +52,7 @@ import {
   getConnectorMessageStatuses,
 } from '../../db/DonkeyDao.js';
 import { transaction } from '../../db/pool.js';
+import { StatisticsAccumulator } from './StatisticsAccumulator.js';
 
 export interface ChannelConfig {
   id: string;
@@ -129,6 +129,10 @@ export class Channel extends EventEmitter {
     filtered: 0,
     queued: 0,
   };
+
+  // Batch accumulator for statistics — reduces DB calls per message
+  // (matches Java Mirth Statistics.java batching pattern)
+  private statsAccumulator = new StatisticsAccumulator();
 
   // Source queue for async processing mode (respondAfterProcessing=false)
   private sourceQueue: SourceQueue | null = null;
@@ -691,14 +695,16 @@ export class Channel extends EventEmitter {
           },
         }
       : undefined;
+    this.statsAccumulator.increment(0, Status.RECEIVED);
     await this.persistInTransaction([
       (conn) => insertMessage(this.id, messageId, serverId, messageData.receivedDate, conn),
       (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, sourceInsertOptions, conn),
       ...(this.storageSettings.storeRaw ? [
         (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, sourceDataType, false, conn),
       ] : []),
-      (conn) => updateStatistics(this.id, 0, serverId, Status.RECEIVED, 1, conn),
+      ...this.statsAccumulator.getFlushOps(this.id, serverId),
     ]);
+    this.statsAccumulator.reset();
 
     // Increment received counter after DB persist completes
     this.stats.received++;
@@ -735,10 +741,12 @@ export class Channel extends EventEmitter {
         if (filtered) {
           sourceMessage.setStatus(Status.FILTERED);
           this.stats.filtered++;
+          this.statsAccumulator.increment(0, Status.FILTERED);
           await this.persistInTransaction([
             (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.FILTERED, conn),
-            (conn) => updateStatistics(this.id, 0, serverId, Status.FILTERED, 1, conn),
+            ...this.statsAccumulator.getFlushOps(this.id, serverId),
           ]);
+          this.statsAccumulator.reset();
           message.setProcessed(true);
           return message;
         }
@@ -802,10 +810,12 @@ export class Channel extends EventEmitter {
           if (filtered) {
             destMessage.setStatus(Status.FILTERED);
             this.stats.filtered++;
+            this.statsAccumulator.increment(i + 1, Status.FILTERED);
             await this.persistInTransaction([
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
-              (conn) => updateStatistics(this.id, i + 1, serverId, Status.FILTERED, 1, conn),
+              ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
+            this.statsAccumulator.reset();
             continue;
           }
 
@@ -858,9 +868,9 @@ export class Channel extends EventEmitter {
           }
 
           // Transaction 3: Per-destination — status + content + maps + custom metadata
+          this.statsAccumulator.increment(i + 1, Status.SENT);
           const destOps: Array<(conn: PoolConnection) => Promise<void>> = [
             (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT, conn),
-            (conn) => updateStatistics(this.id, i + 1, serverId, Status.SENT, 1, conn),
           ];
 
           if (this.storageSettings.storeSent) {
@@ -916,8 +926,11 @@ export class Channel extends EventEmitter {
             }
           }
 
+          destOps.push(...this.statsAccumulator.getFlushOps(this.id, serverId));
           await this.persistInTransaction(destOps);
+          this.statsAccumulator.reset();
         } catch (error) {
+          this.statsAccumulator.reset();
           if (dest.isQueueEnabled()) {
             // Queue-enabled: set QUEUED status instead of ERROR
             destMessage.setStatus(Status.QUEUED);
@@ -927,10 +940,12 @@ export class Channel extends EventEmitter {
             }
             this.stats.queued++;
 
+            this.statsAccumulator.increment(i + 1, Status.QUEUED);
             await this.persistInTransaction([
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
-              (conn) => updateStatistics(this.id, i + 1, serverId, Status.QUEUED, 1, conn),
+              ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
+            this.statsAccumulator.reset();
           } else {
             // Non-queue destination: ERROR handling (original behavior)
             destMessage.setStatus(Status.ERROR);
@@ -939,9 +954,9 @@ export class Channel extends EventEmitter {
             this.stats.error++;
 
             // Error transaction: status + stats + error content + maps
+            this.statsAccumulator.increment(i + 1, Status.ERROR);
             const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
-              (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
               (conn) => updateErrors(this.id, messageId, i + 1,
                 String(error), undefined, errorCode, undefined, conn),
             ];
@@ -951,7 +966,9 @@ export class Channel extends EventEmitter {
                 destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
             }
 
+            errOps.push(...this.statsAccumulator.getFlushOps(this.id, serverId));
             await this.persistInTransaction(errOps);
+            this.statsAccumulator.reset();
           }
         }
       }
@@ -1069,17 +1086,20 @@ export class Channel extends EventEmitter {
 
       await this.persistInTransaction(txn4Ops);
     } catch (error) {
+      this.statsAccumulator.reset();
       sourceMessage.setStatus(Status.ERROR);
       sourceMessage.setProcessingError(String(error));
       const errorCode = sourceMessage.updateErrorCode();
       this.stats.error++;
 
+      this.statsAccumulator.increment(0, Status.ERROR);
       await this.persistInTransaction([
         (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR, conn),
-        (conn) => updateStatistics(this.id, 0, serverId, Status.ERROR, 1, conn),
         (conn) => updateErrors(this.id, messageId, 0,
           String(error), undefined, errorCode, undefined, conn),
+        ...this.statsAccumulator.getFlushOps(this.id, serverId),
       ]);
+      this.statsAccumulator.reset();
     }
 
     // Final SOURCE_MAP upsert — captures enrichments from postprocessor/destinations
@@ -1279,10 +1299,12 @@ export class Channel extends EventEmitter {
         if (filtered) {
           sourceMessage.setStatus(Status.FILTERED);
           this.stats.filtered++;
+          this.statsAccumulator.increment(0, Status.FILTERED);
           await this.persistInTransaction([
             (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.FILTERED, conn),
-            (conn) => updateStatistics(this.id, 0, serverId, Status.FILTERED, 1, conn),
+            ...this.statsAccumulator.getFlushOps(this.id, serverId),
           ]);
+          this.statsAccumulator.reset();
           message.setProcessed(true);
           await this.persistToDb(() => updateMessageProcessed(this.id, messageId, true));
           return;
@@ -1342,10 +1364,12 @@ export class Channel extends EventEmitter {
           if (filtered) {
             destMessage.setStatus(Status.FILTERED);
             this.stats.filtered++;
+            this.statsAccumulator.increment(i + 1, Status.FILTERED);
             await this.persistInTransaction([
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
-              (conn) => updateStatistics(this.id, i + 1, serverId, Status.FILTERED, 1, conn),
+              ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
+            this.statsAccumulator.reset();
             continue;
           }
 
@@ -1391,9 +1415,9 @@ export class Channel extends EventEmitter {
             }
           }
 
+          this.statsAccumulator.increment(i + 1, Status.SENT);
           const destOps: Array<(conn: PoolConnection) => Promise<void>> = [
             (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT, conn),
-            (conn) => updateStatistics(this.id, i + 1, serverId, Status.SENT, 1, conn),
           ];
 
           if (this.storageSettings.storeSent) {
@@ -1441,8 +1465,11 @@ export class Channel extends EventEmitter {
             }
           }
 
+          destOps.push(...this.statsAccumulator.getFlushOps(this.id, serverId));
           await this.persistInTransaction(destOps);
+          this.statsAccumulator.reset();
         } catch (error) {
+          this.statsAccumulator.reset();
           if (dest.isQueueEnabled()) {
             // Queue-enabled: set QUEUED status instead of ERROR (matching dispatchRawMessage path)
             destMessage.setStatus(Status.QUEUED);
@@ -1452,10 +1479,12 @@ export class Channel extends EventEmitter {
             }
             this.stats.queued++;
 
+            this.statsAccumulator.increment(i + 1, Status.QUEUED);
             await this.persistInTransaction([
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
-              (conn) => updateStatistics(this.id, i + 1, serverId, Status.QUEUED, 1, conn),
+              ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
+            this.statsAccumulator.reset();
           } else {
             // Non-queue destination: ERROR handling
             destMessage.setStatus(Status.ERROR);
@@ -1463,9 +1492,9 @@ export class Channel extends EventEmitter {
             const errorCode = destMessage.updateErrorCode();
             this.stats.error++;
 
+            this.statsAccumulator.increment(i + 1, Status.ERROR);
             const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
-              (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
               (conn) => updateErrors(this.id, messageId, i + 1,
                 String(error), undefined, errorCode, undefined, conn),
             ];
@@ -1475,7 +1504,9 @@ export class Channel extends EventEmitter {
                 destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
             }
 
+            errOps.push(...this.statsAccumulator.getFlushOps(this.id, serverId));
             await this.persistInTransaction(errOps);
+            this.statsAccumulator.reset();
           }
         }
       }
@@ -1563,17 +1594,20 @@ export class Channel extends EventEmitter {
 
       await this.persistInTransaction(txn4Ops);
     } catch (error) {
+      this.statsAccumulator.reset();
       sourceMessage.setStatus(Status.ERROR);
       sourceMessage.setProcessingError(String(error));
       const errorCode = sourceMessage.updateErrorCode();
       this.stats.error++;
 
+      this.statsAccumulator.increment(0, Status.ERROR);
       await this.persistInTransaction([
         (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR, conn),
-        (conn) => updateStatistics(this.id, 0, serverId, Status.ERROR, 1, conn),
         (conn) => updateErrors(this.id, messageId, 0,
           String(error), undefined, errorCode, undefined, conn),
+        ...this.statsAccumulator.getFlushOps(this.id, serverId),
       ]);
+      this.statsAccumulator.reset();
     }
 
     // Final SOURCE_MAP upsert

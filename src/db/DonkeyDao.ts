@@ -716,6 +716,27 @@ export async function updateStatistics(
 }
 
 /**
+ * Batch-persist accumulated statistics.
+ * Sorts channel-level (metaDataId=0) first per MIRTH-3042 to avoid deadlocks.
+ *
+ * Ported from: Java Mirth Statistics.update() batching pattern.
+ */
+export async function addChannelStatistics(
+  channelId: string,
+  serverId: string,
+  stats: Map<number, Map<Status, number>>,
+  conn?: DbConnection
+): Promise<void> {
+  // Sort: channel-level (metaDataId=0) first per MIRTH-3042
+  const sortedEntries = [...stats.entries()].sort(([a], [b]) => a - b);
+  for (const [metaDataId, statusMap] of sortedEntries) {
+    for (const [status, count] of statusMap) {
+      await updateStatistics(channelId, metaDataId, serverId, status, count, conn);
+    }
+  }
+}
+
+/**
  * Get statistics for a channel
  */
 export async function getStatistics(channelId: string): Promise<StatisticsRow[]> {
