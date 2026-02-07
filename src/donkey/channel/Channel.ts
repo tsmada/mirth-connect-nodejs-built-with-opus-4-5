@@ -29,6 +29,7 @@ import { MetaDataColumn } from '../../api/models/ServerSettings.js';
 import { StorageSettings } from './StorageSettings.js';
 import { setMetaDataMap } from './MetaDataReplacer.js';
 import { runRecoveryTask } from './RecoveryTask.js';
+import { AttachmentHandler, NoOpAttachmentHandler } from '../message/AttachmentHandler.js';
 import {
   insertMessage,
   insertConnectorMessage,
@@ -113,6 +114,9 @@ export class Channel extends EventEmitter {
 
   // Cached flag: do D_M/D_MM/D_MC/D_MS tables exist for this channel?
   private tablesExist: boolean | null = null;
+
+  // Attachment handler for extracting attachments before content storage
+  private attachmentHandler: AttachmentHandler = new NoOpAttachmentHandler();
 
   // In-memory statistics counters (matches Java Mirth Statistics.java)
   private stats: ChannelStatistics = {
@@ -244,6 +248,21 @@ export class Channel extends EventEmitter {
    */
   resetStatistics(): void {
     this.stats = { received: 0, sent: 0, error: 0, filtered: 0, queued: 0 };
+  }
+
+  /**
+   * Set the attachment handler for this channel.
+   * Called by ChannelBuilder based on channel configuration.
+   */
+  setAttachmentHandler(handler: AttachmentHandler): void {
+    this.attachmentHandler = handler;
+  }
+
+  /**
+   * Get the current attachment handler.
+   */
+  getAttachmentHandler(): AttachmentHandler {
+    return this.attachmentHandler;
   }
 
   /**
@@ -602,6 +621,27 @@ export class Channel extends EventEmitter {
     }
 
     message.setConnectorMessage(0, sourceMessage);
+
+    // Extract attachments before persisting raw content
+    if (this.storageSettings.storeAttachments) {
+      try {
+        const modifiedContent = await this.attachmentHandler.extractAttachments(
+          this.id, messageId, sourceMessage
+        );
+        if (modifiedContent !== rawData) {
+          rawData = modifiedContent;
+          sourceMessage.setContent({
+            contentType: ContentType.RAW,
+            content: modifiedContent,
+            dataType: 'RAW',
+            encrypted: false,
+          });
+        }
+      } catch (err) {
+        console.error(`[${this.name}] Attachment extraction error: ${err}`);
+        // Continue with original content if extraction fails
+      }
+    }
 
     // Increment received counter as soon as message enters the pipeline
     this.stats.received++;
