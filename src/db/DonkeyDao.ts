@@ -14,7 +14,7 @@
 
 import { RowDataPacket, Pool, PoolConnection } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
-import { Status } from '../model/Status.js';
+import { Status, parseStatus } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
 
 export type DbConnection = Pool | PoolConnection;
@@ -1323,6 +1323,113 @@ export async function addMetaDataColumn(
   } catch (err: unknown) {
     // Column may already exist — ignore duplicate column errors
     if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ER_DUP_FIELDNAME') {
+      return;
+    }
+    throw err;
+  }
+}
+
+// ============================================================================
+// Bulk Delete / Connector Query / Schema Modification Methods
+// ============================================================================
+
+/**
+ * Delete all messages and related data for a channel.
+ * Ported from JdbcDao.deleteAllMessages().
+ *
+ * Deletes from child tables first (foreign-key safe order):
+ * D_MC, D_MA, D_MCM, D_MM, D_M
+ */
+export async function deleteAllMessages(channelId: string): Promise<void> {
+  await transaction(async (connection) => {
+    await connection.execute(`DELETE FROM ${contentTable(channelId)}`);
+    await connection.execute(`DELETE FROM ${attachmentTable(channelId)}`);
+    await connection.execute(`DELETE FROM ${customMetadataTable(channelId)}`);
+    await connection.execute(`DELETE FROM ${connectorMessageTable(channelId)}`);
+    await connection.execute(`DELETE FROM ${messageTable(channelId)}`);
+  });
+}
+
+/**
+ * Get count of connector messages matching a specific status.
+ * Ported from JdbcDao.getConnectorMessageCount().
+ *
+ * Joins D_MM with D_M to filter by server ID.
+ */
+interface CountRow extends RowDataPacket {
+  cnt: number;
+}
+
+export async function getConnectorMessageCount(
+  channelId: string,
+  serverId: string,
+  metaDataId: number,
+  status: Status
+): Promise<number> {
+  const pool = getPool();
+  const [rows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) as cnt FROM ${connectorMessageTable(channelId)} mm INNER JOIN ${messageTable(channelId)} m ON mm.MESSAGE_ID = m.ID WHERE m.SERVER_ID = ? AND mm.METADATA_ID = ? AND mm.STATUS = ?`,
+    [serverId, metaDataId, status]
+  );
+  return rows[0]!.cnt;
+}
+
+/**
+ * Get status of all connector messages for a specific message.
+ * Ported from JdbcDao.getConnectorMessageStatuses().
+ *
+ * Returns a Map of metaDataId -> Status.
+ */
+interface StatusRow extends RowDataPacket {
+  METADATA_ID: number;
+  STATUS: string;
+}
+
+export async function getConnectorMessageStatuses(
+  channelId: string,
+  messageId: number
+): Promise<Map<number, Status>> {
+  const pool = getPool();
+  const [rows] = await pool.query<StatusRow[]>(
+    `SELECT METADATA_ID, STATUS FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`,
+    [messageId]
+  );
+  const result = new Map<number, Status>();
+  for (const row of rows) {
+    result.set(row.METADATA_ID, parseStatus(row.STATUS));
+  }
+  return result;
+}
+
+/**
+ * Get the maximum connector message ID (MESSAGE_ID) from D_MM.
+ * Ported from JdbcDao.getMaxConnectorMessageId().
+ */
+export async function getMaxConnectorMessageId(channelId: string): Promise<number | null> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT MAX(MESSAGE_ID) as maxId FROM ${connectorMessageTable(channelId)}`
+  );
+  return rows[0]?.maxId ?? null;
+}
+
+/**
+ * Remove a custom metadata column from the D_MCM table.
+ * Ported from JdbcDao.removeMetaDataColumn().
+ *
+ * Silently ignores ER_CANT_DROP_FIELD_OR_KEY if the column doesn't exist.
+ */
+export async function removeMetaDataColumn(
+  channelId: string,
+  columnName: string
+): Promise<void> {
+  const pool = getPool();
+  try {
+    await pool.execute(
+      `ALTER TABLE ${customMetadataTable(channelId)} DROP COLUMN \`${columnName}\``
+    );
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ER_CANT_DROP_FIELD_OR_KEY') {
       return;
     }
     throw err;
