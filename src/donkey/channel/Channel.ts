@@ -48,6 +48,7 @@ import {
   pruneMessageContent,
   pruneMessageAttachments,
   insertCustomMetaData,
+  getConnectorMessageStatuses,
 } from '../../db/DonkeyDao.js';
 import { transaction } from '../../db/pool.js';
 
@@ -800,8 +801,17 @@ export class Channel extends EventEmitter {
               });
               destMessage.setResponseDate(new Date());
 
+              // PENDING checkpoint — crash recovery marker
+              // If server crashes between send and response transformer,
+              // recovery can re-run response transformer for PENDING messages
+              destMessage.setStatus(Status.PENDING);
+              await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING));
+
               // Execute response transformer
               await dest.executeResponseTransformer(destMessage);
+
+              // Restore SENT status after response transformer completes
+              destMessage.setStatus(Status.SENT);
             }
           }
 
@@ -969,8 +979,30 @@ export class Channel extends EventEmitter {
 
       // Content/attachment removal
       if (this.storageSettings.removeContentOnCompletion) {
-        const shouldRemove = !this.storageSettings.removeOnlyFilteredOnCompletion ||
-          sourceMessage.getStatus() === Status.FILTERED;
+        let shouldRemove = false;
+
+        if (!this.storageSettings.removeOnlyFilteredOnCompletion ||
+            sourceMessage.getStatus() === Status.FILTERED) {
+          // DB check: verify all destination connectors are in terminal state
+          // before removing content. This prevents removing content for messages
+          // still being processed by queue-enabled destinations.
+          try {
+            const statuses = await getConnectorMessageStatuses(this.id, messageId);
+            shouldRemove = true;
+            for (const [metaDataId, status] of statuses) {
+              if (metaDataId === 0) continue; // Skip source connector
+              if (status !== Status.SENT && status !== Status.FILTERED &&
+                  status !== Status.ERROR) {
+                shouldRemove = false;
+                break;
+              }
+            }
+          } catch {
+            // If we can't verify, don't remove (safe default)
+            shouldRemove = false;
+          }
+        }
+
         if (shouldRemove) {
           txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
         }
