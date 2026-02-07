@@ -1,18 +1,36 @@
+const mockPoolConnection = {} as any; // Fake PoolConnection passed to transaction callbacks
+jest.mock('../../../../src/db/pool.js', () => ({
+  transaction: jest.fn().mockImplementation(async (callback: Function) => {
+    return callback(mockPoolConnection);
+  }),
+  getPool: jest.fn(),
+}));
+
+jest.mock('../../../../src/donkey/channel/RecoveryTask.js', () => ({
+  runRecoveryTask: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../../../src/db/DonkeyDao.js', () => ({
   insertMessage: jest.fn().mockResolvedValue(undefined),
   insertConnectorMessage: jest.fn().mockResolvedValue(undefined),
   insertContent: jest.fn().mockResolvedValue(undefined),
   storeContent: jest.fn().mockResolvedValue(undefined),
+  batchInsertContent: jest.fn().mockResolvedValue(undefined),
   updateConnectorMessageStatus: jest.fn().mockResolvedValue(undefined),
   updateMessageProcessed: jest.fn().mockResolvedValue(undefined),
   updateStatistics: jest.fn().mockResolvedValue(undefined),
   updateErrors: jest.fn().mockResolvedValue(undefined),
   updateMaps: jest.fn().mockResolvedValue(undefined),
+  updateResponseMap: jest.fn().mockResolvedValue(undefined),
   updateSendAttempts: jest.fn().mockResolvedValue(undefined),
   getNextMessageId: jest.fn().mockImplementation(() => {
     return Promise.resolve(mockNextMessageId++);
   }),
   channelTablesExist: jest.fn().mockResolvedValue(true),
+  getStatistics: jest.fn().mockResolvedValue([]),
+  pruneMessageContent: jest.fn().mockResolvedValue(0),
+  pruneMessageAttachments: jest.fn().mockResolvedValue(0),
+  insertCustomMetaData: jest.fn().mockResolvedValue(undefined),
 }));
 let mockNextMessageId = 1;
 
@@ -28,11 +46,14 @@ import { MessageStorageMode, getStorageSettings } from '../../../../src/donkey/c
 import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
 import {
-  insertMessage, insertConnectorMessage, insertContent,
+  insertMessage, insertConnectorMessage, insertContent, storeContent,
   updateConnectorMessageStatus, updateMessageProcessed,
-  updateStatistics, updateErrors, updateMaps, updateSendAttempts,
-  getNextMessageId, channelTablesExist,
+  updateStatistics, updateErrors, updateMaps, updateResponseMap, updateSendAttempts,
+  getNextMessageId, channelTablesExist, getStatistics,
+  pruneMessageContent, pruneMessageAttachments,
+  insertCustomMetaData,
 } from '../../../../src/db/DonkeyDao';
+import { StorageSettings } from '../../../../src/donkey/channel/StorageSettings';
 
 // Test source connector implementation
 class TestSourceConnector extends SourceConnector {
@@ -103,7 +124,11 @@ describe('Channel', () => {
     (updateStatistics as jest.Mock).mockResolvedValue(undefined);
     (updateErrors as jest.Mock).mockResolvedValue(undefined);
     (updateMaps as jest.Mock).mockResolvedValue(undefined);
+    (updateResponseMap as jest.Mock).mockResolvedValue(undefined);
     (updateSendAttempts as jest.Mock).mockResolvedValue(undefined);
+    (getStatistics as jest.Mock).mockResolvedValue([]);
+    (pruneMessageContent as jest.Mock).mockResolvedValue(0);
+    (pruneMessageAttachments as jest.Mock).mockResolvedValue(0);
 
     // Reset singletons
     GlobalMap.resetInstance();
@@ -383,7 +408,8 @@ describe('Channel', () => {
         'test-channel-1',
         message.getMessageId(),
         expect.any(String), // serverId
-        expect.any(Date)    // receivedDate
+        expect.any(Date),   // receivedDate
+        mockPoolConnection  // conn from transaction
       );
     });
 
@@ -396,7 +422,10 @@ describe('Channel', () => {
         0,                   // metaDataId for source
         'Test Source',       // connector name
         expect.any(Date),    // receivedDate
-        Status.RECEIVED
+        Status.RECEIVED,
+        0,                   // chainId
+        undefined,           // options
+        mockPoolConnection   // conn from transaction
       );
     });
 
@@ -410,14 +439,15 @@ describe('Channel', () => {
         ContentType.RAW,
         '<test>hello</test>',
         expect.any(String),  // dataType
-        false                // encrypted
+        false,               // encrypted
+        mockPoolConnection   // conn from transaction
       );
     });
 
     it('should persist destination connector message', async () => {
       const message = await channel.dispatchRawMessage('<test>hello</test>');
 
-      // Should be called for destination with metaDataId=1
+      // Should be called for destination with metaDataId=1 (via persistToDb, no conn)
       expect(insertConnectorMessage).toHaveBeenCalledWith(
         'test-channel-1',
         message.getMessageId(),
@@ -434,28 +464,33 @@ describe('Channel', () => {
       expect(updateConnectorMessageStatus).toHaveBeenCalledWith(
         'test-channel-1',
         message.getMessageId(),
-        1,             // destination metaDataId
-        Status.SENT
+        1,                  // destination metaDataId
+        Status.SENT,
+        mockPoolConnection  // conn from transaction
       );
     });
 
     it('should update statistics on RECEIVED and SENT', async () => {
       await channel.dispatchRawMessage('<test>hello</test>');
 
-      // Verify RECEIVED statistics for source (metaDataId=0)
+      // Verify RECEIVED statistics for source (metaDataId=0) — inside transaction
       expect(updateStatistics).toHaveBeenCalledWith(
         'test-channel-1',
         0,                   // source metaDataId
         expect.any(String),  // serverId
-        Status.RECEIVED
+        Status.RECEIVED,
+        1,                   // increment
+        mockPoolConnection   // conn from transaction
       );
 
-      // Verify SENT statistics for destination (metaDataId=1)
+      // Verify SENT statistics for destination (metaDataId=1) — inside transaction
       expect(updateStatistics).toHaveBeenCalledWith(
         'test-channel-1',
         1,                   // destination metaDataId
         expect.any(String),  // serverId
-        Status.SENT
+        Status.SENT,
+        1,                   // increment
+        mockPoolConnection   // conn from transaction
       );
     });
 
@@ -470,13 +505,27 @@ describe('Channel', () => {
     });
 
     it('should skip persistence when tables do not exist', async () => {
+      // Need a fresh channel since start() now caches tablesExist via loadStatisticsFromDb()
+      (channelTablesExist as jest.Mock).mockResolvedValue(false);
+      const noTablesChannel = new Channel({
+        id: 'no-tables-channel',
+        name: 'No Tables',
+        enabled: true,
+      });
+      noTablesChannel.setSourceConnector(new TestSourceConnector());
+      noTablesChannel.addDestinationConnector(new TestDestinationConnector(1));
+
+      await noTablesChannel.start();
+      jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(false);
 
-      const message = await channel.dispatchRawMessage('<test>hello</test>');
+      const message = await noTablesChannel.dispatchRawMessage('<test>hello</test>');
 
       expect(insertMessage).not.toHaveBeenCalled();
       expect(insertConnectorMessage).not.toHaveBeenCalled();
       expect(message.isProcessed()).toBe(true);
+
+      await noTablesChannel.stop();
     });
 
     it('should complete message processing even when DB fails', async () => {
@@ -487,12 +536,13 @@ describe('Channel', () => {
       expect(message.isProcessed()).toBe(true);
     });
 
-    it('should persist SOURCE_MAP content', async () => {
+    it('should persist SOURCE_MAP content via storeContent (upsert) at end of pipeline', async () => {
       const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
 
       await channel.dispatchRawMessage('<test>hello</test>', sourceMap);
 
-      expect(insertContent).toHaveBeenCalledWith(
+      // Final SOURCE_MAP write uses storeContent (upsert) via persistToDb (no conn)
+      expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),  // messageId
         0,                   // metaDataId
@@ -509,7 +559,8 @@ describe('Channel', () => {
       expect(updateMessageProcessed).toHaveBeenCalledWith(
         'test-channel-1',
         message.getMessageId(),
-        true
+        true,
+        mockPoolConnection  // conn from transaction
       );
     });
   });
@@ -779,14 +830,15 @@ describe('Channel', () => {
     it('should persist SENT content after successful send', async () => {
       await channel.dispatchRawMessage('<test>hello</test>');
 
-      expect(insertContent).toHaveBeenCalledWith(
+      expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
         1,                   // destination metaDataId
         ContentType.SENT,
         expect.any(String),  // sent data
         expect.any(String),  // dataType
-        false
+        false,
+        mockPoolConnection   // conn from transaction
       );
     });
 
@@ -799,7 +851,8 @@ describe('Channel', () => {
         1,                    // destination metaDataId
         1,                    // sendAttempts (incremented once)
         expect.any(Date),     // sendDate
-        undefined             // responseDate (no response captured in default test setup)
+        undefined,            // responseDate (no response captured in default test setup)
+        mockPoolConnection    // conn from transaction
       );
     });
 
@@ -832,7 +885,9 @@ describe('Channel', () => {
         1,                    // destination metaDataId
         expect.stringContaining('Connection refused'),
         undefined,            // no postprocessor error
-        undefined             // no error code
+        expect.any(Number),   // error code bitmask
+        undefined,            // responseError
+        mockPoolConnection    // conn from transaction
       );
     });
 
@@ -841,14 +896,15 @@ describe('Channel', () => {
 
       await channel.dispatchRawMessage('<test>hello</test>');
 
-      expect(insertContent).toHaveBeenCalledWith(
+      expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
         1,                    // destination metaDataId
         ContentType.RESPONSE,
         'ACK^A01|OK',
         'RAW',
-        false
+        false,
+        mockPoolConnection    // conn from transaction
       );
     });
 
@@ -861,7 +917,8 @@ describe('Channel', () => {
         1,                    // destination metaDataId
         expect.any(Map),      // connectorMap
         expect.any(Map),      // channelMap
-        expect.any(Map)       // responseMap
+        expect.any(Map),      // responseMap
+        mockPoolConnection    // conn from transaction
       );
     });
 
@@ -874,7 +931,8 @@ describe('Channel', () => {
         0,                    // source metaDataId
         expect.any(Map),      // connectorMap
         expect.any(Map),      // channelMap
-        expect.any(Map)       // responseMap
+        expect.any(Map),      // responseMap
+        mockPoolConnection    // conn from transaction
       );
     });
 
@@ -903,8 +961,8 @@ describe('Channel', () => {
       );
       expect(rawCalls).toHaveLength(0);
 
-      // SENT should NOT be persisted in METADATA mode
-      const sentCalls = (insertContent as jest.Mock).mock.calls.filter(
+      // SENT should NOT be persisted in METADATA mode (uses storeContent)
+      const sentCalls = (storeContent as jest.Mock).mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SENT
       );
       expect(sentCalls).toHaveLength(0);
@@ -934,7 +992,7 @@ describe('Channel', () => {
         0,                    // source metaDataId
         undefined,            // no processing error
         expect.stringContaining('post failed'),
-        undefined
+        expect.any(Number)    // error code bitmask
       );
     });
 
@@ -958,14 +1016,787 @@ describe('Channel', () => {
       await rawChannel.dispatchRawMessage('<test/>', sourceMap);
       await rawChannel.stop();
 
-      // SOURCE_MAP should still be persisted for trace feature
-      const sourceMapCalls = (insertContent as jest.Mock).mock.calls.filter(
+      // SOURCE_MAP should still be persisted for trace feature (via storeContent upsert)
+      const sourceMapCalls = (storeContent as jest.Mock).mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
       );
-      expect(sourceMapCalls).toHaveLength(1);
+      expect(sourceMapCalls.length).toBeGreaterThanOrEqual(1);
 
       // But CONNECTOR_MAP, CHANNEL_MAP, RESPONSE_MAP should NOT be persisted
       expect(updateMaps).not.toHaveBeenCalled();
+    });
+
+    it('should call executeResponseTransformer after response capture', async () => {
+      // Create a destination that returns a response and tracks executeResponseTransformer calls
+      class ResponseTransformerDest extends DestinationConnector {
+        public executeResponseTransformerCalls: ConnectorMessage[] = [];
+
+        constructor() {
+          super({ name: 'RT Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+
+        async send(msg: ConnectorMessage): Promise<void> {
+          msg.setSendDate(new Date());
+        }
+
+        async getResponse(): Promise<string | null> {
+          return 'ACK|response-data';
+        }
+
+        async executeResponseTransformer(connectorMessage: ConnectorMessage): Promise<void> {
+          this.executeResponseTransformerCalls.push(connectorMessage);
+        }
+      }
+
+      const rtDest = new ResponseTransformerDest();
+      const rtChannel = new Channel({
+        id: 'rt-test',
+        name: 'RT Test',
+        enabled: true,
+      });
+      rtChannel.setSourceConnector(new TestSourceConnector());
+      rtChannel.addDestinationConnector(rtDest);
+
+      await rtChannel.start();
+      await rtChannel.dispatchRawMessage('<test/>');
+      await rtChannel.stop();
+
+      expect(rtDest.executeResponseTransformerCalls).toHaveLength(1);
+    });
+
+    it('should persist RESPONSE_TRANSFORMED content when storeResponseTransformed is true', async () => {
+      // Create a destination whose response transformer sets RESPONSE_TRANSFORMED on the message
+      class TransformingDest extends DestinationConnector {
+        constructor() {
+          super({ name: 'Transforming Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+
+        async send(msg: ConnectorMessage): Promise<void> {
+          msg.setSendDate(new Date());
+        }
+
+        async getResponse(): Promise<string | null> {
+          return 'ACK|original';
+        }
+
+        async executeResponseTransformer(connectorMessage: ConnectorMessage): Promise<void> {
+          connectorMessage.setContent({
+            contentType: ContentType.RESPONSE_TRANSFORMED,
+            content: '<transformed>ACK|original</transformed>',
+            dataType: 'XML',
+            encrypted: false,
+          });
+        }
+      }
+
+      const tDest = new TransformingDest();
+      const tChannel = new Channel({
+        id: 'rt-persist-test',
+        name: 'RT Persist Test',
+        enabled: true,
+      });
+      tChannel.setSourceConnector(new TestSourceConnector());
+      tChannel.addDestinationConnector(tDest);
+
+      await tChannel.start();
+      await tChannel.dispatchRawMessage('<test/>');
+      await tChannel.stop();
+
+      expect(storeContent).toHaveBeenCalledWith(
+        'rt-persist-test',
+        expect.any(Number),
+        1,                    // destination metaDataId
+        ContentType.RESPONSE_TRANSFORMED,
+        '<transformed>ACK|original</transformed>',
+        'XML',
+        false,
+        mockPoolConnection    // conn from transaction
+      );
+    });
+
+    it('should persist PROCESSED_RESPONSE content when storeProcessedResponse is true', async () => {
+      class ProcessedResponseDest extends DestinationConnector {
+        constructor() {
+          super({ name: 'PR Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+
+        async send(msg: ConnectorMessage): Promise<void> {
+          msg.setSendDate(new Date());
+        }
+
+        async getResponse(): Promise<string | null> {
+          return 'ACK|original';
+        }
+
+        async executeResponseTransformer(connectorMessage: ConnectorMessage): Promise<void> {
+          connectorMessage.setContent({
+            contentType: ContentType.PROCESSED_RESPONSE,
+            content: '{"status":"SENT","message":"ACK|processed"}',
+            dataType: 'RAW',
+            encrypted: false,
+          });
+        }
+      }
+
+      const prDest = new ProcessedResponseDest();
+      const prChannel = new Channel({
+        id: 'pr-persist-test',
+        name: 'PR Persist Test',
+        enabled: true,
+      });
+      prChannel.setSourceConnector(new TestSourceConnector());
+      prChannel.addDestinationConnector(prDest);
+
+      await prChannel.start();
+      await prChannel.dispatchRawMessage('<test/>');
+      await prChannel.stop();
+
+      expect(storeContent).toHaveBeenCalledWith(
+        'pr-persist-test',
+        expect.any(Number),
+        1,                    // destination metaDataId
+        ContentType.PROCESSED_RESPONSE,
+        '{"status":"SENT","message":"ACK|processed"}',
+        'RAW',
+        false,
+        mockPoolConnection    // conn from transaction
+      );
+    });
+
+    it('should not call executeResponseTransformer when storeResponse is false', async () => {
+      class TrackingDest extends DestinationConnector {
+        public rtCalled = false;
+
+        constructor() {
+          super({ name: 'Tracking Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+
+        async send(msg: ConnectorMessage): Promise<void> {
+          msg.setSendDate(new Date());
+        }
+
+        async getResponse(): Promise<string | null> {
+          return 'ACK|response';
+        }
+
+        async executeResponseTransformer(_connectorMessage: ConnectorMessage): Promise<void> {
+          this.rtCalled = true;
+        }
+      }
+
+      const settings = getStorageSettings(MessageStorageMode.RAW);
+      // RAW mode has storeResponse = false
+      const trackDest = new TrackingDest();
+      const trackChannel = new Channel({
+        id: 'no-response-test',
+        name: 'No Response Test',
+        enabled: true,
+        storageSettings: settings,
+      });
+      trackChannel.setSourceConnector(new TestSourceConnector());
+      trackChannel.addDestinationConnector(trackDest);
+
+      await trackChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await trackChannel.dispatchRawMessage('<test/>');
+      await trackChannel.stop();
+
+      // Response transformer should NOT be called because storeResponse is false
+      expect(trackDest.rtCalled).toBe(false);
+
+      // No RESPONSE_TRANSFORMED or PROCESSED_RESPONSE should be persisted (check both insertContent and storeContent)
+      const rtCalls = (storeContent as jest.Mock).mock.calls.filter(
+        (call: unknown[]) => call[3] === ContentType.RESPONSE_TRANSFORMED
+      );
+      const prCalls = (storeContent as jest.Mock).mock.calls.filter(
+        (call: unknown[]) => call[3] === ContentType.PROCESSED_RESPONSE
+      );
+      expect(rtCalls).toHaveLength(0);
+      expect(prCalls).toHaveLength(0);
+    });
+  });
+
+  describe('finishDispatch: source RESPONSE + merged response map', () => {
+    beforeEach(async () => {
+      await channel.start();
+    });
+
+    afterEach(async () => {
+      await channel.stop();
+    });
+
+    it('should store source RESPONSE from first SENT destination', async () => {
+      destConnector.lastResponse = 'ACK^A01|SUCCESS';
+
+      await channel.dispatchRawMessage('<test>hello</test>');
+
+      // Should persist RESPONSE at metaDataId=0 (source) via storeContent in transaction
+      expect(storeContent).toHaveBeenCalledWith(
+        'test-channel-1',
+        expect.any(Number),
+        0,                      // source metaDataId
+        ContentType.RESPONSE,
+        'ACK^A01|SUCCESS',
+        'RAW',
+        false,
+        mockPoolConnection      // conn from transaction
+      );
+    });
+
+    it('should use first SENT destination response (skip ERROR destinations)', async () => {
+      class FailingDestination extends DestinationConnector {
+        constructor() {
+          super({ name: 'Failing Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+        async send(_msg: ConnectorMessage): Promise<void> {
+          throw new Error('Connection refused');
+        }
+        async getResponse(): Promise<string | null> { return 'ERROR_RESPONSE'; }
+      }
+
+      const dest2 = new TestDestinationConnector(2, 'Success Dest');
+      dest2.lastResponse = 'ACK_FROM_DEST2';
+
+      const multiChannel = new Channel({
+        id: 'multi-dest-resp-test',
+        name: 'Multi Dest Resp Test',
+        enabled: true,
+      });
+      multiChannel.setSourceConnector(new TestSourceConnector());
+      multiChannel.addDestinationConnector(new FailingDestination());
+      multiChannel.addDestinationConnector(dest2);
+
+      await multiChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await multiChannel.dispatchRawMessage('<test/>');
+      await multiChannel.stop();
+
+      // Source RESPONSE should come from dest2 (first SENT), not dest1 (ERROR)
+      const sourceResponseCalls = (storeContent as jest.Mock).mock.calls.filter(
+        (call: unknown[]) => call[2] === 0 && call[3] === ContentType.RESPONSE
+      );
+      expect(sourceResponseCalls).toHaveLength(1);
+      expect(sourceResponseCalls[0]![4]).toBe('ACK_FROM_DEST2');
+    });
+
+    it('should not store source RESPONSE when storeResponse is false', async () => {
+      // Need a fresh channel — stop the default one first
+      await channel.stop();
+
+      const settings = getStorageSettings(MessageStorageMode.RAW);
+      const rawChannel = new Channel({
+        id: 'no-src-resp-test',
+        name: 'No Src Resp',
+        enabled: true,
+        storageSettings: settings,
+      });
+      rawChannel.setSourceConnector(new TestSourceConnector());
+      const dest = new TestDestinationConnector(1);
+      dest.lastResponse = 'SHOULD_NOT_BE_STORED';
+      rawChannel.addDestinationConnector(dest);
+
+      await rawChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await rawChannel.dispatchRawMessage('<test/>');
+      await rawChannel.stop();
+
+      // No source RESPONSE (metaDataId=0) should be persisted (check storeContent)
+      const sourceResponseCalls = (storeContent as jest.Mock).mock.calls.filter(
+        (call: unknown[]) => call[2] === 0 && call[3] === ContentType.RESPONSE
+      );
+      expect(sourceResponseCalls).toHaveLength(0);
+
+      // Re-start default channel for afterEach
+      await channel.start();
+    });
+
+    it('should build merged response map from all destinations', async () => {
+      // Need a fresh channel — stop the default one first
+      await channel.stop();
+
+      class MappingDestination extends DestinationConnector {
+        private mapKey: string;
+        private mapValue: string;
+        constructor(metaDataId: number, name: string, mapKey: string, mapValue: string) {
+          super({ name, metaDataId, transportName: 'TEST' });
+          this.mapKey = mapKey;
+          this.mapValue = mapValue;
+        }
+        async send(msg: ConnectorMessage): Promise<void> {
+          msg.getResponseMap().set(this.mapKey, this.mapValue);
+        }
+        async getResponse(): Promise<string | null> { return 'OK'; }
+      }
+
+      const mergeChannel = new Channel({
+        id: 'merge-resp-map-test',
+        name: 'Merge Response Map Test',
+        enabled: true,
+      });
+      mergeChannel.setSourceConnector(new TestSourceConnector());
+      mergeChannel.addDestinationConnector(new MappingDestination(1, 'Dest A', 'keyA', 'valueA'));
+      mergeChannel.addDestinationConnector(new MappingDestination(2, 'Dest B', 'keyB', 'valueB'));
+
+      await mergeChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await mergeChannel.dispatchRawMessage('<test/>');
+      await mergeChannel.stop();
+
+      // updateResponseMap should be called with metaDataId=0 (source) and a merged map
+      expect(updateResponseMap).toHaveBeenCalledWith(
+        'merge-resp-map-test',
+        expect.any(Number),
+        0,                      // source metaDataId
+        expect.any(Map),
+        mockPoolConnection      // conn from transaction
+      );
+
+      // Verify the merged map contains entries from both destinations
+      const call = (updateResponseMap as jest.Mock).mock.calls[0];
+      const mergedMap = call![3] as Map<string, unknown>;
+      expect(mergedMap.get('keyA')).toBe('valueA');
+      expect(mergedMap.get('keyB')).toBe('valueB');
+
+      // Re-start default channel for afterEach
+      await channel.start();
+    });
+
+    it('should not persist merged response map when storeMergedResponseMap is false', async () => {
+      // Need a fresh channel — stop the default one first
+      await channel.stop();
+
+      const settings = getStorageSettings(MessageStorageMode.RAW);
+      const rawChannel = new Channel({
+        id: 'no-merge-resp-test',
+        name: 'No Merge Resp',
+        enabled: true,
+        storageSettings: settings,
+      });
+      rawChannel.setSourceConnector(new TestSourceConnector());
+      rawChannel.addDestinationConnector(new TestDestinationConnector(1));
+
+      await rawChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await rawChannel.dispatchRawMessage('<test/>');
+      await rawChannel.stop();
+
+      expect(updateResponseMap).not.toHaveBeenCalled();
+
+      // Re-start default channel for afterEach
+      await channel.start();
+    });
+  });
+
+  describe('statistics loading from DB on start', () => {
+    it('should load statistics from D_MS when tables exist', async () => {
+      (getStatistics as jest.Mock).mockResolvedValue([
+        { METADATA_ID: 0, SERVER_ID: 'node-1', RECEIVED: 100, FILTERED: 5, TRANSFORMED: 0, PENDING: 0, SENT: 0, ERROR: 2 },
+        { METADATA_ID: 1, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 3, TRANSFORMED: 0, PENDING: 2, SENT: 88, ERROR: 1 },
+      ]);
+
+      await channel.start();
+
+      const stats = channel.getStatistics();
+      expect(stats.received).toBe(100);
+      expect(stats.filtered).toBe(8);   // 5 + 3
+      expect(stats.sent).toBe(88);
+      expect(stats.error).toBe(3);      // 2 + 1
+      expect(stats.queued).toBe(2);     // PENDING maps to queued
+
+      expect(getStatistics).toHaveBeenCalledWith('test-channel-1');
+
+      await channel.stop();
+    });
+
+    it('should keep stats at zero when tables do not exist', async () => {
+      (channelTablesExist as jest.Mock).mockResolvedValue(false);
+
+      await channel.start();
+
+      const stats = channel.getStatistics();
+      expect(stats.received).toBe(0);
+      expect(stats.sent).toBe(0);
+      expect(stats.error).toBe(0);
+      expect(stats.filtered).toBe(0);
+      expect(stats.queued).toBe(0);
+
+      expect(getStatistics).not.toHaveBeenCalled();
+
+      await channel.stop();
+    });
+
+    it('should survive DB query failure without throwing', async () => {
+      (getStatistics as jest.Mock).mockRejectedValue(new Error('DB connection lost'));
+
+      // Should not throw — logs error and continues with zero stats
+      await channel.start();
+
+      const stats = channel.getStatistics();
+      expect(stats.received).toBe(0);
+      expect(stats.sent).toBe(0);
+
+      expect(channel.getCurrentState()).toBe(DeployedState.STARTED);
+
+      await channel.stop();
+    });
+
+    it('should correctly sum across multiple metadata IDs', async () => {
+      (getStatistics as jest.Mock).mockResolvedValue([
+        { METADATA_ID: 0, SERVER_ID: 'node-1', RECEIVED: 50, FILTERED: 10, TRANSFORMED: 0, PENDING: 0, SENT: 0, ERROR: 0 },
+        { METADATA_ID: 1, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 5, SENT: 30, ERROR: 3 },
+        { METADATA_ID: 2, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 2, SENT: 20, ERROR: 1 },
+        { METADATA_ID: 3, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 0, SENT: 10, ERROR: 0 },
+      ]);
+
+      await channel.start();
+
+      const stats = channel.getStatistics();
+      expect(stats.received).toBe(50);
+      expect(stats.filtered).toBe(10);
+      expect(stats.sent).toBe(60);       // 30 + 20 + 10
+      expect(stats.error).toBe(4);       // 3 + 1
+      expect(stats.queued).toBe(7);      // 5 + 2
+
+      await channel.stop();
+    });
+
+    it('should handle empty D_MS table gracefully', async () => {
+      (getStatistics as jest.Mock).mockResolvedValue([]);
+
+      await channel.start();
+
+      const stats = channel.getStatistics();
+      expect(stats.received).toBe(0);
+      expect(stats.sent).toBe(0);
+      expect(stats.error).toBe(0);
+      expect(stats.filtered).toBe(0);
+      expect(stats.queued).toBe(0);
+
+      await channel.stop();
+    });
+  });
+
+  describe('persistBatch (transaction boundaries)', () => {
+    let channel: Channel;
+    const { transaction: mockTransaction } = require('../../../../src/db/pool');
+
+    beforeEach(async () => {
+      jest.clearAllMocks();
+      mockNextMessageId = 1;
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getStatistics as jest.Mock).mockResolvedValue([]);
+
+      channel = new Channel({
+        id: 'txn-test',
+        name: 'Transaction Test',
+        enabled: true,
+      });
+    });
+
+    it('should execute all operations inside a transaction', async () => {
+      const op1 = jest.fn().mockResolvedValue(undefined);
+      const op2 = jest.fn().mockResolvedValue(undefined);
+
+      await channel.persistBatch([op1, op2]);
+
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(op1).toHaveBeenCalledTimes(1);
+      expect(op2).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fall back to sequential on transaction failure', async () => {
+      mockTransaction.mockRejectedValueOnce(new Error('connection lost'));
+      const op1 = jest.fn().mockResolvedValue(undefined);
+      const op2 = jest.fn().mockResolvedValue(undefined);
+
+      await channel.persistBatch([op1, op2]);
+
+      // Falls back to individual persistToDb calls
+      expect(op1).toHaveBeenCalledTimes(1);
+      expect(op2).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip when tables do not exist', async () => {
+      (channelTablesExist as jest.Mock).mockResolvedValue(false);
+      const op1 = jest.fn().mockResolvedValue(undefined);
+
+      await channel.persistBatch([op1]);
+
+      expect(op1).not.toHaveBeenCalled();
+    });
+
+    it('should handle empty operations array', async () => {
+      await channel.persistBatch([]);
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeContentOnCompletion (PC-MPS-005)', () => {
+    it('should delete content when removeContentOnCompletion is true', async () => {
+      const settings = new StorageSettings();
+      settings.removeContentOnCompletion = true;
+
+      const cleanupChannel = new Channel({
+        id: 'cleanup-test',
+        name: 'Cleanup Test',
+        enabled: true,
+        storageSettings: settings,
+      });
+      cleanupChannel.setSourceConnector(new TestSourceConnector());
+      cleanupChannel.addDestinationConnector(new TestDestinationConnector(1));
+
+      await cleanupChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await cleanupChannel.dispatchRawMessage('<test/>');
+      await cleanupChannel.stop();
+
+      expect(pruneMessageContent).toHaveBeenCalledWith('cleanup-test', [expect.any(Number)]);
+    });
+
+    it('should NOT delete content when removeOnlyFilteredOnCompletion is true and message was not filtered', async () => {
+      const settings = new StorageSettings();
+      settings.removeContentOnCompletion = true;
+      settings.removeOnlyFilteredOnCompletion = true;
+
+      const noCleanupChannel = new Channel({
+        id: 'no-cleanup-test',
+        name: 'No Cleanup Test',
+        enabled: true,
+        storageSettings: settings,
+      });
+      noCleanupChannel.setSourceConnector(new TestSourceConnector());
+      noCleanupChannel.addDestinationConnector(new TestDestinationConnector(1));
+
+      await noCleanupChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await noCleanupChannel.dispatchRawMessage('<test/>');
+      await noCleanupChannel.stop();
+
+      // Source message ends up TRANSFORMED (not FILTERED), so content should NOT be pruned
+      expect(pruneMessageContent).not.toHaveBeenCalled();
+    });
+
+    it('should delete attachments when removeAttachmentsOnCompletion is true', async () => {
+      const settings = new StorageSettings();
+      settings.removeAttachmentsOnCompletion = true;
+
+      const attachCleanupChannel = new Channel({
+        id: 'attach-cleanup-test',
+        name: 'Attach Cleanup Test',
+        enabled: true,
+        storageSettings: settings,
+      });
+      attachCleanupChannel.setSourceConnector(new TestSourceConnector());
+      attachCleanupChannel.addDestinationConnector(new TestDestinationConnector(1));
+
+      await attachCleanupChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await attachCleanupChannel.dispatchRawMessage('<test/>');
+      await attachCleanupChannel.stop();
+
+      expect(pruneMessageAttachments).toHaveBeenCalledWith('attach-cleanup-test', [expect.any(Number)]);
+    });
+
+    it('should NOT delete content or attachments by default', async () => {
+      // Default StorageSettings has removeContentOnCompletion = false
+      await channel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await channel.dispatchRawMessage('<test/>');
+      await channel.stop();
+
+      expect(pruneMessageContent).not.toHaveBeenCalled();
+      expect(pruneMessageAttachments).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SOURCE_MAP upsert (Phase 0C)', () => {
+    it('should use storeContent (upsert) for SOURCE_MAP at end of pipeline', async () => {
+      await channel.start();
+
+      const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
+      await channel.dispatchRawMessage('<test/>', sourceMap);
+
+      // storeContent should be called for SOURCE_MAP (the final upsert write)
+      const storeContentMock = storeContent as jest.Mock;
+      const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
+        (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
+      );
+      expect(sourceMapStoreCalls.length).toBeGreaterThanOrEqual(1);
+
+      await channel.stop();
+    });
+
+    it('should write SOURCE_MAP early in Transaction 2 via insertContent', async () => {
+      await channel.start();
+
+      const sourceMap = new Map<string, unknown>([['traceId', '12345']]);
+      await channel.dispatchRawMessage('<test/>', sourceMap);
+
+      // insertContent should be called for SOURCE_MAP (the early write in Transaction 2)
+      const insertContentMock = insertContent as jest.Mock;
+      const sourceMapInsertCalls = insertContentMock.mock.calls.filter(
+        (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
+      );
+      expect(sourceMapInsertCalls.length).toBeGreaterThanOrEqual(1);
+
+      await channel.stop();
+    });
+  });
+
+  describe('persistInTransaction (Phase 2A)', () => {
+    const { transaction: mockTransaction } = require('../../../../src/db/pool');
+
+    it('should use transaction for source intake', async () => {
+      await channel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await channel.dispatchRawMessage('<test>hello</test>');
+
+      // transaction() should be called (multiple times for different phases)
+      expect(mockTransaction).toHaveBeenCalled();
+
+      // Core DAO functions should all be called
+      expect(insertMessage).toHaveBeenCalled();
+      expect(insertConnectorMessage).toHaveBeenCalled();
+      expect(insertContent).toHaveBeenCalled();
+      expect(updateStatistics).toHaveBeenCalled();
+
+      await channel.stop();
+    });
+
+    it('should pass PoolConnection to DAO calls inside transactions', async () => {
+      await channel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await channel.dispatchRawMessage('<test/>');
+
+      // insertMessage should have received the mockPoolConnection
+      const insertMessageCalls = (insertMessage as jest.Mock).mock.calls;
+      expect(insertMessageCalls.length).toBeGreaterThanOrEqual(1);
+      // Last arg should be the connection
+      expect(insertMessageCalls[0]![insertMessageCalls[0]!.length - 1]).toBe(mockPoolConnection);
+
+      await channel.stop();
+    });
+  });
+
+  describe('MetaDataReplacer integration (Phase 3)', () => {
+    it('should call insertCustomMetaData when metaDataColumns configured', async () => {
+      await channel.stop();
+
+      const metaChannel = new Channel({
+        id: 'metadata-col-test',
+        name: 'MetaData Column Test',
+        enabled: true,
+        metaDataColumns: [
+          { name: 'PatientName', type: 'STRING' as any, mappingName: 'patientName' },
+        ],
+      });
+
+      const src = new TestSourceConnector();
+      metaChannel.setSourceConnector(src);
+
+      // Create a destination that sets the mapping value
+      class MappingDest extends DestinationConnector {
+        constructor() {
+          super({ name: 'Mapping Dest', metaDataId: 1, transportName: 'TEST' });
+        }
+        async send(msg: ConnectorMessage): Promise<void> {
+          msg.getConnectorMap().set('patientName', 'John Doe');
+        }
+        async getResponse(): Promise<string | null> { return null; }
+      }
+      metaChannel.addDestinationConnector(new MappingDest());
+
+      await metaChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await metaChannel.dispatchRawMessage('<test/>');
+      await metaChannel.stop();
+
+      // insertCustomMetaData should have been called for the destination (metaDataId=1)
+      const customMetaCalls = (insertCustomMetaData as jest.Mock).mock.calls;
+      expect(customMetaCalls.length).toBeGreaterThanOrEqual(1);
+
+      // Re-start default channel for afterEach compatibility
+      await channel.start();
+    });
+
+    it('should NOT call insertCustomMetaData when storeCustomMetaData is false', async () => {
+      await channel.stop();
+
+      const settings = getStorageSettings(MessageStorageMode.DISABLED);
+      const noMetaChannel = new Channel({
+        id: 'no-meta-test',
+        name: 'No Meta Test',
+        enabled: true,
+        storageSettings: settings,
+        metaDataColumns: [
+          { name: 'Ignored', type: 'STRING' as any, mappingName: 'ignored' },
+        ],
+      });
+      noMetaChannel.setSourceConnector(new TestSourceConnector());
+      noMetaChannel.addDestinationConnector(new TestDestinationConnector(1));
+
+      await noMetaChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await noMetaChannel.dispatchRawMessage('<test/>');
+      await noMetaChannel.stop();
+
+      expect(insertCustomMetaData).not.toHaveBeenCalled();
+
+      // Re-start default channel for afterEach compatibility
+      await channel.start();
+    });
+
+    it('should NOT call insertCustomMetaData when no metaDataColumns configured', async () => {
+      // Default channel has no metaDataColumns
+      await channel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+
+      await channel.dispatchRawMessage('<test/>');
+
+      expect(insertCustomMetaData).not.toHaveBeenCalled();
+
+      await channel.stop();
     });
   });
 });

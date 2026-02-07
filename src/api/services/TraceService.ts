@@ -5,7 +5,7 @@
  * Given any message in any channel, traces backward to the original source
  * and forward to all downstream destinations, building a tree of TraceNodes.
  *
- * Relies on sourceMap data persisted in D_MC tables (ContentType.SOURCE_MAP = 14)
+ * Relies on sourceMap data persisted in D_MC tables (ContentType.SOURCE_MAP = 15)
  * which carries sourceChannelIds[] and sourceMessageIds[] through the VM connector chain.
  */
 

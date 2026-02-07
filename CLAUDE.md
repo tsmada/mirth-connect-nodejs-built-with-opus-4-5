@@ -228,12 +228,13 @@ The trace feature uses VM Connector chain-tracking data (`sourceChannelIds[]`, `
 | SourceMap persistence | Written by Donkey StorageManager | Written by `Channel.dispatchRawMessage()` |
 | Trace API endpoint | Does not exist | `GET /api/messages/trace/:channelId/:messageId` |
 | Trace CLI command | Does not exist | `mirth-cli trace <channel> <messageId>` |
-| D_MC content type 14 | SOURCE_MAP | SOURCE_MAP (identical) |
+| D_MC content type 14 | RESPONSE_ERROR | RESPONSE_ERROR (identical) |
+| D_MC content type 15 | SOURCE_MAP | SOURCE_MAP (identical) |
 | D_MC data format | JSON map | JSON map (identical) |
 
-#### ContentType Enum Fix (Bug Fix)
+#### ContentType Enum Parity Fix
 
-**Fixed**: `src/api/models/MessageFilter.ts` had an incorrect `RESPONSE_ERROR = 14, SOURCE_MAP = 15` which did not match Java Mirth or the donkey engine model (`src/model/ContentType.ts`). Java Mirth has no `RESPONSE_ERROR` content type — it stops at `SOURCE_MAP = 14`. The inline content type maps in `MessageServlet.ts` had the same error. Both were corrected to match Java Mirth exactly.
+**Fixed**: The Node.js port originally omitted `RESPONSE_ERROR` entirely and assigned `SOURCE_MAP = 14`. Java Mirth defines `RESPONSE_ERROR = 14` and `SOURCE_MAP = 15`. This caused data corruption in takeover mode: Java's RESPONSE_ERROR rows (content type 14 in `D_MC`) were misread as SOURCE_MAP data. All content type definitions — `src/model/ContentType.ts`, `src/api/models/MessageFilter.ts`, and the inline maps in `MessageServlet.ts` — now include `RESPONSE_ERROR = 14` and `SOURCE_MAP = 15`, matching Java Mirth exactly.
 
 ### Cross-Channel Message Trace (`mirth-cli trace`)
 
@@ -1213,17 +1214,17 @@ git add src/db/SchemaManager.ts
 ```
 
 **22. Duplicate Enum Definitions Across Layers (Trace Feature)**
-When the same concept (ContentType) exists in both the donkey engine model and the API layer, they can drift out of sync. The API layer's `MessageFilter.ts` had `RESPONSE_ERROR = 14, SOURCE_MAP = 15` while the canonical donkey model had `SOURCE_MAP = 14` (matching Java Mirth). Always treat the donkey engine model (`src/model/`) as the single source of truth — the API layer should import or mirror it exactly. Inline maps in servlets that duplicate enum values are especially prone to this:
+When the same concept (ContentType) exists in both the donkey engine model and the API layer, they can drift out of sync. The donkey engine model had `SOURCE_MAP = 14` (missing `RESPONSE_ERROR`) while Java Mirth defines `RESPONSE_ERROR = 14, SOURCE_MAP = 15`. Always treat the donkey engine model (`src/model/`) as the single source of truth — and ensure it matches Java Mirth exactly. The API layer should import or mirror it. Inline maps in servlets that duplicate enum values are especially prone to drift:
 ```typescript
-// ❌ Wrong - inline map can drift from enum
+// ❌ Wrong - omitting RESPONSE_ERROR shifts SOURCE_MAP
 const contentTypeMap: Record<string, number> = {
-  RESPONSE_ERROR: 14,  // Doesn't exist in Java Mirth!
-  SOURCE_MAP: 15,      // Wrong value!
+  POSTPROCESSOR_ERROR: 13,
+  SOURCE_MAP: 14,      // Wrong! Should be 15
 };
 
-// ✅ Correct - use the canonical enum or match it exactly
+// ✅ Correct - include all types matching Java Mirth
 import { ContentType } from '../../model/ContentType.js';
-// ContentType.SOURCE_MAP === 14
+// ContentType.RESPONSE_ERROR === 14, ContentType.SOURCE_MAP === 15
 ```
 
 **23. Connector Wiring Must Be End-to-End (VM Routing Bug)**

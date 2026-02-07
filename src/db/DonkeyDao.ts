@@ -12,10 +12,12 @@
  * Reference: ~/Projects/connect/donkey/donkeydbconf/mysql.xml
  */
 
-import { RowDataPacket } from 'mysql2/promise';
+import { RowDataPacket, Pool, PoolConnection } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
 import { Status } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
+
+export type DbConnection = Pool | PoolConnection;
 
 /**
  * Map Status enum values to D_MS statistics table column names.
@@ -36,15 +38,15 @@ function statusToColumn(status: Status): string {
 }
 
 // Table name helpers
-function messageTable(channelId: string): string {
+export function messageTable(channelId: string): string {
   return `D_M${channelId.replace(/-/g, '_')}`;
 }
 
-function connectorMessageTable(channelId: string): string {
+export function connectorMessageTable(channelId: string): string {
   return `D_MM${channelId.replace(/-/g, '_')}`;
 }
 
-function contentTable(channelId: string): string {
+export function contentTable(channelId: string): string {
   return `D_MC${channelId.replace(/-/g, '_')}`;
 }
 
@@ -52,7 +54,7 @@ function attachmentTable(channelId: string): string {
   return `D_MA${channelId.replace(/-/g, '_')}`;
 }
 
-function statisticsTable(channelId: string): string {
+export function statisticsTable(channelId: string): string {
   return `D_MS${channelId.replace(/-/g, '_')}`;
 }
 
@@ -96,6 +98,17 @@ export interface ContentRow extends RowDataPacket {
   CONTENT: string;
   DATA_TYPE: string;
   IS_ENCRYPTED: number;
+}
+
+export interface StatisticsRow extends RowDataPacket {
+  METADATA_ID: number;
+  SERVER_ID: string;
+  RECEIVED: number;
+  FILTERED: number;
+  TRANSFORMED: number;
+  PENDING: number;
+  SENT: number;
+  ERROR: number;
 }
 
 /**
@@ -315,10 +328,11 @@ export async function insertMessage(
   channelId: string,
   messageId: number,
   serverId: string,
-  receivedDate: Date
+  receivedDate: Date,
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  await pool.execute(
+  const db = conn ?? getPool();
+  await db.execute(
     `INSERT INTO ${messageTable(channelId)} (ID, SERVER_ID, RECEIVED_DATE, PROCESSED)
      VALUES (?, ?, ?, 0)`,
     [messageId, serverId, receivedDate]
@@ -331,10 +345,11 @@ export async function insertMessage(
 export async function updateMessageProcessed(
   channelId: string,
   messageId: number,
-  processed: boolean
+  processed: boolean,
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  await pool.execute(`UPDATE ${messageTable(channelId)} SET PROCESSED = ? WHERE ID = ?`, [
+  const db = conn ?? getPool();
+  await db.execute(`UPDATE ${messageTable(channelId)} SET PROCESSED = ? WHERE ID = ?`, [
     processed ? 1 : 0,
     messageId,
   ]);
@@ -349,15 +364,48 @@ export async function insertConnectorMessage(
   metaDataId: number,
   connectorName: string,
   receivedDate: Date,
-  status: Status
+  status: Status,
+  chainId: number = 0,
+  options?: {
+    storeMaps?: { sourceMap?: Map<string, unknown>; connectorMap?: Map<string, unknown>; channelMap?: Map<string, unknown>; responseMap?: Map<string, unknown> };
+    updateStats?: boolean;
+    serverId?: string;
+  },
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  await pool.execute(
+  const db = conn ?? getPool();
+  await db.execute(
     `INSERT INTO ${connectorMessageTable(channelId)}
      (MESSAGE_ID, METADATA_ID, RECEIVED_DATE, STATUS, CONNECTOR_NAME, SEND_ATTEMPTS, CHAIN_ID, ORDER_ID)
-     VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
-    [messageId, metaDataId, receivedDate, status, connectorName, metaDataId]
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+    [messageId, metaDataId, receivedDate, status, connectorName, chainId, metaDataId]
   );
+
+  // Write maps atomically with connector message insert
+  if (options?.storeMaps) {
+    const { sourceMap, connectorMap, channelMap, responseMap } = options.storeMaps;
+    if (sourceMap && sourceMap.size > 0) {
+      await storeContent(channelId, messageId, metaDataId, ContentType.SOURCE_MAP,
+        JSON.stringify(Object.fromEntries(sourceMap)), 'JSON', false, conn);
+    }
+    if (connectorMap && connectorMap.size > 0) {
+      await storeContent(channelId, messageId, metaDataId, ContentType.CONNECTOR_MAP,
+        JSON.stringify(Object.fromEntries(connectorMap)), 'JSON', false, conn);
+    }
+    if (channelMap && channelMap.size > 0) {
+      await storeContent(channelId, messageId, metaDataId, ContentType.CHANNEL_MAP,
+        JSON.stringify(Object.fromEntries(channelMap)), 'JSON', false, conn);
+    }
+    if (responseMap && responseMap.size > 0) {
+      await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
+        JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false, conn);
+    }
+  }
+
+  // Update RECEIVED statistics atomically
+  if (options?.updateStats && options.serverId) {
+    await updateStatistics(channelId, metaDataId, options.serverId, Status.RECEIVED, 1, conn);
+  }
 }
 
 /**
@@ -367,10 +415,11 @@ export async function updateConnectorMessageStatus(
   channelId: string,
   messageId: number,
   metaDataId: number,
-  status: Status
+  status: Status,
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  await pool.execute(
+  const db = conn ?? getPool();
+  await db.execute(
     `UPDATE ${connectorMessageTable(channelId)} SET STATUS = ? WHERE MESSAGE_ID = ? AND METADATA_ID = ?`,
     [status, messageId, metaDataId]
   );
@@ -386,10 +435,11 @@ export async function insertContent(
   contentType: ContentType,
   content: string,
   dataType: string,
-  encrypted: boolean
+  encrypted: boolean,
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  await pool.execute(
+  const db = conn ?? getPool();
+  await db.execute(
     `INSERT INTO ${contentTable(channelId)}
      (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -411,18 +461,38 @@ export async function storeContent(
   contentType: ContentType,
   content: string,
   dataType: string,
-  encrypted: boolean
+  encrypted: boolean,
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  const [result] = await pool.execute(
+  const db = conn ?? getPool();
+  const [result] = await db.execute(
     `UPDATE ${contentTable(channelId)}
      SET CONTENT = ?, DATA_TYPE = ?, IS_ENCRYPTED = ?
      WHERE METADATA_ID = ? AND MESSAGE_ID = ? AND CONTENT_TYPE = ?`,
     [content, dataType, encrypted ? 1 : 0, metaDataId, messageId, contentType]
   );
   if ((result as { affectedRows: number }).affectedRows === 0) {
-    await insertContent(channelId, messageId, metaDataId, contentType, content, dataType, encrypted);
+    await insertContent(channelId, messageId, metaDataId, contentType, content, dataType, encrypted, conn);
   }
+}
+
+/**
+ * Batch insert multiple content rows in a single INSERT statement.
+ * More efficient than individual inserts when writing multiple content types at once.
+ */
+export async function batchInsertContent(
+  channelId: string,
+  rows: Array<{ messageId: number; metaDataId: number; contentType: ContentType; content: string; dataType: string; encrypted: boolean }>,
+  conn?: DbConnection
+): Promise<void> {
+  if (rows.length === 0) return;
+  const db = conn ?? getPool();
+  const placeholders = rows.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+  const values = rows.flatMap(r => [r.messageId, r.metaDataId, r.contentType, r.content, r.dataType, r.encrypted ? 1 : 0]);
+  await db.execute(
+    `INSERT INTO ${contentTable(channelId)} (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED) VALUES ${placeholders}`,
+    values
+  );
 }
 
 /**
@@ -437,19 +507,25 @@ export async function updateErrors(
   metaDataId: number,
   processingError?: string,
   postProcessorError?: string,
-  errorCode?: number
+  errorCode?: number,
+  responseError?: string,
+  conn?: DbConnection
 ): Promise<void> {
   if (processingError) {
     await storeContent(channelId, messageId, metaDataId, ContentType.PROCESSING_ERROR,
-      processingError, 'text/plain', false);
+      processingError, 'text/plain', false, conn);
   }
   if (postProcessorError) {
     await storeContent(channelId, messageId, metaDataId, ContentType.POSTPROCESSOR_ERROR,
-      postProcessorError, 'text/plain', false);
+      postProcessorError, 'text/plain', false, conn);
+  }
+  if (responseError) {
+    await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_ERROR,
+      responseError, 'text/plain', false, conn);
   }
   if (errorCode !== undefined) {
-    const pool = getPool();
-    await pool.execute(
+    const db = conn ?? getPool();
+    await db.execute(
       `UPDATE ${connectorMessageTable(channelId)} SET ERROR_CODE = ? WHERE MESSAGE_ID = ? AND METADATA_ID = ?`,
       [errorCode, messageId, metaDataId]
     );
@@ -468,19 +544,20 @@ export async function updateMaps(
   metaDataId: number,
   connectorMap?: Map<string, unknown>,
   channelMap?: Map<string, unknown>,
-  responseMap?: Map<string, unknown>
+  responseMap?: Map<string, unknown>,
+  conn?: DbConnection
 ): Promise<void> {
   if (connectorMap && connectorMap.size > 0) {
     await storeContent(channelId, messageId, metaDataId, ContentType.CONNECTOR_MAP,
-      JSON.stringify(Object.fromEntries(connectorMap)), 'JSON', false);
+      JSON.stringify(Object.fromEntries(connectorMap)), 'JSON', false, conn);
   }
   if (channelMap && channelMap.size > 0) {
     await storeContent(channelId, messageId, metaDataId, ContentType.CHANNEL_MAP,
-      JSON.stringify(Object.fromEntries(channelMap)), 'JSON', false);
+      JSON.stringify(Object.fromEntries(channelMap)), 'JSON', false, conn);
   }
   if (responseMap && responseMap.size > 0) {
     await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
-      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false);
+      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false, conn);
   }
 }
 
@@ -492,11 +569,12 @@ export async function updateResponseMap(
   channelId: string,
   messageId: number,
   metaDataId: number,
-  responseMap: Map<string, unknown>
+  responseMap: Map<string, unknown>,
+  conn?: DbConnection
 ): Promise<void> {
   if (responseMap.size > 0) {
     await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
-      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false);
+      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false, conn);
   }
 }
 
@@ -510,10 +588,11 @@ export async function updateSendAttempts(
   metaDataId: number,
   sendAttempts: number,
   sendDate?: Date,
-  responseDate?: Date
+  responseDate?: Date,
+  conn?: DbConnection
 ): Promise<void> {
-  const pool = getPool();
-  await pool.execute(
+  const db = conn ?? getPool();
+  await db.execute(
     `UPDATE ${connectorMessageTable(channelId)}
      SET SEND_ATTEMPTS = ?, SEND_DATE = ?, RESPONSE_DATE = ?
      WHERE MESSAGE_ID = ? AND METADATA_ID = ?`,
@@ -567,6 +646,41 @@ export async function getConnectorMessages(
 }
 
 /**
+ * Get connector messages filtered by status.
+ * Optionally filter by messageId as well.
+ * Used for recovery tasks to find messages in specific states.
+ */
+export async function getConnectorMessagesByStatus(
+  channelId: string,
+  statuses: Status[],
+  messageId?: number,
+  conn?: DbConnection
+): Promise<ConnectorMessageRow[]> {
+  const db = conn ?? getPool();
+  const statusChars = statuses.map(s => s as string);
+  const placeholders = statusChars.map(() => '?').join(', ');
+  let sql = `SELECT * FROM ${connectorMessageTable(channelId)} WHERE STATUS IN (${placeholders})`;
+  const params: (string | number)[] = [...statusChars];
+  if (messageId !== undefined) {
+    sql += ` AND MESSAGE_ID = ?`;
+    params.push(messageId);
+  }
+  sql += ` ORDER BY MESSAGE_ID, METADATA_ID`;
+  const [rows] = await db.query<ConnectorMessageRow[]>(sql, params);
+  return rows;
+}
+
+/**
+ * Get connector messages in RECEIVED or PENDING status (for recovery on startup).
+ */
+export async function getPendingConnectorMessages(
+  channelId: string,
+  conn?: DbConnection
+): Promise<ConnectorMessageRow[]> {
+  return getConnectorMessagesByStatus(channelId, [Status.RECEIVED, Status.PENDING], undefined, conn);
+}
+
+/**
  * Update statistics for a connector
  */
 export async function updateStatistics(
@@ -574,12 +688,13 @@ export async function updateStatistics(
   metaDataId: number,
   serverId: string,
   status: Status,
-  increment: number = 1
+  increment: number = 1,
+  conn?: DbConnection
 ): Promise<void> {
   const statusColumn = statusToColumn(status);
-  const pool = getPool();
+  const db = conn ?? getPool();
 
-  await pool.execute(
+  await db.execute(
     `INSERT INTO ${statisticsTable(channelId)} (METADATA_ID, SERVER_ID, ${statusColumn})
      VALUES (?, ?, ?)
      ON DUPLICATE KEY UPDATE ${statusColumn} = ${statusColumn} + ?`,
@@ -590,9 +705,9 @@ export async function updateStatistics(
 /**
  * Get statistics for a channel
  */
-export async function getStatistics(channelId: string): Promise<RowDataPacket[]> {
+export async function getStatistics(channelId: string): Promise<StatisticsRow[]> {
   const pool = getPool();
-  const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${statisticsTable(channelId)}`);
+  const [rows] = await pool.query<StatisticsRow[]>(`SELECT * FROM ${statisticsTable(channelId)}`);
   return rows;
 }
 
@@ -972,4 +1087,244 @@ export async function deleteAttachment(
   );
 
   return (result as { affectedRows: number }).affectedRows;
+}
+
+// ============================================================================
+// Statistics Reset / Message Reset Methods
+// ============================================================================
+
+/**
+ * Reset statistics counters to zero.
+ * Ported from JdbcDao.resetStatistics().
+ *
+ * Optionally scoped to a specific connector (metaDataId) and/or server.
+ */
+export async function resetStatistics(
+  channelId: string,
+  metaDataId?: number,
+  serverId?: string
+): Promise<void> {
+  const pool = getPool();
+  let query = `UPDATE ${statisticsTable(channelId)} SET RECEIVED=0, FILTERED=0, TRANSFORMED=0, PENDING=0, SENT=0, ERROR=0`;
+  const params: (string | number)[] = [];
+  if (metaDataId !== undefined) {
+    query += ` WHERE METADATA_ID = ?`;
+    params.push(metaDataId);
+    if (serverId) {
+      query += ` AND SERVER_ID = ?`;
+      params.push(serverId);
+    }
+  }
+  await pool.execute(query, params);
+}
+
+/**
+ * Reset a message for reprocessing.
+ * Ported from JdbcDao.resetMessage().
+ *
+ * Sets PROCESSED=0 on the message, and resets all destination connector messages
+ * (METADATA_ID > 0) to PENDING status with zero send attempts.
+ */
+export async function resetMessage(
+  channelId: string,
+  messageId: number
+): Promise<void> {
+  const pool = getPool();
+  await pool.execute(
+    `UPDATE ${messageTable(channelId)} SET PROCESSED = 0 WHERE ID = ?`,
+    [messageId]
+  );
+  await pool.execute(
+    `UPDATE ${connectorMessageTable(channelId)} SET STATUS = 'P', SEND_ATTEMPTS = 0, SEND_DATE = NULL, RESPONSE_DATE = NULL, ERROR_CODE = NULL WHERE MESSAGE_ID = ? AND METADATA_ID > 0`,
+    [messageId]
+  );
+}
+
+// ============================================================================
+// Targeted Delete Methods
+// ============================================================================
+
+/**
+ * Delete connector messages for specific metadata IDs.
+ * Ported from JdbcDao.deleteConnectorMessages() with metaDataId filtering.
+ */
+export async function deleteConnectorMessagesByMetaDataIds(
+  channelId: string,
+  messageId: number,
+  metaDataIds: number[]
+): Promise<number> {
+  if (metaDataIds.length === 0) return 0;
+  const pool = getPool();
+  const placeholders = metaDataIds.map(() => '?').join(', ');
+  const [result] = await pool.execute(
+    `DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ? AND METADATA_ID IN (${placeholders})`,
+    [messageId, ...metaDataIds]
+  );
+  return (result as { affectedRows: number }).affectedRows;
+}
+
+/**
+ * Delete message content for specific metadata IDs.
+ * Ported from JdbcDao.deleteMessageContent() with metaDataId filtering.
+ */
+export async function deleteMessageContentByMetaDataIds(
+  channelId: string,
+  messageId: number,
+  metaDataIds: number[]
+): Promise<number> {
+  if (metaDataIds.length === 0) return 0;
+  const pool = getPool();
+  const placeholders = metaDataIds.map(() => '?').join(', ');
+  const [result] = await pool.execute(
+    `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ? AND METADATA_ID IN (${placeholders})`,
+    [messageId, ...metaDataIds]
+  );
+  return (result as { affectedRows: number }).affectedRows;
+}
+
+/**
+ * Delete statistics row for a specific connector.
+ * Ported from JdbcDao.deleteStatistics().
+ */
+export async function deleteMessageStatistics(
+  channelId: string,
+  metaDataId: number
+): Promise<void> {
+  const pool = getPool();
+  await pool.execute(
+    `DELETE FROM ${statisticsTable(channelId)} WHERE METADATA_ID = ?`,
+    [metaDataId]
+  );
+}
+
+/**
+ * Delete all content for a single message.
+ * Ported from JdbcDao.deleteMessageContent() (single message variant).
+ */
+export async function deleteMessageContent(
+  channelId: string,
+  messageId: number
+): Promise<number> {
+  const pool = getPool();
+  const [result] = await pool.execute(
+    `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`,
+    [messageId]
+  );
+  return (result as { affectedRows: number }).affectedRows;
+}
+
+/**
+ * Delete all attachments for a single message.
+ * Ported from JdbcDao.deleteMessageAttachments() (single message variant).
+ */
+export async function deleteMessageAttachments(
+  channelId: string,
+  messageId: number
+): Promise<number> {
+  const pool = getPool();
+  const [result] = await pool.execute(
+    `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`,
+    [messageId]
+  );
+  return (result as { affectedRows: number }).affectedRows;
+}
+
+// ============================================================================
+// Query Methods
+// ============================================================================
+
+/**
+ * Get unfinished (unprocessed) messages for a channel.
+ * Ported from JdbcDao.getUnfinishedMessages().
+ *
+ * Used during channel startup to resume processing of incomplete messages.
+ */
+export async function getUnfinishedMessages(channelId: string): Promise<MessageRow[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<MessageRow[]>(
+    `SELECT * FROM ${messageTable(channelId)} WHERE PROCESSED = 0 ORDER BY ID`
+  );
+  return rows;
+}
+
+/**
+ * Get the maximum message ID for a channel.
+ * Ported from JdbcDao.getMaxMessageId().
+ */
+export async function getMaxMessageId(channelId: string): Promise<number | null> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT MAX(ID) as maxId FROM ${messageTable(channelId)}`
+  );
+  return rows[0]?.maxId ?? null;
+}
+
+/**
+ * Get the minimum message ID for a channel.
+ * Ported from JdbcDao.getMinMessageId().
+ */
+export async function getMinMessageId(channelId: string): Promise<number | null> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT MIN(ID) as minId FROM ${messageTable(channelId)}`
+  );
+  return rows[0]?.minId ?? null;
+}
+
+// ============================================================================
+// Custom Metadata Methods
+// ============================================================================
+
+/**
+ * Insert or update custom metadata for a connector message.
+ * Ported from JdbcDao.insertMetaData().
+ *
+ * Uses INSERT ... ON DUPLICATE KEY UPDATE to upsert user-defined metadata
+ * columns in the D_MCM table.
+ */
+export async function insertCustomMetaData(
+  channelId: string,
+  messageId: number,
+  metaDataId: number,
+  data: Record<string, unknown>,
+  conn?: DbConnection
+): Promise<void> {
+  const db = conn ?? getPool();
+  const columns = Object.keys(data);
+  if (columns.length === 0) return;
+
+  const colNames = columns.map(c => `\`${c}\``).join(', ');
+  const placeholders = columns.map(() => '?').join(', ');
+  const values = columns.map(c => data[c]);
+
+  await db.execute(
+    `INSERT INTO ${customMetadataTable(channelId)} (MESSAGE_ID, METADATA_ID, ${colNames}) VALUES (?, ?, ${placeholders})
+     ON DUPLICATE KEY UPDATE ${columns.map(c => `\`${c}\` = VALUES(\`${c}\`)`).join(', ')}`,
+    [messageId, metaDataId, ...values]
+  );
+}
+
+/**
+ * Add a custom metadata column to the D_MCM table.
+ * Ported from JdbcDao.addMetaDataColumn().
+ *
+ * Silently ignores ER_DUP_FIELDNAME if the column already exists.
+ */
+export async function addMetaDataColumn(
+  channelId: string,
+  columnName: string,
+  columnType: string = 'TEXT'
+): Promise<void> {
+  const pool = getPool();
+  try {
+    await pool.execute(
+      `ALTER TABLE ${customMetadataTable(channelId)} ADD COLUMN \`${columnName}\` ${columnType}`
+    );
+  } catch (err: unknown) {
+    // Column may already exist — ignore duplicate column errors
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ER_DUP_FIELDNAME') {
+      return;
+    }
+    throw err;
+  }
 }

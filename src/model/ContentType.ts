@@ -52,8 +52,11 @@ export enum ContentType {
   /** Postprocessor error details */
   POSTPROCESSOR_ERROR = 13,
 
+  /** Response error details */
+  RESPONSE_ERROR = 14,
+
   /** Source map data */
-  SOURCE_MAP = 14,
+  SOURCE_MAP = 15,
 }
 
 /**
@@ -73,6 +76,7 @@ export const CONTENT_TYPE_DESCRIPTIONS: Record<ContentType, string> = {
   [ContentType.RESPONSE_MAP]: 'Response Map',
   [ContentType.PROCESSING_ERROR]: 'Processing Error',
   [ContentType.POSTPROCESSOR_ERROR]: 'Postprocessor Error',
+  [ContentType.RESPONSE_ERROR]: 'Response Error',
   [ContentType.SOURCE_MAP]: 'Source Map',
 };
 
@@ -80,8 +84,18 @@ export const CONTENT_TYPE_DESCRIPTIONS: Record<ContentType, string> = {
  * Parse a content type ID from database to ContentType enum
  */
 export function parseContentType(id: number): ContentType {
-  if (id < 1 || id > 14) {
+  if (id < 1 || id > 15) {
     throw new Error(`Unknown content type ID: ${id}`);
   }
   return id as ContentType;
 }
+
+/**
+ * Error code bitmask values used in D_MM.ERROR_CODE column.
+ * Matches Java Mirth's ErrorConstants.
+ */
+export const ERROR_CODES = {
+  PROCESSING_ERROR: 1,
+  POSTPROCESSOR_ERROR: 2,
+  RESPONSE_ERROR: 4,
+} as const;

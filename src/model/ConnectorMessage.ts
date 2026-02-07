@@ -62,6 +62,7 @@ export class ConnectorMessage {
   // Processing errors
   private processingError?: string;
   private postProcessorError?: string;
+  private responseError?: string;
 
   constructor(data: ConnectorMessageData) {
     this.messageId = data.messageId;
@@ -270,6 +271,30 @@ export class ConnectorMessage {
     this.postProcessorError = error;
   }
 
+  getResponseError(): string | undefined {
+    return this.responseError;
+  }
+
+  setResponseError(error: string): void {
+    this.responseError = error;
+  }
+
+  /**
+   * Compute a bitmask encoding which error types are present on this connector message.
+   * Ported from Java Mirth ConnectorMessage.getErrorCode():
+   *   bit 0 (1) = processing error
+   *   bit 1 (2) = postprocessor error
+   *   bit 2 (4) = response error
+   */
+  updateErrorCode(): number {
+    let errorCode = 0;
+    if (this.processingError) errorCode |= 1;
+    if (this.postProcessorError) errorCode |= 2;
+    if (this.responseError) errorCode |= 4;
+    this.errorCode = errorCode;
+    return errorCode;
+  }
+
   /**
    * Check if this is a source connector message
    */
@@ -295,6 +320,16 @@ export class ConnectorMessage {
     // Copy channel map (shared between connectors)
     for (const [key, value] of this.channelMap) {
       clone.channelMap.set(key, value);
+    }
+
+    // Copy source map (needed for destination scripts to access $s('key'))
+    for (const [key, value] of this.sourceMap) {
+      clone.sourceMap.set(key, value);
+    }
+
+    // Copy response map
+    for (const [key, value] of this.responseMap) {
+      clone.responseMap.set(key, value);
     }
 
     return clone;

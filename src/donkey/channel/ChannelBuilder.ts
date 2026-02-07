@@ -9,6 +9,7 @@ import { Channel, ChannelConfig } from './Channel.js';
 import { SourceConnector } from './SourceConnector.js';
 import { DestinationConnector } from './DestinationConnector.js';
 import { getStorageSettings, parseMessageStorageMode } from './StorageSettings.js';
+import { MetaDataColumnType } from '../../api/models/ServerSettings.js';
 import { TcpReceiver } from '../../connectors/tcp/TcpReceiver.js';
 import { TcpDispatcher } from '../../connectors/tcp/TcpDispatcher.js';
 import { TcpReceiverProperties, TcpDispatcherProperties, ServerMode, TransmissionMode, ResponseMode } from '../../connectors/tcp/TcpConnectorProperties.js';
@@ -36,6 +37,13 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     storeAttachments: channelProps?.storeAttachments,
   });
 
+  // Extract custom metadata column definitions
+  const metaDataColumns = (channelProps?.metaDataColumns ?? []).map((col) => ({
+    name: col.name,
+    type: col.type as MetaDataColumnType,
+    mappingName: col.mappingName,
+  }));
+
   // Create channel with basic config
   const config: ChannelConfig = {
     id: channelConfig.id,
@@ -47,6 +55,7 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     deployScript: channelConfig.deployScript,
     undeployScript: channelConfig.undeployScript,
     storageSettings,
+    metaDataColumns,
   };
 
   const channel = new Channel(config);

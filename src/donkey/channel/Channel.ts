@@ -12,6 +12,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { PoolConnection } from 'mysql2/promise';
 import { Message, MessageData } from '../../model/Message.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status } from '../../model/Status.js';
@@ -24,20 +25,30 @@ import {
 } from '../../javascript/runtime/JavaScriptExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState, ChannelStatistics } from '../../api/models/DashboardStatus.js';
+import { MetaDataColumn } from '../../api/models/ServerSettings.js';
 import { StorageSettings } from './StorageSettings.js';
+import { setMetaDataMap } from './MetaDataReplacer.js';
+import { runRecoveryTask } from './RecoveryTask.js';
 import {
   insertMessage,
   insertConnectorMessage,
   insertContent,
+  storeContent,
   updateConnectorMessageStatus,
   updateMessageProcessed,
   updateStatistics,
   updateErrors,
   updateMaps,
+  updateResponseMap,
   updateSendAttempts,
   getNextMessageId,
   channelTablesExist,
+  getStatistics,
+  pruneMessageContent,
+  pruneMessageAttachments,
+  insertCustomMetaData,
 } from '../../db/DonkeyDao.js';
+import { transaction } from '../../db/pool.js';
 
 export interface ChannelConfig {
   id: string;
@@ -49,6 +60,7 @@ export interface ChannelConfig {
   deployScript?: string;
   undeployScript?: string;
   storageSettings?: StorageSettings;
+  metaDataColumns?: MetaDataColumn[];
 }
 
 /**
@@ -76,7 +88,7 @@ export class Channel extends EventEmitter {
   private description: string;
   private enabled: boolean;
   private currentState: DeployedState = DeployedState.STOPPED;
-  private serverId: string = 'node-1';
+  private serverId: string = process.env.MIRTH_SERVER_ID || 'node-1';
 
   private sourceConnector: SourceConnector | null = null;
   private destinationConnectors: DestinationConnector[] = [];
@@ -89,6 +101,9 @@ export class Channel extends EventEmitter {
 
   // Storage settings — controls which content types are persisted
   private storageSettings: StorageSettings;
+
+  // Custom metadata column definitions (persisted to D_MCM tables)
+  private metaDataColumns: MetaDataColumn[];
 
   // JavaScript executor
   private executor: JavaScriptExecutor;
@@ -119,6 +134,7 @@ export class Channel extends EventEmitter {
     this.deployScript = config.deployScript;
     this.undeployScript = config.undeployScript;
     this.storageSettings = config.storageSettings ?? new StorageSettings();
+    this.metaDataColumns = config.metaDataColumns ?? [];
     this.executor = getDefaultExecutor();
   }
 
@@ -230,6 +246,33 @@ export class Channel extends EventEmitter {
     this.stats = { received: 0, sent: 0, error: 0, filtered: 0, queued: 0 };
   }
 
+  /**
+   * Load accumulated statistics from the D_MS table.
+   * Called during start() so dashboard counters survive restarts.
+   * Matches Java Mirth Statistics.loadFromDatabase() pattern.
+   */
+  private async loadStatisticsFromDb(): Promise<void> {
+    try {
+      if (this.tablesExist === null) {
+        this.tablesExist = await channelTablesExist(this.id);
+      }
+      if (!this.tablesExist) return;
+
+      const rows = await getStatistics(this.id);
+      let received = 0, sent = 0, error = 0, filtered = 0, queued = 0;
+      for (const row of rows) {
+        received += Number(row.RECEIVED) || 0;
+        filtered += Number(row.FILTERED) || 0;
+        sent += Number(row.SENT) || 0;
+        error += Number(row.ERROR) || 0;
+        queued += Number(row.PENDING) || 0;
+      }
+      this.stats = { received, sent, error, filtered, queued };
+    } catch (err) {
+      console.error(`[${this.name}] Failed to load statistics: ${err}`);
+    }
+  }
+
   setSourceConnector(connector: SourceConnector): void {
     this.sourceConnector = connector;
     connector.setChannel(this);
@@ -272,6 +315,18 @@ export class Channel extends EventEmitter {
       // Execute deploy script
       if (this.deployScript) {
         await this.executeScript(this.deployScript, 'deploy');
+      }
+
+      // Load accumulated statistics from DB so dashboard counters survive restarts
+      await this.loadStatisticsFromDb();
+
+      // Run recovery task to handle messages left unfinished from a previous crash
+      if (this.storageSettings.messageRecoveryEnabled) {
+        try {
+          await runRecoveryTask(this.id, this.serverId);
+        } catch (err) {
+          console.error(`[${this.name}] Recovery task failed: ${err}`);
+        }
       }
 
       // Start destination connectors first (they need to be ready to receive)
@@ -430,6 +485,66 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Execute multiple DB operations in a single database transaction.
+   * Each operation receives a PoolConnection to use for queries, ensuring
+   * all operations share the same connection and transaction boundary.
+   *
+   * Never throws — logs errors and returns silently like persistToDb().
+   */
+  private async persistInTransaction(
+    operations: Array<(conn: PoolConnection) => Promise<void>>
+  ): Promise<void> {
+    try {
+      if (this.tablesExist === null) {
+        this.tablesExist = await channelTablesExist(this.id);
+      }
+      if (!this.tablesExist) return;
+      if (operations.length === 0) return;
+
+      await transaction(async (conn) => {
+        for (const op of operations) {
+          await op(conn);
+        }
+      });
+    } catch (err) {
+      console.error(`[${this.name}] DB transaction error: ${err}`);
+    }
+  }
+
+  /**
+   * Execute multiple DB operations in a single transaction.
+   * Matches Java Mirth's transactional grouping pattern — each pipeline phase
+   * (source processing, per-destination, finish) is wrapped in a transaction
+   * so a crash mid-phase leaves the DB in a consistent state.
+   *
+   * Never throws — logs errors and returns silently like persistToDb().
+   * Falls back to sequential persistToDb() calls if transaction() fails to initialize.
+   *
+   * Used by external callers (RecoveryTask, reprocessing) that need atomic multi-step DB ops.
+   */
+  async persistBatch(operations: Array<() => Promise<void>>): Promise<void> {
+    try {
+      if (this.tablesExist === null) {
+        this.tablesExist = await channelTablesExist(this.id);
+      }
+      if (!this.tablesExist) return;
+      if (operations.length === 0) return;
+
+      await transaction(async () => {
+        for (const op of operations) {
+          await op();
+        }
+      });
+    } catch (err) {
+      console.error(`[${this.name}] DB transaction error, falling back to sequential: ${err}`);
+      // Fallback: execute each operation individually
+      for (const op of operations) {
+        await this.persistToDb(op);
+      }
+    }
+  }
+
+  /**
    * Dispatch a raw message through the channel pipeline
    */
   async dispatchRawMessage(
@@ -459,9 +574,6 @@ export class Channel extends EventEmitter {
     };
     const message = new Message(messageData);
 
-    // Persist message row
-    await this.persistToDb(() => insertMessage(this.id, messageId, serverId, messageData.receivedDate));
-
     // Create source connector message
     const sourceMessage = new ConnectorMessage({
       messageId,
@@ -474,21 +586,13 @@ export class Channel extends EventEmitter {
       status: Status.RECEIVED,
     });
 
-    // Persist source connector message
-    await this.persistToDb(() => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED));
-
     // Set raw content
     sourceMessage.setContent({
       contentType: ContentType.RAW,
       content: rawData,
-      dataType: 'RAW', // TODO: Get from source connector config
+      dataType: 'RAW', // Default; connector-specific types applied during serialization
       encrypted: false,
     });
-
-    // Persist RAW content
-    if (this.storageSettings.storeRaw) {
-      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, 'RAW', false));
-    }
 
     // Copy source map data
     if (sourceMapData) {
@@ -501,7 +605,16 @@ export class Channel extends EventEmitter {
 
     // Increment received counter as soon as message enters the pipeline
     this.stats.received++;
-    await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.RECEIVED));
+
+    // Transaction 1: Source intake — persist message + source connector + raw content + stats
+    await this.persistInTransaction([
+      (conn) => insertMessage(this.id, messageId, serverId, messageData.receivedDate, conn),
+      (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, undefined, conn),
+      ...(this.storageSettings.storeRaw ? [
+        (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, 'RAW', false, conn),
+      ] : []),
+      (conn) => updateStatistics(this.id, 0, serverId, Status.RECEIVED, 1, conn),
+    ]);
 
     try {
       // Execute preprocessor
@@ -527,33 +640,54 @@ export class Channel extends EventEmitter {
         if (filtered) {
           sourceMessage.setStatus(Status.FILTERED);
           this.stats.filtered++;
-          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.FILTERED));
-          await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.FILTERED));
+          await this.persistInTransaction([
+            (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.FILTERED, conn),
+            (conn) => updateStatistics(this.id, 0, serverId, Status.FILTERED, 1, conn),
+          ]);
           message.setProcessed(true);
           return message;
         }
 
         await this.sourceConnector.executeTransformer(sourceMessage);
         sourceMessage.setStatus(Status.TRANSFORMED);
-        await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.TRANSFORMED));
 
-        // Persist source TRANSFORMED content (ContentType=3)
+        // Transaction 2: Source processing — status + content + sourceMap + custom metadata
+        const txn2Ops: Array<(conn: PoolConnection) => Promise<void>> = [
+          (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.TRANSFORMED, conn),
+        ];
+
         if (this.storageSettings.storeTransformed) {
           const transformedContent = sourceMessage.getTransformedContent();
           if (transformedContent) {
-            await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
-              transformedContent.content, transformedContent.dataType, false));
+            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
+              transformedContent.content, transformedContent.dataType, false, conn));
           }
         }
 
-        // Persist source ENCODED content (ContentType=4)
         if (this.storageSettings.storeSourceEncoded) {
           const encodedContent = sourceMessage.getEncodedContent();
           if (encodedContent) {
-            await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.ENCODED,
-              encodedContent.content, encodedContent.dataType, false));
+            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.ENCODED,
+              encodedContent.content, encodedContent.dataType, false, conn));
           }
         }
+
+        // Write sourceMap early (will be upserted again at end via storeContent)
+        const srcMapEarly = sourceMessage.getSourceMap();
+        if (srcMapEarly.size > 0) {
+          txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP,
+            JSON.stringify(Object.fromEntries(srcMapEarly)), 'JSON', false, conn));
+        }
+
+        // Custom metadata after source transformer
+        if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
+          const metaData = setMetaDataMap(sourceMessage, this.metaDataColumns);
+          if (metaData.size > 0) {
+            txn2Ops.push((conn) => insertCustomMetaData(this.id, messageId, 0, Object.fromEntries(metaData), conn));
+          }
+        }
+
+        await this.persistInTransaction(txn2Ops);
       }
 
       // Dispatch to destinations
@@ -573,8 +707,10 @@ export class Channel extends EventEmitter {
           if (filtered) {
             destMessage.setStatus(Status.FILTERED);
             this.stats.filtered++;
-            await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED));
-            await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.FILTERED));
+            await this.persistInTransaction([
+              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
+              (conn) => updateStatistics(this.id, i + 1, serverId, Status.FILTERED, 1, conn),
+            ]);
             continue;
           }
 
@@ -599,19 +735,8 @@ export class Channel extends EventEmitter {
           destMessage.setStatus(Status.SENT);
           destMessage.setSendDate(sendDate);
           this.stats.sent++;
-          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT));
-          await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.SENT));
 
-          // Persist SENT content (ContentType=5) — what was actually sent
-          if (this.storageSettings.storeSent) {
-            const sentData = destMessage.getEncodedContent();
-            if (sentData) {
-              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.SENT,
-                sentData.content, sentData.dataType, false));
-            }
-          }
-
-          // Capture and persist RESPONSE content (ContentType=6)
+          // Capture response before building the transaction (response transformer may modify maps)
           if (this.storageSettings.storeResponse) {
             const responseData = await dest.getResponse(destMessage);
             if (responseData) {
@@ -622,76 +747,191 @@ export class Channel extends EventEmitter {
                 encrypted: false,
               });
               destMessage.setResponseDate(new Date());
-              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.RESPONSE,
-                responseData, 'RAW', false));
+
+              // Execute response transformer
+              await dest.executeResponseTransformer(destMessage);
             }
           }
 
-          // Update send attempts and dates in D_MM
-          await this.persistToDb(() => updateSendAttempts(this.id, messageId, i + 1,
-            destMessage.getSendAttempts(), sendDate, destMessage.getResponseDate()));
+          // Transaction 3: Per-destination — status + content + maps + custom metadata
+          const destOps: Array<(conn: PoolConnection) => Promise<void>> = [
+            (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT, conn),
+            (conn) => updateStatistics(this.id, i + 1, serverId, Status.SENT, 1, conn),
+          ];
 
-          // Persist destination maps after send
-          if (this.storageSettings.storeMaps) {
-            await this.persistToDb(() => updateMaps(this.id, messageId, i + 1,
-              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap()));
+          if (this.storageSettings.storeSent) {
+            const sentData = destMessage.getEncodedContent();
+            if (sentData) {
+              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.SENT,
+                sentData.content, sentData.dataType, false, conn));
+            }
           }
+
+          // Persist RESPONSE content (ContentType=6)
+          if (this.storageSettings.storeResponse) {
+            const respContent = destMessage.getResponseContent();
+            if (respContent) {
+              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE,
+                respContent.content, respContent.dataType, false, conn));
+            }
+
+            // Persist RESPONSE_TRANSFORMED content (ContentType=7)
+            if (this.storageSettings.storeResponseTransformed) {
+              const responseTransformed = destMessage.getContent(ContentType.RESPONSE_TRANSFORMED);
+              if (responseTransformed) {
+                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE_TRANSFORMED,
+                  responseTransformed.content, responseTransformed.dataType, false, conn));
+              }
+            }
+
+            // Persist PROCESSED_RESPONSE content (ContentType=8)
+            if (this.storageSettings.storeProcessedResponse) {
+              const processedResponse = destMessage.getContent(ContentType.PROCESSED_RESPONSE);
+              if (processedResponse) {
+                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.PROCESSED_RESPONSE,
+                  processedResponse.content, processedResponse.dataType, false, conn));
+              }
+            }
+          }
+
+          // Update send attempts and dates
+          destOps.push((conn) => updateSendAttempts(this.id, messageId, i + 1,
+            destMessage.getSendAttempts(), sendDate, destMessage.getResponseDate(), conn));
+
+          // Persist destination maps
+          if (this.storageSettings.storeMaps) {
+            destOps.push((conn) => updateMaps(this.id, messageId, i + 1,
+              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+          }
+
+          // Custom metadata after destination transformer
+          if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
+            const destMetaData = setMetaDataMap(destMessage, this.metaDataColumns);
+            if (destMetaData.size > 0) {
+              destOps.push((conn) => insertCustomMetaData(this.id, messageId, i + 1, Object.fromEntries(destMetaData), conn));
+            }
+          }
+
+          await this.persistInTransaction(destOps);
         } catch (error) {
           destMessage.setStatus(Status.ERROR);
           destMessage.setProcessingError(String(error));
+          const errorCode = destMessage.updateErrorCode();
           this.stats.error++;
-          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR));
-          await this.persistToDb(() => updateStatistics(this.id, i + 1, serverId, Status.ERROR));
 
-          // Persist PROCESSING_ERROR (ContentType=12)
-          await this.persistToDb(() => updateErrors(this.id, messageId, i + 1,
-            String(error), undefined, undefined));
+          // Error transaction: status + stats + error content + maps
+          const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
+            (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
+            (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
+            (conn) => updateErrors(this.id, messageId, i + 1,
+              String(error), undefined, errorCode, undefined, conn),
+          ];
 
-          // Persist destination maps even on error
           if (this.storageSettings.storeMaps) {
-            await this.persistToDb(() => updateMaps(this.id, messageId, i + 1,
-              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap()));
+            errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
+              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+          }
+
+          await this.persistInTransaction(errOps);
+        }
+      }
+
+      // Transaction 4: Finish — source response + merged maps + mark processed
+
+      // Select response from first successful destination and store as source RESPONSE
+      const txn4Ops: Array<(conn: PoolConnection) => Promise<void>> = [];
+
+      if (this.storageSettings.storeResponse) {
+        for (let i = 0; i < this.destinationConnectors.length; i++) {
+          const destMsg = message.getConnectorMessage(i + 1);
+          if (destMsg && destMsg.getStatus() === Status.SENT) {
+            const respContent = destMsg.getResponseContent();
+            if (respContent) {
+              sourceMessage.setContent({
+                contentType: ContentType.RESPONSE,
+                content: respContent.content,
+                dataType: respContent.dataType,
+                encrypted: false,
+              });
+              txn4Ops.push((conn) => storeContent(this.id, messageId, 0, ContentType.RESPONSE,
+                respContent.content, respContent.dataType, false, conn));
+              break;
+            }
           }
         }
       }
 
-      // Execute postprocessor
+      // Execute postprocessor (runs outside transaction — errors caught separately)
       if (this.postprocessorScript) {
         try {
           await this.executePostprocessor(message);
         } catch (postError) {
           sourceMessage.setPostProcessorError(String(postError));
+          const errorCode = sourceMessage.updateErrorCode();
           await this.persistToDb(() => updateErrors(this.id, messageId, 0,
-            undefined, String(postError), undefined));
+            undefined, String(postError), errorCode));
         }
       }
 
-      // Persist source maps
-      if (this.storageSettings.storeMaps) {
-        await this.persistToDb(() => updateMaps(this.id, messageId, 0,
-          sourceMessage.getConnectorMap(), sourceMessage.getChannelMap(), sourceMessage.getResponseMap()));
+      // Merged response map from all destinations
+      if (this.storageSettings.storeMergedResponseMap) {
+        const mergedMap = new Map<string, unknown>();
+        for (let i = 0; i < this.destinationConnectors.length; i++) {
+          const destMsg = message.getConnectorMessage(i + 1);
+          if (destMsg) {
+            for (const [k, v] of destMsg.getResponseMap()) {
+              mergedMap.set(k, v);
+            }
+          }
+        }
+        if (mergedMap.size > 0) {
+          txn4Ops.push((conn) => updateResponseMap(this.id, messageId, 0, mergedMap, conn));
+        }
       }
 
+      // Source maps
+      if (this.storageSettings.storeMaps) {
+        txn4Ops.push((conn) => updateMaps(this.id, messageId, 0,
+          sourceMessage.getConnectorMap(), sourceMessage.getChannelMap(), sourceMessage.getResponseMap(), conn));
+      }
+
+      // Mark processed
       message.setProcessed(true);
-      await this.persistToDb(() => updateMessageProcessed(this.id, messageId, true));
+      txn4Ops.push((conn) => updateMessageProcessed(this.id, messageId, true, conn));
+
+      // Content/attachment removal
+      if (this.storageSettings.removeContentOnCompletion) {
+        const shouldRemove = !this.storageSettings.removeOnlyFilteredOnCompletion ||
+          sourceMessage.getStatus() === Status.FILTERED;
+        if (shouldRemove) {
+          txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
+        }
+      }
+      if (this.storageSettings.removeAttachmentsOnCompletion) {
+        txn4Ops.push(async () => { await pruneMessageAttachments(this.id, [messageId]); });
+      }
+
+      await this.persistInTransaction(txn4Ops);
     } catch (error) {
       sourceMessage.setStatus(Status.ERROR);
       sourceMessage.setProcessingError(String(error));
+      const errorCode = sourceMessage.updateErrorCode();
       this.stats.error++;
-      await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR));
-      await this.persistToDb(() => updateStatistics(this.id, 0, serverId, Status.ERROR));
 
-      // Persist source PROCESSING_ERROR (ContentType=12)
-      await this.persistToDb(() => updateErrors(this.id, messageId, 0,
-        String(error), undefined, undefined));
+      await this.persistInTransaction([
+        (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR, conn),
+        (conn) => updateStatistics(this.id, 0, serverId, Status.ERROR, 1, conn),
+        (conn) => updateErrors(this.id, messageId, 0,
+          String(error), undefined, errorCode, undefined, conn),
+      ]);
     }
 
-    // Persist source map to D_MC table for cross-channel tracing
-    // SOURCE_MAP is always persisted regardless of storeMaps flag — it's needed for trace feature
+    // Final SOURCE_MAP upsert — captures enrichments from postprocessor/destinations
+    // Always persisted regardless of storeMaps flag — needed for trace feature
     const srcMap = sourceMessage.getSourceMap();
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
 
     return message;

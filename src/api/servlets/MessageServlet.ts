@@ -1708,7 +1708,8 @@ messageRouter.get(
           RESPONSE_MAP: 11,
           PROCESSING_ERROR: 12,
           POSTPROCESSOR_ERROR: 13,
-          SOURCE_MAP: 14,
+          RESPONSE_ERROR: 14,
+          SOURCE_MAP: 15,
         };
         contentTypeNum = contentTypeMap[contentTypeStr.toUpperCase()] ?? -1;
       }
@@ -1797,7 +1798,8 @@ messageRouter.put(
           RESPONSE_MAP: 11,
           PROCESSING_ERROR: 12,
           POSTPROCESSOR_ERROR: 13,
-          SOURCE_MAP: 14,
+          RESPONSE_ERROR: 14,
+          SOURCE_MAP: 15,
         };
         contentTypeNum = contentTypeMap[contentTypeStr.toUpperCase()] ?? -1;
       }
