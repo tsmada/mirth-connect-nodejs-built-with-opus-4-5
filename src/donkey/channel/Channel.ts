@@ -641,10 +641,11 @@ export class Channel extends EventEmitter {
     });
 
     // Set raw content
+    const sourceDataType = this.sourceConnector?.getInboundDataType() ?? 'RAW';
     sourceMessage.setContent({
       contentType: ContentType.RAW,
       content: rawData,
-      dataType: 'RAW', // Default; connector-specific types applied during serialization
+      dataType: sourceDataType,
       encrypted: false,
     });
 
@@ -668,7 +669,7 @@ export class Channel extends EventEmitter {
           sourceMessage.setContent({
             contentType: ContentType.RAW,
             content: modifiedContent,
-            dataType: 'RAW',
+            dataType: sourceDataType,
             encrypted: false,
           });
         }
@@ -678,18 +679,18 @@ export class Channel extends EventEmitter {
       }
     }
 
-    // Increment received counter as soon as message enters the pipeline
-    this.stats.received++;
-
     // Transaction 1: Source intake — persist message + source connector + raw content + stats
     await this.persistInTransaction([
       (conn) => insertMessage(this.id, messageId, serverId, messageData.receivedDate, conn),
       (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, undefined, conn),
       ...(this.storageSettings.storeRaw ? [
-        (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, 'RAW', false, conn),
+        (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, sourceDataType, false, conn),
       ] : []),
       (conn) => updateStatistics(this.id, 0, serverId, Status.RECEIVED, 1, conn),
     ]);
+
+    // Increment received counter after DB persist completes
+    this.stats.received++;
 
     // Source queue mode: persist raw + return immediately for background processing
     if (this.sourceConnector && !this.sourceConnector.getRespondAfterProcessing() && this.sourceQueue) {
@@ -707,13 +708,13 @@ export class Channel extends EventEmitter {
         sourceMessage.setContent({
           contentType: ContentType.PROCESSED_RAW,
           content: processedData,
-          dataType: 'RAW',
+          dataType: sourceDataType,
           encrypted: false,
         });
 
         // Persist PROCESSED_RAW content
         if (this.storageSettings.storeProcessedRaw) {
-          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, 'RAW', false));
+          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, sourceDataType, false));
         }
       }
 
@@ -1233,16 +1234,17 @@ export class Channel extends EventEmitter {
       // Execute preprocessor
       let processedData = rawData;
       if (this.preprocessorScript) {
+        const queueDataType = this.sourceConnector?.getInboundDataType() ?? 'RAW';
         processedData = await this.executePreprocessor(rawData, sourceMessage);
         sourceMessage.setContent({
           contentType: ContentType.PROCESSED_RAW,
           content: processedData,
-          dataType: 'RAW',
+          dataType: queueDataType,
           encrypted: false,
         });
 
         if (this.storageSettings.storeProcessedRaw) {
-          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, 'RAW', false));
+          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, queueDataType, false));
         }
       }
 
