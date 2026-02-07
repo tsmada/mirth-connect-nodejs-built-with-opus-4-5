@@ -66,6 +66,13 @@ export function getEncryptor(): Encryptor {
 }
 
 /**
+ * Check whether real encryption is enabled (i.e. the encryptor is NOT a NoOp).
+ */
+export function isEncryptionEnabled(): boolean {
+  return !(currentEncryptor instanceof NoOpEncryptor);
+}
+
+/**
  * Initialize encryptor from environment variables.
  */
 export function initEncryptorFromEnv(): void {

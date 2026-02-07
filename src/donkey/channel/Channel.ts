@@ -65,6 +65,7 @@ export interface ChannelConfig {
   undeployScript?: string;
   storageSettings?: StorageSettings;
   metaDataColumns?: MetaDataColumn[];
+  encryptData?: boolean;
 }
 
 /**
@@ -109,6 +110,9 @@ export class Channel extends EventEmitter {
   // Custom metadata column definitions (persisted to D_MCM tables)
   private metaDataColumns: MetaDataColumn[];
 
+  // Whether to encrypt content in D_MC tables (channel-level setting)
+  private encryptData: boolean = false;
+
   // JavaScript executor
   private executor: JavaScriptExecutor;
 
@@ -147,6 +151,7 @@ export class Channel extends EventEmitter {
     this.undeployScript = config.undeployScript;
     this.storageSettings = config.storageSettings ?? new StorageSettings();
     this.metaDataColumns = config.metaDataColumns ?? [];
+    this.encryptData = config.encryptData ?? false;
     this.executor = getDefaultExecutor();
   }
 
@@ -695,7 +700,7 @@ export class Channel extends EventEmitter {
       (conn) => insertMessage(this.id, messageId, serverId, messageData.receivedDate, conn),
       (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, sourceInsertOptions, conn),
       ...(this.storageSettings.storeRaw ? [
-        (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, sourceDataType, false, conn),
+        (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, sourceDataType, this.encryptData, conn),
       ] : []),
       (conn) => updateStatistics(this.id, 0, serverId, Status.RECEIVED, 1, conn),
     ]);
@@ -725,7 +730,7 @@ export class Channel extends EventEmitter {
 
         // Persist PROCESSED_RAW content
         if (this.storageSettings.storeProcessedRaw) {
-          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, sourceDataType, false));
+          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, sourceDataType, this.encryptData));
         }
       }
 
@@ -755,7 +760,7 @@ export class Channel extends EventEmitter {
           const transformedContent = sourceMessage.getTransformedContent();
           if (transformedContent) {
             txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
-              transformedContent.content, transformedContent.dataType, false, conn));
+              transformedContent.content, transformedContent.dataType, this.encryptData, conn));
           }
         }
 
@@ -763,16 +768,11 @@ export class Channel extends EventEmitter {
           const encodedContent = sourceMessage.getEncodedContent();
           if (encodedContent) {
             txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.ENCODED,
-              encodedContent.content, encodedContent.dataType, false, conn));
+              encodedContent.content, encodedContent.dataType, this.encryptData, conn));
           }
         }
 
-        // Write sourceMap early (will be upserted again at end via storeContent)
-        const srcMapEarly = sourceMessage.getSourceMap();
-        if (srcMapEarly.size > 0) {
-          txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP,
-            JSON.stringify(Object.fromEntries(srcMapEarly)), 'JSON', false, conn));
-        }
+        // sourceMap: no early INSERT — written once at end of pipeline (PC-MJM-001)
 
         // Custom metadata after source transformer
         if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
@@ -819,7 +819,7 @@ export class Channel extends EventEmitter {
             const destEncoded = destMessage.getEncodedContent();
             if (destEncoded) {
               await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.ENCODED,
-                destEncoded.content, destEncoded.dataType, false));
+                destEncoded.content, destEncoded.dataType, this.encryptData));
             }
           }
 
@@ -867,7 +867,7 @@ export class Channel extends EventEmitter {
             const sentData = destMessage.getEncodedContent();
             if (sentData) {
               destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.SENT,
-                sentData.content, sentData.dataType, false, conn));
+                sentData.content, sentData.dataType, this.encryptData, conn));
             }
           }
 
@@ -876,7 +876,7 @@ export class Channel extends EventEmitter {
             const respContent = destMessage.getResponseContent();
             if (respContent) {
               destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, false, conn));
+                respContent.content, respContent.dataType, this.encryptData, conn));
             }
 
             // Persist RESPONSE_TRANSFORMED content (ContentType=7)
@@ -884,7 +884,7 @@ export class Channel extends EventEmitter {
               const responseTransformed = destMessage.getContent(ContentType.RESPONSE_TRANSFORMED);
               if (responseTransformed) {
                 destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE_TRANSFORMED,
-                  responseTransformed.content, responseTransformed.dataType, false, conn));
+                  responseTransformed.content, responseTransformed.dataType, this.encryptData, conn));
               }
             }
 
@@ -893,7 +893,7 @@ export class Channel extends EventEmitter {
               const processedResponse = destMessage.getContent(ContentType.PROCESSED_RESPONSE);
               if (processedResponse) {
                 destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.PROCESSED_RESPONSE,
-                  processedResponse.content, processedResponse.dataType, false, conn));
+                  processedResponse.content, processedResponse.dataType, this.encryptData, conn));
               }
             }
           }
@@ -974,7 +974,7 @@ export class Channel extends EventEmitter {
                 encrypted: false,
               });
               txn4Ops.push((conn) => storeContent(this.id, messageId, 0, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, false, conn));
+                respContent.content, respContent.dataType, this.encryptData, conn));
               break;
             }
           }
@@ -1082,12 +1082,12 @@ export class Channel extends EventEmitter {
       ]);
     }
 
-    // Final SOURCE_MAP upsert — captures enrichments from postprocessor/destinations
+    // Final SOURCE_MAP write — single INSERT (no early write to upsert over)
     // Always persisted regardless of storeMaps flag — needed for trace feature
     const srcMap = sourceMessage.getSourceMap();
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
 
     return message;
@@ -1269,7 +1269,7 @@ export class Channel extends EventEmitter {
         });
 
         if (this.storageSettings.storeProcessedRaw) {
-          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, queueDataType, false));
+          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, queueDataType, this.encryptData));
         }
       }
 
@@ -1299,7 +1299,7 @@ export class Channel extends EventEmitter {
           const transformedContent = sourceMessage.getTransformedContent();
           if (transformedContent) {
             txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
-              transformedContent.content, transformedContent.dataType, false, conn));
+              transformedContent.content, transformedContent.dataType, this.encryptData, conn));
           }
         }
 
@@ -1307,15 +1307,11 @@ export class Channel extends EventEmitter {
           const encodedContent = sourceMessage.getEncodedContent();
           if (encodedContent) {
             txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.ENCODED,
-              encodedContent.content, encodedContent.dataType, false, conn));
+              encodedContent.content, encodedContent.dataType, this.encryptData, conn));
           }
         }
 
-        const srcMapEarly = sourceMessage.getSourceMap();
-        if (srcMapEarly.size > 0) {
-          txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP,
-            JSON.stringify(Object.fromEntries(srcMapEarly)), 'JSON', false, conn));
-        }
+        // sourceMap: no early INSERT — written once at end of pipeline (PC-MJM-001)
 
         if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
           const metaData = setMetaDataMap(sourceMessage, this.metaDataColumns);
@@ -1357,7 +1353,7 @@ export class Channel extends EventEmitter {
             const destEncoded = destMessage.getEncodedContent();
             if (destEncoded) {
               await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.ENCODED,
-                destEncoded.content, destEncoded.dataType, false));
+                destEncoded.content, destEncoded.dataType, this.encryptData));
             }
           }
 
@@ -1400,7 +1396,7 @@ export class Channel extends EventEmitter {
             const sentData = destMessage.getEncodedContent();
             if (sentData) {
               destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.SENT,
-                sentData.content, sentData.dataType, false, conn));
+                sentData.content, sentData.dataType, this.encryptData, conn));
             }
           }
 
@@ -1408,20 +1404,20 @@ export class Channel extends EventEmitter {
             const respContent = destMessage.getResponseContent();
             if (respContent) {
               destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, false, conn));
+                respContent.content, respContent.dataType, this.encryptData, conn));
             }
             if (this.storageSettings.storeResponseTransformed) {
               const responseTransformed = destMessage.getContent(ContentType.RESPONSE_TRANSFORMED);
               if (responseTransformed) {
                 destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE_TRANSFORMED,
-                  responseTransformed.content, responseTransformed.dataType, false, conn));
+                  responseTransformed.content, responseTransformed.dataType, this.encryptData, conn));
               }
             }
             if (this.storageSettings.storeProcessedResponse) {
               const processedResponse = destMessage.getContent(ContentType.PROCESSED_RESPONSE);
               if (processedResponse) {
                 destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.PROCESSED_RESPONSE,
-                  processedResponse.content, processedResponse.dataType, false, conn));
+                  processedResponse.content, processedResponse.dataType, this.encryptData, conn));
               }
             }
           }
@@ -1496,7 +1492,7 @@ export class Channel extends EventEmitter {
                 encrypted: false,
               });
               txn4Ops.push((conn) => storeContent(this.id, messageId, 0, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, false, conn));
+                respContent.content, respContent.dataType, this.encryptData, conn));
               break;
             }
           }
@@ -1576,11 +1572,11 @@ export class Channel extends EventEmitter {
       ]);
     }
 
-    // Final SOURCE_MAP upsert
+    // Final SOURCE_MAP write — single INSERT (no early write to upsert over)
     const srcMap = sourceMessage.getSourceMap();
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
   }
 }

@@ -16,7 +16,7 @@ import { RowDataPacket, Pool, PoolConnection } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
 import { Status, parseStatus } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
-import { getEncryptor } from './Encryptor.js';
+import { getEncryptor, isEncryptionEnabled } from './Encryptor.js';
 
 export type DbConnection = Pool | PoolConnection;
 
@@ -439,12 +439,23 @@ export async function insertContent(
   encrypted: boolean,
   conn?: DbConnection
 ): Promise<void> {
+  let finalContent = content;
+  let finalEncrypted = encrypted;
+
+  // Encrypt content if requested and encryption is configured
+  if (encrypted && isEncryptionEnabled()) {
+    finalContent = getEncryptor().encrypt(content);
+  } else if (encrypted && !isEncryptionEnabled()) {
+    // No encryptor configured — store as plaintext
+    finalEncrypted = false;
+  }
+
   const db = conn ?? getPool();
   await db.execute(
     `INSERT INTO ${contentTable(channelId)}
      (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [messageId, metaDataId, contentType, content, dataType, encrypted ? 1 : 0]
+    [messageId, metaDataId, contentType, finalContent, dataType, finalEncrypted ? 1 : 0]
   );
 }
 
@@ -465,15 +476,31 @@ export async function storeContent(
   encrypted: boolean,
   conn?: DbConnection
 ): Promise<void> {
+  let finalContent = content;
+  let finalEncrypted = encrypted;
+
+  // Encrypt content if requested and encryption is configured
+  if (encrypted && isEncryptionEnabled()) {
+    finalContent = getEncryptor().encrypt(content);
+  } else if (encrypted && !isEncryptionEnabled()) {
+    finalEncrypted = false;
+  }
+
   const db = conn ?? getPool();
   const [result] = await db.execute(
     `UPDATE ${contentTable(channelId)}
      SET CONTENT = ?, DATA_TYPE = ?, IS_ENCRYPTED = ?
      WHERE METADATA_ID = ? AND MESSAGE_ID = ? AND CONTENT_TYPE = ?`,
-    [content, dataType, encrypted ? 1 : 0, metaDataId, messageId, contentType]
+    [finalContent, dataType, finalEncrypted ? 1 : 0, metaDataId, messageId, contentType]
   );
   if ((result as { affectedRows: number }).affectedRows === 0) {
-    await insertContent(channelId, messageId, metaDataId, contentType, content, dataType, encrypted, conn);
+    // Pass already-encrypted content with finalEncrypted=false to avoid double encryption in insertContent
+    await db.execute(
+      `INSERT INTO ${contentTable(channelId)}
+       (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [messageId, metaDataId, contentType, finalContent, dataType, finalEncrypted ? 1 : 0]
+    );
   }
 }
 

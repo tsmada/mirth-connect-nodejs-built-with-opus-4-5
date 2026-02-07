@@ -45,6 +45,10 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     mappingName: col.mappingName,
   }));
 
+  // Extract encryptData from channel properties
+  const encryptData = channelProps?.encryptData === true ||
+    String(channelProps?.encryptData) === 'true';
+
   // Create channel with basic config
   const config: ChannelConfig = {
     id: channelConfig.id,
@@ -57,6 +61,7 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     undeployScript: channelConfig.undeployScript,
     storageSettings,
     metaDataColumns,
+    encryptData,
   };
 
   const channel = new Channel(config);
