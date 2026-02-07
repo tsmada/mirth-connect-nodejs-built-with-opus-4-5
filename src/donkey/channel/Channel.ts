@@ -19,6 +19,8 @@ import { Status } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
 import { SourceConnector } from './SourceConnector.js';
 import { DestinationConnector } from './DestinationConnector.js';
+import { SourceQueue } from '../queue/SourceQueue.js';
+import { ConnectorMessageQueueDataSource } from '../queue/ConnectorMessageQueue.js';
 import {
   JavaScriptExecutor,
   getDefaultExecutor,
@@ -127,6 +129,11 @@ export class Channel extends EventEmitter {
     filtered: 0,
     queued: 0,
   };
+
+  // Source queue for async processing mode (respondAfterProcessing=false)
+  private sourceQueue: SourceQueue | null = null;
+  private sourceQueueAbortController: AbortController | null = null;
+  private sourceQueuePromise: Promise<void> | null = null;
 
   constructor(config: ChannelConfig) {
     super(); // Initialize EventEmitter
@@ -366,6 +373,17 @@ export class Channel extends EventEmitter {
       if (this.sourceConnector) {
         await this.sourceConnector.start();
         startedConnectors.push(this.sourceConnector);
+
+        // Start source queue processing if in async mode
+        if (!this.sourceConnector.getRespondAfterProcessing()) {
+          this.sourceQueue = new SourceQueue();
+          // Provide an in-memory data source so the queue's size tracking works.
+          // setDataSource calls invalidate(), so we fillBuffer() to clear that state
+          // and initialize size to 0 before any add() calls.
+          this.sourceQueue.setDataSource(this.createInMemoryQueueDataSource());
+          this.sourceQueue.fillBuffer();
+          this.startSourceQueueProcessing();
+        }
       }
 
       this.updateCurrentState(DeployedState.STARTED);
@@ -409,6 +427,10 @@ export class Channel extends EventEmitter {
 
     try {
       this.updateCurrentState(DeployedState.STOPPING);
+
+      // Stop source queue processing before stopping source connector
+      await this.stopSourceQueueProcessing();
+      this.sourceQueue = null;
 
       // Stop source connector first (stop receiving new messages)
       if (this.sourceConnector) {
@@ -668,6 +690,14 @@ export class Channel extends EventEmitter {
       ] : []),
       (conn) => updateStatistics(this.id, 0, serverId, Status.RECEIVED, 1, conn),
     ]);
+
+    // Source queue mode: persist raw + return immediately for background processing
+    if (this.sourceConnector && !this.sourceConnector.getRespondAfterProcessing() && this.sourceQueue) {
+      sourceMessage.getSourceMap().set('__rawData', rawData);
+      this.sourceQueue.add(sourceMessage);
+      message.setProcessed(false);
+      return message;
+    }
 
     try {
       // Execute preprocessor
@@ -1100,6 +1130,392 @@ export class Channel extends EventEmitter {
 
     if (!result.success) {
       throw result.error ?? new Error('Postprocessor script failed');
+    }
+  }
+
+  // ---------- Source Queue Background Processing ----------
+
+  /**
+   * Create an in-memory data source for the source queue.
+   * Returns size 0 and empty items — the queue is purely in-memory via add().
+   */
+  private createInMemoryQueueDataSource(): ConnectorMessageQueueDataSource {
+    return {
+      getChannelId: () => this.id,
+      getMetaDataId: () => 0,
+      getSize: () => 0,
+      getItems: () => new Map(),
+      isQueueRotated: () => false,
+      setLastItem: () => {},
+      rotateQueue: () => {},
+      getRotateThreadMap: () => new Map(),
+    };
+  }
+
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(new Error('aborted')); return; }
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')); }, { once: true });
+    });
+  }
+
+  /**
+   * Start the source queue background processing loop.
+   * Ported from Java Channel.java lines 1836-1881.
+   */
+  private startSourceQueueProcessing(): void {
+    if (!this.sourceQueue) return;
+    this.sourceQueueAbortController = new AbortController();
+    this.sourceQueuePromise = this.runSourceQueueLoop(this.sourceQueueAbortController.signal);
+  }
+
+  private async stopSourceQueueProcessing(): Promise<void> {
+    if (this.sourceQueueAbortController) {
+      this.sourceQueueAbortController.abort();
+      try {
+        await this.sourceQueuePromise;
+      } catch {
+        // Expected abort
+      }
+      this.sourceQueueAbortController = null;
+      this.sourceQueuePromise = null;
+    }
+  }
+
+  private async runSourceQueueLoop(signal: AbortSignal): Promise<void> {
+    while (!signal.aborted) {
+      try {
+        const connectorMessage = this.sourceQueue?.poll() ?? null;
+
+        if (!connectorMessage) {
+          await this.sleep(100, signal);
+          continue;
+        }
+
+        const rawData = (connectorMessage.getSourceMap().get('__rawData') as string) ??
+                         connectorMessage.getRawContent()?.content ?? '';
+
+        await this.processFromSourceQueue(connectorMessage, rawData);
+
+      } catch (error) {
+        if (signal.aborted) break;
+        console.error(`[${this.name}] Source queue processing error: ${error}`);
+      }
+    }
+  }
+
+  /**
+   * Process a message that was dequeued from the source queue.
+   * Runs the remaining pipeline steps: preprocessor -> filter/transform -> destinations -> postprocessor.
+   */
+  private async processFromSourceQueue(
+    sourceMessage: ConnectorMessage,
+    rawData: string,
+  ): Promise<void> {
+    const messageId = sourceMessage.getMessageId();
+    const serverId = this.serverId;
+
+    // Reconstruct Message wrapper
+    const message = new Message({
+      messageId,
+      serverId,
+      channelId: this.id,
+      receivedDate: sourceMessage.getReceivedDate(),
+      processed: false,
+    });
+    message.setConnectorMessage(0, sourceMessage);
+
+    // Clean up the internal marker from sourceMap
+    sourceMessage.getSourceMap().delete('__rawData');
+
+    try {
+      // Execute preprocessor
+      let processedData = rawData;
+      if (this.preprocessorScript) {
+        processedData = await this.executePreprocessor(rawData, sourceMessage);
+        sourceMessage.setContent({
+          contentType: ContentType.PROCESSED_RAW,
+          content: processedData,
+          dataType: 'RAW',
+          encrypted: false,
+        });
+
+        if (this.storageSettings.storeProcessedRaw) {
+          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, 'RAW', false));
+        }
+      }
+
+      // Execute source filter/transformer
+      if (this.sourceConnector) {
+        const filtered = await this.sourceConnector.executeFilter(sourceMessage);
+        if (filtered) {
+          sourceMessage.setStatus(Status.FILTERED);
+          this.stats.filtered++;
+          await this.persistInTransaction([
+            (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.FILTERED, conn),
+            (conn) => updateStatistics(this.id, 0, serverId, Status.FILTERED, 1, conn),
+          ]);
+          message.setProcessed(true);
+          await this.persistToDb(() => updateMessageProcessed(this.id, messageId, true));
+          return;
+        }
+
+        await this.sourceConnector.executeTransformer(sourceMessage);
+        sourceMessage.setStatus(Status.TRANSFORMED);
+
+        const txn2Ops: Array<(conn: PoolConnection) => Promise<void>> = [
+          (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.TRANSFORMED, conn),
+        ];
+
+        if (this.storageSettings.storeTransformed) {
+          const transformedContent = sourceMessage.getTransformedContent();
+          if (transformedContent) {
+            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
+              transformedContent.content, transformedContent.dataType, false, conn));
+          }
+        }
+
+        if (this.storageSettings.storeSourceEncoded) {
+          const encodedContent = sourceMessage.getEncodedContent();
+          if (encodedContent) {
+            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.ENCODED,
+              encodedContent.content, encodedContent.dataType, false, conn));
+          }
+        }
+
+        const srcMapEarly = sourceMessage.getSourceMap();
+        if (srcMapEarly.size > 0) {
+          txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP,
+            JSON.stringify(Object.fromEntries(srcMapEarly)), 'JSON', false, conn));
+        }
+
+        if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
+          const metaData = setMetaDataMap(sourceMessage, this.metaDataColumns);
+          if (metaData.size > 0) {
+            txn2Ops.push((conn) => insertCustomMetaData(this.id, messageId, 0, Object.fromEntries(metaData), conn));
+          }
+        }
+
+        await this.persistInTransaction(txn2Ops);
+      }
+
+      // Dispatch to destinations
+      for (let i = 0; i < this.destinationConnectors.length; i++) {
+        const dest = this.destinationConnectors[i];
+        if (!dest) continue;
+
+        const destMessage = sourceMessage.clone(i + 1, dest.getName());
+        message.setConnectorMessage(i + 1, destMessage);
+
+        await this.persistToDb(() => insertConnectorMessage(this.id, messageId, i + 1, dest.getName(), destMessage.getReceivedDate(), Status.RECEIVED));
+
+        try {
+          const filtered = await dest.executeFilter(destMessage);
+          if (filtered) {
+            destMessage.setStatus(Status.FILTERED);
+            this.stats.filtered++;
+            await this.persistInTransaction([
+              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
+              (conn) => updateStatistics(this.id, i + 1, serverId, Status.FILTERED, 1, conn),
+            ]);
+            continue;
+          }
+
+          await dest.executeTransformer(destMessage);
+          destMessage.setStatus(Status.TRANSFORMED);
+          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED));
+
+          if (this.storageSettings.storeDestinationEncoded) {
+            const destEncoded = destMessage.getEncodedContent();
+            if (destEncoded) {
+              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.ENCODED,
+                destEncoded.content, destEncoded.dataType, false));
+            }
+          }
+
+          destMessage.incrementSendAttempts();
+          await dest.send(destMessage);
+          const sendDate = new Date();
+          destMessage.setStatus(Status.SENT);
+          destMessage.setSendDate(sendDate);
+          this.stats.sent++;
+
+          if (this.storageSettings.storeResponse) {
+            const responseData = await dest.getResponse(destMessage);
+            if (responseData) {
+              destMessage.setContent({
+                contentType: ContentType.RESPONSE,
+                content: responseData,
+                dataType: 'RAW',
+                encrypted: false,
+              });
+              destMessage.setResponseDate(new Date());
+              await dest.executeResponseTransformer(destMessage);
+            }
+          }
+
+          const destOps: Array<(conn: PoolConnection) => Promise<void>> = [
+            (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.SENT, conn),
+            (conn) => updateStatistics(this.id, i + 1, serverId, Status.SENT, 1, conn),
+          ];
+
+          if (this.storageSettings.storeSent) {
+            const sentData = destMessage.getEncodedContent();
+            if (sentData) {
+              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.SENT,
+                sentData.content, sentData.dataType, false, conn));
+            }
+          }
+
+          if (this.storageSettings.storeResponse) {
+            const respContent = destMessage.getResponseContent();
+            if (respContent) {
+              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE,
+                respContent.content, respContent.dataType, false, conn));
+            }
+            if (this.storageSettings.storeResponseTransformed) {
+              const responseTransformed = destMessage.getContent(ContentType.RESPONSE_TRANSFORMED);
+              if (responseTransformed) {
+                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE_TRANSFORMED,
+                  responseTransformed.content, responseTransformed.dataType, false, conn));
+              }
+            }
+            if (this.storageSettings.storeProcessedResponse) {
+              const processedResponse = destMessage.getContent(ContentType.PROCESSED_RESPONSE);
+              if (processedResponse) {
+                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.PROCESSED_RESPONSE,
+                  processedResponse.content, processedResponse.dataType, false, conn));
+              }
+            }
+          }
+
+          destOps.push((conn) => updateSendAttempts(this.id, messageId, i + 1,
+            destMessage.getSendAttempts(), sendDate, destMessage.getResponseDate(), conn));
+
+          if (this.storageSettings.storeMaps) {
+            destOps.push((conn) => updateMaps(this.id, messageId, i + 1,
+              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+          }
+
+          if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
+            const destMetaData = setMetaDataMap(destMessage, this.metaDataColumns);
+            if (destMetaData.size > 0) {
+              destOps.push((conn) => insertCustomMetaData(this.id, messageId, i + 1, Object.fromEntries(destMetaData), conn));
+            }
+          }
+
+          await this.persistInTransaction(destOps);
+        } catch (error) {
+          destMessage.setStatus(Status.ERROR);
+          destMessage.setProcessingError(String(error));
+          const errorCode = destMessage.updateErrorCode();
+          this.stats.error++;
+
+          const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
+            (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
+            (conn) => updateStatistics(this.id, i + 1, serverId, Status.ERROR, 1, conn),
+            (conn) => updateErrors(this.id, messageId, i + 1,
+              String(error), undefined, errorCode, undefined, conn),
+          ];
+
+          if (this.storageSettings.storeMaps) {
+            errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
+              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+          }
+
+          await this.persistInTransaction(errOps);
+        }
+      }
+
+      // Finish: source response + merged maps + mark processed
+      const txn4Ops: Array<(conn: PoolConnection) => Promise<void>> = [];
+
+      if (this.storageSettings.storeResponse) {
+        for (let i = 0; i < this.destinationConnectors.length; i++) {
+          const destMsg = message.getConnectorMessage(i + 1);
+          if (destMsg && destMsg.getStatus() === Status.SENT) {
+            const respContent = destMsg.getResponseContent();
+            if (respContent) {
+              sourceMessage.setContent({
+                contentType: ContentType.RESPONSE,
+                content: respContent.content,
+                dataType: respContent.dataType,
+                encrypted: false,
+              });
+              txn4Ops.push((conn) => storeContent(this.id, messageId, 0, ContentType.RESPONSE,
+                respContent.content, respContent.dataType, false, conn));
+              break;
+            }
+          }
+        }
+      }
+
+      if (this.postprocessorScript) {
+        try {
+          await this.executePostprocessor(message);
+        } catch (postError) {
+          sourceMessage.setPostProcessorError(String(postError));
+          const errorCode = sourceMessage.updateErrorCode();
+          await this.persistToDb(() => updateErrors(this.id, messageId, 0,
+            undefined, String(postError), errorCode));
+        }
+      }
+
+      if (this.storageSettings.storeMergedResponseMap) {
+        const mergedMap = new Map<string, unknown>();
+        for (let i = 0; i < this.destinationConnectors.length; i++) {
+          const destMsg = message.getConnectorMessage(i + 1);
+          if (destMsg) {
+            for (const [k, v] of destMsg.getResponseMap()) {
+              mergedMap.set(k, v);
+            }
+          }
+        }
+        if (mergedMap.size > 0) {
+          txn4Ops.push((conn) => updateResponseMap(this.id, messageId, 0, mergedMap, conn));
+        }
+      }
+
+      if (this.storageSettings.storeMaps) {
+        txn4Ops.push((conn) => updateMaps(this.id, messageId, 0,
+          sourceMessage.getConnectorMap(), sourceMessage.getChannelMap(), sourceMessage.getResponseMap(), conn));
+      }
+
+      message.setProcessed(true);
+      txn4Ops.push((conn) => updateMessageProcessed(this.id, messageId, true, conn));
+
+      if (this.storageSettings.removeContentOnCompletion) {
+        const shouldRemove = !this.storageSettings.removeOnlyFilteredOnCompletion ||
+          sourceMessage.getStatus() === Status.FILTERED;
+        if (shouldRemove) {
+          txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
+        }
+      }
+      if (this.storageSettings.removeAttachmentsOnCompletion) {
+        txn4Ops.push(async () => { await pruneMessageAttachments(this.id, [messageId]); });
+      }
+
+      await this.persistInTransaction(txn4Ops);
+    } catch (error) {
+      sourceMessage.setStatus(Status.ERROR);
+      sourceMessage.setProcessingError(String(error));
+      const errorCode = sourceMessage.updateErrorCode();
+      this.stats.error++;
+
+      await this.persistInTransaction([
+        (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR, conn),
+        (conn) => updateStatistics(this.id, 0, serverId, Status.ERROR, 1, conn),
+        (conn) => updateErrors(this.id, messageId, 0,
+          String(error), undefined, errorCode, undefined, conn),
+      ]);
+    }
+
+    // Final SOURCE_MAP upsert
+    const srcMap = sourceMessage.getSourceMap();
+    if (srcMap.size > 0) {
+      const mapObj = Object.fromEntries(srcMap);
+      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
   }
 }
