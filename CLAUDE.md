@@ -9,6 +9,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 - **Connectors**: Protocol implementations in `src/connectors/`
 - **JavaScript Runtime**: E4X transpilation in `src/javascript/`
 - **REST API**: Express-based in `src/api/`
+- **Cluster**: Horizontal scaling in `src/cluster/`
 - **CLI Tool**: Terminal monitor utility in `src/cli/`
 
 ### REST API Servlets (Implemented)
@@ -29,6 +30,8 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 | System | SystemServlet.ts | System info/stats |
 | Usage | UsageServlet.ts | Usage data reporting |
 | Trace | TraceServlet.ts | Cross-channel message tracing (Node.js-only) |
+| Cluster | ClusterServlet.ts | Cluster status, node list (Node.js-only) |
+| Internal | RemoteDispatcher.ts | Inter-instance message forwarding (cluster-only) |
 
 ### CLI Monitor Utility (`src/cli/`)
 
@@ -236,6 +239,114 @@ The trace feature uses VM Connector chain-tracking data (`sourceChannelIds[]`, `
 
 **Fixed**: The Node.js port originally omitted `RESPONSE_ERROR` entirely and assigned `SOURCE_MAP = 14`. Java Mirth defines `RESPONSE_ERROR = 14` and `SOURCE_MAP = 15`. This caused data corruption in takeover mode: Java's RESPONSE_ERROR rows (content type 14 in `D_MC`) were misread as SOURCE_MAP data. All content type definitions — `src/model/ContentType.ts`, `src/api/models/MessageFilter.ts`, and the inline maps in `MessageServlet.ts` — now include `RESPONSE_ERROR = 14` and `SOURCE_MAP = 15`, matching Java Mirth exactly.
 
+### Horizontal Scaling (Container-Native Clustering)
+
+**This is a Node.js-only feature with no Java Mirth equivalent.** It provides container-native horizontal scaling.
+
+#### How It Differs from Java Mirth Clustering
+
+Java Mirth has a separate **Clustering Plugin** (commercial add-on) that:
+- Stores `server.id` in the `CONFIGURATION` table (key: `server.id`, category: `core`)
+- Uses JGroups for inter-node communication and cluster discovery
+- Requires a license key for the clustering extension
+- Manages node membership via the `D_CONFIGURATION` or plugin-specific tables
+- Coordinates via TCP/UDP multicast (JGroups protocol stack)
+
+Node.js Mirth uses a **container-native** approach:
+- Stores server identity in `MIRTH_SERVER_ID` environment variable (or auto-generated UUID)
+- Uses database polling (D_CLUSTER_EVENTS) or Redis pub/sub for inter-node communication
+- Requires no license — clustering is built into the core engine
+- Manages node membership via the `D_SERVERS` table with heartbeat
+- Coordinates via HTTP (internal API) or database polling — no multicast required
+
+#### Takeover Mode Clustering Considerations (CRITICAL)
+
+When running Node.js Mirth in **takeover mode** against a database that also serves Java Mirth instances:
+
+1. **SERVER_ID Collision**: Java Mirth's clustering plugin stores `server.id` in the `CONFIGURATION` table. Node.js Mirth uses `MIRTH_SERVER_ID` env var (stored in `D_SERVERS`). These are **separate namespaces** — no collision risk. However, both systems write `SERVER_ID` into `D_M` and `D_MM` message tables, so ensure they use **different** UUIDs.
+
+2. **D_SERVERS Table**: This table is **Node.js-only**. Java Mirth does not read or write it. It is safe to have `D_SERVERS` in a shared database — Java Mirth ignores unknown tables.
+
+3. **D_CLUSTER_EVENTS Table**: Also Node.js-only. Java Mirth's clustering plugin uses JGroups, not database events. Safe in shared database.
+
+4. **D_CHANNEL_DEPLOYMENTS Table**: Node.js-only. Java Mirth tracks deployments differently (in-memory via the clustering plugin's JGroups state transfer).
+
+5. **D_GLOBAL_MAP Table**: Node.js-only. Java Mirth stores global map data in-memory (or via its own clustering plugin mechanism with JGroups replication). The D_GLOBAL_MAP table is used by Node.js for database-backed GlobalMap persistence.
+
+6. **Message Recovery**: The critical fix — `RecoveryTask` now filters by `SERVER_ID`. Without this, a Node.js instance would recover Java Mirth's in-flight messages (and vice versa), causing duplicate processing and data corruption.
+
+7. **Statistics Aggregation**: `D_MS` tables now have per-node rows keyed by `(METADATA_ID, SERVER_ID)`. The `/api/system/cluster/statistics` endpoint sums across all nodes for accurate cross-instance totals.
+
+8. **Sequence IDs**: Both Java and Node.js use `D_MSQ` with `FOR UPDATE` row locks. The `SequenceAllocator` pre-allocates blocks to reduce contention, but this is compatible with Java Mirth's single-lock approach — block gaps are harmless.
+
+#### Future Java Clustering Plugin Integration
+
+If you need to integrate with Java Mirth's clustering plugin in takeover mode:
+
+1. **Read Java's `server.id`**: Query `SELECT VALUE FROM CONFIGURATION WHERE CATEGORY = 'core' AND NAME = 'server.id'` to discover the Java instance's SERVER_ID.
+2. **Avoid duplicate channel deployment**: If Java Mirth is processing channels, the Node.js instance should skip those channels (or accept that both will process messages on the same channel with different SERVER_IDs — the LB routes messages, so no duplicates if properly configured).
+3. **JGroups compatibility**: Not planned. Node.js cannot join a JGroups cluster. The hybrid model requires the external LB to route traffic appropriately to Java vs Node.js instances.
+4. **Shared GlobalMap**: Java Mirth's clustering plugin replicates GlobalMap via JGroups. Node.js uses D_GLOBAL_MAP or Redis. In hybrid mode, global map state will **not** be shared between Java and Node.js instances unless both read from the same database table.
+
+#### Cluster Module Architecture
+
+```
+src/cluster/
+├── ClusterIdentity.ts      # SERVER_ID: MIRTH_SERVER_ID env or crypto.randomUUID()
+├── ClusterConfig.ts         # Central config from env vars (8 variables with defaults)
+├── ServerRegistry.ts        # D_SERVERS heartbeat + node tracking
+├── SequenceAllocator.ts     # Block-allocated message IDs (100 per block default)
+├── HealthCheck.ts           # K8s/ECS/CloudRun probe endpoints (readiness, liveness, startup)
+├── MapBackend.ts            # Pluggable storage: InMemory, Database (D_GLOBAL_MAP), Redis
+├── ChannelRegistry.ts       # D_CHANNEL_DEPLOYMENTS tracking
+├── RemoteDispatcher.ts      # POST /api/internal/dispatch (inter-instance forwarding)
+├── EventBus.ts              # Pub/sub: Local, DatabasePolling, Redis implementations
+└── index.ts                 # Barrel re-exports
+```
+
+#### Cluster Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIRTH_SERVER_ID` | auto UUID | Unique container instance identifier |
+| `MIRTH_CLUSTER_ENABLED` | `false` | Enable cluster-aware behavior |
+| `MIRTH_CLUSTER_REDIS_URL` | (none) | Redis URL for maps + events (optional) |
+| `MIRTH_CLUSTER_SECRET` | (none) | Inter-instance API auth secret |
+| `MIRTH_CLUSTER_HEARTBEAT_INTERVAL` | `10000` | Heartbeat interval (ms) |
+| `MIRTH_CLUSTER_HEARTBEAT_TIMEOUT` | `30000` | Instance suspect threshold (ms) |
+| `MIRTH_CLUSTER_SEQUENCE_BLOCK` | `100` | Sequence block pre-allocation size |
+| `MIRTH_MODE` | `auto` | Operational mode: `takeover`/`standalone`/`auto` |
+
+#### Health Check Endpoints (No Auth Required)
+
+| Endpoint | Purpose | Returns |
+|----------|---------|---------|
+| `GET /api/health` | Readiness probe (LB routing) | 200 when ready, 503 during shutdown |
+| `GET /api/health/live` | Liveness probe (restart policy) | Always 200 |
+| `GET /api/health/startup` | Startup probe (slow-start) | 200 after channels deployed |
+| `GET /api/health/channels/:channelId` | Channel-specific health | 200 if channel STARTED |
+
+These map to standard orchestrator probe patterns: K8s `readinessProbe`/`livenessProbe`/`startupProbe`, ECS health checks, Cloud Run startup checks, etc.
+
+#### Cluster API Endpoints (Auth Required)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/system/cluster/status` | GET | All instances with deployed channels |
+| `/api/system/cluster/nodes` | GET | Node list without channel details |
+| `/api/system/cluster/statistics` | GET | Cross-instance aggregated statistics |
+| `/api/internal/dispatch` | POST | Inter-instance message forwarding (cluster secret auth) |
+
+#### Graceful Shutdown Sequence
+
+When the container receives SIGTERM:
+1. Health check returns 503 (LB stops routing new connections)
+2. In-flight messages drain (current pipeline completes)
+3. Server heartbeat stops
+4. Server deregisters from D_SERVERS (status → OFFLINE)
+5. Database pool closes
+6. Process exits 0
+
 ### Cross-Channel Message Trace (`mirth-cli trace`)
 
 Traces a message across VM-connected channels (Channel Writer/Reader), showing the complete journey from source to final destination(s).
@@ -338,13 +449,21 @@ await ensureChannelTables(channelId);  // Creates D_M, D_MM, D_MC, D_MA, D_MS, D
 - `CODE_TEMPLATE`, `CODE_TEMPLATE_LIBRARY`, `CHANNEL_GROUP`, `SCRIPT`
 - `SCHEMA_INFO` (version tracking), `D_CHANNELS` (channel ID mapping)
 
+**Cluster Tables** (Node.js-only, created in standalone mode or auto-created when cluster enabled):
+- `D_SERVERS` - Cluster node registry with heartbeat tracking
+- `D_CHANNEL_DEPLOYMENTS` - Which channels are deployed on which instances
+- `D_CLUSTER_EVENTS` - Polling-based event bus for inter-node communication
+- `D_GLOBAL_MAP` - Shared global/channel map storage for clustered mode
+
+**Note**: These tables are safe to have in a shared Java+Node.js database — Java Mirth ignores unknown tables. They are NOT related to Java Mirth's clustering plugin tables (which stores cluster state in `CONFIGURATION` and uses JGroups for communication).
+
 **Per-Channel Tables** (auto-created on deploy):
-- `D_M{id}` - Messages
-- `D_MM{id}` - Message metadata
+- `D_M{id}` - Messages (includes `SERVER_ID` column for node ownership)
+- `D_MM{id}` - Message metadata (includes `SERVER_ID` column)
 - `D_MC{id}` - Message content
 - `D_MA{id}` - Message attachments
-- `D_MS{id}` - Message statistics
-- `D_MSQ{id}` - Message sequence
+- `D_MS{id}` - Message statistics (keyed by `METADATA_ID, SERVER_ID` for per-node tracking)
+- `D_MSQ{id}` - Message sequence (row-locked for ID generation)
 - `D_MCM{id}` - Custom metadata (user-defined fields)
 
 ## Validation Requirements
@@ -1289,6 +1408,8 @@ All Waves 1-6 are complete. The porting project has reached production-ready sta
 - Additional servlet test coverage
 - Performance optimization for high-volume channels
 - Kubernetes deployment manifests
+- Redis-backed EventBus and MapBackend (requires ioredis dependency)
+- Java Mirth clustering plugin interop (JGroups state reading, not joining)
 
 ---
 
