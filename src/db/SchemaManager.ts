@@ -9,7 +9,7 @@
  * Reference: ~/Projects/connect/server/dbconf/mysql/mysql-database.sql
  */
 
-import { RowDataPacket } from 'mysql2/promise';
+import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
 import { createChannelTables, channelTablesExist as donkeyChannelTablesExist } from './DonkeyDao.js';
 
@@ -44,9 +44,6 @@ interface SchemaVersionRow extends RowDataPacket {
   VERSION: string;
 }
 
-interface PersonExistsRow extends RowDataPacket {
-  count: number;
-}
 
 /**
  * Detect operational mode based on environment or database state
@@ -293,6 +290,51 @@ export async function ensureCoreTables(): Promise<void> {
         CHANNEL_ID VARCHAR(36) NOT NULL UNIQUE
       ) ENGINE=InnoDB
     `);
+
+    // D_SERVERS - Cluster node registry for multi-instance deployments
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS D_SERVERS (
+        SERVER_ID VARCHAR(36) NOT NULL PRIMARY KEY,
+        HOSTNAME VARCHAR(255),
+        PORT INTEGER,
+        API_URL VARCHAR(512),
+        STARTED_AT TIMESTAMP NULL DEFAULT NULL,
+        LAST_HEARTBEAT TIMESTAMP NULL DEFAULT NULL,
+        STATUS VARCHAR(20) DEFAULT 'ONLINE'
+      ) ENGINE=InnoDB
+    `);
+
+    // D_CHANNEL_DEPLOYMENTS - Tracks which channels are deployed on which instances
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS D_CHANNEL_DEPLOYMENTS (
+        SERVER_ID VARCHAR(36) NOT NULL,
+        CHANNEL_ID VARCHAR(36) NOT NULL,
+        DEPLOYED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(SERVER_ID, CHANNEL_ID)
+      ) ENGINE=InnoDB
+    `);
+
+    // D_CLUSTER_EVENTS - Polling-based event bus for cluster communication
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS D_CLUSTER_EVENTS (
+        ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        CHANNEL VARCHAR(255) NOT NULL,
+        DATA LONGTEXT,
+        CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        SERVER_ID VARCHAR(36) NOT NULL
+      ) ENGINE=InnoDB
+    `);
+
+    // D_GLOBAL_MAP - Shared global/channel map storage for clustered mode
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS D_GLOBAL_MAP (
+        SCOPE VARCHAR(255) NOT NULL,
+        MAP_KEY VARCHAR(255) NOT NULL,
+        MAP_VALUE LONGTEXT,
+        UPDATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY(SCOPE, MAP_KEY)
+      ) ENGINE=InnoDB
+    `);
   });
 
   console.warn('[SchemaManager] Core tables ensured');
@@ -310,18 +352,14 @@ export async function seedDefaults(): Promise<void> {
   console.warn('[SchemaManager] Seeding default data...');
 
   await transaction(async (connection) => {
-    // Check if admin user exists
-    const [adminCheck] = await connection.query<PersonExistsRow[]>(
-      `SELECT COUNT(*) as count FROM PERSON WHERE USERNAME = 'admin'`
+    // Use INSERT IGNORE to handle concurrent inserts safely (no TOCTOU race).
+    // If another instance already inserted the admin user, this is a no-op.
+    const [adminResult] = await connection.query<ResultSetHeader>(
+      `INSERT IGNORE INTO PERSON (USERNAME, LOGGED_IN) VALUES ('admin', FALSE)`
     );
 
-    if (adminCheck[0]!.count === 0) {
-      // Insert admin user
-      await connection.query(
-        `INSERT INTO PERSON (USERNAME, LOGGED_IN) VALUES ('admin', FALSE)`
-      );
-
-      // Insert admin password (Java Mirth's default hash for 'admin')
+    if (adminResult.affectedRows > 0) {
+      // Admin was actually created — insert the default password
       await connection.query(
         `INSERT INTO PERSON_PASSWORD (PERSON_ID, PASSWORD)
          SELECT ID, 'YzKZIAnbQ5m+3llggrZvNtf5fg69yX7pAplfYg0Dngn/fESH93OktQ=='
@@ -331,17 +369,10 @@ export async function seedDefaults(): Promise<void> {
       console.warn('[SchemaManager] Created default admin user');
     }
 
-    // Insert schema version (if not exists)
-    const [versionCheck] = await connection.query<PersonExistsRow[]>(
-      `SELECT COUNT(*) as count FROM SCHEMA_INFO`
+    // Insert schema version (INSERT IGNORE for idempotency)
+    await connection.query(
+      `INSERT IGNORE INTO SCHEMA_INFO (VERSION) VALUES ('3.9.1')`
     );
-
-    if (versionCheck[0]!.count === 0) {
-      await connection.query(
-        `INSERT INTO SCHEMA_INFO (VERSION) VALUES ('3.9.1')`
-      );
-      console.warn('[SchemaManager] Set schema version to 3.9.1');
-    }
 
     // Insert default configuration values (INSERT IGNORE for idempotency)
     const defaultConfigs = [

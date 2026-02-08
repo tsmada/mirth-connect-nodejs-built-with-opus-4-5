@@ -24,6 +24,11 @@ import { systemRouter } from './servlets/SystemServlet.js';
 import { usageRouter } from './servlets/UsageServlet.js';
 import { traceRouter } from './servlets/TraceServlet.js';
 
+// Cluster health probes and routing
+import { healthRouter } from '../cluster/HealthCheck.js';
+import { clusterRouter } from './servlets/ClusterServlet.js';
+import { internalRouter } from '../cluster/RemoteDispatcher.js';
+
 // Plugin routes
 import { codeTemplateRouter } from '../plugins/codetemplates/index.js';
 import { dataPrunerRouter } from '../plugins/datapruner/index.js';
@@ -84,10 +89,16 @@ export function createApp(options: ServerOptions = {}): Express {
   // Content negotiation middleware
   app.use(contentNegotiationMiddleware());
 
-  // Health check endpoint (no auth required)
+  // Health check endpoint (no auth required) - legacy
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
+
+  // Cluster health probes (no auth required)
+  app.use('/api/health', healthRouter);
+
+  // Internal cluster dispatch (secured by cluster secret, not user auth)
+  app.use('/api/internal', internalRouter);
 
   // API version endpoint (no auth required)
   app.get('/api', (_req: Request, res: Response) => {
@@ -118,6 +129,7 @@ export function createApp(options: ServerOptions = {}): Express {
   app.use('/api/extensions', authMiddleware({ required: true }), extensionRouter);
   app.use('/api/databaseTasks', authMiddleware({ required: true }), databaseTaskRouter);
   app.use('/api/system', authMiddleware({ required: true }), systemRouter);
+  app.use('/api/system/cluster', authMiddleware({ required: true }), clusterRouter);
   app.use('/api/usageData', authMiddleware({ required: true }), usageRouter);
 
   // Plugin routes
