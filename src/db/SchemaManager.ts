@@ -335,6 +335,24 @@ export async function ensureCoreTables(): Promise<void> {
         PRIMARY KEY(SCOPE, MAP_KEY)
       ) ENGINE=InnoDB
     `);
+
+    // D_ARTIFACT_SYNC - Git artifact sync tracking (Node.js-only)
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS D_ARTIFACT_SYNC (
+        ID VARCHAR(36) NOT NULL PRIMARY KEY,
+        ARTIFACT_TYPE VARCHAR(20) NOT NULL,
+        ARTIFACT_ID VARCHAR(36) NOT NULL,
+        ARTIFACT_NAME VARCHAR(255),
+        REVISION INT,
+        COMMIT_HASH VARCHAR(40),
+        SYNC_DIRECTION VARCHAR(10) NOT NULL,
+        SYNCED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        SYNCED_BY VARCHAR(255),
+        ENVIRONMENT VARCHAR(50),
+        INDEX idx_artifact (ARTIFACT_TYPE, ARTIFACT_ID),
+        INDEX idx_commit (COMMIT_HASH)
+      ) ENGINE=InnoDB
+    `);
   });
 
   console.warn('[SchemaManager] Core tables ensured');
