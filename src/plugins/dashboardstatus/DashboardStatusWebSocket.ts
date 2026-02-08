@@ -20,6 +20,7 @@ import {
   DashboardStatusController,
   dashboardStatusController,
 } from './DashboardStatusController.js';
+import { isShadowMode, getPromotedChannels } from '../../cluster/ShadowMode.js';
 import {
   ConnectionLogItem,
   serializeConnectionLogItem,
@@ -277,10 +278,15 @@ export class DashboardStatusWebSocketHandler {
    */
   private handleGetStates(ws: WebSocket): void {
     const states = this.controller.getConnectionStatesForApi();
+    const shadowMode = isShadowMode();
 
     this.send(ws, {
       type: 'states',
       data: states,
+      ...(shadowMode && {
+        shadowMode: true,
+        promotedChannels: Array.from(getPromotedChannels()),
+      }),
     });
   }
 

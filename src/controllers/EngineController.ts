@@ -29,6 +29,7 @@ import { Status } from '../model/Status.js';
 import { dashboardStatusController, ConnectionStatusEvent } from '../plugins/dashboardstatus/DashboardStatusController.js';
 import { ConnectionStatusEventType } from '../plugins/dashboardstatus/ConnectionLogItem.js';
 import type { StateChangeEvent } from '../donkey/channel/Channel.js';
+import { isShadowMode, isChannelActive, isChannelPromoted } from '../cluster/ShadowMode.js';
 
 /**
  * Deployment metadata for a channel.
@@ -294,9 +295,14 @@ export class EngineController {
       const initialState = channelConfig.properties?.initialState || DeployedState.STARTED;
 
       // Start the channel if initial state is STARTED
-      // Channel.start() will manage its own state transitions
+      // In shadow mode, only start promoted channels — others remain deployed but stopped
       if (initialState === DeployedState.STARTED) {
-        await runtimeChannel.start();
+        if (!isShadowMode() || isChannelPromoted(channelId)) {
+          await runtimeChannel.start();
+        } else {
+          // Shadow mode: load stats for dashboard display without starting connectors
+          await runtimeChannel.loadStatisticsFromDb();
+        }
       }
 
       console.log(`Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`);
@@ -502,6 +508,11 @@ export class EngineController {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
 
+    // Shadow mode guard: block message dispatch to non-promoted channels
+    if (isShadowMode() && !isChannelActive(channelId)) {
+      throw new Error(`Channel ${channelId} is in shadow mode and not promoted for message processing`);
+    }
+
     const message = await channel.dispatchRawMessage(rawMessage, sourceMapData);
     return {
       messageId: message.getMessageId(),
@@ -523,6 +534,12 @@ export class EngineController {
     if (!channel) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
+
+    // Shadow mode guard: block message dispatch to non-promoted channels
+    if (isShadowMode() && !isChannelActive(channelId)) {
+      throw new Error(`Channel ${channelId} is in shadow mode and not promoted for message processing`);
+    }
+
     const message = await channel.dispatchRawMessage(
       rawMessage.getRawData(),
       rawMessage.getSourceMap()

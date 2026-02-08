@@ -7,3 +7,4 @@ export * from './contentNegotiation.js';
 export * from './permissions.js';
 export * from './authorization.js';
 export * from './operations.js';
+export * from './shadowGuard.js';

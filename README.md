@@ -52,6 +52,87 @@ Week 4: Decommission Java Mirth
 - **Gradual Adoption**: Test channel-by-channel before full cutover
 - **Same Admin GUI**: Mirth Administrator works identically with both engines
 
+## Shadow Mode (Safe Takeover)
+
+> **Node.js-only feature** — Shadow mode has no equivalent in Java Mirth.
+
+Shadow mode enables a safe, progressive cutover from Java Mirth to Node.js Mirth. When enabled, the Node.js engine deploys all channels in a **read-only observer state** — no ports are bound, no polling starts, and no messages are processed. The operator then promotes channels one-by-one, stopping each on Java Mirth first, until the full cutover is complete.
+
+### Why Shadow Mode?
+
+Running two engines against the same database without shadow mode causes:
+- **Port conflicts** — Both engines try to bind the same MLLP/HTTP/TCP ports
+- **Duplicate processing** — File and database receivers poll the same sources
+- **Data corruption** — Both engines write to the same message tables simultaneously
+
+Shadow mode prevents all of this by keeping the Node.js engine passive until the operator explicitly activates each channel.
+
+### Quick Start
+
+```bash
+# Start Node.js Mirth in shadow mode (connects to existing Java Mirth database)
+MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true PORT=8081 node dist/index.js
+
+# Check shadow status
+mirth-cli shadow status
+# → SHADOW MODE ACTIVE: 12 channels deployed, 0 promoted
+
+# Stop a channel on Java Mirth first, then promote it on Node.js
+mirth-cli shadow promote "ADT Receiver"
+# → Channel ADT Receiver promoted and started (port 6661 bound)
+
+# Test the channel, then promote the next one
+mirth-cli shadow promote "HL7 Router"
+
+# When ready, cut over all remaining channels at once
+mirth-cli shadow cutover
+# → All channels promoted, shadow mode disabled
+
+# Shut down Java Mirth
+```
+
+### Shadow Mode CLI Commands
+
+```bash
+mirth-cli shadow status              # Show shadow state + promoted channels
+mirth-cli shadow promote <channel>   # Promote single channel to active
+mirth-cli shadow promote --all       # Promote all channels (full cutover)
+mirth-cli shadow demote <channel>    # Stop + return channel to shadow
+mirth-cli shadow cutover             # Interactive guided cutover
+```
+
+### Shadow Mode API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/system/shadow` | GET | Shadow status, promoted channels list |
+| `/api/system/shadow/promote` | POST | Promote channel (`{channelId}`) or full cutover (`{all: true}`) |
+| `/api/system/shadow/demote` | POST | Stop + demote channel back to shadow |
+
+### How It Works
+
+| Shadow State | Behavior |
+|---|---|
+| **Global shadow, no promotions** | All channels deployed but stopped. All mutating API requests return 409 Conflict. Dashboard shows historical statistics. |
+| **Per-channel promoted** | Promoted channels start normally (ports bind, polling begins). Non-promoted channels remain in shadow. |
+| **Full cutover** | All channels active. Shadow mode disabled. VMRouter and DataPruner initialized. |
+
+### Safety Guardrails
+
+- **Port conflicts surface naturally** — If Java Mirth still has a port bound, the promote fails with `EADDRINUSE` and the channel is auto-demoted back to shadow
+- **Recovery task is safe** — It only runs inside `Channel.start()`, which is skipped in shadow mode
+- **DataPruner is deferred** — Not initialized until full cutover, preventing deletion of Java's messages
+- **VMRouter is deferred** — Not wired until full cutover, preventing cross-channel routing interference
+- **Health probes are shadow-aware** — Stopped shadow channels return 200 with `status: shadow` instead of 503
+
+### Environment Variable
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIRTH_SHADOW_MODE` | `false` | Enable shadow mode for safe takeover observation |
+
+This is separate from `MIRTH_MODE` (which controls schema behavior). Typical usage: `MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true`.
+
 ## Horizontal Scaling (Container-Native)
 
 Node.js Mirth supports running multiple instances behind an external load balancer, sharing a single MySQL database. Each instance is a stateless container that can be scaled up/down by your orchestration platform.
@@ -228,6 +309,7 @@ On SIGTERM (sent by orchestrators during scale-down/rolling updates):
 | **Plugins** | Code Templates, **Data Pruner** (per-channel retention, event pruning, config persistence), XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, **ServerLog**, **DashboardStatus** |
 | **CLI Tool** | Terminal-based monitor and management utility |
 | **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, **UUIDGenerator**, **NCPDPUtil**, **ContextFactory** |
+| **Shadow Mode** | Safe read-only takeover with progressive per-channel cutover from Java Mirth |
 | **Cluster** | Container-native horizontal scaling, health probes, block-allocated sequences, database-backed global maps, graceful shutdown |
 | **Utilities** | ValueReplacer, ACKGenerator, JsonXmlUtil, SerializerFactory, **ErrorMessageBuilder** |
 
@@ -275,6 +357,9 @@ NODE_ENV=development
 
 # Logging
 LOG_LEVEL=info
+
+# Shadow Mode (optional — for safe Java → Node.js takeover)
+# MIRTH_SHADOW_MODE=true              # Deploy channels read-only, promote one-by-one
 
 # Horizontal Scaling (optional — single-instance by default)
 # MIRTH_SERVER_ID=my-instance-1       # Unique ID (auto-generated UUID if omitted)
@@ -634,6 +719,13 @@ Query parameters: `includeContent`, `contentTypes`, `maxContentLength`, `maxDept
 | `/api/system/cluster/nodes` | GET | Node list with heartbeat status |
 | `/api/system/cluster/statistics` | GET | Cross-instance aggregated statistics |
 | `/api/internal/dispatch` | POST | Inter-instance forwarding (cluster secret) |
+
+### Shadow Mode (Node.js Extension)
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/system/shadow` | GET | Shadow status, promoted channels, deployed/promoted counts |
+| `/api/system/shadow/promote` | POST | Promote channel or trigger full cutover |
+| `/api/system/shadow/demote` | POST | Demote promoted channel back to shadow |
 
 ### Administration
 | Endpoint | Methods | Description |
@@ -1004,6 +1096,7 @@ The Node.js engine maintains 100% API compatibility with the Java Mirth Administ
 | **Cluster Tables** | 4 new tables (D_SERVERS, D_CHANNEL_DEPLOYMENTS, D_CLUSTER_EVENTS, D_GLOBAL_MAP) created in standalone mode or when cluster is enabled. | Additive — Java Mirth ignores unknown tables. Safe in shared databases. |
 | **Health Endpoints** | `GET /api/health/*` endpoints for orchestrator probes. No auth required. | Extension — Java Mirth does not have these endpoints. |
 | **Cluster API** | `GET /api/system/cluster/*` endpoints for node status and aggregated statistics. | Extension — not related to Java Mirth's clustering plugin endpoints. |
+| **Shadow Mode** | When `MIRTH_SHADOW_MODE=true`, channels deploy in read-only state. Operator promotes channels one-by-one for safe cutover from Java Mirth. | Extension — Java Mirth has no equivalent. Does not affect normal operation when disabled (default). |
 | **Graceful Shutdown** | SIGTERM triggers drain + deregister sequence instead of immediate exit. | Behavioral improvement — Java Mirth has similar graceful shutdown in its shutdown hook. |
 | **Block Sequence IDs** | SequenceAllocator pre-allocates 100 IDs per lock instead of 1. | Compatible — produces valid non-contiguous IDs. Gaps are harmless (IDs need only be unique). |
 | **Data Pruner Operational** | DataPruner is wired into server lifecycle, runs on schedule, reads per-channel pruning settings, skips in-flight messages (`PROCESSED=0`), cleans D_MCM tables, persists config to CONFIGURATION table, and prunes old audit events. | Matches Java Mirth behavior. Archive-before-delete phase not yet connected (planned). |
@@ -1023,6 +1116,8 @@ These features exist only in the Node.js engine and have no Java Mirth equivalen
 | Cross-Channel Trace | Reconstructs complete message journey across VM-connected channels | `GET /api/messages/trace/:channelId/:messageId` |
 | Interactive Dashboard | Terminal-based real-time channel monitoring via Ink/React | CLI: `mirth-cli dashboard` |
 | Message Trace CLI | CLI command to trace messages with tree visualization | CLI: `mirth-cli trace <channel> <messageId>` |
+| Shadow Mode | Safe read-only takeover with progressive per-channel cutover | `GET/POST /api/system/shadow/*` |
+| Shadow Mode CLI | CLI commands for shadow status, promote, demote, cutover | CLI: `mirth-cli shadow <command>` |
 | Container-Native Clustering | Horizontal scaling without clustering plugin | `GET /api/system/cluster/*` |
 | Health Probes | Readiness/liveness/startup for orchestrators | `GET /api/health/*` |
 | Block Sequence Allocation | Pre-allocated message IDs for reduced DB contention | Internal (SequenceAllocator) |

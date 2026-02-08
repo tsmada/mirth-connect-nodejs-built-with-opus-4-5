@@ -7,7 +7,7 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import { createServer, Server as HttpServer } from 'http';
-import { authMiddleware, contentNegotiationMiddleware } from './middleware/index.js';
+import { authMiddleware, contentNegotiationMiddleware, shadowGuard } from './middleware/index.js';
 import { userRouter } from './servlets/UserServlet.js';
 import { channelRouter } from './servlets/ChannelServlet.js';
 import { channelStatusRouter } from './servlets/ChannelStatusServlet.js';
@@ -23,6 +23,7 @@ import { databaseTaskRouter } from './servlets/DatabaseTaskServlet.js';
 import { systemRouter } from './servlets/SystemServlet.js';
 import { usageRouter } from './servlets/UsageServlet.js';
 import { traceRouter } from './servlets/TraceServlet.js';
+import { shadowRouter } from './servlets/ShadowServlet.js';
 
 // Cluster health probes and routing
 import { healthRouter } from '../cluster/HealthCheck.js';
@@ -112,21 +113,24 @@ export function createApp(options: ServerOptions = {}): Express {
   // Public routes (no auth required)
   app.use('/api/users', userRouter);
 
+  // Shadow mode API (auth required, but NOT guarded by shadowGuard — promote/demote must always work)
+  app.use('/api/system/shadow', authMiddleware({ required: true }), shadowRouter);
+
   // Protected routes (auth required)
   // NOTE: Route order matters! More specific routes must come BEFORE parameterized routes.
   // channelStatusRouter, channelStatisticsRouter, and engineRouter have routes like /statuses
   // which must be matched BEFORE channelRouter's /:channelId route.
-  app.use('/api/channels', authMiddleware({ required: true }), channelStatusRouter);
-  app.use('/api/channels', authMiddleware({ required: true }), channelStatisticsRouter);
-  app.use('/api/channels', authMiddleware({ required: true }), engineRouter);
-  app.use('/api/channels', authMiddleware({ required: true }), channelRouter);
-  app.use('/api/channels/:channelId/messages', authMiddleware({ required: true }), messageRouter);
+  app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), channelStatusRouter);
+  app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), channelStatisticsRouter);
+  app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), engineRouter);
+  app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), channelRouter);
+  app.use('/api/channels/:channelId/messages', authMiddleware({ required: true }), shadowGuard(), messageRouter);
   app.use('/api/messages/trace', authMiddleware({ required: true }), traceRouter);
-  app.use('/api/channelgroups', authMiddleware({ required: true }), channelGroupRouter);
-  app.use('/api/server', authMiddleware({ required: true }), configurationRouter);
+  app.use('/api/channelgroups', authMiddleware({ required: true }), shadowGuard(), channelGroupRouter);
+  app.use('/api/server', authMiddleware({ required: true }), shadowGuard(), configurationRouter);
   app.use('/api/events', authMiddleware({ required: true }), eventRouter);
-  app.use('/api/alerts', authMiddleware({ required: true }), alertRouter);
-  app.use('/api/extensions', authMiddleware({ required: true }), extensionRouter);
+  app.use('/api/alerts', authMiddleware({ required: true }), shadowGuard(), alertRouter);
+  app.use('/api/extensions', authMiddleware({ required: true }), shadowGuard(), extensionRouter);
   app.use('/api/databaseTasks', authMiddleware({ required: true }), databaseTaskRouter);
   app.use('/api/system', authMiddleware({ required: true }), systemRouter);
   app.use('/api/system/cluster', authMiddleware({ required: true }), clusterRouter);

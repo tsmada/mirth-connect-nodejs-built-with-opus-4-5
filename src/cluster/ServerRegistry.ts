@@ -20,7 +20,7 @@ export interface ClusterNode {
   apiUrl: string | null;
   startedAt: Date | null;
   lastHeartbeat: Date | null;
-  status: 'ONLINE' | 'OFFLINE';
+  status: 'ONLINE' | 'OFFLINE' | 'SHADOW';
 }
 
 interface ClusterNodeRow extends RowDataPacket {
@@ -43,7 +43,7 @@ function rowToNode(row: ClusterNodeRow): ClusterNode {
     apiUrl: row.API_URL,
     startedAt: row.STARTED_AT,
     lastHeartbeat: row.LAST_HEARTBEAT,
-    status: row.STATUS === 'ONLINE' ? 'ONLINE' : 'OFFLINE',
+    status: row.STATUS === 'SHADOW' ? 'SHADOW' : row.STATUS === 'ONLINE' ? 'ONLINE' : 'OFFLINE',
   };
 }
 
@@ -51,22 +51,23 @@ function rowToNode(row: ClusterNodeRow): ClusterNode {
  * Register this server in D_SERVERS.
  * Uses INSERT ... ON DUPLICATE KEY UPDATE for idempotent upsert.
  */
-export async function registerServer(port?: number): Promise<void> {
+export async function registerServer(port?: number, status?: string): Promise<void> {
   const serverId = getServerId();
   const hostname = os.hostname();
   const apiUrl = port ? `http://${hostname}:${port}` : null;
+  const serverStatus = status || 'ONLINE';
 
   await execute(
     `INSERT INTO D_SERVERS (SERVER_ID, HOSTNAME, PORT, API_URL, STARTED_AT, LAST_HEARTBEAT, STATUS)
-     VALUES (:serverId, :hostname, :port, :apiUrl, NOW(), NOW(), 'ONLINE')
+     VALUES (:serverId, :hostname, :port, :apiUrl, NOW(), NOW(), :serverStatus)
      ON DUPLICATE KEY UPDATE
        HOSTNAME = :hostname,
        PORT = :port,
        API_URL = :apiUrl,
        STARTED_AT = NOW(),
        LAST_HEARTBEAT = NOW(),
-       STATUS = 'ONLINE'`,
-    { serverId, hostname, port: port ?? null, apiUrl }
+       STATUS = :serverStatus`,
+    { serverId, hostname, port: port ?? null, apiUrl, serverStatus }
   );
 
   console.warn(`[ServerRegistry] Registered server ${serverId} (${hostname}:${port ?? 'N/A'})`);

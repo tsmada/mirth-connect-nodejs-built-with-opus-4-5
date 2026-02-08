@@ -47,3 +47,14 @@ export {
   RedisEventBus,
   createEventBus,
 } from './EventBus.js';
+export {
+  isShadowMode,
+  setShadowMode,
+  promoteChannel,
+  demoteChannel,
+  isChannelPromoted,
+  promoteAllChannels,
+  getPromotedChannels,
+  isChannelActive,
+  resetShadowMode,
+} from './ShadowMode.js';

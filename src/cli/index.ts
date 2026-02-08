@@ -21,6 +21,7 @@ import { registerSendCommands } from './commands/send.js';
 import { registerEventCommands } from './commands/events.js';
 import { registerDashboardCommand } from './commands/dashboard.js';
 import { registerTraceCommand } from './commands/trace.js';
+import { registerShadowCommands } from './commands/shadow.js';
 import { ConfigManager } from './lib/ConfigManager.js';
 
 // Package version - would normally read from package.json
@@ -68,6 +69,7 @@ function createProgram(): Command {
   registerEventCommands(program);
   registerDashboardCommand(program);
   registerTraceCommand(program);
+  registerShadowCommands(program);
 
   // Custom help with banner
   program.addHelpText('before', BANNER);

@@ -293,7 +293,7 @@ export class Channel extends EventEmitter {
    * Called during start() so dashboard counters survive restarts.
    * Matches Java Mirth Statistics.loadFromDatabase() pattern.
    */
-  private async loadStatisticsFromDb(): Promise<void> {
+  public async loadStatisticsFromDb(): Promise<void> {
     try {
       if (this.tablesExist === null) {
         this.tablesExist = await channelTablesExist(this.id);

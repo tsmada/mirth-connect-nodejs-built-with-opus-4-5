@@ -16,6 +16,7 @@ import { Router, Request, Response } from 'express';
 import { getServerId } from './ClusterIdentity.js';
 import { EngineController } from '../controllers/EngineController.js';
 import { DeployedState } from '../api/models/DashboardStatus.js';
+import { isShadowMode, getPromotedChannels } from './ShadowMode.js';
 
 let shuttingDown = false;
 let startupComplete = false;
@@ -63,11 +64,16 @@ healthRouter.get('/', (_req: Request, res: Response) => {
     return;
   }
 
+  const shadowMode = isShadowMode();
   res.status(200).json({
     status: 'ok',
     serverId: getServerId(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
     mode: process.env['MIRTH_MODE'] || 'auto',
+    ...(shadowMode && {
+      shadowMode: true,
+      promotedChannels: Array.from(getPromotedChannels()),
+    }),
   });
 });
 
@@ -114,10 +120,22 @@ healthRouter.get('/channels/:channelId', async (req: Request, res: Response) => 
       serverId: getServerId(),
     });
   } else {
-    res.status(503).json({
-      status: state.toLowerCase(),
-      channelId,
-      serverId: getServerId(),
-    });
+    // In shadow mode, non-promoted deployed channels return 200 with shadow status
+    // (they are intentionally stopped, not broken)
+    const shadowMode = isShadowMode();
+    if (shadowMode && state === DeployedState.STOPPED) {
+      res.status(200).json({
+        status: 'shadow',
+        channelId,
+        serverId: getServerId(),
+        shadowMode: true,
+      });
+    } else {
+      res.status(503).json({
+        status: state.toLowerCase(),
+        channelId,
+        serverId: getServerId(),
+      });
+    }
   }
 });

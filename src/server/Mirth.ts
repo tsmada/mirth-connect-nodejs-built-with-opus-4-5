@@ -27,6 +27,7 @@ import { ConfigurationController } from '../controllers/ConfigurationController.
 import { registerServer, startHeartbeat, stopHeartbeat, deregisterServer } from '../cluster/ServerRegistry.js';
 import { setShuttingDown, setStartupComplete } from '../cluster/HealthCheck.js';
 import { getClusterConfig } from '../cluster/ClusterConfig.js';
+import { setShadowMode, isShadowMode } from '../cluster/ShadowMode.js';
 
 // Global Donkey instance for EngineController to access
 let donkeyInstance: Donkey | null = null;
@@ -96,6 +97,14 @@ export class Mirth {
     this.detectedMode = await detectMode();
     console.warn(`Operational mode: ${this.detectedMode}`);
 
+    // Check for shadow mode
+    const shadowEnabled = process.env['MIRTH_SHADOW_MODE'] === 'true';
+    if (shadowEnabled) {
+      setShadowMode(true);
+      console.warn('SHADOW MODE ACTIVE: Read-only observer -- no message processing');
+      console.warn('    Use mirth-cli shadow promote <channel> to activate channels');
+    }
+
     if (this.detectedMode === 'standalone') {
       console.warn('Standalone mode: ensuring core tables exist...');
       await ensureCoreTables();
@@ -123,7 +132,7 @@ export class Mirth {
     this.server = await startServer({ port: this.config.httpPort });
 
     // Register this server in D_SERVERS and start heartbeat
-    await registerServer(this.config.httpPort);
+    await registerServer(this.config.httpPort, isShadowMode() ? 'SHADOW' : undefined);
     const clusterConfig = getClusterConfig();
     if (clusterConfig.clusterEnabled) {
       startHeartbeat();
@@ -135,39 +144,15 @@ export class Mirth {
     // Mark startup complete (health probe: /api/health/startup)
     setStartupComplete(true);
 
-    // Initialize VMRouter singletons for user scripts (router.routeMessage())
-    setVmRouterEngineController({
-      dispatchRawMessage: async (channelId, rawMessageObj, _force, _storeRawResponse) => {
-        const channel = EngineController.getDeployedChannel(channelId);
-        if (!channel) throw new Error(`Channel not deployed: ${channelId}`);
-        const message = await channel.dispatchRawMessage(
-          rawMessageObj.rawData,
-          rawMessageObj.sourceMap
-        );
-        // Extract response from the first destination connector message
-        let selectedResponse: Response | undefined;
-        for (const [metaDataId, cm] of message.getConnectorMessages()) {
-          if (metaDataId > 0) {
-            const responseContent = cm.getResponseContent();
-            if (responseContent?.content) {
-              selectedResponse = new Response({
-                status: cm.getStatus(),
-                message: responseContent.content,
-              });
-              break;
-            }
-          }
-        }
-        return { selectedResponse };
-      },
-    });
-    setVmRouterChannelController({
-      getDeployedChannelByName: (name) => EngineController.getDeployedChannelByName(name),
-    });
-    console.warn('VMRouter singletons initialized');
+    if (!isShadowMode()) {
+      // Initialize VMRouter singletons for user scripts (router.routeMessage())
+      this.initializeVMRouter();
 
-    // Initialize data pruner (scheduled background cleanup)
-    await dataPrunerController.initialize();
+      // Initialize data pruner (scheduled background cleanup)
+      await dataPrunerController.initialize();
+    } else {
+      console.warn('Shadow mode: VMRouter and DataPruner initialization deferred until cutover');
+    }
 
     this.running = true;
     console.warn(
@@ -271,6 +256,51 @@ export class Mirth {
 
   getDonkey(): Donkey | null {
     return this.donkey;
+  }
+
+  /**
+   * Initialize VMRouter singletons for user scripts.
+   * Extracted to allow deferred initialization after shadow mode cutover.
+   */
+  private initializeVMRouter(): void {
+    setVmRouterEngineController({
+      dispatchRawMessage: async (channelId, rawMessageObj, _force, _storeRawResponse) => {
+        const channel = EngineController.getDeployedChannel(channelId);
+        if (!channel) throw new Error(`Channel not deployed: ${channelId}`);
+        const message = await channel.dispatchRawMessage(
+          rawMessageObj.rawData,
+          rawMessageObj.sourceMap
+        );
+        let selectedResponse: Response | undefined;
+        for (const [metaDataId, cm] of message.getConnectorMessages()) {
+          if (metaDataId > 0) {
+            const responseContent = cm.getResponseContent();
+            if (responseContent?.content) {
+              selectedResponse = new Response({
+                status: cm.getStatus(),
+                message: responseContent.content,
+              });
+              break;
+            }
+          }
+        }
+        return { selectedResponse };
+      },
+    });
+    setVmRouterChannelController({
+      getDeployedChannelByName: (name) => EngineController.getDeployedChannelByName(name),
+    });
+    console.warn('VMRouter singletons initialized');
+  }
+
+  /**
+   * Complete shadow mode cutover: initialize deferred services.
+   * Called when all channels are promoted via the shadow API.
+   */
+  async completeShadowCutover(): Promise<void> {
+    this.initializeVMRouter();
+    await dataPrunerController.initialize();
+    console.warn('Shadow mode cutover complete: VMRouter and DataPruner initialized');
   }
 
   /**

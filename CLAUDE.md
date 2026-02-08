@@ -32,6 +32,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 | Trace | TraceServlet.ts | Cross-channel message tracing (Node.js-only) |
 | Cluster | ClusterServlet.ts | Cluster status, node list (Node.js-only) |
 | Internal | RemoteDispatcher.ts | Inter-instance message forwarding (cluster-only) |
+| Shadow | ShadowServlet.ts | Shadow mode promote/demote/status (Node.js-only) |
 
 ### CLI Monitor Utility (`src/cli/`)
 
@@ -50,7 +51,8 @@ src/cli/
 │   ├── server.ts               # info, status, stats
 │   ├── events.ts               # list, search, errors
 │   ├── config.ts               # get, set, list, reset
-│   └── dashboard.ts            # Interactive Ink-based dashboard (thin wrapper)
+│   ├── dashboard.ts            # Interactive Ink-based dashboard (thin wrapper)
+│   └── shadow.ts               # Shadow mode promote/demote/cutover
 ├── ui/                         # Dashboard component architecture
 │   ├── components/             # React/Ink UI components
 │   │   ├── Dashboard.tsx       # Main orchestrator (~280 lines)
@@ -348,6 +350,7 @@ src/cluster/
 | `MIRTH_CLUSTER_HEARTBEAT_TIMEOUT` | `30000` | Instance suspect threshold (ms) |
 | `MIRTH_CLUSTER_SEQUENCE_BLOCK` | `100` | Sequence block pre-allocation size |
 | `MIRTH_MODE` | `auto` | Operational mode: `takeover`/`standalone`/`auto` |
+| `MIRTH_SHADOW_MODE` | `false` | Read-only observer mode for safe takeover |
 
 #### Health Check Endpoints (No Auth Required)
 
@@ -378,6 +381,84 @@ When the container receives SIGTERM:
 4. Server deregisters from D_SERVERS (status → OFFLINE)
 5. Database pool closes
 6. Process exits 0
+
+### Shadow Mode (Safe Takeover)
+
+**This is a Node.js-only feature with no Java Mirth equivalent.** It enables safe, progressive cutover from Java Mirth.
+
+When `MIRTH_SHADOW_MODE=true`, the Node.js engine deploys channels in a read-only observer state — config loaded, dashboard visible, historical stats available — but no connectors start, no ports bind, and no messages are processed.
+
+**Typical usage:** `MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true PORT=8081 node dist/index.js`
+
+#### Shadow Mode Behavior
+
+| Aspect | Shadow Active | Channel Promoted | Full Cutover |
+|--------|--------------|-----------------|--------------|
+| Channel deployed | Yes | Yes | Yes |
+| Dashboard visible | Yes (STOPPED) | Yes (STARTED) | Yes (STARTED) |
+| Connectors started | No | Yes | Yes |
+| Message processing | No | Yes | Yes |
+| API writes | Blocked (409) | Allowed (per-channel) | Allowed |
+| VMRouter | Not initialized | Not initialized | Initialized |
+| DataPruner | Not initialized | Not initialized | Initialized |
+| D_SERVERS status | SHADOW | SHADOW | ONLINE |
+
+#### Shadow API Endpoints (Auth Required)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/system/shadow` | GET | Shadow status, promoted channels list |
+| `/api/system/shadow/promote` | POST | Promote channel (`{channelId}`) or full cutover (`{all: true}`) |
+| `/api/system/shadow/demote` | POST | Stop + demote a promoted channel back to shadow |
+
+#### Shadow CLI Commands
+
+```bash
+mirth-cli shadow status              # Show shadow mode state + promoted channels
+mirth-cli shadow promote <channel>   # Promote single channel (with warning)
+mirth-cli shadow promote --all       # Full cutover
+mirth-cli shadow demote <channel>    # Stop + return channel to shadow
+mirth-cli shadow cutover             # Interactive guided cutover
+```
+
+#### Cutover Workflow (Operator Perspective)
+
+```
+1. Start Node.js:   MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true PORT=8081 node dist/index.js
+2. Observe:         mirth-cli shadow status          → "12 channels deployed, 0 promoted"
+                    mirth-cli dashboard               → all channels show STOPPED (shadow)
+3. Stop on Java:    (operator stops "ADT Receiver" in Java Mirth GUI)
+4. Promote:         mirth-cli shadow promote "ADT Receiver"
+                    → Node.js binds port 6661, starts processing
+5. Test:            Send test HL7 message → verify processing
+6. Rollback:        mirth-cli shadow demote "ADT Receiver"
+                    → Node.js stops, frees port. Restart on Java Mirth
+7. Repeat:          Steps 3-6 for each channel
+8. Full cutover:    mirth-cli shadow cutover          → promotes all, disables shadow mode
+9. Shutdown Java:   (operator shuts down Java Mirth)
+```
+
+#### Safety Guardrails
+
+| Risk | Mitigation |
+|------|------------|
+| Port conflict on promote | EADDRINUSE surfaces naturally; CLI warns to stop Java first |
+| Duplicate processing | CLI warns operator; no automated cross-process check |
+| Recovery interference | Recovery task only runs inside `Channel.start()`, skipped in shadow mode |
+| DataPruner deletes Java's data | Not initialized until full cutover |
+| VMRouter routes messages | Not wired until full cutover |
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/cluster/ShadowMode.ts` | Core state module (shadow mode flag + promoted channels set) |
+| `src/api/middleware/shadowGuard.ts` | Express middleware blocking writes in shadow mode |
+| `src/api/servlets/ShadowServlet.ts` | REST API for promote/demote/status |
+| `src/cli/commands/shadow.ts` | CLI commands for shadow mode management |
+| `tests/unit/cluster/ShadowMode.test.ts` | 15 tests — state management |
+| `tests/unit/api/shadowGuard.test.ts` | 9 tests — middleware behavior |
+| `tests/unit/controllers/EngineController.shadow.test.ts` | 11 tests — deploy/dispatch guards |
 
 ### Cross-Channel Message Trace (`mirth-cli trace`)
 
@@ -727,6 +808,8 @@ npm run validate -- --priority 1
 |---------|-------------------|-------------|
 | Message Trace API | `GET /api/messages/trace/:channelId/:messageId` | Cross-channel message tracing |
 | Message Trace CLI | `mirth-cli trace <channel> <messageId>` | Terminal tree view of message journey |
+| Shadow Mode API | `GET/POST /api/system/shadow/*` | Safe takeover with progressive cutover |
+| Shadow Mode CLI | `mirth-cli shadow status/promote/demote/cutover` | Shadow mode management commands |
 
 ---
 
