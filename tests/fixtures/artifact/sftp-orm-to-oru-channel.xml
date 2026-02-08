@@ -1,0 +1,271 @@
+<channel version="3.8.0">
+  <id>7f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c</id>
+  <name>SFTP ORM to ORU Lab Transform</name>
+  <description>Read ORM lab orders from SFTP, transform to ORU results with mock data, write to SFTP</description>
+  <enabled>true</enabled>
+  <revision>1</revision>
+  <sourceConnector version="3.8.0">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="3.8.0">
+      <pluginProperties/>
+      <pollConnectorProperties version="3.8.0">
+        <pollingType>INTERVAL</pollingType>
+        <pollOnStart>true</pollOnStart>
+        <pollingFrequency>1000</pollingFrequency>
+        <pollingHour>0</pollingHour>
+        <pollingMinute>0</pollingMinute>
+        <cronJobs/>
+        <advancedProperties/>
+      </pollConnectorProperties>
+      <sourceConnectorProperties version="3.8.0">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+      <scheme>SFTP</scheme>
+      <host>{{SFTP_INPUT_DIR}}</host>
+      <fileFilter>*.hl7</fileFilter>
+      <regex>false</regex>
+      <directoryRecursion>false</directoryRecursion>
+      <ignoreDot>true</ignoreDot>
+      <anonymous>false</anonymous>
+      <username>{{SFTP_USER}}</username>
+      <password>{{SFTP_PASS}}</password>
+      <timeout>10000</timeout>
+      <secure>false</secure>
+      <passive>true</passive>
+      <validateConnection>true</validateConnection>
+      <afterProcessingAction>DELETE</afterProcessingAction>
+      <moveToDirectory></moveToDirectory>
+      <moveToFileName></moveToFileName>
+      <errorReadingAction>NONE</errorReadingAction>
+      <errorResponseAction>AFTER_PROCESSING</errorResponseAction>
+      <checkFileAge>false</checkFileAge>
+      <fileAge>0</fileAge>
+      <fileSizeMinimum>0</fileSizeMinimum>
+      <binary>false</binary>
+      <charsetEncoding>UTF-8</charsetEncoding>
+      <schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties" version="3.8.0">
+        <scheme>SFTP</scheme>
+        <host>{{SFTP_INPUT_DIR}}</host>
+        <sftpHost>localhost</sftpHost>
+        <port>2222</port>
+        <passwordAuth>true</passwordAuth>
+        <keyAuth>false</keyAuth>
+        <keyFile></keyFile>
+        <passPhrase></passPhrase>
+        <hostKeyChecking>no</hostKeyChecking>
+        <knownHostsFile></knownHostsFile>
+        <configurationSettings/>
+      </schemeProperties>
+    </properties>
+    <transformer version="3.8.0">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.8.0">
+          <name>ORM to ORU Transformer</name>
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script>
+// ORM^O01 to ORU^R01 Transformer
+// Reads ORM lab order and produces ORU with mock lab results
+
+var rawMsg = messageObject.getRawData();
+var segments = rawMsg.split('\n');
+var oru = '';
+var obrCount = 0;
+
+// Mock lab results keyed by CPT code
+var mockResults = {
+  '80053': [
+    { code: '2345-7', name: 'Glucose', value: '95', units: 'mg/dL', range: '70-100', flag: 'N' },
+    { code: '3094-0', name: 'BUN', value: '15', units: 'mg/dL', range: '7-20', flag: 'N' },
+    { code: '2160-0', name: 'Creatinine', value: '1.0', units: 'mg/dL', range: '0.7-1.3', flag: 'N' }
+  ],
+  '85025': [
+    { code: '6690-2', name: 'WBC', value: '7.5', units: '10*3/uL', range: '4.5-11.0', flag: 'N' },
+    { code: '789-8', name: 'RBC', value: '4.8', units: '10*6/uL', range: '4.5-5.5', flag: 'N' },
+    { code: '718-7', name: 'Hemoglobin', value: '14.2', units: 'g/dL', range: '12.0-16.0', flag: 'N' }
+  ]
+};
+
+for (var i = 0; i &lt; segments.length; i++) {
+  var seg = segments[i].replace(/\r/g, '');
+  if (seg.length === 0) continue;
+
+  var fields = seg.split('|');
+  var segName = fields[0];
+
+  if (segName === 'MSH') {
+    // Build ORU MSH: swap sender/receiver, change message type
+    oru += 'MSH|^~\\&amp;|LAB_SYS|LAB_A|ORDER_SYS|CLINIC_A|' +
+           '20260207130000||ORU^R01^ORU_R01|RESULT001|P|2.5\r';
+  } else if (segName === 'PID') {
+    oru += seg + '\r';
+  } else if (segName === 'PV1') {
+    oru += seg + '\r';
+  } else if (segName === 'ORC') {
+    // Change order control from NW (new) to RE (results)
+    fields[1] = 'RE';
+    oru += fields.join('|') + '\r';
+  } else if (segName === 'OBR') {
+    obrCount++;
+    // Add result status F (final) to OBR-25
+    while (fields.length &lt; 26) fields.push('');
+    fields[25] = 'F';
+    oru += fields.join('|') + '\r';
+
+    // Extract CPT code from OBR-4 (e.g., "80053^COMPREHENSIVE METABOLIC PANEL^CPT")
+    var obr4 = fields[4] || '';
+    var cptCode = obr4.split('^')[0];
+
+    // Add mock OBX results for this order
+    var results = mockResults[cptCode] || [];
+    for (var j = 0; j &lt; results.length; j++) {
+      var r = results[j];
+      var setId = j + 1;
+      oru += 'OBX|' + setId + '|NM|' + r.code + '^' + r.name + '||' +
+             r.value + '|' + r.units + '|' + r.range + '|' + r.flag +
+             '|||F\r';
+    }
+  }
+}
+
+// Set transformed message as raw string
+tmp['msg'] = oru;
+          </script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+      </elements>
+      <inboundDataType>RAW</inboundDataType>
+      <outboundDataType>RAW</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+    </transformer>
+    <filter version="3.8.0">
+      <elements/>
+    </filter>
+    <transportName>File Reader</transportName>
+    <mode>SOURCE</mode>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="3.8.0">
+      <metaDataId>1</metaDataId>
+      <name>SFTP Output Writer</name>
+      <properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="3.8.0">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.8.0">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <scheme>SFTP</scheme>
+        <host>{{SFTP_OUTPUT_DIR}}</host>
+        <outputPattern>result.hl7</outputPattern>
+        <anonymous>false</anonymous>
+        <username>{{SFTP_USER}}</username>
+        <password>{{SFTP_PASS}}</password>
+        <timeout>10000</timeout>
+        <keepConnectionOpen>false</keepConnectionOpen>
+        <maxIdleTime>0</maxIdleTime>
+        <secure>false</secure>
+        <passive>true</passive>
+        <validateConnection>true</validateConnection>
+        <outputAppend>false</outputAppend>
+        <errorOnExists>false</errorOnExists>
+        <temporary>false</temporary>
+        <binary>false</binary>
+        <charsetEncoding>UTF-8</charsetEncoding>
+        <template>${message.encodedData}</template>
+        <schemeProperties class="com.mirth.connect.connectors.file.SftpSchemeProperties" version="3.8.0">
+          <scheme>SFTP</scheme>
+          <host>{{SFTP_OUTPUT_DIR}}</host>
+          <sftpHost>localhost</sftpHost>
+          <port>2222</port>
+          <passwordAuth>true</passwordAuth>
+          <keyAuth>false</keyAuth>
+          <keyFile></keyFile>
+          <passPhrase></passPhrase>
+          <hostKeyChecking>no</hostKeyChecking>
+          <knownHostsFile></knownHostsFile>
+          <configurationSettings/>
+        </schemeProperties>
+      </properties>
+      <transformer version="3.8.0">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      </transformer>
+      <responseTransformer version="3.8.0">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      </responseTransformer>
+      <filter version="3.8.0">
+        <elements/>
+      </filter>
+      <transportName>File Writer</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>// No preprocessing needed
+return message;</preprocessingScript>
+  <postprocessingScript>// No postprocessing needed
+return;</postprocessingScript>
+  <deployScript>// No deploy script
+return;</deployScript>
+  <undeployScript>// No undeploy script
+return;</undeployScript>
+  <properties version="3.8.0">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>false</storeAttachments>
+    <metaDataColumns/>
+    <attachmentProperties version="3.8.0">
+      <type>None</type>
+      <properties/>
+    </attachmentProperties>
+    <resourceIds class="linked-hash-map">
+      <entry>
+        <string>Default Resource</string>
+        <string>[Default Resource]</string>
+      </entry>
+    </resourceIds>
+  </properties>
+</channel>
