@@ -21,6 +21,8 @@ import {
   setChannelController as setVmRouterChannelController,
 } from '../javascript/userutil/VMRouter.js';
 import { Response } from '../model/Response.js';
+import { dashboardStatusController } from '../plugins/dashboardstatus/DashboardStatusController.js';
+import { ConfigurationController } from '../controllers/ConfigurationController.js';
 
 // Global Donkey instance for EngineController to access
 let donkeyInstance: Donkey | null = null;
@@ -103,6 +105,10 @@ export class Mirth {
       }
       console.warn(`Takeover mode: schema verified (version ${result.version})`);
     }
+
+    // Initialize dashboard status controller with server ID
+    const serverId = await ConfigurationController.getServerId();
+    dashboardStatusController.setServerId(serverId);
 
     // Initialize Donkey engine
     this.donkey = new Donkey();

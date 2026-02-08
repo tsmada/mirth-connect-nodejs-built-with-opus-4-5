@@ -26,6 +26,9 @@ import { getDonkeyInstance } from '../server/Mirth.js';
 import { RawMessage } from '../model/RawMessage.js';
 import { VmDispatcher, EngineController as IVmEngineController, DispatchResult } from '../connectors/vm/VmDispatcher.js';
 import { Status } from '../model/Status.js';
+import { dashboardStatusController, ConnectionStatusEvent } from '../plugins/dashboardstatus/DashboardStatusController.js';
+import { ConnectionStatusEventType } from '../plugins/dashboardstatus/ConnectionLogItem.js';
+import type { StateChangeEvent } from '../donkey/channel/Channel.js';
 
 /**
  * Deployment metadata for a channel.
@@ -44,6 +47,85 @@ interface DeploymentInfo {
  * The Channel.currentState within each entry is the authoritative state.
  */
 const deployedChannels = new Map<string, DeploymentInfo>();
+
+/**
+ * Map DeployedState to ConnectionStatusEventType for dashboard display
+ */
+function deployedStateToConnectionStatus(state: DeployedState): ConnectionStatusEventType {
+  switch (state) {
+    case DeployedState.STARTED:
+      return ConnectionStatusEventType.CONNECTED;
+    case DeployedState.STOPPED:
+    case DeployedState.UNDEPLOYING:
+      return ConnectionStatusEventType.DISCONNECTED;
+    case DeployedState.STARTING:
+    case DeployedState.DEPLOYING:
+      return ConnectionStatusEventType.CONNECTING;
+    case DeployedState.PAUSED:
+    case DeployedState.PAUSING:
+    case DeployedState.STOPPING:
+      return ConnectionStatusEventType.WAITING;
+    default:
+      return ConnectionStatusEventType.IDLE;
+  }
+}
+
+/**
+ * Throttle timestamps for messageComplete events (1 event/second per channel)
+ */
+const messageCompleteLastEmit = new Map<string, number>();
+
+/**
+ * Wire a runtime channel's events to the DashboardStatusController.
+ * Subscribes to stateChange, connectorStateChange, and messageComplete events.
+ */
+export function wireChannelToDashboard(runtimeChannel: Channel, channelName: string): void {
+  const channelId = runtimeChannel.getId();
+
+  // Channel-level state changes (source connector, metadataId 0)
+  runtimeChannel.on('stateChange', (event: StateChangeEvent) => {
+    const statusEvent: ConnectionStatusEvent = {
+      channelId: event.channelId,
+      metadataId: 0,
+      state: deployedStateToConnectionStatus(event.state),
+      channelName: event.channelName,
+    };
+    dashboardStatusController.processEvent(statusEvent);
+  });
+
+  // Individual connector state changes (with actual metaDataId)
+  runtimeChannel.on('connectorStateChange', (event: {
+    channelId: string;
+    channelName: string;
+    metaDataId: number;
+    connectorName: string;
+    state: DeployedState;
+  }) => {
+    const statusEvent: ConnectionStatusEvent = {
+      channelId: event.channelId,
+      metadataId: event.metaDataId,
+      state: deployedStateToConnectionStatus(event.state),
+      channelName: event.channelName,
+    };
+    dashboardStatusController.processEvent(statusEvent);
+  });
+
+  // Message complete events (throttled to 1/second per channel)
+  runtimeChannel.on('messageComplete', () => {
+    const now = Date.now();
+    const lastEmit = messageCompleteLastEmit.get(channelId) ?? 0;
+    if (now - lastEmit >= 1000) {
+      messageCompleteLastEmit.set(channelId, now);
+      const statusEvent: ConnectionStatusEvent = {
+        channelId,
+        metadataId: 0,
+        state: ConnectionStatusEventType.CONNECTED,
+        channelName,
+      };
+      dashboardStatusController.processEvent(statusEvent);
+    }
+  });
+}
 
 /**
  * Engine Controller - manages channel deployment and runtime state
@@ -176,6 +258,9 @@ export class EngineController {
       // Build runtime channel with connectors
       const runtimeChannel = buildChannel(channelConfig);
 
+      // Wire channel events to dashboard status controller
+      wireChannelToDashboard(runtimeChannel, channelConfig.name);
+
       // Wire VM dispatchers to engine controller
       for (const dest of runtimeChannel.getDestinationConnectors()) {
         if (dest instanceof VmDispatcher) {
@@ -249,6 +334,12 @@ export class EngineController {
     } catch (error) {
       console.error(`Error stopping channel ${name}:`, error);
     }
+
+    // Clear dashboard state for this channel
+    dashboardStatusController.resetChannelState(channelId);
+
+    // Clean up messageComplete throttle entry
+    messageCompleteLastEmit.delete(channelId);
 
     // Remove from deployed channels
     deployedChannels.delete(channelId);

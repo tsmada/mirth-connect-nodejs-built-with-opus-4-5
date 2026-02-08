@@ -1110,6 +1110,8 @@ export class Channel extends EventEmitter {
       await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
 
+    this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });
+
     return message;
   }
 
@@ -1612,5 +1614,7 @@ export class Channel extends EventEmitter {
       const mapObj = Object.fromEntries(srcMap);
       await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
+
+    this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });
   }
 }
