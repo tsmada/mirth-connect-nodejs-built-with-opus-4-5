@@ -810,6 +810,52 @@ export const USAGE_GET_DATA = createOperation(
 );
 
 // ============================================================================
+// Artifact Operations
+// ============================================================================
+
+export const ARTIFACT_EXPORT = createOperation(
+  'exportArtifacts',
+  'Export artifacts',
+  P.CHANNELS_VIEW
+);
+
+export const ARTIFACT_IMPORT = createOperation(
+  'importArtifacts',
+  'Import artifacts',
+  P.CHANNELS_MANAGE
+);
+
+export const ARTIFACT_DEPLOY = createOperation(
+  'deployArtifacts',
+  'Deploy artifacts',
+  P.CHANNELS_DEPLOY_UNDEPLOY
+);
+
+export const ARTIFACT_PROMOTE = createOperation(
+  'promoteArtifacts',
+  'Promote artifacts',
+  P.CHANNELS_MANAGE
+);
+
+export const ARTIFACT_GIT_STATUS = createOperation(
+  'getArtifactGitStatus',
+  'Get artifact git status',
+  P.CHANNELS_VIEW
+);
+
+export const ARTIFACT_GIT_PUSH = createOperation(
+  'pushArtifacts',
+  'Push artifacts to git',
+  P.CHANNELS_MANAGE
+);
+
+export const ARTIFACT_GIT_PULL = createOperation(
+  'pullArtifacts',
+  'Pull artifacts from git',
+  P.CHANNELS_MANAGE
+);
+
+// ============================================================================
 // Operation Registry (for lookup by name)
 // ============================================================================
 
@@ -959,6 +1005,14 @@ const allOperations: Operation[] = [
   SYSTEM_GET_STATS,
   // Usage
   USAGE_GET_DATA,
+  // Artifacts
+  ARTIFACT_EXPORT,
+  ARTIFACT_IMPORT,
+  ARTIFACT_DEPLOY,
+  ARTIFACT_PROMOTE,
+  ARTIFACT_GIT_STATUS,
+  ARTIFACT_GIT_PUSH,
+  ARTIFACT_GIT_PULL,
 ];
 
 const operationsByName = new Map<string, Operation>();
