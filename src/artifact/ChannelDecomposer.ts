@@ -121,6 +121,16 @@ export function toFileTree(decomposed: DecomposedChannel): FileTreeEntry[] {
     addConnectorFiles(files, `destinations/${name}`, dest);
   }
 
+  // Raw XML backbone — needed by the assembler for lossless round-trip reassembly.
+  // When importing from git, filesToDecomposed() reads this back into rawXml.
+  if (decomposed.rawXml) {
+    files.push({
+      path: '_raw.xml',
+      content: decomposed.rawXml,
+      type: 'xml',
+    });
+  }
+
   // Channel scripts
   if (decomposed.scripts.deploy && !isDefaultScript(decomposed.scripts.deploy)) {
     files.push({ path: 'scripts/deploy.js', content: decomposed.scripts.deploy, type: 'js' });

@@ -155,7 +155,7 @@ mirth-cli artifact git push -m "Initial export"
 ls mirth-config/channels/
 # → adt-receiver/  hl7-router/  emr-writer/
 ls mirth-config/channels/adt-receiver/
-# → channel.yaml  _skeleton.xml  source/  destinations/  scripts/
+# → channel.yaml  _raw.xml  source/  destinations/  scripts/
 ```
 
 ### Environment Setup

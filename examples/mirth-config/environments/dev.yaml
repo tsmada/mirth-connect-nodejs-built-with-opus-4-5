@@ -1,0 +1,6 @@
+# Dev environment overrides.
+# Inherits all values from base.yaml, overrides only what differs.
+
+DB_HOST: "dev-db.internal"
+LOG_LEVEL: "DEBUG"
+MAX_CONNECTIONS: "5"

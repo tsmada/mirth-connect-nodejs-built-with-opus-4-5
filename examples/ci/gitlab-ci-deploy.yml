@@ -1,0 +1,87 @@
+# GitLab CI pipeline for deploying Mirth channel configurations.
+# Includes stages for both standalone (container rebuild) and takeover (hot-deploy) modes.
+# To use: copy this file to .gitlab-ci.yml in your artifact repository root.
+
+stages:
+  - validate
+  - build
+  - deploy-staging
+  - deploy-prod
+
+variables:
+  MIRTH_CLI_URL: ${MIRTH_URL}
+
+# ------------------------------------------------------------------
+# Validate: dry-run promotion, check for issues
+# ------------------------------------------------------------------
+validate:
+  stage: validate
+  image: node:18-alpine
+  script:
+    - npm install -g mirth-cli
+    - mirth-cli artifact promote prod --dry-run --source staging
+  only:
+    changes:
+      - channels/**
+      - code-templates/**
+      - environments/**
+
+# ------------------------------------------------------------------
+# Standalone mode: build container image with config baked in
+# ------------------------------------------------------------------
+build-image:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker build
+        --build-arg MIRTH_MODE=standalone
+        --build-arg MIRTH_ARTIFACT_ENV=prod
+        -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+  only:
+    changes:
+      - channels/**
+      - code-templates/**
+
+# ------------------------------------------------------------------
+# Deploy to staging (automatic on merge)
+# ------------------------------------------------------------------
+deploy-staging:
+  stage: deploy-staging
+  image: node:18-alpine
+  script:
+    - npm install -g mirth-cli
+    - mirth-cli login -u "$MIRTH_USER" -p "$MIRTH_PASS"
+    - mirth-cli artifact import --all --env staging
+    - mirth-cli artifact deploy --delta
+    - "curl -sf $MIRTH_STAGING_URL/api/health || exit 1"
+  variables:
+    MIRTH_CLI_URL: ${MIRTH_STAGING_URL}
+  environment:
+    name: staging
+    url: ${MIRTH_STAGING_URL}
+  only:
+    - main
+
+# ------------------------------------------------------------------
+# Deploy to production (manual gate)
+# ------------------------------------------------------------------
+deploy-prod:
+  stage: deploy-prod
+  image: node:18-alpine
+  script:
+    - npm install -g mirth-cli
+    - mirth-cli login -u "$MIRTH_USER" -p "$MIRTH_PASS"
+    - mirth-cli artifact import --all --env prod
+    - mirth-cli artifact deploy --delta
+    - "curl -sf $MIRTH_PROD_URL/api/health || exit 1"
+  variables:
+    MIRTH_CLI_URL: ${MIRTH_PROD_URL}
+  environment:
+    name: production
+    url: ${MIRTH_PROD_URL}
+  when: manual
+  only:
+    - main

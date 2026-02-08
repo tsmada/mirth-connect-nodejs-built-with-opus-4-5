@@ -12,6 +12,7 @@
     "report": "ts-node scripts/generate-report.ts",
     "validate:sftp": "ts-node runners/ValidationRunner.ts --scenario 7.8 --verbose",
     "validate:sftp:quick": "ts-node scripts/sftp-quick-validate.ts",
+    "validate:artifacts": "ts-node runners/ArtifactIntegrationRunner.ts",
     "setup": "bash scripts/setup.sh",
     "clean": "rm -rf dist reports/*.html reports/*.json"
   },

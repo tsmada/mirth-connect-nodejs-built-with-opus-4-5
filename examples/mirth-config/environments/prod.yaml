@@ -1,0 +1,8 @@
+# Production overrides.
+# Secrets (DB_PASSWORD, SFTP_PASSWORD, etc.) come from process.env, NOT this file.
+# Inject secrets via K8s Secrets, ECS task definitions, or Vault.
+
+DB_HOST: "prod-db.internal"
+LOG_LEVEL: "WARN"
+MAX_CONNECTIONS: "50"
+MLLP_PORT: "6661"

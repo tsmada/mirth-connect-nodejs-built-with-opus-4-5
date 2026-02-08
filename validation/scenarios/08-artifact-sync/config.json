@@ -1,0 +1,50 @@
+{
+  "id": "8",
+  "name": "Artifact Sync Integration",
+  "description": "Integration tests for git-backed artifact management against a real GitHub remote. Creates an ephemeral public repo per test run.",
+  "type": "artifact",
+  "priority": 8,
+  "prerequisites": ["gh-cli-authenticated", "node-mirth-running"],
+  "scenarios": [
+    {
+      "id": "8.1",
+      "name": "Export + Push to GitHub",
+      "description": "Export deployed channels via ArtifactController, push to GitHub, verify decomposed file tree in remote clone"
+    },
+    {
+      "id": "8.2",
+      "name": "Git Status + Log via API",
+      "description": "Verify git status and log match between ArtifactController and independent clone"
+    },
+    {
+      "id": "8.3",
+      "name": "Clone + Import from GitHub",
+      "description": "Clone remote repo, initialize separate ArtifactController, import channels, verify round-trip fidelity"
+    },
+    {
+      "id": "8.4",
+      "name": "Modify + Delta Detection",
+      "description": "Modify a channel file in git, commit+push, verify DeltaDetector identifies the correct changed channel"
+    },
+    {
+      "id": "8.5",
+      "name": "Multi-Branch Promotion",
+      "description": "Create dev and staging branches, export to dev, promote to staging via PromotionPipeline"
+    },
+    {
+      "id": "8.6",
+      "name": "Sensitive Data Masking",
+      "description": "Export with maskSecrets=true, verify credentials replaced with ${} variable placeholders"
+    },
+    {
+      "id": "8.7",
+      "name": "Structural Diff via API",
+      "description": "Modify channel XML, run ChannelDiff against git version, verify diff result has changes"
+    },
+    {
+      "id": "8.8",
+      "name": "Dependency Graph",
+      "description": "Query dependency graph via ArtifactController and REST API, verify structure"
+    }
+  ]
+}

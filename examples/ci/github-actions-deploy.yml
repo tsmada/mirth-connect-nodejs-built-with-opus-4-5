@@ -1,0 +1,84 @@
+# GitHub Actions pipeline for deploying Mirth channel configurations.
+# Includes two job examples:
+#   1. standalone-deploy: Immutable container rebuild (recommended for standalone mode)
+#   2. takeover-deploy: Hot-deploy to a running server (for takeover mode)
+
+name: Deploy Mirth Config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'channels/**'
+      - 'code-templates/**'
+      - 'environments/**'
+
+# ------------------------------------------------------------------
+# Job 1: Standalone mode — build a new container image with config
+# ------------------------------------------------------------------
+jobs:
+  standalone-deploy:
+    if: false  # Enable this job by changing to: if: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image with Mirth config
+        run: |
+          docker build \
+            --build-arg MIRTH_MODE=standalone \
+            --build-arg MIRTH_ARTIFACT_ENV=prod \
+            -t mirth-nodejs:${{ github.sha }} .
+
+      - name: Push to container registry
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker tag mirth-nodejs:${{ github.sha }} ghcr.io/${{ github.repository }}/mirth-nodejs:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/mirth-nodejs:${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/mirth-nodejs \
+            mirth=ghcr.io/${{ github.repository }}/mirth-nodejs:${{ github.sha }}
+          kubectl rollout status deployment/mirth-nodejs --timeout=120s
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+
+# ------------------------------------------------------------------
+# Job 2: Takeover mode — hot-deploy to a running Mirth instance
+# ------------------------------------------------------------------
+  takeover-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install mirth-cli
+        run: npm install -g mirth-cli
+
+      - name: Login to Mirth server
+        run: mirth-cli login -u "$MIRTH_USER" -p "$MIRTH_PASS"
+        env:
+          MIRTH_CLI_URL: ${{ secrets.MIRTH_URL }}
+          MIRTH_USER: ${{ secrets.MIRTH_USER }}
+          MIRTH_PASS: ${{ secrets.MIRTH_PASS }}
+
+      - name: Import and deploy changed channels
+        run: |
+          mirth-cli artifact import --all --env prod
+          mirth-cli artifact deploy --delta
+        env:
+          MIRTH_CLI_URL: ${{ secrets.MIRTH_URL }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -sf "$MIRTH_URL/api/health" || exit 1
+        env:
+          MIRTH_URL: ${{ secrets.MIRTH_URL }}

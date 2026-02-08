@@ -34,6 +34,7 @@ import { PromotionGate } from './promotion/PromotionGate.js';
 import type { ApprovalRecord } from './promotion/PromotionGate.js';
 import type { FileTreeEntry, SensitiveField, DecomposedChannel } from './types.js';
 import { sanitizeName } from './types.js';
+import type { RepoMetadata } from './git/GitSyncService.js';
 
 // --- Types -------------------------------------------------------------------
 
@@ -158,8 +159,31 @@ export class ArtifactController {
     }
 
     for (const entry of channelEntries) {
-      await syncService.writeChannel(`channels/${entry.name}`, entry.files);
+      // writeChannel() already joins repoPath + 'channels' + channelDir,
+      // so pass just the channel name, not 'channels/{name}'
+      await syncService.writeChannel(entry.name, entry.files);
     }
+
+    // Write repo metadata (.mirth-sync.yaml) with engine info
+    const metadata: RepoMetadata = {
+      engine: {
+        type: 'nodejs',
+        mirthVersion: '3.9.1',
+        nodeVersion: process.version,
+        e4xSupport: true,
+        schemaVersion: '1',
+      },
+      serverId: process.env['MIRTH_SERVER_ID'] || 'unknown',
+      lastSync: new Date().toISOString(),
+    };
+
+    // Preserve existing gitFlow config if present
+    const existingMeta = await syncService.readRepoMetadata();
+    if (existingMeta?.gitFlow) {
+      metadata.gitFlow = existingMeta.gitFlow;
+    }
+
+    await syncService.writeRepoMetadata(metadata);
 
     await gitClient.add('.');
     const commitMessage = options?.message || `Export ${channelXmls.size} channel(s)`;
@@ -200,7 +224,8 @@ export class ArtifactController {
 
     const syncService = ArtifactController.syncService!;
     const dirName = sanitizeName(channelName);
-    const files = await syncService.readChannel(`channels/${dirName}`);
+    // readChannel() already joins repoPath + 'channels' + channelDir
+    const files = await syncService.readChannel(dirName);
 
     if (files.length === 0) {
       throw new Error(`Channel '${channelName}' not found in artifact repo`);
@@ -265,7 +290,8 @@ export class ArtifactController {
 
     let gitFiles: FileTreeEntry[];
     try {
-      gitFiles = await syncService.readChannel(`channels/${dirName}`);
+      // readChannel() already joins repoPath + 'channels' + channelDir
+      gitFiles = await syncService.readChannel(dirName);
     } catch {
       gitFiles = [];
     }
@@ -407,17 +433,28 @@ export class ArtifactController {
   static async promote(request: PromotionRequest): Promise<PromotionResult> {
     ArtifactController.ensureInitialized();
 
-    const config: PromotionConfig = {
+    // Read promotion config from .mirth-sync.yaml, fall back to defaults
+    const syncService = ArtifactController.syncService!;
+    const repoMeta = await syncService.readRepoMetadata();
+
+    const defaultConfig: PromotionConfig = {
       gitFlow: {
         model: 'environment-branches',
-        branches: {
-          dev: 'dev',
-          staging: 'staging',
-          prod: 'main',
-        },
+        branches: { dev: 'dev', staging: 'staging', prod: 'main' },
       },
       environments: ['dev', 'staging', 'prod'],
     };
+
+    const config: PromotionConfig = repoMeta?.gitFlow
+      ? {
+          gitFlow: {
+            model: repoMeta.gitFlow.model || 'environment-branches',
+            branches: repoMeta.gitFlow.branches || defaultConfig.gitFlow.branches,
+            autoSync: repoMeta.gitFlow.autoSync,
+          },
+          environments: Object.keys(repoMeta.gitFlow.branches || defaultConfig.gitFlow.branches),
+        }
+      : defaultConfig;
 
     const pipeline = new PromotionPipeline(config);
     const validation = pipeline.validate(request);
@@ -456,7 +493,30 @@ export class ArtifactController {
       ArtifactController.promotionApprovals.push(approval);
     }
 
-    const result = await pipeline.promote(request, [], undefined, undefined);
+    // Discover channels from the git repo to pass to the pipeline
+    const channelDirs = await syncService.listChannels();
+    const channels: Array<{ id: string; name: string; metadata: Record<string, unknown> }> = [];
+
+    for (const dir of channelDirs) {
+      try {
+        const files = await syncService.readChannel(dir);
+        const yamlFile = files.find(f => f.path.endsWith('channel.yaml'));
+        if (yamlFile) {
+          const parsed = yaml.load(yamlFile.content) as Record<string, unknown> | undefined;
+          channels.push({
+            id: (parsed?.id as string) || dir,
+            name: (parsed?.name as string) || dir,
+            metadata: parsed || {},
+          });
+        } else {
+          channels.push({ id: dir, name: dir, metadata: {} });
+        }
+      } catch {
+        channels.push({ id: dir, name: dir, metadata: {} });
+      }
+    }
+
+    const result = await pipeline.promote(request, channels, undefined, undefined);
     return result;
   }
 
@@ -591,12 +651,16 @@ export class ArtifactController {
       }
     }
 
+    // Read _raw.xml if present — the assembler needs this for lossless round-trip
+    const rawFile = files.find(f => f.path.endsWith('_raw.xml'));
+    const rawXml = rawFile?.content || '';
+
     return {
       metadata: metadata as any,
       source: source as any,
       destinations: destinations as any,
       scripts: scripts as any,
-      rawXml: '',
+      rawXml,
     };
   }
 

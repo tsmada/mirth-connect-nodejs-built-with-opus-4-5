@@ -1,0 +1,17 @@
+# Never commit secrets
+.env
+*.key
+*.pem
+*.p12
+*.jks
+
+# Internal assembly artifacts
+.raw.xml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/

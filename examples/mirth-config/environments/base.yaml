@@ -1,0 +1,11 @@
+# Shared defaults across all environments.
+# These values are used when no environment-specific override is provided.
+# Reference these in channel configs as ${VAR_NAME} or ${VAR_NAME:default_value}.
+
+MLLP_PORT: "6661"
+HTTP_PORT: "8083"
+DB_HOST: "localhost"
+DB_PORT: "3306"
+DB_NAME: "mirthdb"
+LOG_LEVEL: "INFO"
+MAX_CONNECTIONS: "10"
