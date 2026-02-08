@@ -16,8 +16,9 @@ import { TcpReceiverProperties, TcpDispatcherProperties, ServerMode, Transmissio
 import { HttpReceiver } from '../../connectors/http/HttpReceiver.js';
 import { HttpDispatcher } from '../../connectors/http/HttpDispatcher.js';
 import { HttpReceiverProperties, HttpDispatcherProperties } from '../../connectors/http/HttpConnectorProperties.js';
+import { FileReceiver } from '../../connectors/file/FileReceiver.js';
 import { FileDispatcher } from '../../connectors/file/FileDispatcher.js';
-import { FileDispatcherProperties } from '../../connectors/file/FileConnectorProperties.js';
+import { FileReceiverProperties, FileDispatcherProperties, FileScheme, AfterProcessingAction, FileSortBy } from '../../connectors/file/FileConnectorProperties.js';
 import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js';
 import { VmDispatcher } from '../../connectors/vm/VmDispatcher.js';
 import { VmReceiver } from '../../connectors/vm/VmReceiver.js';
@@ -116,6 +117,8 @@ function buildSourceConnector(channelConfig: ChannelModel): SourceConnector | nu
       return buildHttpReceiver(sourceConfig.properties);
     case 'Channel Reader':
       return buildVmReceiver(sourceConfig.properties);
+    case 'File Reader':
+      return buildFileReceiver(sourceConfig.properties);
     default:
       console.warn(`Unsupported source connector transport: ${transportName}`);
       return null;
@@ -386,12 +389,19 @@ function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
 
 /**
  * Build File dispatcher from configuration
+ *
+ * Enhanced to support SFTP scheme properties alongside local FILE scheme.
+ * When scheme is SFTP, parses host/port/credentials and sftpSchemeProperties.
  */
 function buildFileDispatcher(destConfig: Connector): FileDispatcher {
   const props = destConfig.properties as Record<string, unknown>;
   const schemeProps = props?.schemeProperties as Record<string, unknown>;
 
-  // Parse directory and filename
+  // Parse scheme
+  const schemeStr = String(schemeProps?.scheme || props?.scheme || 'FILE').toUpperCase();
+  const scheme = (FileScheme as Record<string, string>)[schemeStr] as FileScheme || FileScheme.FILE;
+
+  // Parse directory — for SFTP, remote path is in schemeProperties.host
   let directory = String(schemeProps?.host || props?.host || '/tmp');
   const outputPattern = String(props?.outputPattern || 'output.txt');
 
@@ -400,15 +410,58 @@ function buildFileDispatcher(destConfig: Connector): FileDispatcher {
     directory = '/tmp';
   }
 
+  // SFTP connection properties
+  let host = '';
+  let port: number | undefined;
+  let username = '';
+  let password = '';
+
+  if (scheme === FileScheme.SFTP) {
+    host = String(props?.host || schemeProps?.sftpHost || 'localhost');
+    port = parseInt(String(props?.port || schemeProps?.port || '22'), 10);
+    username = String(props?.username || '');
+    password = String(props?.password || '');
+
+    if (host.startsWith('${')) {
+      host = 'localhost';
+    }
+    if (isNaN(port)) {
+      port = 22;
+    }
+  }
+
   // Parse output append mode
   const outputAppend = String(props?.outputAppend) === 'true';
 
+  // Parse SFTP-specific scheme properties
+  let sftpSchemeProperties: Record<string, unknown> | undefined;
+  if (scheme === FileScheme.SFTP) {
+    const sftpProps = schemeProps?.sftpSchemeProperties as Record<string, unknown> ||
+                      props?.sftpSchemeProperties as Record<string, unknown>;
+    if (sftpProps) {
+      sftpSchemeProperties = {
+        passwordAuth: String(sftpProps.passwordAuth) !== 'false',
+        keyAuth: String(sftpProps.keyAuth) === 'true',
+        keyFile: String(sftpProps.keyFile || ''),
+        passPhrase: String(sftpProps.passPhrase || ''),
+        hostKeyChecking: String(sftpProps.hostKeyChecking || 'no'),
+        knownHostsFile: String(sftpProps.knownHostsFile || ''),
+      };
+    }
+  }
+
   const fileProperties: Partial<FileDispatcherProperties> = {
+    scheme,
+    host,
+    port,
+    username,
+    password,
     directory,
     outputPattern,
     outputAppend,
     template: String(props?.template || ''),
     charsetEncoding: String(props?.charsetEncoding || 'UTF-8'),
+    ...(sftpSchemeProperties ? { sftpSchemeProperties: sftpSchemeProperties as any } : {}),
   };
 
   return new FileDispatcher({
@@ -490,6 +543,113 @@ function buildHttpReceiver(properties: unknown): HttpReceiver {
   return new HttpReceiver({
     name: 'sourceConnector',
     properties: httpProperties,
+  });
+}
+
+/**
+ * Build File receiver (File Reader) from properties
+ *
+ * Parses channel XML properties for both local FILE and remote SFTP schemes.
+ * In Mirth's XML format, SFTP paths are stored in schemeProperties.host,
+ * while the actual SFTP server hostname is in the top-level host property.
+ */
+function buildFileReceiver(properties: unknown): FileReceiver {
+  const props = properties as Record<string, unknown>;
+  const schemeProps = props?.schemeProperties as Record<string, unknown>;
+
+  // Parse scheme — may be at top level or inside schemeProperties
+  const schemeStr = String(schemeProps?.scheme || props?.scheme || 'FILE').toUpperCase();
+  const scheme = (FileScheme as Record<string, string>)[schemeStr] as FileScheme || FileScheme.FILE;
+
+  // For SFTP: the remote directory is in schemeProperties.host (Mirth convention)
+  // For FILE: directory is in schemeProperties.host or props.host
+  let directory = String(schemeProps?.host || props?.host || props?.directory || '');
+  if (directory.startsWith('${')) {
+    directory = '/tmp';
+  }
+
+  // SFTP connection properties
+  let host = '';
+  let port: number | undefined;
+  let username = '';
+  let password = '';
+
+  if (scheme === FileScheme.SFTP) {
+    // For SFTP, the server hostname is at the top-level properties
+    host = String(props?.host || schemeProps?.sftpHost || 'localhost');
+    port = parseInt(String(props?.port || schemeProps?.port || '22'), 10);
+    username = String(props?.username || '');
+    password = String(props?.password || '');
+
+    if (host.startsWith('${')) {
+      host = 'localhost';
+    }
+    if (isNaN(port)) {
+      port = 22;
+    }
+  }
+
+  // Parse file filter and processing options
+  const fileFilter = String(props?.fileFilter || schemeProps?.fileFilter || '*');
+  const regex = String(props?.regex || schemeProps?.regex) === 'true';
+  const pollConnProps = props?.pollConnectorProperties as Record<string, unknown> | undefined;
+  const pollInterval = parseInt(String(pollConnProps?.pollingFrequency || pollConnProps?.pollFrequency || props?.pollInterval || '5000'), 10);
+
+  // Parse after-processing action
+  const afterProcStr = String(props?.afterProcessingAction || 'NONE').toUpperCase();
+  const afterProcessingAction = (AfterProcessingAction as Record<string, string>)[afterProcStr] as AfterProcessingAction || AfterProcessingAction.NONE;
+
+  const moveToDirectory = String(props?.moveToDirectory || '');
+
+  // Parse sort options
+  const sortByStr = String(props?.sortBy || 'DATE').toUpperCase();
+  const sortBy = (FileSortBy as Record<string, string>)[sortByStr] as FileSortBy || FileSortBy.DATE;
+
+  // Parse SFTP-specific scheme properties
+  let sftpSchemeProperties: Record<string, unknown> | undefined;
+  if (scheme === FileScheme.SFTP) {
+    const sftpProps = schemeProps?.sftpSchemeProperties as Record<string, unknown> ||
+                      props?.sftpSchemeProperties as Record<string, unknown>;
+    if (sftpProps) {
+      sftpSchemeProperties = {
+        passwordAuth: String(sftpProps.passwordAuth) !== 'false',
+        keyAuth: String(sftpProps.keyAuth) === 'true',
+        keyFile: String(sftpProps.keyFile || ''),
+        passPhrase: String(sftpProps.passPhrase || ''),
+        hostKeyChecking: String(sftpProps.hostKeyChecking || 'no'),
+        knownHostsFile: String(sftpProps.knownHostsFile || ''),
+      };
+    }
+  }
+
+  const fileProperties: Partial<FileReceiverProperties> = {
+    scheme,
+    host,
+    port,
+    username,
+    password,
+    directory,
+    fileFilter,
+    regex,
+    directoryRecursion: String(props?.directoryRecursion) === 'true',
+    ignoreDot: String(props?.ignoreDot) !== 'false',
+    binary: String(props?.binary) === 'true',
+    charsetEncoding: String(props?.charsetEncoding || 'UTF-8'),
+    afterProcessingAction,
+    moveToDirectory,
+    errorDirectory: String(props?.errorDirectory || ''),
+    fileAge: parseInt(String(props?.fileAge || '0'), 10),
+    pollInterval: isNaN(pollInterval) ? 5000 : pollInterval,
+    sortBy,
+    sortDescending: String(props?.sortDescending) === 'true',
+    batchSize: parseInt(String(props?.batchSize || '0'), 10),
+    timeout: parseInt(String(props?.timeout || '10000'), 10),
+    ...(sftpSchemeProperties ? { sftpSchemeProperties: sftpSchemeProperties as any } : {}),
+  };
+
+  return new FileReceiver({
+    name: 'sourceConnector',
+    properties: fileProperties,
   });
 }
 

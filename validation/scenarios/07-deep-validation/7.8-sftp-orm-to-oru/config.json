@@ -1,0 +1,12 @@
+{
+  "id": "7.8",
+  "name": "SFTP ORM to ORU Lab Transform",
+  "description": "Read ORM lab order from SFTP, transform to ORU with mock results, write to SFTP",
+  "priority": 7,
+  "type": "sftp",
+  "channelFile": "sftp-orm-to-oru-channel.xml",
+  "inputMessage": "orm-lab-order.hl7",
+  "outputFormat": "hl7",
+  "outputFilePattern": "result.hl7",
+  "timeout": 60000
+}

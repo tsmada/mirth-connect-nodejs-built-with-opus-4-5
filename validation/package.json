@@ -10,6 +10,8 @@
     "validate:priority1": "ts-node runners/ValidationRunner.ts --priority 1",
     "validate:scenario": "ts-node runners/ScenarioRunner.ts",
     "report": "ts-node scripts/generate-report.ts",
+    "validate:sftp": "ts-node runners/ValidationRunner.ts --scenario 7.8 --verbose",
+    "validate:sftp:quick": "ts-node scripts/sftp-quick-validate.ts",
     "setup": "bash scripts/setup.sh",
     "clean": "rm -rf dist reports/*.html reports/*.json"
   },

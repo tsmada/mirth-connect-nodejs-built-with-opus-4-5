@@ -82,6 +82,13 @@ export interface ScenarioConfig {
    * Library functions will be available to the channel's scripts.
    */
   codeTemplateLibrary?: string;
+  /**
+   * Glob pattern for the expected output file in SFTP scenarios.
+   * When set, the runner polls the output directory for any file matching
+   * this pattern instead of deriving the name from the input filename.
+   * Example: "result.hl7", "*.oru", "output-*.hl7"
+   */
+  outputFilePattern?: string;
 }
 
 export interface ScenarioStep {
@@ -643,7 +650,6 @@ export class ScenarioRunner {
       const javaOutputDir = '/home/javauser/output';
       const nodeOutputDir = '/home/nodeuser/output';
       const filename = `test-${Date.now()}.hl7`;
-      const outputFilename = filename.replace('.hl7', '.out');
 
       await javaSftp.ensureDirectory(javaInputDir);
       await javaSftp.ensureDirectory(javaOutputDir);
@@ -654,34 +660,47 @@ export class ScenarioRunner {
       await javaSftp.uploadContent(inputContent, `${javaInputDir}/${filename}`);
       await nodeSftp.uploadContent(inputContent, `${nodeInputDir}/${filename}`);
 
-      // Wait for output files
+      // Wait for output files — use pattern matching or derived filename
       const timeout = config.timeout || 60000;
-      const javaOutputFound = await javaSftp.waitForFile(`${javaOutputDir}/${outputFilename}`, timeout);
-      const nodeOutputFound = await nodeSftp.waitForFile(`${nodeOutputDir}/${outputFilename}`, timeout);
+      let javaOutputFile: string | null;
+      let nodeOutputFile: string | null;
 
-      if (!javaOutputFound || !nodeOutputFound) {
+      if (config.outputFilePattern) {
+        // Poll for any file matching the pattern in the output directory
+        javaOutputFile = await this.waitForFileByPattern(javaSftp, javaOutputDir, config.outputFilePattern, timeout);
+        nodeOutputFile = await this.waitForFileByPattern(nodeSftp, nodeOutputDir, config.outputFilePattern, timeout);
+      } else {
+        // Legacy behavior: derive output filename from input
+        const outputFilename = filename.replace('.hl7', '.out');
+        const javaFound = await javaSftp.waitForFile(`${javaOutputDir}/${outputFilename}`, timeout);
+        const nodeFound = await nodeSftp.waitForFile(`${nodeOutputDir}/${outputFilename}`, timeout);
+        javaOutputFile = javaFound ? `${javaOutputDir}/${outputFilename}` : null;
+        nodeOutputFile = nodeFound ? `${nodeOutputDir}/${outputFilename}` : null;
+      }
+
+      if (!javaOutputFile || !nodeOutputFile) {
         return {
           scenarioId: config.id,
           scenarioName: config.name,
           passed: false,
-          error: `Output file not found: Java=${javaOutputFound}, Node=${nodeOutputFound}`,
+          error: `Output file not found: Java=${!!javaOutputFile}, Node=${!!nodeOutputFile}`,
           differences: [],
           duration: Date.now() - startTime,
         };
       }
 
       // Download and compare outputs
-      const javaOutput = await javaSftp.downloadFile(`${javaOutputDir}/${outputFilename}`);
-      const nodeOutput = await nodeSftp.downloadFile(`${nodeOutputDir}/${outputFilename}`);
+      const javaOutput = await javaSftp.downloadFile(javaOutputFile);
+      const nodeOutput = await nodeSftp.downloadFile(nodeOutputFile);
 
       const comparison = this.compareOutputs(javaOutput, nodeOutput, config.outputFormat || 'hl7');
 
       // Cleanup input/output files
       try {
         await javaSftp.deleteFile(`${javaInputDir}/${filename}`);
-        await javaSftp.deleteFile(`${javaOutputDir}/${outputFilename}`);
+        await javaSftp.deleteFile(javaOutputFile);
         await nodeSftp.deleteFile(`${nodeInputDir}/${filename}`);
-        await nodeSftp.deleteFile(`${nodeOutputDir}/${outputFilename}`);
+        await nodeSftp.deleteFile(nodeOutputFile);
       } catch {
         // Ignore cleanup errors
       }
@@ -744,6 +763,40 @@ export class ScenarioRunner {
       default:
         return this.messageComparator.compareHL7(javaOutput, nodeOutput);
     }
+  }
+
+  /**
+   * Wait for a file matching a glob pattern to appear in an SFTP directory.
+   * Returns the full remote path of the first matching file, or null on timeout.
+   */
+  private async waitForFileByPattern(
+    sftp: ValidationSftpClient,
+    directory: string,
+    pattern: string,
+    timeout: number,
+    pollInterval: number = 500
+  ): Promise<string | null> {
+    const startTime = Date.now();
+    // Convert simple glob to regex: *.hl7 → ^.*\.hl7$
+    const regexStr = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    const regex = new RegExp(`^${regexStr}$`, 'i');
+
+    while (Date.now() - startTime < timeout) {
+      try {
+        const files = await sftp.listFiles(directory);
+        const match = files.find(f => f.type === '-' && regex.test(f.name));
+        if (match) {
+          return `${directory}/${match.name}`;
+        }
+      } catch {
+        // Directory may not exist yet, continue waiting
+      }
+      await this.delay(pollInterval);
+    }
+    return null;
   }
 
   /**
@@ -936,12 +989,22 @@ export class ScenarioRunner {
       `<id>${engineChannelId}</id>`
     );
 
+    // SFTP credentials and paths per engine
+    const sftpUser = engine === 'java' ? 'javauser' : 'nodeuser';
+    const sftpPass = engine === 'java' ? 'javapass' : 'nodepass';
+    const sftpInputDir = `/home/${sftpUser}/input`;
+    const sftpOutputDir = `/home/${sftpUser}/output`;
+
     // Replace modern placeholders
     prepared = prepared
       .replace(/\{\{MLLP_PORT\}\}/g, String(mllpPort))
       .replace(/\{\{HTTP_PORT\}\}/g, String(httpPort))
       .replace(/\{\{FILE_OUTPUT_DIR\}\}/g, fileOutputDir)
-      .replace(/\{\{CHANNEL_ID\}\}/g, engineChannelId);
+      .replace(/\{\{CHANNEL_ID\}\}/g, engineChannelId)
+      .replace(/\{\{SFTP_USER\}\}/g, sftpUser)
+      .replace(/\{\{SFTP_PASS\}\}/g, sftpPass)
+      .replace(/\{\{SFTP_INPUT_DIR\}\}/g, sftpInputDir)
+      .replace(/\{\{SFTP_OUTPUT_DIR\}\}/g, sftpOutputDir);
 
     // Replace legacy Mirth configuration variables
     prepared = prepared
