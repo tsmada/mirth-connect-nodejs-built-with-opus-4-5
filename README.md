@@ -225,7 +225,7 @@ On SIGTERM (sent by orchestrators during scale-down/rolling updates):
 | **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, **HL7v3 (CDA)**, **NCPDP (pharmacy)**, **DICOM** |
 | **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), VMRouter, DestinationSet, FileUtil, HTTPUtil, **DICOMUtil** |
 | **API** | Full REST API compatible with Mirth Administrator (14 servlets) with **message import/export** and **attachments** |
-| **Plugins** | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, **ServerLog**, **DashboardStatus** |
+| **Plugins** | Code Templates, **Data Pruner** (per-channel retention, event pruning, config persistence), XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, **ServerLog**, **DashboardStatus** |
 | **CLI Tool** | Terminal-based monitor and management utility |
 | **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, **UUIDGenerator**, **NCPDPUtil**, **ContextFactory** |
 | **Cluster** | Container-native horizontal scaling, health probes, block-allocated sequences, database-backed global maps, graceful shutdown |
@@ -643,6 +643,7 @@ Query parameters: `includeContent`, `contentTypes`, `maxContentLength`, `maxDept
 | `/api/events/_search` | POST | Event search |
 | `/api/alerts` | GET, POST, PUT, DELETE | Alert management |
 | `/api/extensions` | GET, PUT | Plugin management |
+| `/api/extensions/datapruner` | GET, POST, PUT | Data Pruner status, config, start/stop |
 | `/api/channelgroups` | GET, POST | Channel groups |
 | `/api/codeTemplates` | GET, POST, PUT, DELETE | Code template library |
 
@@ -1005,6 +1006,7 @@ The Node.js engine maintains 100% API compatibility with the Java Mirth Administ
 | **Cluster API** | `GET /api/system/cluster/*` endpoints for node status and aggregated statistics. | Extension — not related to Java Mirth's clustering plugin endpoints. |
 | **Graceful Shutdown** | SIGTERM triggers drain + deregister sequence instead of immediate exit. | Behavioral improvement — Java Mirth has similar graceful shutdown in its shutdown hook. |
 | **Block Sequence IDs** | SequenceAllocator pre-allocates 100 IDs per lock instead of 1. | Compatible — produces valid non-contiguous IDs. Gaps are harmless (IDs need only be unique). |
+| **Data Pruner Operational** | DataPruner is wired into server lifecycle, runs on schedule, reads per-channel pruning settings, skips in-flight messages (`PROCESSED=0`), cleans D_MCM tables, persists config to CONFIGURATION table, and prunes old audit events. | Matches Java Mirth behavior. Archive-before-delete phase not yet connected (planned). |
 
 ### Bug Fixes Applied
 
@@ -1037,6 +1039,32 @@ The Node.js engine persists this sourceMap to the `D_MC` table after message pro
 **Dependency graph**: The trace service builds a channel dependency graph by scanning all channel configurations for `transportName === 'Channel Writer'` destinations, scoping forward-trace queries to only relevant downstream channels.
 
 **VM cross-channel routing** is fully operational: `ChannelBuilder` wires both `VmReceiver` (Channel Reader source) and `VmDispatcher` (Channel Writer destination), and the `EngineController` adapter is connected during deployment to enable runtime message dispatch between channels.
+
+### Data Pruner
+
+The Data Pruner runs as a scheduled background task that removes old messages from per-channel tables based on retention policies configured per channel. It is automatically started on server startup via `dataPrunerController.initialize()`.
+
+**How it works:**
+
+1. On each scheduled run (default: every 12 hours), the pruner builds a task queue by scanning all channels
+2. Per-channel pruning settings are read from `ConfigurationController.getChannelMetadata()` — channels without explicit settings are skipped
+3. Channels with `messageStorageMode=DISABLED` are skipped (no messages stored)
+4. For each channel, messages older than the configured retention period are deleted in batches
+5. In-flight messages (`PROCESSED=0`) are never pruned, preventing data loss during pipeline processing
+6. All per-channel tables are cleaned: `D_M`, `D_MM`, `D_MC`, `D_MA`, `D_MCM` (custom metadata)
+7. Old audit events can be pruned when `pruneEvents` is enabled with a `maxEventAge` setting
+8. Configuration is persisted to the `CONFIGURATION` table and survives server restarts
+
+**REST API:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/extensions/datapruner/status` | GET | Current pruner status (running, progress, last run) |
+| `/api/extensions/datapruner/_start` | POST | Trigger a manual pruning run |
+| `/api/extensions/datapruner/_stop` | POST | Stop a running pruning job |
+| `/api/extensions/datapruner/config` | GET, PUT | Read/update pruner configuration |
+
+**Remaining gap:** The `MessageArchiver` (archive-before-delete) is implemented but not yet connected to the pruning pipeline. See `plans/datapruner-archive-integration.md` for the integration plan.
 
 ## Troubleshooting
 

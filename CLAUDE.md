@@ -239,6 +239,38 @@ The trace feature uses VM Connector chain-tracking data (`sourceChannelIds[]`, `
 
 **Fixed**: The Node.js port originally omitted `RESPONSE_ERROR` entirely and assigned `SOURCE_MAP = 14`. Java Mirth defines `RESPONSE_ERROR = 14` and `SOURCE_MAP = 15`. This caused data corruption in takeover mode: Java's RESPONSE_ERROR rows (content type 14 in `D_MC`) were misread as SOURCE_MAP data. All content type definitions — `src/model/ContentType.ts`, `src/api/models/MessageFilter.ts`, and the inline maps in `MessageServlet.ts` — now include `RESPONSE_ERROR = 14` and `SOURCE_MAP = 15`, matching Java Mirth exactly.
 
+### Data Pruner (Operational)
+
+The DataPruner is fully wired into the server lifecycle and matches Java Mirth's pruning behavior.
+
+**Startup wiring:** `dataPrunerController.initialize()` is called from `Mirth.ts` after VMRouter init. `dataPrunerController.shutdown()` is called during server shutdown. The controller runs the pruner on a configurable schedule (default: every 12 hours).
+
+**Per-channel pruning settings:** `buildTaskQueue()` reads per-channel retention settings from `ConfigurationController.getChannelMetadata()`. Channels without explicit `pruningSettings` are skipped (Java Mirth behavior). Channel names are resolved via `ChannelController.getChannelIdsAndNames()`.
+
+**Safety features:**
+- `PROCESSED=0` messages are never pruned (prevents deleting in-flight messages)
+- `messageStorageMode=DISABLED` channels are skipped (no messages stored)
+- `messageStorageMode=METADATA` channels have content pruning disabled (no content tables)
+- Failed archives skip deletion for that batch (data safety, when archive integration is connected)
+
+**D_MCM cleanup:** `DonkeyDao.pruneMessages()` now includes `D_MCM{id}` (custom metadata) in its batch delete transaction, matching the behavior of `deleteMessage()`.
+
+**Config persistence:** Pruner configuration is stored in the `CONFIGURATION` table with `category='Data Pruner'`, `name='pruner.config'` as JSON via `MirthDao.getConfiguration/setConfiguration`.
+
+**Event pruning:** `EventDao.deleteEventsBeforeDate()` is called when `pruneEvents=true` and `maxEventAge` is set, removing old audit log entries.
+
+**Remaining gap:** `MessageArchiver` (archive-before-delete phase) is implemented but not yet connected to the pruning pipeline. Plan: `plans/datapruner-archive-integration.md`.
+
+**Key files:**
+| File | Purpose |
+|------|---------|
+| `src/plugins/datapruner/DataPruner.ts` | Core pruning engine with per-channel task queue |
+| `src/plugins/datapruner/DataPrunerController.ts` | Scheduler, config CRUD, lifecycle management |
+| `src/plugins/datapruner/DataPrunerServlet.ts` | REST API: status, start, stop, config |
+| `src/plugins/datapruner/MessageArchiver.ts` | Archive-before-delete (not yet connected) |
+| `src/plugins/datapruner/DataPrunerStatus.ts` | Status tracking model |
+| `tests/unit/plugins/datapruner/` | 55 tests (unit + integration) |
+
 ### Horizontal Scaling (Container-Native Clustering)
 
 **This is a Node.js-only feature with no Java Mirth equivalent.** It provides container-native horizontal scaling.
@@ -1120,7 +1152,7 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 **Advanced Plugins - Wave 4:**
 - ServerLog - Real-time log streaming via WebSocket
 - DashboardStatus - Real-time channel status via WebSocket
-- DataPruner enhancements - Complete archival/pruning configuration
+- DataPruner — Fully operational: server lifecycle wiring, per-channel pruning settings, PROCESSED flag safety, D_MCM cleanup, config persistence via CONFIGURATION table, event pruning via EventDao
 
 **Specialized Data Types - Wave 5:**
 
@@ -1404,6 +1436,7 @@ All Waves 1-6 are complete. The porting project has reached production-ready sta
 - ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 
 **Future Enhancements (Optional):**
+- DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)
 - Remote I/O Utils (S3Util, FtpUtil, SftpUtil) - File connector already supports these
 - Additional servlet test coverage
 - Performance optimization for high-volume channels
