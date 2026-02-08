@@ -7,12 +7,14 @@
  * Endpoints:
  * - GET /system/info - Get system information
  * - GET /system/stats - Get system statistics
+ * - GET /system/cluster/statistics - Get cluster-wide channel statistics
  */
 
 import { Router, Request, Response } from 'express';
 import * as os from 'os';
 import { authorize } from '../middleware/authorization.js';
 import { SYSTEM_GET_INFO, SYSTEM_GET_STATS } from '../middleware/operations.js';
+import { getLocalChannelIds, getStatistics, StatisticsRow } from '../../db/DonkeyDao.js';
 
 export const systemRouter = Router();
 
@@ -132,6 +134,94 @@ systemRouter.get(
     } catch (error) {
       console.error('Get system stats error:', error);
       res.status(500).json({ error: 'Failed to get system stats' });
+    }
+  }
+);
+
+// ============================================================================
+// Cluster Statistics
+// ============================================================================
+
+interface PerServerStats {
+  serverId: string;
+  received: number;
+  filtered: number;
+  transformed: number;
+  pending: number;
+  sent: number;
+  error: number;
+}
+
+interface ChannelClusterStats {
+  channelId: string;
+  aggregate: Omit<PerServerStats, 'serverId'>;
+  perServer: PerServerStats[];
+}
+
+/**
+ * GET /system/cluster/statistics
+ * Get channel statistics aggregated across all cluster instances.
+ *
+ * Queries each channel's D_MS table (which is already partitioned by SERVER_ID)
+ * and returns both per-server breakdowns and aggregated totals.
+ */
+systemRouter.get(
+  '/cluster/statistics',
+  authorize({ operation: SYSTEM_GET_STATS }),
+  async (_req: Request, res: Response) => {
+    try {
+      const channelMap = await getLocalChannelIds();
+      const channelIds = Array.from(channelMap.keys());
+
+      const results: ChannelClusterStats[] = [];
+
+      for (const channelId of channelIds) {
+        let rows: StatisticsRow[];
+        try {
+          rows = await getStatistics(channelId);
+        } catch {
+          // Channel tables may have been dropped; skip
+          continue;
+        }
+
+        // Group by SERVER_ID
+        const serverMap = new Map<string, PerServerStats>();
+        const aggregate = { received: 0, filtered: 0, transformed: 0, pending: 0, sent: 0, error: 0 };
+
+        for (const row of rows) {
+          let entry = serverMap.get(row.SERVER_ID);
+          if (!entry) {
+            entry = { serverId: row.SERVER_ID, received: 0, filtered: 0, transformed: 0, pending: 0, sent: 0, error: 0 };
+            serverMap.set(row.SERVER_ID, entry);
+          }
+          // Sum across all METADATA_IDs for this server
+          entry.received += row.RECEIVED;
+          entry.filtered += row.FILTERED;
+          entry.transformed += row.TRANSFORMED;
+          entry.pending += row.PENDING;
+          entry.sent += row.SENT;
+          entry.error += row.ERROR;
+
+          // Aggregate across all servers
+          aggregate.received += row.RECEIVED;
+          aggregate.filtered += row.FILTERED;
+          aggregate.transformed += row.TRANSFORMED;
+          aggregate.pending += row.PENDING;
+          aggregate.sent += row.SENT;
+          aggregate.error += row.ERROR;
+        }
+
+        results.push({
+          channelId,
+          aggregate,
+          perServer: Array.from(serverMap.values()),
+        });
+      }
+
+      res.sendData(results);
+    } catch (error) {
+      console.error('Get cluster statistics error:', error);
+      res.status(500).json({ error: 'Failed to get cluster statistics' });
     }
   }
 );

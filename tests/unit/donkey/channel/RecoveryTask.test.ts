@@ -6,7 +6,7 @@
  */
 
 // Mock DAO functions
-const mockGetUnfinishedMessages = jest.fn();
+const mockGetUnfinishedMessagesByServerId = jest.fn();
 const mockGetConnectorMessagesByStatus = jest.fn();
 const mockUpdateConnectorMessageStatus = jest.fn();
 const mockUpdateErrors = jest.fn();
@@ -14,7 +14,7 @@ const mockUpdateStatistics = jest.fn();
 const mockUpdateMessageProcessed = jest.fn();
 
 jest.mock('../../../../src/db/DonkeyDao.js', () => ({
-  getUnfinishedMessages: mockGetUnfinishedMessages,
+  getUnfinishedMessagesByServerId: mockGetUnfinishedMessagesByServerId,
   getConnectorMessagesByStatus: mockGetConnectorMessagesByStatus,
   updateConnectorMessageStatus: mockUpdateConnectorMessageStatus,
   updateErrors: mockUpdateErrors,
@@ -50,17 +50,17 @@ describe('RecoveryTask', () => {
   });
 
   it('returns zero counts when no unfinished messages exist', async () => {
-    mockGetUnfinishedMessages.mockResolvedValue([]);
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([]);
 
     const result = await runRecoveryTask(channelId, serverId);
 
     expect(result).toEqual({ recovered: 0, errors: 0 });
-    expect(mockGetUnfinishedMessages).toHaveBeenCalledWith(channelId);
+    expect(mockGetUnfinishedMessagesByServerId).toHaveBeenCalledWith(channelId, serverId);
     expect(mockUpdateConnectorMessageStatus).not.toHaveBeenCalled();
   });
 
   it('recovers unfinished message with pending connectors and marks as ERROR', async () => {
-    mockGetUnfinishedMessages.mockResolvedValue([
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([
       { ID: 42, SERVER_ID: 'node-1' },
     ]);
     mockGetConnectorMessagesByStatus.mockResolvedValue([
@@ -110,7 +110,7 @@ describe('RecoveryTask', () => {
   });
 
   it('recovers multiple unfinished messages', async () => {
-    mockGetUnfinishedMessages.mockResolvedValue([
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([
       { ID: 10, SERVER_ID: 'node-1' },
       { ID: 20, SERVER_ID: 'node-1' },
     ]);
@@ -126,7 +126,7 @@ describe('RecoveryTask', () => {
   });
 
   it('continues recovering other messages if one fails', async () => {
-    mockGetUnfinishedMessages.mockResolvedValue([
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([
       { ID: 10, SERVER_ID: 'node-1' },
       { ID: 20, SERVER_ID: 'node-1' },
     ]);
@@ -145,7 +145,7 @@ describe('RecoveryTask', () => {
   });
 
   it('handles initial query failure gracefully', async () => {
-    mockGetUnfinishedMessages.mockRejectedValue(new Error('Table does not exist'));
+    mockGetUnfinishedMessagesByServerId.mockRejectedValue(new Error('Table does not exist'));
 
     const result = await runRecoveryTask(channelId, serverId);
 
@@ -156,7 +156,7 @@ describe('RecoveryTask', () => {
   });
 
   it('does not log when no messages were recovered', async () => {
-    mockGetUnfinishedMessages.mockResolvedValue([]);
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([]);
 
     await runRecoveryTask(channelId, serverId);
 
@@ -166,7 +166,7 @@ describe('RecoveryTask', () => {
   it('uses transaction for atomicity per message', async () => {
     const { transaction } = require('../../../../src/db/pool');
 
-    mockGetUnfinishedMessages.mockResolvedValue([
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([
       { ID: 1, SERVER_ID: 'node-1' },
     ]);
     mockGetConnectorMessagesByStatus.mockResolvedValue([
@@ -179,8 +179,18 @@ describe('RecoveryTask', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
   });
 
+  it('queries unfinished messages filtered by serverId for cluster safety', async () => {
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([]);
+
+    await runRecoveryTask(channelId, 'cluster-node-A');
+
+    // Must pass serverId so each instance only recovers its own messages
+    expect(mockGetUnfinishedMessagesByServerId).toHaveBeenCalledWith(channelId, 'cluster-node-A');
+    expect(mockGetUnfinishedMessagesByServerId).toHaveBeenCalledTimes(1);
+  });
+
   it('passes connection to DAO functions within transaction', async () => {
-    mockGetUnfinishedMessages.mockResolvedValue([
+    mockGetUnfinishedMessagesByServerId.mockResolvedValue([
       { ID: 5, SERVER_ID: 'node-1' },
     ]);
     mockGetConnectorMessagesByStatus.mockResolvedValue([

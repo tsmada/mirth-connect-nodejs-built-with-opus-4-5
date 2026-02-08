@@ -53,6 +53,12 @@ import {
 } from '../../db/DonkeyDao.js';
 import { transaction } from '../../db/pool.js';
 import { StatisticsAccumulator } from './StatisticsAccumulator.js';
+import { getServerId } from '../../cluster/ClusterIdentity.js';
+import { getClusterConfig } from '../../cluster/ClusterConfig.js';
+import { SequenceAllocator } from '../../cluster/SequenceAllocator.js';
+
+// Module-level singleton for block-allocated message IDs in cluster mode
+const sequenceAllocator = new SequenceAllocator(getClusterConfig().sequenceBlockSize);
 
 export interface ChannelConfig {
   id: string;
@@ -93,7 +99,7 @@ export class Channel extends EventEmitter {
   private description: string;
   private enabled: boolean;
   private currentState: DeployedState = DeployedState.STOPPED;
-  private serverId: string = process.env.MIRTH_SERVER_ID || 'node-1';
+  private serverId: string = getServerId();
 
   private sourceConnector: SourceConnector | null = null;
   private destinationConnectors: DestinationConnector[] = [];
@@ -622,7 +628,12 @@ export class Channel extends EventEmitter {
       if (this.tablesExist === null) {
         this.tablesExist = await channelTablesExist(this.id);
       }
-      messageId = this.tablesExist ? await getNextMessageId(this.id) : this.nextMessageId++;
+      // Use block allocation in cluster mode for reduced contention
+      if (getClusterConfig().clusterEnabled) {
+        messageId = await sequenceAllocator.allocateId(this.id);
+      } else {
+        messageId = this.tablesExist ? await getNextMessageId(this.id) : this.nextMessageId++;
+      }
     } catch {
       messageId = this.nextMessageId++;
     }
