@@ -1328,11 +1328,30 @@ export async function getMessages(channelId: string, messageIds: number[]): Prom
  * Ported from JdbcDao.getUnfinishedMessages().
  *
  * Used during channel startup to resume processing of incomplete messages.
+ *
+ * @deprecated Use {@link getUnfinishedMessagesByServerId} in cluster deployments
+ *   so each instance only recovers its own messages.
  */
 export async function getUnfinishedMessages(channelId: string): Promise<MessageRow[]> {
   const pool = getPool();
   const [rows] = await pool.query<MessageRow[]>(
     `SELECT * FROM ${messageTable(channelId)} WHERE PROCESSED = 0 ORDER BY ID`
+  );
+  return rows;
+}
+
+/**
+ * Get unfinished messages filtered by SERVER_ID.
+ * In a cluster, each instance should only recover its own messages.
+ */
+export async function getUnfinishedMessagesByServerId(
+  channelId: string,
+  serverId: string
+): Promise<MessageRow[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<MessageRow[]>(
+    `SELECT * FROM ${messageTable(channelId)} WHERE PROCESSED = 0 AND SERVER_ID = ? ORDER BY ID`,
+    [serverId]
   );
   return rows;
 }

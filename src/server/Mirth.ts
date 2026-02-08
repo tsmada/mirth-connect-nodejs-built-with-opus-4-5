@@ -23,6 +23,9 @@ import {
 import { Response } from '../model/Response.js';
 import { dashboardStatusController } from '../plugins/dashboardstatus/DashboardStatusController.js';
 import { ConfigurationController } from '../controllers/ConfigurationController.js';
+import { registerServer, startHeartbeat, stopHeartbeat, deregisterServer } from '../cluster/ServerRegistry.js';
+import { setShuttingDown, setStartupComplete } from '../cluster/HealthCheck.js';
+import { getClusterConfig } from '../cluster/ClusterConfig.js';
 
 // Global Donkey instance for EngineController to access
 let donkeyInstance: Donkey | null = null;
@@ -118,8 +121,18 @@ export class Mirth {
     // Start REST API server
     this.server = await startServer({ port: this.config.httpPort });
 
+    // Register this server in D_SERVERS and start heartbeat
+    await registerServer(this.config.httpPort);
+    const clusterConfig = getClusterConfig();
+    if (clusterConfig.clusterEnabled) {
+      startHeartbeat();
+    }
+
     // Load channels from database and deploy them
     await this.loadAndDeployChannels();
+
+    // Mark startup complete (health probe: /api/health/startup)
+    setStartupComplete(true);
 
     // Initialize VMRouter singletons for user scripts (router.routeMessage())
     setVmRouterEngineController({
@@ -165,6 +178,12 @@ export class Mirth {
 
     console.warn('Stopping Mirth Connect...');
 
+    // Signal health checks to return 503
+    setShuttingDown(true);
+
+    // Stop heartbeat
+    stopHeartbeat();
+
     // Stop all running channels
     if (this.donkey) {
       const channels = this.donkey.getChannels();
@@ -193,11 +212,38 @@ export class Mirth {
       this.donkey = null;
     }
 
+    // Mark server as offline in D_SERVERS
+    try {
+      await deregisterServer();
+    } catch {
+      // DB pool may already be closed; best-effort
+    }
+
     // Close database connection pool
     await closePool();
 
     this.running = false;
+    setStartupComplete(false);
     console.warn('Mirth Connect stopped');
+  }
+
+  /**
+   * Install SIGTERM/SIGINT handlers for graceful shutdown.
+   * Call this after start() to enable signal-based shutdown.
+   */
+  installSignalHandlers(): void {
+    const shutdown = async (signal: string) => {
+      console.warn(`Received ${signal}, initiating graceful shutdown...`);
+      try {
+        await this.stop();
+      } catch (err) {
+        console.error('Error during graceful shutdown:', err);
+      }
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => void shutdown('SIGTERM'));
+    process.on('SIGINT', () => void shutdown('SIGINT'));
   }
 
   isRunning(): boolean {

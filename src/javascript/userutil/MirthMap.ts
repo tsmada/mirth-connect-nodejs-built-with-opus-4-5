@@ -9,6 +9,9 @@
  * - Java-style method names (get, put, containsKey, etc.)
  */
 
+import type { MapBackend } from '../../cluster/MapBackend.js';
+import type { RowDataPacket } from 'mysql2/promise';
+
 /**
  * Base MirthMap class - Java-compatible Map for script scope
  */
@@ -213,9 +216,15 @@ export class ResponseMap extends MirthMap {
 
 /**
  * GlobalMap - Singleton map for global variables across all channels
+ *
+ * Supports an optional MapBackend for clustered deployments. When a backend
+ * is configured via setBackend(), writes are persisted asynchronously
+ * (write-through cache) while reads remain synchronous from the in-memory
+ * cache for backward compatibility with user scripts that call $g('key').
  */
 export class GlobalMap extends MirthMap {
   private static instance: GlobalMap | null = null;
+  private backend: MapBackend | null = null;
 
   private constructor() {
     super();
@@ -229,6 +238,72 @@ export class GlobalMap extends MirthMap {
   }
 
   /**
+   * Set a backend for persistent/shared storage.
+   * Activates write-through caching: reads from in-memory, writes to both.
+   */
+  static setBackend(backend: MapBackend): void {
+    GlobalMap.getInstance().backend = backend;
+  }
+
+  /**
+   * Get the current backend (if any)
+   */
+  static getBackend(): MapBackend | null {
+    return GlobalMap.getInstance().backend;
+  }
+
+  /**
+   * Load all entries from the backend into the in-memory cache.
+   * Call this at startup when using a persistent backend.
+   */
+  async loadFromBackend(): Promise<void> {
+    if (!this.backend) return;
+    const entries = await this.backend.getAll();
+    for (const [key, value] of entries) {
+      this.data.set(key, value);
+    }
+  }
+
+  /**
+   * Put value by key — synchronous in-memory write with async backend persist.
+   */
+  override put(key: string, value: unknown): unknown {
+    const previous = super.put(key, value);
+    if (this.backend) {
+      // Fire-and-forget write-through to backend
+      this.backend.set(key, value).catch((err) => {
+        console.error(`[GlobalMap] Backend write failed for key "${key}":`, err);
+      });
+    }
+    return previous;
+  }
+
+  /**
+   * Remove key — synchronous in-memory delete with async backend delete.
+   */
+  override remove(key: string): unknown {
+    const value = super.remove(key);
+    if (this.backend) {
+      this.backend.delete(key).catch((err) => {
+        console.error(`[GlobalMap] Backend delete failed for key "${key}":`, err);
+      });
+    }
+    return value;
+  }
+
+  /**
+   * Clear all entries — synchronous in-memory clear with async backend clear.
+   */
+  override clear(): void {
+    super.clear();
+    if (this.backend) {
+      this.backend.clear().catch((err) => {
+        console.error('[GlobalMap] Backend clear failed:', err);
+      });
+    }
+  }
+
+  /**
    * Reset for testing
    */
   static resetInstance(): void {
@@ -237,11 +312,64 @@ export class GlobalMap extends MirthMap {
 }
 
 /**
+ * BackendAwareMirthMap - MirthMap that delegates writes to a MapBackend.
+ *
+ * Used internally by GlobalChannelMapStore to provide write-through caching
+ * per channel when a backend factory is configured.
+ */
+class BackendAwareMirthMap extends MirthMap {
+  private backend: MapBackend;
+
+  constructor(backend: MapBackend) {
+    super();
+    this.backend = backend;
+  }
+
+  override put(key: string, value: unknown): unknown {
+    const previous = super.put(key, value);
+    this.backend.set(key, value).catch((err) => {
+      console.error(`[GlobalChannelMap] Backend write failed for key "${key}":`, err);
+    });
+    return previous;
+  }
+
+  override remove(key: string): unknown {
+    const value = super.remove(key);
+    this.backend.delete(key).catch((err) => {
+      console.error(`[GlobalChannelMap] Backend delete failed for key "${key}":`, err);
+    });
+    return value;
+  }
+
+  override clear(): void {
+    super.clear();
+    this.backend.clear().catch((err) => {
+      console.error('[GlobalChannelMap] Backend clear failed:', err);
+    });
+  }
+
+  /**
+   * Load all entries from the backend into the in-memory cache.
+   */
+  async loadFromBackend(): Promise<void> {
+    const entries = await this.backend.getAll();
+    for (const [key, value] of entries) {
+      this.data.set(key, value);
+    }
+  }
+}
+
+/**
  * GlobalChannelMap - Per-channel global variables
+ *
+ * Supports an optional backend factory for clustered deployments.
+ * When a factory is set via setBackendFactory(), each per-channel map
+ * is backed by a MapBackend instance scoped to that channel.
  */
 export class GlobalChannelMapStore {
   private static instance: GlobalChannelMapStore | null = null;
   private channelMaps: Map<string, MirthMap>;
+  private backendFactory: ((channelId: string) => MapBackend) | null = null;
 
   private constructor() {
     this.channelMaps = new Map();
@@ -255,13 +383,39 @@ export class GlobalChannelMapStore {
   }
 
   /**
-   * Get or create map for channel
+   * Set a factory that creates a MapBackend for each channel.
+   * New channel maps created after this call will be backend-aware.
+   */
+  static setBackendFactory(factory: (channelId: string) => MapBackend): void {
+    GlobalChannelMapStore.getInstance().backendFactory = factory;
+  }
+
+  /**
+   * Get or create map for channel.
+   * If a backend factory is configured, new maps are created with
+   * write-through caching to the backend.
    */
   get(channelId: string): MirthMap {
     if (!this.channelMaps.has(channelId)) {
-      this.channelMaps.set(channelId, new MirthMap());
+      if (this.backendFactory) {
+        const backend = this.backendFactory(channelId);
+        this.channelMaps.set(channelId, new BackendAwareMirthMap(backend));
+      } else {
+        this.channelMaps.set(channelId, new MirthMap());
+      }
     }
     return this.channelMaps.get(channelId)!;
+  }
+
+  /**
+   * Load a channel's map from its backend.
+   * No-op if the map is not backend-aware.
+   */
+  async loadChannelFromBackend(channelId: string): Promise<void> {
+    const map = this.get(channelId);
+    if (map instanceof BackendAwareMirthMap) {
+      await map.loadFromBackend();
+    }
   }
 
   /**
@@ -288,9 +442,13 @@ export class GlobalChannelMapStore {
 
 /**
  * ConfigurationMap - Server configuration map (typically read-only)
+ *
+ * In clustered mode, configuration can be periodically reloaded from the
+ * database so that changes made on one node are visible to others.
  */
 export class ConfigurationMap extends MirthMap {
   private static instance: ConfigurationMap | null = null;
+  private reloadTimer: ReturnType<typeof setInterval> | null = null;
 
   private constructor() {
     super();
@@ -313,9 +471,67 @@ export class ConfigurationMap extends MirthMap {
   }
 
   /**
+   * Reload configuration from CONFIGURATION table.
+   * Replaces the in-memory cache with fresh values from the database.
+   */
+  async reloadFromDb(): Promise<void> {
+    // Dynamic import to avoid circular dependency at module load time
+    const { getPool } = await import('../../db/pool.js');
+    const pool = getPool();
+    const [rows] = await pool.query<ConfigurationRow[]>(
+      'SELECT NAME, VALUE FROM CONFIGURATION'
+    );
+    this.data.clear();
+    for (const row of rows) {
+      this.data.set(row.NAME, row.VALUE);
+    }
+  }
+
+  /**
+   * Start periodic reloading from the database.
+   * Useful in clustered mode so configuration changes on one node
+   * are picked up by others within the reload interval.
+   *
+   * @param intervalMs Reload interval in milliseconds (default 30000)
+   */
+  startPeriodicReload(intervalMs: number = 30_000): void {
+    this.stopPeriodicReload();
+    this.reloadTimer = setInterval(() => {
+      this.reloadFromDb().catch((err) => {
+        console.error('[ConfigurationMap] Periodic reload failed:', err);
+      });
+    }, intervalMs);
+    // Don't hold the process open for the timer
+    if (this.reloadTimer && typeof this.reloadTimer === 'object' && 'unref' in this.reloadTimer) {
+      this.reloadTimer.unref();
+    }
+  }
+
+  /**
+   * Stop periodic reloading.
+   */
+  stopPeriodicReload(): void {
+    if (this.reloadTimer) {
+      clearInterval(this.reloadTimer);
+      this.reloadTimer = null;
+    }
+  }
+
+  /**
    * Reset for testing
    */
   static resetInstance(): void {
+    if (ConfigurationMap.instance) {
+      ConfigurationMap.instance.stopPeriodicReload();
+    }
     ConfigurationMap.instance = null;
   }
+}
+
+/**
+ * Row interface for CONFIGURATION table queries.
+ */
+interface ConfigurationRow extends RowDataPacket {
+  NAME: string;
+  VALUE: string | null;
 }

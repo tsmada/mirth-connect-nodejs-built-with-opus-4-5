@@ -7,7 +7,7 @@
  */
 
 import {
-  getUnfinishedMessages,
+  getUnfinishedMessagesByServerId,
   getConnectorMessagesByStatus,
   updateConnectorMessageStatus,
   updateErrors,
@@ -29,8 +29,9 @@ export async function runRecoveryTask(
   const result: RecoveryResult = { recovered: 0, errors: 0 };
 
   try {
-    // Find unfinished messages (PROCESSED=0)
-    const unfinished = await getUnfinishedMessages(channelId);
+    // Find unfinished messages (PROCESSED=0) owned by this server instance.
+    // In a cluster, each instance only recovers its own messages.
+    const unfinished = await getUnfinishedMessagesByServerId(channelId, serverId);
 
     if (unfinished.length === 0) {
       return result;
