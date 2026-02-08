@@ -40,7 +40,7 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
   });
 
   // Extract custom metadata column definitions
-  const metaDataColumns = (channelProps?.metaDataColumns ?? []).map((col) => ({
+  const metaDataColumns = (Array.isArray(channelProps?.metaDataColumns) ? channelProps.metaDataColumns : []).map((col) => ({
     name: col.name,
     type: col.type as MetaDataColumnType,
     mappingName: col.mappingName,

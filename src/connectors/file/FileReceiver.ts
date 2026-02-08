@@ -106,9 +106,10 @@ export class FileReceiver extends SourceConnector {
         throw new Error(`Unknown file scheme: ${this.properties.scheme}`);
     }
 
-    // Start polling
-    this.startPolling();
+    // Set running before starting polling to avoid race condition
+    // where the first poll() call sees running=false and exits immediately
     this.running = true;
+    this.startPolling();
   }
 
   /**

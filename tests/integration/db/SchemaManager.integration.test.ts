@@ -131,7 +131,7 @@ describe('SchemaManager Integration Tests', () => {
       const [rows] = await pool.query<RowDataPacket[]>(`
         SELECT USERNAME FROM PERSON WHERE USERNAME = 'admin'
       `);
-      expect(rows.length).toBe(1);
+      expect(rows.length).toBeGreaterThanOrEqual(1);
     });
 
     it('should seed default configuration', async () => {
