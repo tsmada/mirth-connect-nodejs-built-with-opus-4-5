@@ -1088,6 +1088,23 @@ Parameters:
 
 See `.claude/agents/api-parity-checker.md` for full specification.
 
+### channel-deployer
+Design and build git-backed configuration management, environment promotion, and deployment tooling for Mirth channel artifacts.
+
+**Use for**: Git sync features, promotion pipelines, channel diff tools, decomposed export/import, environment-specific configuration management, sensitive data handling.
+
+**Quick start**:
+```
+Use the channel-deployer agent to design a git synchronization feature.
+Parameters:
+- mode: design
+- feature: git-sync
+- scope: full-config
+- sensitiveDataStrategy: env-vars
+```
+
+See `.claude/agents/channel-deployer.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)
