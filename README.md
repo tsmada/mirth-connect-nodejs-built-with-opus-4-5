@@ -133,6 +133,126 @@ mirth-cli shadow cutover             # Interactive guided cutover
 
 This is separate from `MIRTH_MODE` (which controls schema behavior). Typical usage: `MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true`.
 
+## Git-Backed Configuration Management
+
+> **Node.js-only feature** — Java Mirth has no built-in git integration.
+
+Manage Mirth configurations as code: decompose channel XML into reviewable file trees, sync with git repositories, promote across environments, and deploy only what changed.
+
+### Quick Start
+
+```bash
+# 1. Initialize an artifact repository
+mirth-cli artifact git init ./mirth-config
+
+# 2. Export all channels to decomposed file trees
+mirth-cli artifact export --all --mask-secrets
+
+# 3. Commit and push
+mirth-cli artifact git push -m "Initial export"
+
+# 4. View the decomposed structure
+ls mirth-config/channels/
+# → adt-receiver/  hl7-router/  emr-writer/
+ls mirth-config/channels/adt-receiver/
+# → channel.yaml  _skeleton.xml  source/  destinations/  scripts/
+```
+
+### Environment Setup
+
+```yaml
+# mirth-config/environments/base.yaml (shared defaults)
+MLLP_PORT: "6661"
+DB_HOST: "localhost"
+LOG_LEVEL: "INFO"
+
+# mirth-config/environments/prod.yaml (production overrides)
+MLLP_PORT: "6661"
+DB_HOST: "prod-db.internal"
+LOG_LEVEL: "WARN"
+# Secrets come from process.env, NOT this file
+```
+
+### Promotion Workflow
+
+```bash
+# Promote from dev to staging (validates version compatibility)
+mirth-cli artifact promote staging --source dev
+
+# Preview what would change (dry run)
+mirth-cli artifact promote prod --dry-run
+
+# Force promotion past version guards
+mirth-cli artifact promote prod --force
+```
+
+### Delta Deploy
+
+```bash
+# Deploy only channels changed since last sync
+mirth-cli artifact deploy --delta
+
+# Deploy from a specific git commit
+mirth-cli artifact deploy --from abc1234
+
+# Deploy specific channels only
+mirth-cli artifact deploy --channels "ADT Receiver,HL7 Router"
+
+# Rollback to a previous state
+mirth-cli artifact rollback abc1234
+```
+
+### CI/CD Integration Example
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy Mirth Config
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to production
+        run: |
+          mirth-cli login -u ${{ secrets.MIRTH_USER }} -p ${{ secrets.MIRTH_PASS }}
+          mirth-cli artifact import --all --env prod
+          mirth-cli artifact deploy --delta
+        env:
+          MIRTH_CLI_URL: ${{ secrets.MIRTH_URL }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+```
+
+### Structural Diff
+
+```bash
+$ mirth-cli artifact diff "ADT Receiver"
+
+Channel: ADT Receiver (3 changes)
+
+--- source/connector.yaml ---
+  port: 6661 → 6662
+  maxConnections: 10 → 20
+
+--- destinations/dest-1/transformer.js ---
+@@ -5,3 +5,4 @@
+ $c('sourceValue', 'fromSource');
++$c('patientDOB', msg['PID']['PID.7']['PID.7.1'].toString());
+ $c('patientMRN', msg['PID']['PID.3']['PID.3.1'].toString());
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIRTH_ARTIFACT_REPO` | (none) | Path to git repository for artifact sync |
+| `MIRTH_ARTIFACT_ENV` | (none) | Active environment (dev, staging, prod) |
+| `MIRTH_ARTIFACT_AUTO_SYNC` | `false` | Enable filesystem watcher for auto-sync |
+| `MIRTH_ARTIFACT_REMOTE` | `origin` | Git remote name |
+
 ## Horizontal Scaling (Container-Native)
 
 Node.js Mirth supports running multiple instances behind an external load balancer, sharing a single MySQL database. Each instance is a stateless container that can be scaled up/down by your orchestration platform.
@@ -311,6 +431,7 @@ On SIGTERM (sent by orchestrators during scale-down/rolling updates):
 | **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, **UUIDGenerator**, **NCPDPUtil**, **ContextFactory** |
 | **Shadow Mode** | Safe read-only takeover with progressive per-channel cutover from Java Mirth |
 | **Cluster** | Container-native horizontal scaling, health probes, block-allocated sequences, database-backed global maps, graceful shutdown |
+| **Artifact Management** | **Git-backed config management**: decompose/assemble, export/import, structural diff, env promotion, delta deploy, version compatibility guards |
 | **Utilities** | ValueReplacer, ACKGenerator, JsonXmlUtil, SerializerFactory, **ErrorMessageBuilder** |
 
 ## Quick Start
@@ -369,6 +490,12 @@ LOG_LEVEL=info
 # MIRTH_CLUSTER_HEARTBEAT_INTERVAL=10000  # Heartbeat interval (ms)
 # MIRTH_CLUSTER_HEARTBEAT_TIMEOUT=30000   # Suspect threshold (ms)
 # MIRTH_CLUSTER_SEQUENCE_BLOCK=100        # Sequence block pre-allocation
+
+# Git-Backed Artifact Management (optional — for config-as-code workflows)
+# MIRTH_ARTIFACT_REPO=./mirth-config     # Path to git repo for artifact sync
+# MIRTH_ARTIFACT_ENV=dev                  # Active environment (dev/staging/prod)
+# MIRTH_ARTIFACT_AUTO_SYNC=false          # Enable fs watcher for auto-sync
+# MIRTH_ARTIFACT_REMOTE=origin            # Git remote name
 ```
 
 ### Operational Modes Explained
@@ -551,6 +678,31 @@ Hops: 4 | Depth: 2 | Latency: 222ms | Errors: 1
 | `--no-content` | - | Hide content, show tree structure only |
 | `--json` | - | Output raw JSON |
 
+#### Artifact Management (Git-Backed Config-as-Code)
+```bash
+# Export / Import
+mirth-cli artifact export [channel]              # Export channel to git directory
+mirth-cli artifact export --all --mask-secrets    # Export all, parameterize credentials
+mirth-cli artifact import [channel] --env prod    # Import with prod env vars
+
+# Git operations
+mirth-cli artifact git init [path]               # Initialize artifact repo
+mirth-cli artifact git status                    # Show sync status
+mirth-cli artifact git push -m "message"         # Export + commit + push
+mirth-cli artifact git pull --env staging        # Pull + import with staging vars
+mirth-cli artifact git log -n 20                 # Show recent sync history
+
+# Analysis
+mirth-cli artifact diff <channel>               # Structural diff vs git version
+mirth-cli artifact secrets <channel>             # Detect sensitive fields
+mirth-cli artifact deps                          # Show dependency graph
+
+# Promotion & Deployment
+mirth-cli artifact promote <target-env>          # Promote to environment
+mirth-cli artifact deploy --delta                # Deploy only changed artifacts
+mirth-cli artifact rollback <ref>                # Rollback to previous state
+```
+
 #### Interactive Dashboard
 ```bash
 mirth-cli dashboard                 # Launch interactive dashboard with WebSocket
@@ -656,8 +808,11 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 │  SMTP, JMS, SOAP   │  EDI, HL7v3      │  28 Userutil Classes   │
 │  DICOM             │  NCPDP, DICOM    │                        │
 ├─────────────────────────────────────────────────────────────────┤
+│  Artifact Management (Git-Backed Config-as-Code)               │
+│  Decompose/Assemble │ Git Sync │ Env Vars │ Promote │ Deploy   │
+├─────────────────────────────────────────────────────────────────┤
 │                      Database Layer                             │
-│   (MySQL - Existing Mirth Schema + Cluster Tables)             │
+│   (MySQL - Existing Mirth Schema + Cluster/Artifact Tables)    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -674,6 +829,7 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 | **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
 | **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
 | **Cluster** | `src/cluster/` | Horizontal scaling: ClusterIdentity, ServerRegistry, SequenceAllocator, HealthCheck, EventBus, MapBackend, RemoteDispatcher |
+| **Artifact Management** | `src/artifact/` | Git-backed config: ChannelDecomposer, ChannelAssembler, GitClient, GitSyncService, PromotionPipeline, DeltaDetector, VariableResolver, ChannelDiff |
 | **Utilities** | `src/util/` | ValueReplacer, ACKGenerator, JsonXmlUtil, ErrorMessageBuilder, SerializerFactory |
 
 ## API Endpoints
@@ -726,6 +882,24 @@ Query parameters: `includeContent`, `contentTypes`, `maxContentLength`, `maxDept
 | `/api/system/shadow` | GET | Shadow status, promoted channels, deployed/promoted counts |
 | `/api/system/shadow/promote` | POST | Promote channel or trigger full cutover |
 | `/api/system/shadow/demote` | POST | Demote promoted channel back to shadow |
+
+### Artifact Management (Node.js Extension)
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/artifacts/export` | POST | Export channels to decomposed file tree |
+| `/api/artifacts/export/:channelId` | GET | Export single channel |
+| `/api/artifacts/import` | POST | Import from file tree (with env var resolution) |
+| `/api/artifacts/diff/:channelId` | GET | Structural diff current vs git version |
+| `/api/artifacts/sensitive/:channelId` | GET | Detect sensitive fields |
+| `/api/artifacts/deps` | GET | Dependency graph |
+| `/api/artifacts/git/status` | GET | Git repository status |
+| `/api/artifacts/git/push` | POST | Export + commit + push |
+| `/api/artifacts/git/pull` | POST | Pull + import + deploy |
+| `/api/artifacts/git/log` | GET | Recent commit history |
+| `/api/artifacts/promote` | POST | Promote to target environment |
+| `/api/artifacts/promote/status` | GET | Promotion pipeline status |
+| `/api/artifacts/delta` | GET | Changed artifacts between git refs |
+| `/api/artifacts/deploy` | POST | Deploy changed artifacts |
 
 ### Administration
 | Endpoint | Methods | Description |
@@ -833,6 +1007,15 @@ src/
 │       ├── ContextFactory.ts     # JavaScript context info
 │       ├── DICOMUtil.ts          # DICOM operations
 │       └── ...                   # HTTPUtil, SMTPConnection, etc.
+├── artifact/             # Git-backed config management
+│   ├── ChannelDecomposer.ts   # XML → decomposed file tree
+│   ├── ChannelAssembler.ts    # File tree → XML
+│   ├── VariableResolver.ts    # Deploy-time ${VAR} resolution
+│   ├── ChannelDiff.ts         # Structural + script diffs
+│   ├── DependencySort.ts      # Topological sort
+│   ├── ArtifactController.ts  # Central orchestrator
+│   ├── git/                   # GitClient, GitSyncService, DeltaDetector
+│   └── promotion/             # PromotionPipeline, VersionCompatibility
 ├── cli/                  # CLI tool
 │   ├── commands/         # Command implementations
 │   ├── lib/              # Utilities (ApiClient, ConfigManager)
@@ -919,16 +1102,20 @@ npm run test:coverage
 ```
 tests/
 ├── unit/           # Unit tests
+│   ├── artifact/       # Artifact module tests (417 tests)
 │   ├── cluster/        # Cluster module tests (123 tests)
 │   ├── connectors/
 │   ├── datatypes/
 │   ├── db/             # DonkeyDao recovery tests
 │   ├── donkey/
-│   └── javascript/
+│   ├── javascript/
+│   ├── api/servlets/   # API endpoint tests (ArtifactServlet, etc.)
+│   └── cli/            # CLI command tests
 ├── integration/    # Database and E2E tests
 ├── api/            # API endpoint tests
 └── fixtures/       # Test data
     ├── messages/   # Sample HL7, XML, JSON
+    ├── artifact/   # Channel XML fixtures for decomposer tests
     └── example-channels/
 ```
 
@@ -978,7 +1165,7 @@ npm run validate -- --scenario 1.1
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect scenarios |
 
-**Total Tests: 2,559 passing**
+**Total Tests: 2,976 passing** (2,559 core + 417 artifact)
 
 ## Version Management
 
@@ -1065,6 +1252,7 @@ This project uses the **existing Mirth MySQL schema** — no modifications requi
 | `D_CHANNEL_DEPLOYMENTS` | Channel → instance deployment tracking (Node.js-only) |
 | `D_CLUSTER_EVENTS` | Inter-node event bus via DB polling (Node.js-only) |
 | `D_GLOBAL_MAP` | Shared global map for clustered mode (Node.js-only) |
+| `D_ARTIFACT_SYNC` | Git artifact sync tracking — commit ↔ revision mapping (Node.js-only) |
 
 ### Per-Channel Tables (Auto-Created on Deploy)
 
@@ -1099,6 +1287,8 @@ The Node.js engine maintains 100% API compatibility with the Java Mirth Administ
 | **Shadow Mode** | When `MIRTH_SHADOW_MODE=true`, channels deploy in read-only state. Operator promotes channels one-by-one for safe cutover from Java Mirth. | Extension — Java Mirth has no equivalent. Does not affect normal operation when disabled (default). |
 | **Graceful Shutdown** | SIGTERM triggers drain + deregister sequence instead of immediate exit. | Behavioral improvement — Java Mirth has similar graceful shutdown in its shutdown hook. |
 | **Block Sequence IDs** | SequenceAllocator pre-allocates 100 IDs per lock instead of 1. | Compatible — produces valid non-contiguous IDs. Gaps are harmless (IDs need only be unique). |
+| **Artifact Sync Table** | `D_ARTIFACT_SYNC` table tracks git sync operations (commit hash ↔ channel revision). | Additive — Java Mirth ignores unknown tables. Safe in shared databases. |
+| **Artifact API** | 14 REST endpoints under `/api/artifacts/*` for git-backed config management. | Extension — Java Mirth has no equivalent. Does not affect existing API endpoints. |
 | **Data Pruner Operational** | DataPruner is wired into server lifecycle, runs on schedule, reads per-channel pruning settings, skips in-flight messages (`PROCESSED=0`), cleans D_MCM tables, persists config to CONFIGURATION table, and prunes old audit events. | Matches Java Mirth behavior. Archive-before-delete phase not yet connected (planned). |
 
 ### Bug Fixes Applied
@@ -1122,6 +1312,10 @@ These features exist only in the Node.js engine and have no Java Mirth equivalen
 | Health Probes | Readiness/liveness/startup for orchestrators | `GET /api/health/*` |
 | Block Sequence Allocation | Pre-allocated message IDs for reduced DB contention | Internal (SequenceAllocator) |
 | Database-Backed GlobalMap | Shared global map across instances via D_GLOBAL_MAP | Internal (MapBackend) |
+| Git Artifact Sync | Git-backed config management, decompose/assemble, export/import | `GET/POST /api/artifacts/*` |
+| Artifact CLI | Export, import, diff, promote, deploy, rollback commands | CLI: `mirth-cli artifact <command>` |
+| Environment Promotion | Dev → staging → prod workflow with version compatibility guards | `POST /api/artifacts/promote` |
+| Delta Deploy | Deploy only changed artifacts with dependency cascades | `POST /api/artifacts/deploy` |
 
 ### How SourceMap Tracing Works
 
