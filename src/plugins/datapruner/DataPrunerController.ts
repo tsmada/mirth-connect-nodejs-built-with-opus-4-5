@@ -7,6 +7,7 @@
 
 import { dataPruner, DataPruner, DEFAULT_PRUNING_BLOCK_SIZE, DEFAULT_ARCHIVING_BLOCK_SIZE, SkipStatus } from './DataPruner.js';
 import { DataPrunerStatus } from './DataPrunerStatus.js';
+import * as MirthDao from '../../db/MirthDao.js';
 
 /**
  * Data pruner configuration
@@ -83,19 +84,29 @@ class DataPrunerController {
   }
 
   /**
-   * Load configuration from storage
+   * Load configuration from CONFIGURATION table
    */
   private async loadConfiguration(): Promise<void> {
-    // In a full implementation, this would load from the database
-    // For now, we use the default configuration
-    // TODO: Load from CONFIGURATION table with category = 'Data Pruner'
+    try {
+      const stored = await MirthDao.getConfiguration('Data Pruner', 'pruner.config');
+      if (stored) {
+        const parsed = JSON.parse(stored) as Partial<DataPrunerConfig>;
+        this.config = { ...DEFAULT_CONFIG, ...parsed };
+      }
+    } catch {
+      // Database may not be ready or config may not exist yet — use defaults
+    }
   }
 
   /**
-   * Save configuration to storage
+   * Save configuration to CONFIGURATION table
    */
   private async saveConfiguration(): Promise<void> {
-    // TODO: Save to CONFIGURATION table
+    try {
+      await MirthDao.setConfiguration('Data Pruner', 'pruner.config', JSON.stringify(this.config));
+    } catch (error) {
+      console.error('Failed to save data pruner configuration:', error);
+    }
   }
 
   /**

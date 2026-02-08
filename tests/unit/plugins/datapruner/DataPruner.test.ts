@@ -158,3 +158,17 @@ describe('dataPruner singleton', () => {
     expect(dataPruner).toBeInstanceOf(DataPruner);
   });
 });
+
+describe('DataPruner imports', () => {
+  it('should import ConfigurationController for per-channel metadata', async () => {
+    // Verify the module-level import resolves (compile-time check)
+    const mod = await import('../../../../src/plugins/datapruner/DataPruner');
+    expect(mod.DataPruner).toBeDefined();
+  });
+
+  it('should import EventDao for event pruning', async () => {
+    const mod = await import('../../../../src/db/EventDao');
+    expect(mod.deleteEventsBeforeDate).toBeDefined();
+    expect(typeof mod.deleteEventsBeforeDate).toBe('function');
+  });
+});

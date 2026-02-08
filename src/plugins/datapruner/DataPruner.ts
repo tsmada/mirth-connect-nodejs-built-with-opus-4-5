@@ -15,6 +15,10 @@ import {
   createPrunerTask,
 } from './DataPrunerStatus.js';
 import * as DonkeyDao from '../../db/DonkeyDao.js';
+import { ConfigurationController } from '../../controllers/ConfigurationController.js';
+import { ChannelController } from '../../controllers/ChannelController.js';
+import { MessageStorageMode, parseMessageStorageMode } from '../../donkey/channel/StorageSettings.js';
+import * as EventDao from '../../db/EventDao.js';
 
 /**
  * Default block sizes for pruning operations
@@ -248,7 +252,11 @@ export class DataPruner {
   }
 
   /**
-   * Build the task queue from channel configurations
+   * Build the task queue from channel configurations.
+   *
+   * Per-channel pruning settings are read from ConfigurationController.getChannelMetadata().
+   * Channels without explicit settings are skipped (matches Java Mirth behavior).
+   * Channels with messageStorageMode=DISABLED are skipped (no messages to prune).
    */
   private async buildTaskQueue(): Promise<PrunerTask[]> {
     const tasks: PrunerTask[] = [];
@@ -256,33 +264,72 @@ export class DataPruner {
     // Get all channel IDs that have message tables
     const localChannelIds = await DonkeyDao.getLocalChannelIds();
 
+    // Load per-channel metadata (pruning settings) and channel names
+    const [channelMetadata, channelNames, allChannels] = await Promise.all([
+      ConfigurationController.getChannelMetadata(),
+      ChannelController.getChannelIdsAndNames(),
+      ChannelController.getAllChannels(),
+    ]);
+
+    // Build a map of channelId -> messageStorageMode for skipping DISABLED channels
+    const storageModes = new Map<string, MessageStorageMode>();
+    for (const channel of allChannels) {
+      storageModes.set(
+        channel.id,
+        parseMessageStorageMode(channel.properties?.messageStorageMode)
+      );
+    }
+
     for (const [channelId] of localChannelIds) {
-      // Get channel metadata (would normally come from ConfigurationController)
-      // For now, use default retention policies
-      const pruneMetaDataDays = 30; // Default: 30 days for metadata
-      const pruneContentDays = 7; // Default: 7 days for content
+      // Skip channels with storage disabled (no messages stored, nothing to prune)
+      const storageMode = storageModes.get(channelId);
+      if (storageMode === MessageStorageMode.DISABLED) {
+        continue;
+      }
+
+      // Read per-channel pruning settings from metadata
+      const metadata = channelMetadata[channelId];
+      const pruningSettings = metadata?.pruningSettings;
+
+      // Channels without explicit pruning settings are skipped (Java Mirth behavior)
+      if (!pruningSettings) {
+        continue;
+      }
+
+      const { pruneMetaDataDays, pruneContentDays } = pruningSettings;
+
+      // Both null/undefined means no pruning configured for this channel
+      if (pruneMetaDataDays == null && pruneContentDays == null) {
+        continue;
+      }
 
       let messageDateThreshold: Date | null = null;
       let contentDateThreshold: Date | null = null;
 
-      if (pruneMetaDataDays !== null) {
+      if (pruneMetaDataDays != null) {
         messageDateThreshold = new Date();
         messageDateThreshold.setDate(messageDateThreshold.getDate() - pruneMetaDataDays);
       }
 
-      if (pruneContentDays !== null) {
+      if (pruneContentDays != null) {
         contentDateThreshold = new Date();
         contentDateThreshold.setDate(contentDateThreshold.getDate() - pruneContentDays);
       }
 
+      // For METADATA storage mode, there's no content to prune
+      if (storageMode === MessageStorageMode.METADATA) {
+        contentDateThreshold = null;
+      }
+
       if (messageDateThreshold || contentDateThreshold) {
+        const channelName = channelNames[channelId] ?? `Channel ${channelId.substring(0, 8)}...`;
         tasks.push(
           createPrunerTask(
             channelId,
-            `Channel ${channelId.substring(0, 8)}...`,
+            channelName,
             messageDateThreshold,
             contentDateThreshold,
-            false // archiveEnabled
+            pruningSettings.archiveEnabled ?? false
           )
         );
         this.status.pendingChannelIds.add(channelId);
@@ -388,7 +435,8 @@ export class DataPruner {
         channelId,
         dateThreshold,
         ID_RETRIEVE_LIMIT,
-        skipStatuses
+        skipStatuses,
+        this.skipIncomplete
       );
       return messages.map((m) => m.messageId);
     } catch (error) {
@@ -445,9 +493,10 @@ export class DataPruner {
       const dateThreshold = new Date();
       dateThreshold.setDate(dateThreshold.getDate() - this.maxEventAge);
 
-      // Prune events older than threshold
-      // This would be implemented in MirthDao
-      console.log(`Would prune events older than ${dateThreshold.toISOString()}`);
+      const deleted = await EventDao.deleteEventsBeforeDate(dateThreshold);
+      console.log(`Pruned ${deleted} events older than ${dateThreshold.toISOString()}`);
+    } catch (error) {
+      console.error('Failed to prune events:', error);
     } finally {
       this.status.isPruningEvents = false;
     }

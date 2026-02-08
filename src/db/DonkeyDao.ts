@@ -861,7 +861,8 @@ export async function getMessagesToPrune(
   channelId: string,
   dateThreshold: Date,
   limit: number,
-  skipStatuses?: string[]
+  skipStatuses?: string[],
+  skipIncomplete: boolean = true
 ): Promise<PruneMessageRow[]> {
   const pool = getPool();
 
@@ -873,6 +874,11 @@ export async function getMessagesToPrune(
   `;
 
   const params: (Date | string | number)[] = [dateThreshold];
+
+  // Skip unprocessed (in-flight) messages to avoid pruning mid-pipeline
+  if (skipIncomplete) {
+    query += ` AND m.PROCESSED = 1`;
+  }
 
   // Skip messages with certain statuses (check connector messages)
   if (skipStatuses && skipStatuses.length > 0) {
@@ -973,7 +979,7 @@ export async function pruneMessages(channelId: string, messageIds: number[]): Pr
   return await transaction(async (connection) => {
     const placeholders = messageIds.map(() => '?').join(', ');
 
-    // Delete in order: content, attachments, connector messages, messages
+    // Delete in order: content, attachments, custom metadata, connector messages, messages
     await connection.execute(
       `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
       messageIds
@@ -981,6 +987,11 @@ export async function pruneMessages(channelId: string, messageIds: number[]): Pr
 
     await connection.execute(
       `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
+      messageIds
+    );
+
+    await connection.execute(
+      `DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
       messageIds
     );
 

@@ -22,6 +22,7 @@ import {
 } from '../javascript/userutil/VMRouter.js';
 import { Response } from '../model/Response.js';
 import { dashboardStatusController } from '../plugins/dashboardstatus/DashboardStatusController.js';
+import { dataPrunerController } from '../plugins/datapruner/DataPrunerController.js';
 import { ConfigurationController } from '../controllers/ConfigurationController.js';
 import { registerServer, startHeartbeat, stopHeartbeat, deregisterServer } from '../cluster/ServerRegistry.js';
 import { setShuttingDown, setStartupComplete } from '../cluster/HealthCheck.js';
@@ -165,6 +166,9 @@ export class Mirth {
     });
     console.warn('VMRouter singletons initialized');
 
+    // Initialize data pruner (scheduled background cleanup)
+    await dataPrunerController.initialize();
+
     this.running = true;
     console.warn(
       `Mirth Connect started on port ${this.config.httpPort} (HTTP)`
@@ -180,6 +184,9 @@ export class Mirth {
 
     // Signal health checks to return 503
     setShuttingDown(true);
+
+    // Stop data pruner before stopping channels
+    await dataPrunerController.shutdown();
 
     // Stop heartbeat
     stopHeartbeat();

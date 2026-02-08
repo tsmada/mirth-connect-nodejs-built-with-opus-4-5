@@ -191,6 +191,19 @@ export async function removeAllEvents(): Promise<void> {
 }
 
 /**
+ * Delete events older than a given date threshold
+ * Used by the Data Pruner to clean up old audit log entries.
+ * @returns The number of events deleted
+ */
+export async function deleteEventsBeforeDate(dateThreshold: Date): Promise<number> {
+  const result = await execute(
+    'DELETE FROM EVENT WHERE DATE_CREATED < :dateThreshold',
+    { dateThreshold }
+  );
+  return result.affectedRows;
+}
+
+/**
  * Get all events for export
  */
 export async function getAllEvents(): Promise<ServerEvent[]> {
