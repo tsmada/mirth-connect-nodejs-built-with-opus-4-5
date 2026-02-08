@@ -496,6 +496,180 @@ export const CONFIG_SET_SETTINGS = createOperation(
 );
 
 // ============================================================================
+// Configuration Extended Operations
+// ============================================================================
+
+export const CONFIG_GET_ENCRYPTION = createOperation(
+  'getEncryptionSettings',
+  'Get encryption settings',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_GET_CHARSETS = createOperation(
+  'getAvailableCharsetEncodings',
+  'Get available charsets',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_GENERATE_GUID = createOperation(
+  'generateGUID',
+  'Generate GUID',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_GET_GLOBAL_SCRIPTS = createOperation(
+  'getGlobalScripts',
+  'Get global scripts',
+  P.GLOBAL_SCRIPTS_VIEW
+);
+
+export const CONFIG_SET_GLOBAL_SCRIPTS = createOperation(
+  'setGlobalScripts',
+  'Set global scripts',
+  P.GLOBAL_SCRIPTS_EDIT
+);
+
+export const CONFIG_GET_CONFIG_MAP = createOperation(
+  'getConfigurationMap',
+  'Get configuration map',
+  P.CONFIG_MAP_VIEW
+);
+
+export const CONFIG_SET_CONFIG_MAP = createOperation(
+  'setConfigurationMap',
+  'Set configuration map',
+  P.CONFIG_MAP_EDIT
+);
+
+export const CONFIG_GET_DB_DRIVERS = createOperation(
+  'getDatabaseDrivers',
+  'Get database drivers',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_SET_DB_DRIVERS = createOperation(
+  'setDatabaseDrivers',
+  'Set database drivers',
+  P.DATABASE_DRIVERS_EDIT
+);
+
+export const CONFIG_GET_PASSWORD_REQUIREMENTS = createOperation(
+  'getPasswordRequirements',
+  'Get password requirements',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_GET_UPDATE_SETTINGS = createOperation(
+  'getUpdateSettings',
+  'Get update settings',
+  P.SERVER_SETTINGS_VIEW
+);
+
+export const CONFIG_SET_UPDATE_SETTINGS = createOperation(
+  'setUpdateSettings',
+  'Set update settings',
+  P.SERVER_SETTINGS_EDIT
+);
+
+export const CONFIG_GET_LICENSE = createOperation(
+  'getLicenseInfo',
+  'Get license info',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_GET_RESOURCES = createOperation(
+  'getResources',
+  'Get resources',
+  P.RESOURCES_VIEW
+);
+
+export const CONFIG_SET_RESOURCES = createOperation(
+  'setResources',
+  'Set resources',
+  P.RESOURCES_EDIT
+);
+
+export const CONFIG_RELOAD_RESOURCE = createOperation(
+  'reloadResource',
+  'Reload resource',
+  P.RESOURCES_RELOAD
+);
+
+export const CONFIG_GET_CHANNEL_DEPS = createOperation(
+  'getChannelDependencies',
+  'Get channel dependencies',
+  P.CHANNELS_VIEW
+);
+
+export const CONFIG_SET_CHANNEL_DEPS = createOperation(
+  'setChannelDependencies',
+  'Set channel dependencies',
+  P.CHANNELS_MANAGE
+);
+
+export const CONFIG_GET_CHANNEL_TAGS = createOperation(
+  'getChannelTags',
+  'Get channel tags',
+  P.TAGS_VIEW
+);
+
+export const CONFIG_SET_CHANNEL_TAGS = createOperation(
+  'setChannelTags',
+  'Set channel tags',
+  P.TAGS_MANAGE
+);
+
+export const CONFIG_GET_CHANNEL_METADATA = createOperation(
+  'getChannelMetadata',
+  'Get channel metadata',
+  P.CHANNELS_VIEW
+);
+
+export const CONFIG_SET_CHANNEL_METADATA = createOperation(
+  'setChannelMetadata',
+  'Set channel metadata',
+  P.CHANNELS_MANAGE
+);
+
+export const CONFIG_GET_PROTOCOLS = createOperation(
+  'getProtocolsAndCipherSuites',
+  'Get protocols and cipher suites',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_GET_RHINO_VERSION = createOperation(
+  'getRhinoLanguageVersion',
+  'Get Rhino language version',
+  P.SERVER_SETTINGS_VIEW,
+  { auditable: false }
+);
+
+export const CONFIG_TEST_EMAIL = createOperation(
+  'sendTestEmail',
+  'Send test email',
+  P.SERVER_SEND_TEST_EMAIL
+);
+
+export const CONFIG_GET_SERVER_CONFIGURATION = createOperation(
+  'getServerConfiguration',
+  'Get server configuration',
+  P.SERVER_BACKUP
+);
+
+export const CONFIG_SET_SERVER_CONFIGURATION = createOperation(
+  'setServerConfiguration',
+  'Set server configuration',
+  P.SERVER_RESTORE
+);
+
+// ============================================================================
 // Code Template Operations
 // ============================================================================
 
@@ -732,6 +906,34 @@ const allOperations: Operation[] = [
   CONFIG_GET_ABOUT,
   CONFIG_GET_SETTINGS,
   CONFIG_SET_SETTINGS,
+  // Configuration Extended
+  CONFIG_GET_ENCRYPTION,
+  CONFIG_GET_CHARSETS,
+  CONFIG_GENERATE_GUID,
+  CONFIG_GET_GLOBAL_SCRIPTS,
+  CONFIG_SET_GLOBAL_SCRIPTS,
+  CONFIG_GET_CONFIG_MAP,
+  CONFIG_SET_CONFIG_MAP,
+  CONFIG_GET_DB_DRIVERS,
+  CONFIG_SET_DB_DRIVERS,
+  CONFIG_GET_PASSWORD_REQUIREMENTS,
+  CONFIG_GET_UPDATE_SETTINGS,
+  CONFIG_SET_UPDATE_SETTINGS,
+  CONFIG_GET_LICENSE,
+  CONFIG_GET_RESOURCES,
+  CONFIG_SET_RESOURCES,
+  CONFIG_RELOAD_RESOURCE,
+  CONFIG_GET_CHANNEL_DEPS,
+  CONFIG_SET_CHANNEL_DEPS,
+  CONFIG_GET_CHANNEL_TAGS,
+  CONFIG_SET_CHANNEL_TAGS,
+  CONFIG_GET_CHANNEL_METADATA,
+  CONFIG_SET_CHANNEL_METADATA,
+  CONFIG_GET_PROTOCOLS,
+  CONFIG_GET_RHINO_VERSION,
+  CONFIG_GET_SERVER_CONFIGURATION,
+  CONFIG_SET_SERVER_CONFIGURATION,
+  CONFIG_TEST_EMAIL,
   // Code Templates
   CODE_TEMPLATE_GET,
   CODE_TEMPLATE_GET_ALL,

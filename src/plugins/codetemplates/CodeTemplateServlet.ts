@@ -7,6 +7,16 @@
 
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../../api/middleware/auth.js';
+import { authorize } from '../../api/middleware/authorization.js';
+import {
+  CODE_TEMPLATE_GET,
+  CODE_TEMPLATE_GET_ALL,
+  CODE_TEMPLATE_UPDATE,
+  CODE_TEMPLATE_REMOVE,
+  CODE_TEMPLATE_LIBRARY_GET,
+  CODE_TEMPLATE_LIBRARY_GET_ALL,
+  CODE_TEMPLATE_LIBRARY_UPDATE,
+} from '../../api/middleware/operations.js';
 import * as CodeTemplateController from './CodeTemplateController.js';
 import { CodeTemplate } from './models/CodeTemplate.js';
 import { CodeTemplateLibrary } from './models/CodeTemplateLibrary.js';
@@ -20,7 +30,7 @@ codeTemplateRouter.use(authMiddleware({ required: true }));
  * GET /codeTemplateLibraries
  * Get all code template libraries or specific ones by ID
  */
-codeTemplateRouter.get('/codeTemplateLibraries', async (req: Request, res: Response) => {
+codeTemplateRouter.get('/codeTemplateLibraries', authorize({ operation: CODE_TEMPLATE_LIBRARY_GET_ALL }), async (req: Request, res: Response) => {
   try {
     const libraryIdParam = req.query.libraryId;
     const includeCodeTemplates = req.query.includeCodeTemplates === 'true';
@@ -49,6 +59,7 @@ codeTemplateRouter.get('/codeTemplateLibraries', async (req: Request, res: Respo
  */
 codeTemplateRouter.post(
   '/codeTemplateLibraries/_getCodeTemplateLibraries',
+  authorize({ operation: CODE_TEMPLATE_LIBRARY_GET_ALL }),
   async (req: Request, res: Response) => {
     try {
       const libraryIds = req.body;
@@ -75,7 +86,7 @@ codeTemplateRouter.post(
  * GET /codeTemplateLibraries/:libraryId
  * Get a single code template library
  */
-codeTemplateRouter.get('/codeTemplateLibraries/:libraryId', async (req: Request, res: Response) => {
+codeTemplateRouter.get('/codeTemplateLibraries/:libraryId', authorize({ operation: CODE_TEMPLATE_LIBRARY_GET }), async (req: Request, res: Response) => {
   try {
     const libraryId = req.params.libraryId as string;
     const includeCodeTemplates = req.query.includeCodeTemplates === 'true';
@@ -101,7 +112,7 @@ codeTemplateRouter.get('/codeTemplateLibraries/:libraryId', async (req: Request,
  * PUT /codeTemplateLibraries
  * Replace all code template libraries
  */
-codeTemplateRouter.put('/codeTemplateLibraries', async (req: Request, res: Response) => {
+codeTemplateRouter.put('/codeTemplateLibraries', authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }), async (req: Request, res: Response) => {
   try {
     const libraries: CodeTemplateLibrary[] = req.body;
     const override = req.query.override === 'true';
@@ -118,7 +129,7 @@ codeTemplateRouter.put('/codeTemplateLibraries', async (req: Request, res: Respo
  * GET /codeTemplates
  * Get all code templates or specific ones by ID
  */
-codeTemplateRouter.get('/codeTemplates', async (req: Request, res: Response) => {
+codeTemplateRouter.get('/codeTemplates', authorize({ operation: CODE_TEMPLATE_GET_ALL }), async (req: Request, res: Response) => {
   try {
     const codeTemplateIdParam = req.query.codeTemplateId;
 
@@ -143,7 +154,7 @@ codeTemplateRouter.get('/codeTemplates', async (req: Request, res: Response) => 
  * POST /codeTemplates/_getCodeTemplates
  * Get code templates by ID (POST alternative for many IDs)
  */
-codeTemplateRouter.post('/codeTemplates/_getCodeTemplates', async (req: Request, res: Response) => {
+codeTemplateRouter.post('/codeTemplates/_getCodeTemplates', authorize({ operation: CODE_TEMPLATE_GET_ALL }), async (req: Request, res: Response) => {
   try {
     const templateIds = req.body;
 
@@ -164,7 +175,7 @@ codeTemplateRouter.post('/codeTemplates/_getCodeTemplates', async (req: Request,
  * GET /codeTemplates/:codeTemplateId
  * Get a single code template
  */
-codeTemplateRouter.get('/codeTemplates/:codeTemplateId', async (req: Request, res: Response) => {
+codeTemplateRouter.get('/codeTemplates/:codeTemplateId', authorize({ operation: CODE_TEMPLATE_GET }), async (req: Request, res: Response) => {
   try {
     const codeTemplateId = req.params.codeTemplateId as string;
 
@@ -186,7 +197,7 @@ codeTemplateRouter.get('/codeTemplates/:codeTemplateId', async (req: Request, re
  * POST /codeTemplates/_getSummary
  * Get code template summaries for cache sync
  */
-codeTemplateRouter.post('/codeTemplates/_getSummary', async (req: Request, res: Response) => {
+codeTemplateRouter.post('/codeTemplates/_getSummary', authorize({ operation: CODE_TEMPLATE_GET_ALL }), async (req: Request, res: Response) => {
   try {
     const clientRevisions: Record<string, number> = req.body || {};
     const revisionMap = new Map(Object.entries(clientRevisions));
@@ -203,7 +214,7 @@ codeTemplateRouter.post('/codeTemplates/_getSummary', async (req: Request, res: 
  * PUT /codeTemplates/:codeTemplateId
  * Update a single code template
  */
-codeTemplateRouter.put('/codeTemplates/:codeTemplateId', async (req: Request, res: Response) => {
+codeTemplateRouter.put('/codeTemplates/:codeTemplateId', authorize({ operation: CODE_TEMPLATE_UPDATE }), async (req: Request, res: Response) => {
   try {
     const codeTemplateId = req.params.codeTemplateId as string;
     const template: CodeTemplate = req.body;
@@ -225,7 +236,7 @@ codeTemplateRouter.put('/codeTemplates/:codeTemplateId', async (req: Request, re
  * DELETE /codeTemplates/:codeTemplateId
  * Delete a single code template
  */
-codeTemplateRouter.delete('/codeTemplates/:codeTemplateId', async (req: Request, res: Response) => {
+codeTemplateRouter.delete('/codeTemplates/:codeTemplateId', authorize({ operation: CODE_TEMPLATE_REMOVE }), async (req: Request, res: Response) => {
   try {
     const codeTemplateId = req.params.codeTemplateId as string;
 
@@ -241,7 +252,7 @@ codeTemplateRouter.delete('/codeTemplates/:codeTemplateId', async (req: Request,
  * POST /codeTemplateLibraries/_bulkUpdate
  * Update all libraries and templates in one request
  */
-codeTemplateRouter.post('/codeTemplateLibraries/_bulkUpdate', async (req: Request, res: Response) => {
+codeTemplateRouter.post('/codeTemplateLibraries/_bulkUpdate', authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }), async (req: Request, res: Response) => {
   try {
     const {
       libraries = [],

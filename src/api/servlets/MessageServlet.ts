@@ -1128,6 +1128,54 @@ messageRouter.delete(
   }
 );
 
+/**
+ * POST /channels/:channelId/messages/_remove
+ * Remove messages matching a filter
+ * Called by GUI "Remove Messages" button with filter criteria
+ */
+messageRouter.post(
+  '/_remove',
+  authorize({ operation: MESSAGE_REMOVE, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const filter = parseMessageFilter(req.body as Record<string, unknown>);
+      const clearStatistics = req.query.clearStatistics !== 'false';
+
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found or has no messages' });
+        return;
+      }
+
+      // Search for messages matching filter
+      const messages = await searchMessages(channelId, filter, 0, 10000, false);
+
+      let removedCount = 0;
+      for (const message of messages) {
+        const deleted = await deleteMessage(channelId, message.messageId);
+        if (deleted) removedCount++;
+      }
+
+      // Optionally clear statistics
+      if (clearStatistics && removedCount > 0) {
+        try {
+          const pool = getPool();
+          await pool.execute(`UPDATE D_MS${channelId.replace(/-/g, '_')} SET
+            RECEIVED = GREATEST(RECEIVED - ?, 0)`, [removedCount]);
+        } catch {
+          // Statistics table might not exist
+        }
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      console.error('Remove messages error:', error);
+      res.status(500).json({ error: 'Failed to remove messages' });
+    }
+  }
+);
+
 // ============================================================================
 // Routes - Multipart Import (Phase 2)
 // ============================================================================

@@ -837,6 +837,23 @@ Parameters:
 
 See `.claude/agents/parity-checker.md` for full specification.
 
+### api-parity-checker
+Detect Java↔Node.js REST API servlet parity gaps — missing endpoints, parameter mismatches, permission drift, and response format differences.
+
+**Use for**: API surface gap analysis, content negotiation audits, permission audits, pre-takeover GUI validation.
+
+**Quick start**:
+```
+Use the api-parity-checker agent to scan all servlets for API gaps.
+Parameters:
+- scope: full|servlet|permissions|response-format
+- servletName: ChannelServlet (required when scope: servlet)
+- severity: critical|major|minor
+- bugCategories: ["missing-endpoint", "extra-endpoint", "parameter-mismatch", "response-format-gap", "status-code-mismatch", "permission-mismatch", "content-negotiation-gap", "error-handling-gap", "missing-query-option", "stub-endpoint"]
+```
+
+See `.claude/agents/api-parity-checker.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)

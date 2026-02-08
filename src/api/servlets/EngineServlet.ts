@@ -7,6 +7,12 @@
 
 import { Router, Request, Response } from 'express';
 import { EngineController } from '../../controllers/EngineController.js';
+import { authorize } from '../middleware/authorization.js';
+import {
+  ENGINE_DEPLOY,
+  ENGINE_UNDEPLOY,
+  ENGINE_REDEPLOY_ALL,
+} from '../middleware/operations.js';
 
 export const engineRouter = Router();
 
@@ -62,16 +68,11 @@ function extractChannelIds(body: unknown): string[] {
   return [];
 }
 
-// Route param types
-interface ChannelParams {
-  channelId: string;
-}
-
 /**
  * POST /channels/_redeployAll
  * Redeploy all channels
  */
-engineRouter.post('/_redeployAll', async (req: Request, res: Response) => {
+engineRouter.post('/_redeployAll', authorize({ operation: ENGINE_REDEPLOY_ALL }), async (req: Request, res: Response) => {
   try {
     await EngineController.redeployAllChannels();
     res.status(204).end();
@@ -90,9 +91,9 @@ engineRouter.post('/_redeployAll', async (req: Request, res: Response) => {
  * POST /channels/:channelId/_deploy
  * Deploy a single channel
  */
-engineRouter.post('/:channelId/_deploy', async (req: Request<ChannelParams>, res: Response) => {
+engineRouter.post('/:channelId/_deploy', authorize({ operation: ENGINE_DEPLOY, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
     await EngineController.deployChannel(channelId);
     res.status(204).end();
   } catch (error) {
@@ -110,7 +111,7 @@ engineRouter.post('/:channelId/_deploy', async (req: Request<ChannelParams>, res
  * POST /channels/_deploy
  * Deploy multiple channels
  */
-engineRouter.post('/_deploy', async (req: Request, res: Response) => {
+engineRouter.post('/_deploy', authorize({ operation: ENGINE_DEPLOY }), async (req: Request, res: Response) => {
   try {
     const channelIds = extractChannelIds(req.body);
 
@@ -140,9 +141,9 @@ engineRouter.post('/_deploy', async (req: Request, res: Response) => {
  * POST /channels/:channelId/_undeploy
  * Undeploy a single channel
  */
-engineRouter.post('/:channelId/_undeploy', async (req: Request<ChannelParams>, res: Response) => {
+engineRouter.post('/:channelId/_undeploy', authorize({ operation: ENGINE_UNDEPLOY, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
     await EngineController.undeployChannel(channelId);
     res.status(204).end();
   } catch (error) {
@@ -160,7 +161,7 @@ engineRouter.post('/:channelId/_undeploy', async (req: Request<ChannelParams>, r
  * POST /channels/_undeploy
  * Undeploy multiple channels
  */
-engineRouter.post('/_undeploy', async (req: Request, res: Response) => {
+engineRouter.post('/_undeploy', authorize({ operation: ENGINE_UNDEPLOY }), async (req: Request, res: Response) => {
   try {
     const channelIds = extractChannelIds(req.body);
 

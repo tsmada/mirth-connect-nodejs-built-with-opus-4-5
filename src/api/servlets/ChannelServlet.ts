@@ -7,26 +7,30 @@
 
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { RowDataPacket } from 'mysql2';
 import { Channel, ChannelHeader } from '../models/Channel.js';
+import { DeployedState } from '../models/DashboardStatus.js';
 import { ChannelController } from '../../controllers/ChannelController.js';
+import { getPool } from '../../db/pool.js';
+import { authorize } from '../middleware/authorization.js';
+import {
+  CHANNEL_GET_CHANNELS,
+  CHANNEL_GET_CHANNEL,
+  CHANNEL_GET_CHANNEL_SUMMARY,
+  CHANNEL_CREATE,
+  CHANNEL_UPDATE,
+  CHANNEL_REMOVE,
+  CHANNEL_GET_IDS_AND_NAMES,
+  MESSAGE_REMOVE_ALL,
+} from '../middleware/operations.js';
 
 export const channelRouter = Router();
-
-// Route param types
-interface ChannelParams {
-  channelId: string;
-}
-
-interface EnabledParams {
-  channelId: string;
-  enabled: string;
-}
 
 /**
  * GET /channels
  * Get all channels or channels by IDs
  */
-channelRouter.get('/', async (req: Request, res: Response) => {
+channelRouter.get('/', authorize({ operation: CHANNEL_GET_CHANNELS }), async (req: Request, res: Response) => {
   try {
     const channelIds = req.query.channelId;
     const pollingOnly = req.query.pollingOnly === 'true';
@@ -68,7 +72,7 @@ channelRouter.get('/', async (req: Request, res: Response) => {
  * POST /channels/_getChannels
  * Get channels by IDs (POST alternative for large ID sets)
  */
-channelRouter.post('/_getChannels', async (req: Request, res: Response) => {
+channelRouter.post('/_getChannels', authorize({ operation: CHANNEL_GET_CHANNELS }), async (req: Request, res: Response) => {
   try {
     const channelIds = req.body;
     const pollingOnly = req.query.pollingOnly === 'true';
@@ -106,7 +110,7 @@ channelRouter.post('/_getChannels', async (req: Request, res: Response) => {
  * Get map of channel IDs to names
  * NOTE: This MUST come before /:channelId to avoid being matched as a channelId
  */
-channelRouter.get('/idsAndNames', async (_req: Request, res: Response) => {
+channelRouter.get('/idsAndNames', authorize({ operation: CHANNEL_GET_IDS_AND_NAMES }), async (_req: Request, res: Response) => {
   try {
     const idsAndNames = await ChannelController.getChannelIdsAndNames();
     res.sendData(idsAndNames);
@@ -120,9 +124,9 @@ channelRouter.get('/idsAndNames', async (_req: Request, res: Response) => {
  * GET /channels/:channelId
  * Get a single channel by ID
  */
-channelRouter.get('/:channelId', async (req: Request<ChannelParams>, res: Response) => {
+channelRouter.get('/:channelId', authorize({ operation: CHANNEL_GET_CHANNEL, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
     const includeCodeTemplateLibraries = req.query.includeCodeTemplateLibraries === 'true';
     const accept = req.get('Accept') || '';
     const wantsXml = accept.includes('application/xml') || accept.includes('text/xml');
@@ -161,7 +165,7 @@ channelRouter.get('/:channelId', async (req: Request<ChannelParams>, res: Respon
  * POST /channels/_getSummary
  * Get channel summaries
  */
-channelRouter.post('/_getSummary', async (req: Request, res: Response) => {
+channelRouter.post('/_getSummary', authorize({ operation: CHANNEL_GET_CHANNEL_SUMMARY }), async (req: Request, res: Response) => {
   try {
     const cachedChannels: Record<string, ChannelHeader> = req.body || {};
     const ignoreNewChannels = req.query.ignoreNewChannels === 'true';
@@ -178,7 +182,7 @@ channelRouter.post('/_getSummary', async (req: Request, res: Response) => {
  * POST /channels
  * Create a new channel or update existing if override=true
  */
-channelRouter.post('/', async (req: Request, res: Response) => {
+channelRouter.post('/', authorize({ operation: CHANNEL_CREATE }), async (req: Request, res: Response) => {
   try {
     const channelData = req.body;
     const override = req.query.override === 'true';
@@ -225,9 +229,9 @@ channelRouter.post('/', async (req: Request, res: Response) => {
  * PUT /channels/:channelId
  * Update a channel
  */
-channelRouter.put('/:channelId', async (req: Request<ChannelParams>, res: Response) => {
+channelRouter.put('/:channelId', authorize({ operation: CHANNEL_UPDATE, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
     const channelData = req.body;
     const override = req.query.override === 'true';
 
@@ -255,9 +259,9 @@ channelRouter.put('/:channelId', async (req: Request<ChannelParams>, res: Respon
  * DELETE /channels/:channelId
  * Delete a channel
  */
-channelRouter.delete('/:channelId', async (req: Request<ChannelParams>, res: Response) => {
+channelRouter.delete('/:channelId', authorize({ operation: CHANNEL_REMOVE, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
 
     const existing = await ChannelController.getChannel(channelId);
     if (!existing) {
@@ -277,7 +281,7 @@ channelRouter.delete('/:channelId', async (req: Request<ChannelParams>, res: Res
  * DELETE /channels
  * Delete multiple channels
  */
-channelRouter.delete('/', async (req: Request, res: Response) => {
+channelRouter.delete('/', authorize({ operation: CHANNEL_REMOVE }), async (req: Request, res: Response) => {
   try {
     const channelIds = req.query.channelId;
     if (!channelIds) {
@@ -301,7 +305,7 @@ channelRouter.delete('/', async (req: Request, res: Response) => {
  * POST /channels/_removeChannels
  * Delete multiple channels (POST alternative)
  */
-channelRouter.post('/_removeChannels', async (req: Request, res: Response) => {
+channelRouter.post('/_removeChannels', authorize({ operation: CHANNEL_REMOVE }), async (req: Request, res: Response) => {
   try {
     const channelIds = req.body;
     if (!channelIds || !Array.isArray(channelIds)) {
@@ -321,10 +325,166 @@ channelRouter.post('/_removeChannels', async (req: Request, res: Response) => {
 });
 
 /**
+ * DELETE /channels/_removeAllMessages
+ * Remove all messages from specified channels
+ * Called by GUI bulk "Remove All Messages" action
+ */
+channelRouter.delete('/_removeAllMessages', authorize({ operation: MESSAGE_REMOVE_ALL }), async (req: Request, res: Response) => {
+  try {
+    const channelIds = req.query.channelId;
+    const clearStatistics = req.query.clearStatistics !== 'false';
+
+    if (!channelIds) {
+      res.status(400).json({ error: 'Channel IDs required' });
+      return;
+    }
+
+    const ids = Array.isArray(channelIds) ? channelIds as string[] : [channelIds as string];
+    const pool = getPool();
+
+    for (const channelId of ids) {
+      const tableId = channelId.replace(/-/g, '_');
+
+      // Check if tables exist
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [`D_M${tableId}`]
+      );
+
+      if (rows.length === 0) continue;
+
+      // Truncate all message-related tables
+      await pool.execute(`TRUNCATE TABLE D_MC${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_MA${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_MM${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_M${tableId}`);
+
+      if (clearStatistics) {
+        try {
+          await pool.execute(`UPDATE D_MS${tableId} SET RECEIVED = 0, FILTERED = 0, TRANSFORMED = 0, PENDING = 0, SENT = 0, ERROR = 0`);
+        } catch {
+          // Stats table might not exist
+        }
+      }
+    }
+
+    res.status(204).end();
+  } catch (error) {
+    console.error('Remove all messages error:', error);
+    res.status(500).json({ error: 'Failed to remove all messages' });
+  }
+});
+
+/**
+ * POST /channels/_removeAllMessagesPost
+ * POST alternative for removing all messages from specified channels
+ */
+channelRouter.post('/_removeAllMessagesPost', authorize({ operation: MESSAGE_REMOVE_ALL }), async (req: Request, res: Response) => {
+  try {
+    const channelIds = req.body;
+    const clearStatistics = req.query.clearStatistics !== 'false';
+
+    if (!channelIds || !Array.isArray(channelIds) || channelIds.length === 0) {
+      res.status(400).json({ error: 'Channel IDs required in body' });
+      return;
+    }
+
+    const pool = getPool();
+
+    for (const channelId of channelIds) {
+      const tableId = (channelId as string).replace(/-/g, '_');
+
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [`D_M${tableId}`]
+      );
+
+      if (rows.length === 0) continue;
+
+      await pool.execute(`TRUNCATE TABLE D_MC${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_MA${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_MM${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_M${tableId}`);
+
+      if (clearStatistics) {
+        try {
+          await pool.execute(`UPDATE D_MS${tableId} SET RECEIVED = 0, FILTERED = 0, TRANSFORMED = 0, PENDING = 0, SENT = 0, ERROR = 0`);
+        } catch {
+          // Stats table might not exist
+        }
+      }
+    }
+
+    res.status(204).end();
+  } catch (error) {
+    console.error('Remove all messages POST error:', error);
+    res.status(500).json({ error: 'Failed to remove all messages' });
+  }
+});
+
+/**
+ * POST /channels/_setInitialState
+ * Set initial state for multiple channels
+ */
+channelRouter.post('/_setInitialState', authorize({ operation: CHANNEL_UPDATE }), async (req: Request, res: Response) => {
+  try {
+    const { channelIds, initialState } = req.body as { channelIds?: string[]; initialState?: string };
+
+    if (!initialState) {
+      res.status(400).json({ error: 'initialState is required' });
+      return;
+    }
+
+    const ids = channelIds || [];
+    for (const id of ids) {
+      const channel = await ChannelController.getChannel(id);
+      if (channel) {
+        channel.properties = channel.properties || {};
+        channel.properties.initialState = initialState as DeployedState;
+        await ChannelController.updateChannel(id, channel);
+      }
+    }
+
+    res.status(204).end();
+  } catch (error) {
+    console.error('Set initial state error:', error);
+    res.status(500).json({ error: 'Failed to set initial state' });
+  }
+});
+
+/**
+ * POST /channels/:channelId/initialState/:initialState
+ * Set initial state for a single channel
+ */
+channelRouter.post('/:channelId/initialState/:initialState', authorize({ operation: CHANNEL_UPDATE, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
+  try {
+    const channelId = req.params.channelId as string;
+    const initialState = req.params.initialState as string;
+
+    const channel = await ChannelController.getChannel(channelId);
+    if (!channel) {
+      res.status(404).json({ error: 'Channel not found' });
+      return;
+    }
+
+    channel.properties = channel.properties || {};
+    channel.properties.initialState = initialState as DeployedState;
+    await ChannelController.updateChannel(channelId, channel);
+
+    res.status(204).end();
+  } catch (error) {
+    console.error('Set channel initial state error:', error);
+    res.status(500).json({ error: 'Failed to set initial state' });
+  }
+});
+
+/**
  * POST /channels/_setEnabled
  * Enable/disable channels
  */
-channelRouter.post('/_setEnabled', async (req: Request, res: Response) => {
+channelRouter.post('/_setEnabled', authorize({ operation: CHANNEL_UPDATE }), async (req: Request, res: Response) => {
   try {
     const channelIds = req.body.channelId;
     const enabled = req.body.enabled === 'true' || req.body.enabled === true;
@@ -354,9 +514,10 @@ channelRouter.post('/_setEnabled', async (req: Request, res: Response) => {
  * POST /channels/:channelId/enabled/:enabled
  * Enable/disable a single channel
  */
-channelRouter.post('/:channelId/enabled/:enabled', async (req: Request<EnabledParams>, res: Response) => {
+channelRouter.post('/:channelId/enabled/:enabled', authorize({ operation: CHANNEL_UPDATE, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId, enabled } = req.params;
+    const channelId = req.params.channelId as string;
+    const enabled = req.params.enabled as string;
     await ChannelController.setChannelEnabled(channelId, enabled === 'true');
     res.status(204).end();
   } catch (error) {
@@ -369,9 +530,9 @@ channelRouter.post('/:channelId/enabled/:enabled', async (req: Request<EnabledPa
  * GET /channels/:channelId/connectorNames
  * Get connector names for a channel
  */
-channelRouter.get('/:channelId/connectorNames', async (req: Request<ChannelParams>, res: Response) => {
+channelRouter.get('/:channelId/connectorNames', authorize({ operation: CHANNEL_GET_CHANNEL, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
     const channel = await ChannelController.getChannel(channelId);
 
     if (!channel) {
@@ -396,9 +557,9 @@ channelRouter.get('/:channelId/connectorNames', async (req: Request<ChannelParam
  * GET /channels/:channelId/metaDataColumns
  * Get metadata columns for a channel
  */
-channelRouter.get('/:channelId/metaDataColumns', async (req: Request<ChannelParams>, res: Response) => {
+channelRouter.get('/:channelId/metaDataColumns', authorize({ operation: CHANNEL_GET_CHANNEL, checkAuthorizedChannelId: 'channelId' }), async (req: Request, res: Response) => {
   try {
-    const { channelId } = req.params;
+    const channelId = req.params.channelId as string;
     const channel = await ChannelController.getChannel(channelId);
 
     if (!channel) {

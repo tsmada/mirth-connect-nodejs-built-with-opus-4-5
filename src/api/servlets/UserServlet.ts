@@ -22,6 +22,19 @@ import {
   isUserLoggedIn,
   hashPassword,
 } from '../middleware/auth.js';
+import { authorize } from '../middleware/authorization.js';
+import {
+  USER_GET,
+  USER_GET_ALL,
+  USER_CREATE,
+  USER_UPDATE,
+  USER_REMOVE,
+  USER_CHECK_PASSWORD,
+  USER_UPDATE_PASSWORD,
+  USER_GET_PREFERENCES,
+  USER_SET_PREFERENCES,
+  USER_IS_LOGGED_IN,
+} from '../middleware/operations.js';
 import * as MirthDao from '../../db/MirthDao.js';
 
 export const userRouter = Router();
@@ -130,7 +143,7 @@ userRouter.post('/_logout', authMiddleware({ required: false }), async (req: Req
  * GET /users
  * Get all users
  */
-userRouter.get('/', authMiddleware({ required: true }), async (_req: Request, res: Response) => {
+userRouter.get('/', authMiddleware({ required: true }), authorize({ operation: USER_GET_ALL }), async (_req: Request, res: Response) => {
   try {
     const rows = await MirthDao.getAllPersons();
     const users: User[] = rows.map(personRowToUser);
@@ -145,7 +158,7 @@ userRouter.get('/', authMiddleware({ required: true }), async (_req: Request, re
  * GET /users/current
  * Get current logged in user
  */
-userRouter.get('/current', authMiddleware({ required: true }), (req: Request, res: Response) => {
+userRouter.get('/current', authMiddleware({ required: true }), authorize({ operation: USER_GET, dontCheckAuthorized: true }), (req: Request, res: Response) => {
   if (req.user) {
     res.sendData(req.user);
   } else {
@@ -157,7 +170,7 @@ userRouter.get('/current', authMiddleware({ required: true }), (req: Request, re
  * GET /users/:userIdOrName
  * Get user by ID or username
  */
-userRouter.get('/:userIdOrName', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.get('/:userIdOrName', authMiddleware({ required: true }), authorize({ operation: USER_GET }), async (req: Request, res: Response) => {
   try {
     const userIdOrName = req.params.userIdOrName as string;
     let personRow;
@@ -187,7 +200,7 @@ userRouter.get('/:userIdOrName', authMiddleware({ required: true }), async (req:
  * POST /users
  * Create a new user
  */
-userRouter.post('/', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.post('/', authMiddleware({ required: true }), authorize({ operation: USER_CREATE }), async (req: Request, res: Response) => {
   try {
     const userData = req.body;
 
@@ -230,7 +243,7 @@ userRouter.post('/', authMiddleware({ required: true }), async (req: Request, re
  * PUT /users/:userId
  * Update a user
  */
-userRouter.put('/:userId', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.put('/:userId', authMiddleware({ required: true }), authorize({ operation: USER_UPDATE, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
     const userData = req.body;
@@ -262,7 +275,7 @@ userRouter.put('/:userId', authMiddleware({ required: true }), async (req: Reque
  * DELETE /users/:userId
  * Delete a user
  */
-userRouter.delete('/:userId', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.delete('/:userId', authMiddleware({ required: true }), authorize({ operation: USER_REMOVE }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
 
@@ -284,7 +297,7 @@ userRouter.delete('/:userId', authMiddleware({ required: true }), async (req: Re
  * GET /users/:userId/loggedIn
  * Check if user is logged in
  */
-userRouter.get('/:userId/loggedIn', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.get('/:userId/loggedIn', authMiddleware({ required: true }), authorize({ operation: USER_IS_LOGGED_IN }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
     const loggedIn = isUserLoggedIn(userId);
@@ -299,7 +312,7 @@ userRouter.get('/:userId/loggedIn', authMiddleware({ required: true }), async (r
  * PUT /users/:userId/password
  * Update user password
  */
-userRouter.put('/:userId/password', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.put('/:userId/password', authMiddleware({ required: true }), authorize({ operation: USER_UPDATE_PASSWORD, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
     const newPassword = typeof req.body === 'string' ? req.body : req.body.password;
@@ -341,7 +354,7 @@ userRouter.put('/:userId/password', authMiddleware({ required: true }), async (r
  * POST /users/_checkPassword
  * Check password against requirements
  */
-userRouter.post('/_checkPassword', authMiddleware({ required: true }), (req: Request, res: Response) => {
+userRouter.post('/_checkPassword', authMiddleware({ required: true }), authorize({ operation: USER_CHECK_PASSWORD }), (req: Request, res: Response) => {
   const password = typeof req.body === 'string' ? req.body : req.body.password;
   const requirements: string[] = [];
 
@@ -353,10 +366,56 @@ userRouter.post('/_checkPassword', authMiddleware({ required: true }), (req: Req
 });
 
 /**
+ * GET /users/:userId/preferences/:name
+ * Get a single preference by name
+ */
+userRouter.get('/:userId/preferences/:name', authMiddleware({ required: true }), authorize({ operation: USER_GET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId as string, 10);
+    const name = req.params.name as string;
+
+    const prefs = await MirthDao.getPersonPreferences(userId);
+    const value = prefs[name];
+
+    if (value === undefined) {
+      res.status(404).json({ error: 'Preference not found' });
+      return;
+    }
+
+    res.type('text/plain').send(value);
+  } catch (error) {
+    console.error('Get preference error:', error);
+    res.status(500).json({ error: 'Failed to get preference' });
+  }
+});
+
+/**
+ * PUT /users/:userId/preferences/:name
+ * Set a single preference by name
+ */
+userRouter.put('/:userId/preferences/:name', authMiddleware({ required: true }), authorize({ operation: USER_SET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId as string, 10);
+    const name = req.params.name as string;
+    const value = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+    // Get existing preferences and update the single value
+    const prefs = await MirthDao.getPersonPreferences(userId);
+    prefs[name] = value;
+    await MirthDao.setPersonPreferences(userId, prefs);
+
+    res.status(204).end();
+  } catch (error) {
+    console.error('Set preference error:', error);
+    res.status(500).json({ error: 'Failed to set preference' });
+  }
+});
+
+/**
  * GET /users/:userId/preferences
  * Get user preferences
  */
-userRouter.get('/:userId/preferences', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.get('/:userId/preferences', authMiddleware({ required: true }), authorize({ operation: USER_GET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
     const nameFilter = req.query.name;
@@ -383,7 +442,7 @@ userRouter.get('/:userId/preferences', authMiddleware({ required: true }), async
  * PUT /users/:userId/preferences
  * Update user preferences
  */
-userRouter.put('/:userId/preferences', authMiddleware({ required: true }), async (req: Request, res: Response) => {
+userRouter.put('/:userId/preferences', authMiddleware({ required: true }), authorize({ operation: USER_SET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
     const preferences = req.body;

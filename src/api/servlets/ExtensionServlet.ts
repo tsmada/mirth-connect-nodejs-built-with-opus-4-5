@@ -6,8 +6,12 @@
  *
  * Endpoints:
  * - GET /extensions - Get all extensions
+ * - GET /extensions/connectors - Get connector metadata
+ * - GET /extensions/plugins - Get plugin metadata
  * - GET /extensions/:extensionName - Get extension
+ * - GET /extensions/:extensionName/enabled - Check if enabled
  * - PUT /extensions/:extensionName/enabled/:enabled - Enable/disable
+ * - POST /extensions/:extensionName/_setEnabled - Enable/disable (Java Mirth POST variant)
  * - GET /extensions/:extensionName/properties - Get properties
  * - PUT /extensions/:extensionName/properties - Set properties
  */
@@ -378,6 +382,50 @@ extensionRouter.get(
 );
 
 /**
+ * GET /extensions/connectors
+ * Get all connector metadata (source and destination connectors)
+ * Used by GUI connector type dropdown
+ */
+extensionRouter.get(
+  '/connectors',
+  authorize({ operation: EXTENSION_GET_ALL }),
+  async (_req: Request, res: Response) => {
+    try {
+      const extensions = await getAllExtensions();
+      const connectors = extensions.filter(
+        (ext): ext is ConnectorMetaData => 'type' in ext && 'transportName' in ext
+      );
+      res.sendData(connectors);
+    } catch (error) {
+      console.error('Get connectors error:', error);
+      res.status(500).json({ error: 'Failed to get connectors' });
+    }
+  }
+);
+
+/**
+ * GET /extensions/plugins
+ * Get all plugin metadata (non-connector extensions)
+ * Used by GUI plugin management tab
+ */
+extensionRouter.get(
+  '/plugins',
+  authorize({ operation: EXTENSION_GET_ALL }),
+  async (_req: Request, res: Response) => {
+    try {
+      const extensions = await getAllExtensions();
+      const plugins = extensions.filter(
+        (ext) => !('type' in ext) || !('transportName' in ext)
+      );
+      res.sendData(plugins);
+    } catch (error) {
+      console.error('Get plugins error:', error);
+      res.status(500).json({ error: 'Failed to get plugins' });
+    }
+  }
+);
+
+/**
  * GET /extensions/:extensionName
  * Get extension by name
  */
@@ -398,6 +446,31 @@ extensionRouter.get(
     } catch (error) {
       console.error('Get extension error:', error);
       res.status(500).json({ error: 'Failed to get extension' });
+    }
+  }
+);
+
+/**
+ * GET /extensions/:extensionName/enabled
+ * Check if extension is enabled (returns boolean)
+ */
+extensionRouter.get(
+  '/:extensionName/enabled',
+  authorize({ operation: EXTENSION_GET }),
+  async (req: Request, res: Response) => {
+    try {
+      const extensionName = decodeURIComponent(req.params.extensionName as string);
+      const extension = await getExtension(extensionName);
+
+      if (!extension) {
+        res.status(404).json({ error: 'Extension not found' });
+        return;
+      }
+
+      res.sendData(extension.enabled);
+    } catch (error) {
+      console.error('Get extension enabled error:', error);
+      res.status(500).json({ error: 'Failed to check extension enabled' });
     }
   }
 );
@@ -427,6 +500,35 @@ extensionRouter.put(
       res.status(204).end();
     } catch (error) {
       console.error('Set extension enabled error:', error);
+      res.status(500).json({ error: 'Failed to set extension enabled' });
+    }
+  }
+);
+
+/**
+ * POST /extensions/:extensionName/_setEnabled
+ * Enable or disable extension (POST variant matching Java Mirth)
+ * Java Mirth uses POST with body parameter, not PUT with path parameter
+ */
+extensionRouter.post(
+  '/:extensionName/_setEnabled',
+  authorize({ operation: EXTENSION_SET_ENABLED }),
+  async (req: Request, res: Response) => {
+    try {
+      const extensionName = decodeURIComponent(req.params.extensionName as string);
+      const enabled = req.body?.enabled === 'true' || req.body?.enabled === true ||
+                       req.query.enabled === 'true';
+
+      const success = await setExtensionEnabled(extensionName, enabled);
+
+      if (!success) {
+        res.status(404).json({ error: 'Extension not found' });
+        return;
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      console.error('Set extension enabled POST error:', error);
       res.status(500).json({ error: 'Failed to set extension enabled' });
     }
   }

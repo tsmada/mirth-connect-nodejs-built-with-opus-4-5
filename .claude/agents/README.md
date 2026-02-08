@@ -19,6 +19,7 @@ Agents are reusable AI assistants with specific expertise. They follow documente
 | [version-upgrader](./version-upgrader.md) | Orchestrate version upgrades with parallel agents | Upgrading to new Mirth versions (3.9.1 → 3.10.0, etc.) |
 | [subtle-bug-finder](./subtle-bug-finder.md) | Detect Java→Node.js porting discrepancies | Post-porting validation, debugging unexpected API behavior, pre-release checks |
 | [parity-checker](./parity-checker.md) | Detect Java↔Node.js pipeline coverage gaps | DAO method gaps, missing content persistence, incomplete pipeline stages |
+| [api-parity-checker](./api-parity-checker.md) | Detect Java↔Node.js REST API servlet gaps | Missing endpoints, parameter mismatches, permission drift, response format differences |
 
 ## How to Invoke an Agent
 
