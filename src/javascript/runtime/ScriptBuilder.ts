@@ -372,6 +372,11 @@ export class ScriptBuilder {
     // Configuration map (read-only)
     builder.push('function $cfg(key) { return configurationMap.get(key); }');
 
+    // Secrets (read-only, direct vault access)
+    builder.push(
+      "function $secrets(key) { if (typeof secretsMap !== 'undefined') { return secretsMap.get(key); } return undefined; }"
+    );
+
     // Response map
     builder.push(
       'function $r(key, value) { if (arguments.length === 1) { return responseMap.get(key); } else { return responseMap.put(key, value); } }'

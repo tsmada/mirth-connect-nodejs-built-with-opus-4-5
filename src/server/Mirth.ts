@@ -154,6 +154,24 @@ export class Mirth {
       console.warn('Shadow mode: VMRouter and DataPruner initialization deferred until cutover');
     }
 
+    // Initialize Secrets Manager (if configured)
+    const secretsProviders = process.env['MIRTH_SECRETS_PROVIDERS'];
+    if (secretsProviders) {
+      const { SecretsManager } = await import('../secrets/SecretsManager.js');
+      await SecretsManager.initialize();
+      console.warn(`Secrets providers initialized: ${secretsProviders}`);
+
+      // Wire secrets as ConfigurationMap fallback
+      const { createConfigMapFallback } = await import('../secrets/integration/ConfigMapBackend.js');
+      const { ConfigurationMap } = await import('../javascript/userutil/MirthMap.js');
+      ConfigurationMap.getInstance().setFallback(createConfigMapFallback());
+
+      // Wire $secrets into script scope
+      const { createSecretsFunction } = await import('../secrets/integration/ScriptSecretsMap.js');
+      const { setSecretsFunction } = await import('../javascript/runtime/ScopeBuilder.js');
+      setSecretsFunction(createSecretsFunction());
+    }
+
     this.running = true;
     console.warn(
       `Mirth Connect started on port ${this.config.httpPort} (HTTP)`
@@ -210,6 +228,13 @@ export class Mirth {
     } catch {
       // DB pool may already be closed; best-effort
     }
+
+    // Shutdown secrets manager
+    try {
+      const { SecretsManager } = await import('../secrets/SecretsManager.js');
+      const mgr = SecretsManager.getInstance();
+      if (mgr) await mgr.shutdown();
+    } catch { /* module not loaded */ }
 
     // Close database connection pool
     await closePool();

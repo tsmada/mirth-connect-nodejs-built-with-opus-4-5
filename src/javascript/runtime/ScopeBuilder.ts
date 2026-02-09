@@ -27,6 +27,13 @@ import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Message } from '../../model/Message.js';
 import { Status } from '../../model/Status.js';
 
+// Module-level secrets function setter (same pattern as VMRouter)
+let secretsFn: ((key: string) => string | undefined) | null = null;
+
+export function setSecretsFunction(fn: (key: string) => string | undefined): void {
+  secretsFn = fn;
+}
+
 /**
  * Logger interface for script execution
  */
@@ -117,6 +124,9 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     // Shorthand for global maps
     $g: GlobalMap.getInstance(),
     $cfg: ConfigurationMap.getInstance(),
+
+    // Secrets map (if secrets manager is initialized)
+    ...(secretsFn ? { secretsMap: { get: secretsFn, containsKey: (k: string) => secretsFn!(k) !== undefined } } : {}),
 
     // XML utilities
     XMLProxy,

@@ -237,7 +237,13 @@ export class ArtifactController {
     if (options?.environment) {
       const resolver = new VariableResolver();
       await resolver.loadEnvironment(ArtifactController.repoPath!, options.environment);
-      const rawXml = assemble(decomposed);
+      let rawXml = assemble(decomposed);
+      // Resolve ${secret:KEY} references from secrets providers
+      try {
+        const { resolveSecretReferences } = await import('../secrets/integration/VariableResolverPlugin.js');
+        const secretResult = await resolveSecretReferences(rawXml);
+        rawXml = secretResult.resolved;
+      } catch { /* secrets module not loaded */ }
       const result = resolver.resolve(rawXml);
       if (result.unresolvedVars.length > 0) {
         warnings.push(`Unresolved variables: ${result.unresolvedVars.join(', ')}`);

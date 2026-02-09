@@ -449,6 +449,7 @@ export class GlobalChannelMapStore {
 export class ConfigurationMap extends MirthMap {
   private static instance: ConfigurationMap | null = null;
   private reloadTimer: ReturnType<typeof setInterval> | null = null;
+  private fallback: ((key: string) => unknown | undefined) | null = null;
 
   private constructor() {
     super();
@@ -468,6 +469,25 @@ export class ConfigurationMap extends MirthMap {
     for (const [key, value] of Object.entries(config)) {
       this.data.set(key, value);
     }
+  }
+
+  /**
+   * Set a fallback function for keys not found in the database.
+   * Used to bridge SecretsManager into $cfg() transparently.
+   */
+  setFallback(fn: (key: string) => unknown | undefined): void {
+    this.fallback = fn;
+  }
+
+  /**
+   * Override get to check fallback when key not in database.
+   * This is what makes $cfg('DB_PASSWORD') resolve from vault.
+   */
+  override get(key: string): unknown {
+    const value = this.data.get(key);
+    if (value !== undefined) return value;
+    if (this.fallback) return this.fallback(key);
+    return undefined;
   }
 
   /**
