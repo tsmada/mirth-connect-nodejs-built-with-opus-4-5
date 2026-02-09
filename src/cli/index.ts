@@ -23,6 +23,7 @@ import { registerDashboardCommand } from './commands/dashboard.js';
 import { registerTraceCommand } from './commands/trace.js';
 import { registerShadowCommands } from './commands/shadow.js';
 import { registerArtifactCommands } from './commands/artifact.js';
+import { registerSecretsCommands } from './commands/secrets.js';
 import { ConfigManager } from './lib/ConfigManager.js';
 
 // Package version - would normally read from package.json
@@ -72,6 +73,7 @@ function createProgram(): Command {
   registerTraceCommand(program);
   registerShadowCommands(program);
   registerArtifactCommands(program);
+  registerSecretsCommands(program);
 
   // Custom help with banner
   program.addHelpText('before', BANNER);
