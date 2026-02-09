@@ -417,8 +417,12 @@ describe('SecretsManager', () => {
       // Advance timer past TTL to trigger refresh
       jest.advanceTimersByTime(60 * 1000);
 
-      // Allow the async refresh to complete
-      await jest.runAllTimersAsync();
+      // Allow the async refresh callback (Promise.allSettled) to settle
+      // Multiple microtask ticks needed for Promise chains
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
 
       expect(mgr.getSync('key')).toBe('refreshed');
     });
