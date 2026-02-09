@@ -4,14 +4,24 @@ import { AwsSecretsProvider } from '../../../../src/secrets/providers/AwsSecrets
 describe('AwsSecretsProvider', () => {
   let provider: AwsSecretsProvider;
   let mockSend: jest.Mock<(...args: any[]) => Promise<any>>;
+  // Mock command constructors that pass through their args
+  const MockCommand = jest.fn((args: any) => args);
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    jest.clearAllMocks();
     mockSend = jest.fn<(...args: any[]) => Promise<any>>();
     provider = new AwsSecretsProvider('us-west-2', 'mirth/');
-    // Bypass dynamic import by injecting mock client directly
+    // Bypass dynamic import by injecting mock client and commands directly
     (provider as any).client = { send: mockSend };
+    (provider as any).commands = {
+      GetSecretValueCommand: MockCommand,
+      ListSecretsCommand: MockCommand,
+      PutSecretValueCommand: MockCommand,
+      CreateSecretCommand: MockCommand,
+      DeleteSecretCommand: MockCommand,
+    };
   });
 
   afterEach(async () => {
@@ -26,7 +36,6 @@ describe('AwsSecretsProvider', () => {
   it('should use AWS_REGION env var when no region specified', () => {
     process.env['AWS_REGION'] = 'eu-west-1';
     const envProvider = new AwsSecretsProvider();
-    // Region is stored at construction time
     expect((envProvider as any).region).toBe('eu-west-1');
   });
 
@@ -65,11 +74,10 @@ describe('AwsSecretsProvider', () => {
       });
 
       await provider.get('my_key');
-      // The GetSecretValueCommand constructor gets called with the prefixed key
-      const callArg = mockSend.mock.calls[0]![0] as any;
-      // Dynamic import means the command is constructed inside get()
-      // We verify the send was called (the SecretId is passed to the command constructor)
-      expect(mockSend).toHaveBeenCalledTimes(1);
+      // MockCommand receives { SecretId: 'mirth/my_key' }
+      expect(MockCommand).toHaveBeenCalledWith({
+        SecretId: 'mirth/my_key',
+      });
     });
 
     it('should parse JSON secret and extract the key', async () => {
@@ -205,6 +213,11 @@ describe('AwsSecretsProvider', () => {
 
       await provider.set!('db_password', 'new-value');
       expect(mockSend).toHaveBeenCalledTimes(1);
+      // Verify PutSecretValueCommand was constructed with correct args
+      expect(MockCommand).toHaveBeenCalledWith({
+        SecretId: 'mirth/db_password',
+        SecretString: 'new-value',
+      });
     });
 
     it('should create new secret on ResourceNotFoundException', async () => {
@@ -231,11 +244,15 @@ describe('AwsSecretsProvider', () => {
   });
 
   describe('delete()', () => {
-    it('should delete secret', async () => {
+    it('should delete secret with force flag', async () => {
       mockSend.mockResolvedValueOnce({});
 
       await provider.delete!('old_secret');
       expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(MockCommand).toHaveBeenCalledWith({
+        SecretId: 'mirth/old_secret',
+        ForceDeleteWithoutRecovery: true,
+      });
     });
 
     it('should throw if not initialized', async () => {
@@ -245,8 +262,10 @@ describe('AwsSecretsProvider', () => {
   });
 
   describe('shutdown()', () => {
-    it('should clear client on shutdown', async () => {
+    it('should clear client and commands on shutdown', async () => {
       await provider.shutdown();
+      expect((provider as any).client).toBeNull();
+      expect((provider as any).commands).toBeNull();
       await expect(provider.get('key')).rejects.toThrow('not initialized');
     });
   });

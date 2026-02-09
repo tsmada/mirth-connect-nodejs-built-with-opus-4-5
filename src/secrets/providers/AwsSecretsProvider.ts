@@ -3,6 +3,7 @@ import type { SecretValue, SecretsProvider } from '../types.js';
 export class AwsSecretsProvider implements SecretsProvider {
   readonly name = 'aws';
   private client: any = null;
+  private commands: any = null; // Stores SDK command constructors
   private region: string;
   private prefix: string;
 
@@ -13,8 +14,16 @@ export class AwsSecretsProvider implements SecretsProvider {
 
   async initialize(): Promise<void> {
     try {
-      const { SecretsManagerClient } = await import('@aws-sdk/client-secrets-manager');
-      this.client = new SecretsManagerClient({ region: this.region });
+      // @ts-expect-error -- optional peer dependency, installed by user
+      const sdk = await import('@aws-sdk/client-secrets-manager');
+      this.client = new sdk.SecretsManagerClient({ region: this.region });
+      this.commands = {
+        GetSecretValueCommand: sdk.GetSecretValueCommand,
+        ListSecretsCommand: sdk.ListSecretsCommand,
+        PutSecretValueCommand: sdk.PutSecretValueCommand,
+        CreateSecretCommand: sdk.CreateSecretCommand,
+        DeleteSecretCommand: sdk.DeleteSecretCommand,
+      };
     } catch {
       throw new Error('AWS Secrets Manager SDK not installed. Run: npm install @aws-sdk/client-secrets-manager');
     }
@@ -23,8 +32,7 @@ export class AwsSecretsProvider implements SecretsProvider {
   async get(key: string): Promise<SecretValue | undefined> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
     try {
-      const { GetSecretValueCommand } = await import('@aws-sdk/client-secrets-manager');
-      const response = await this.client.send(new GetSecretValueCommand({
+      const response = await this.client.send(new this.commands.GetSecretValueCommand({
         SecretId: this.prefix + key,
       }));
 
@@ -63,11 +71,10 @@ export class AwsSecretsProvider implements SecretsProvider {
 
   async list(): Promise<string[]> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
-    const { ListSecretsCommand } = await import('@aws-sdk/client-secrets-manager');
     const keys: string[] = [];
     let nextToken: string | undefined;
     do {
-      const response = await this.client.send(new ListSecretsCommand({
+      const response = await this.client.send(new this.commands.ListSecretsCommand({
         NextToken: nextToken,
         Filters: [{ Key: 'name', Values: [this.prefix] }],
       }));
@@ -83,15 +90,14 @@ export class AwsSecretsProvider implements SecretsProvider {
 
   async set(key: string, value: string): Promise<void> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
-    const { PutSecretValueCommand, CreateSecretCommand } = await import('@aws-sdk/client-secrets-manager');
     try {
-      await this.client.send(new PutSecretValueCommand({
+      await this.client.send(new this.commands.PutSecretValueCommand({
         SecretId: this.prefix + key,
         SecretString: value,
       }));
     } catch (err: any) {
       if (err.name === 'ResourceNotFoundException') {
-        await this.client.send(new CreateSecretCommand({
+        await this.client.send(new this.commands.CreateSecretCommand({
           Name: this.prefix + key,
           SecretString: value,
         }));
@@ -103,8 +109,7 @@ export class AwsSecretsProvider implements SecretsProvider {
 
   async delete(key: string): Promise<void> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
-    const { DeleteSecretCommand } = await import('@aws-sdk/client-secrets-manager');
-    await this.client.send(new DeleteSecretCommand({
+    await this.client.send(new this.commands.DeleteSecretCommand({
       SecretId: this.prefix + key,
       ForceDeleteWithoutRecovery: true,
     }));
@@ -112,5 +117,6 @@ export class AwsSecretsProvider implements SecretsProvider {
 
   async shutdown(): Promise<void> {
     this.client = null;
+    this.commands = null;
   }
 }

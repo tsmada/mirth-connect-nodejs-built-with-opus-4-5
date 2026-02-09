@@ -12,6 +12,7 @@ export class GcpSecretsProvider implements SecretsProvider {
   async initialize(): Promise<void> {
     if (!this.project) throw new Error('GCP project ID required (MIRTH_SECRETS_GCP_PROJECT or GCP_PROJECT_ID)');
     try {
+      // @ts-expect-error -- optional peer dependency, installed by user
       const { SecretManagerServiceClient } = await import('@google-cloud/secret-manager');
       this.client = new SecretManagerServiceClient();
     } catch {

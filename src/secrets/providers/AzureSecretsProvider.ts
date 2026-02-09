@@ -12,7 +12,9 @@ export class AzureSecretsProvider implements SecretsProvider {
   async initialize(): Promise<void> {
     if (!this.vaultUrl) throw new Error('Azure Key Vault URL required (MIRTH_SECRETS_AZURE_VAULT_URL)');
     try {
+      // @ts-expect-error -- optional peer dependency, installed by user
       const { SecretClient } = await import('@azure/keyvault-secrets');
+      // @ts-expect-error -- optional peer dependency, installed by user
       const { DefaultAzureCredential } = await import('@azure/identity');
       this.client = new SecretClient(this.vaultUrl, new DefaultAzureCredential());
     } catch {
