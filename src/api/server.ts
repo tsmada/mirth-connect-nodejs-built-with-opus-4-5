@@ -25,6 +25,7 @@ import { usageRouter } from './servlets/UsageServlet.js';
 import { traceRouter } from './servlets/TraceServlet.js';
 import { shadowRouter } from './servlets/ShadowServlet.js';
 import { artifactRouter } from './servlets/ArtifactServlet.js';
+import { secretsRouter } from './servlets/SecretsServlet.js';
 
 // Cluster health probes and routing
 import { healthRouter } from '../cluster/HealthCheck.js';
@@ -119,6 +120,9 @@ export function createApp(options: ServerOptions = {}): Express {
 
   // Artifact management API (auth required, not shadow-guarded — read operations must always work)
   app.use('/api/artifacts', authMiddleware({ required: true }), artifactRouter);
+
+  // Secrets management API (auth required, not shadow-guarded — read operations must always work)
+  app.use('/api/secrets', authMiddleware({ required: true }), secretsRouter);
 
   // Protected routes (auth required)
   // NOTE: Route order matters! More specific routes must come BEFORE parameterized routes.
