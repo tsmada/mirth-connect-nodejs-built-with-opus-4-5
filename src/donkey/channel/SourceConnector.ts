@@ -12,6 +12,7 @@
 
 import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
+import { ContentType } from '../../model/ContentType.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
@@ -204,14 +205,40 @@ export abstract class SourceConnector {
    */
   async executeTransformer(connectorMessage: ConnectorMessage): Promise<void> {
     if (!this.filterTransformerExecutor) {
+      // No executor — set encoded content from raw content (passthrough)
+      // Java Mirth: FilterTransformerExecutor always sets encoded content
+      const raw = connectorMessage.getRawContent();
+      if (raw) {
+        connectorMessage.setContent({
+          contentType: ContentType.ENCODED,
+          content: raw.content,
+          dataType: raw.dataType,
+          encrypted: raw.encrypted,
+        });
+      }
       return;
     }
 
     const result = await this.filterTransformerExecutor.executeTransformer(connectorMessage);
 
+    // Java Mirth: FilterTransformerExecutor.processConnectorMessage() throws DonkeyException
+    // on transformer errors, which stops the pipeline. Match that behavior.
+    if (result.error) {
+      throw new Error(`Transformer error: ${result.error}`);
+    }
+
     // Set transformed content on connector message
     if (result.transformedData !== undefined) {
       connectorMessage.setTransformedData(result.transformedData, result.transformedDataType ?? 'XML');
+
+      // Java Mirth: FilterTransformerExecutor.java:142 — always set ENCODED content
+      // For RAW serialization type, encoded = transformed
+      connectorMessage.setContent({
+        contentType: ContentType.ENCODED,
+        content: result.transformedData,
+        dataType: result.transformedDataType ?? 'RAW',
+        encrypted: false,
+      });
     }
   }
 

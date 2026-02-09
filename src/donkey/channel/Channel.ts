@@ -805,11 +805,28 @@ export class Channel extends EventEmitter {
       }
 
       // Dispatch to destinations
+      // Java Mirth: Channel.java:1665-1699 — source's encoded content becomes destination's RAW
+      const sourceEncoded = sourceMessage.getEncodedContent()
+        ?? sourceMessage.getTransformedContent()
+        ?? sourceMessage.getRawContent();
+
       for (let i = 0; i < this.destinationConnectors.length; i++) {
         const dest = this.destinationConnectors[i];
         if (!dest) continue;
 
         const destMessage = sourceMessage.clone(i + 1, dest.getName());
+
+        // Set RAW content on destination from source's encoded content
+        // Java Mirth: Channel.java:1699 — "create the raw content from the source's encoded content"
+        if (sourceEncoded) {
+          destMessage.setContent({
+            contentType: ContentType.RAW,
+            content: sourceEncoded.content,
+            dataType: sourceEncoded.dataType,
+            encrypted: sourceEncoded.encrypted,
+          });
+        }
+
         message.setConnectorMessage(i + 1, destMessage);
 
         // Persist destination connector message
@@ -1359,11 +1376,27 @@ export class Channel extends EventEmitter {
       }
 
       // Dispatch to destinations
+      // Java Mirth: source's encoded content becomes destination's RAW
+      const sourceEncoded2 = sourceMessage.getEncodedContent()
+        ?? sourceMessage.getTransformedContent()
+        ?? sourceMessage.getRawContent();
+
       for (let i = 0; i < this.destinationConnectors.length; i++) {
         const dest = this.destinationConnectors[i];
         if (!dest) continue;
 
         const destMessage = sourceMessage.clone(i + 1, dest.getName());
+
+        // Set RAW content on destination from source's encoded content
+        if (sourceEncoded2) {
+          destMessage.setContent({
+            contentType: ContentType.RAW,
+            content: sourceEncoded2.content,
+            dataType: sourceEncoded2.dataType,
+            encrypted: sourceEncoded2.encrypted,
+          });
+        }
+
         message.setConnectorMessage(i + 1, destMessage);
 
         await this.persistToDb(() => insertConnectorMessage(this.id, messageId, i + 1, dest.getName(), destMessage.getReceivedDate(), Status.RECEIVED));
