@@ -311,7 +311,13 @@ export class ScriptBuilder {
     builder.push('function doPreprocess() {');
     builder.push(transpiled);
     builder.push('}');
-    builder.push('message = doPreprocess() || message;');
+    // Java behavior: only update message if doPreprocess() returns non-null/undefined.
+    // If the user modifies `message` inside the function but doesn't return, Java discards
+    // the modification (uses the original raw message). We save the original before calling
+    // so we can restore it when the function doesn't explicitly return.
+    builder.push('var __pp_original = message;');
+    builder.push('var __pp_result = doPreprocess();');
+    builder.push('if (__pp_result !== undefined && __pp_result !== null) { message = __pp_result; } else { message = __pp_original; }');
 
     return builder.join('\n');
   }
@@ -472,7 +478,7 @@ function validate(mapping, defaultValue, replacement) {
     result = defaultValue;
   }
   if ('string' === typeof result || (typeof result === 'object' && result != null && typeof result.toXMLString === 'function')) {
-    result = new String(result.toString());
+    result = String(result.toString());
     if (replacement != undefined && replacement != null) {
       for (var i = 0; i < replacement.length; i++) {
         var entry = replacement[i];

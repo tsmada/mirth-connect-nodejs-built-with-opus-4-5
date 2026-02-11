@@ -225,7 +225,9 @@ describe('ScriptBuilder', () => {
       const script = builder.generatePreprocessorScript('return message.replace("a", "b");');
 
       expect(script).toContain('function doPreprocess()');
-      expect(script).toContain('message = doPreprocess() || message;');
+      expect(script).toContain('var __pp_original = message;');
+      expect(script).toContain('var __pp_result = doPreprocess();');
+      expect(script).toContain('if (__pp_result !== undefined && __pp_result !== null) { message = __pp_result; } else { message = __pp_original; }');
     });
 
     it('should transpile E4X syntax', () => {

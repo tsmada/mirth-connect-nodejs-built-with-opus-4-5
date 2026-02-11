@@ -168,8 +168,9 @@ describe('JRC-SBD-015 — Global pre/postprocessor script chaining', () => {
     it('should pass global preprocessor result to channel when global returns no explicit value', () => {
       const cm = makeConnectorMessage();
 
-      // Global script modifies 'message' in-place but doesn't return explicitly
-      // executePreprocessor reads back context.message
+      // Global script modifies 'message' in-place but doesn't return explicitly.
+      // Java behavior (JRC-SBD-024): doPreprocess() returns undefined → original message used.
+      // The scope modification is discarded when there's no return statement.
       const globalScript = 'message = message + " [MODIFIED]";';
       const channelScript = 'return message + " [CHANNEL]";';
 
@@ -182,9 +183,9 @@ describe('JRC-SBD-015 — Global pre/postprocessor script chaining', () => {
       );
 
       expect(result.success).toBe(true);
-      // Global modifies message in scope → "start [MODIFIED]"
-      // Channel receives that → "start [MODIFIED] [CHANNEL]"
-      expect(result.result).toBe('start [MODIFIED] [CHANNEL]');
+      // Java: global doesn't return → original "start" passed to channel
+      // Channel returns "start [CHANNEL]"
+      expect(result.result).toBe('start [CHANNEL]');
     });
   });
 
