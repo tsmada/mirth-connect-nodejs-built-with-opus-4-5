@@ -61,6 +61,7 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch channels from API
   const refresh = useCallback(async () => {
@@ -88,6 +89,21 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+    };
+  }, [refresh, refreshInterval, enablePolling]);
+
+  // Heartbeat: refresh data every second even when WebSocket handles primary
+  // updates. Keeps lastUpdate fresh and catches any missed WebSocket events.
+  useEffect(() => {
+    if (!enablePolling) {
+      heartbeatRef.current = setInterval(refresh, 1000);
+    }
+
+    return () => {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
       }
     };
   }, [refresh, refreshInterval, enablePolling]);

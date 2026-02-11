@@ -16,11 +16,11 @@ This project provides a modern, TypeScript-based implementation of the Mirth Con
 - **MLLP, HTTP, TCP, File, Database** — All major connector protocols
 - **Mirth Administrator Compatibility** — Use the existing Mirth Administrator GUI
 
-## 🔄 Incremental Takeover Strategy
+## Incremental Takeover Strategy
 
 **The key differentiator: Node.js Mirth can seamlessly replace Java Mirth without any migration.**
 
-The only difference between the Java and Node.js engines is the **operational mode** — a single environment variable that determines how the Node.js runtime interacts with the database:
+The only difference between the Java and Node.js engines is the **operational mode**:
 
 | Mode | Command | Use Case |
 |------|---------|----------|
@@ -28,411 +28,45 @@ The only difference between the Java and Node.js engines is the **operational mo
 | **Standalone** | `MIRTH_MODE=standalone npm start` | Fresh installation with auto-created schema. |
 | **Auto** | `npm start` | Auto-detect: uses existing DB if found, else creates new. |
 
-### Migration Path: Java → Node.js
-
-```
-Week 1: Run Node.js Mirth in TAKEOVER mode alongside Java Mirth
-        ↓ Both engines share the same MySQL database
-        ↓ Use Java Mirth as primary, Node.js for testing
-
-Week 2: Gradually route traffic to Node.js endpoints
-        ↓ Compare behavior, validate messages
-
-Week 3: Switch primary to Node.js
-        ↓ Keep Java Mirth as fallback
-
-Week 4: Decommission Java Mirth
-        ↓ Node.js runs standalone
-```
-
-### Why This Matters
-
 - **Zero Data Migration**: Point Node.js at your existing MySQL database — all channels, messages, users, and configuration are immediately available
 - **Rollback Safety**: If issues arise, switch back to Java Mirth instantly (same database)
 - **Gradual Adoption**: Test channel-by-channel before full cutover
 - **Same Admin GUI**: Mirth Administrator works identically with both engines
 
-## Shadow Mode (Safe Takeover)
+See the full [Migration & Shadow Mode Guide](docs/migration-and-shadow-mode.md) for the migration timeline and progressive cutover workflow.
 
-> **Node.js-only feature** — Shadow mode has no equivalent in Java Mirth.
+## Shadow Mode
 
-Shadow mode enables a safe, progressive cutover from Java Mirth to Node.js Mirth. When enabled, the Node.js engine deploys all channels in a **read-only observer state** — no ports are bound, no polling starts, and no messages are processed. The operator then promotes channels one-by-one, stopping each on Java Mirth first, until the full cutover is complete.
+Shadow mode enables safe, progressive cutover from Java to Node.js. The Node.js engine deploys all channels in a read-only observer state, and the operator promotes them one-by-one. See the full [Migration & Shadow Mode Guide](docs/migration-and-shadow-mode.md#shadow-mode-safe-takeover).
 
-### Why Shadow Mode?
+## Centralized Logging
 
-Running two engines against the same database without shadow mode causes:
-- **Port conflicts** — Both engines try to bind the same MLLP/HTTP/TCP ports
-- **Duplicate processing** — File and database receivers poll the same sources
-- **Data corruption** — Both engines write to the same message tables simultaneously
-
-Shadow mode prevents all of this by keeping the Node.js engine passive until the operator explicitly activates each channel.
-
-### Quick Start
-
-```bash
-# Start Node.js Mirth in shadow mode (connects to existing Java Mirth database)
-MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true PORT=8081 node dist/index.js
-
-# Check shadow status
-mirth-cli shadow status
-# → SHADOW MODE ACTIVE: 12 channels deployed, 0 promoted
-
-# Stop a channel on Java Mirth first, then promote it on Node.js
-mirth-cli shadow promote "ADT Receiver"
-# → Channel ADT Receiver promoted and started (port 6661 bound)
-
-# Test the channel, then promote the next one
-mirth-cli shadow promote "HL7 Router"
-
-# When ready, cut over all remaining channels at once
-mirth-cli shadow cutover
-# → All channels promoted, shadow mode disabled
-
-# Shut down Java Mirth
-```
-
-### Shadow Mode CLI Commands
-
-```bash
-mirth-cli shadow status              # Show shadow state + promoted channels
-mirth-cli shadow promote <channel>   # Promote single channel to active
-mirth-cli shadow promote --all       # Promote all channels (full cutover)
-mirth-cli shadow demote <channel>    # Stop + return channel to shadow
-mirth-cli shadow cutover             # Interactive guided cutover
-```
-
-### Shadow Mode API
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/system/shadow` | GET | Shadow status, promoted channels list |
-| `/api/system/shadow/promote` | POST | Promote channel (`{channelId}`) or full cutover (`{all: true}`) |
-| `/api/system/shadow/demote` | POST | Stop + demote channel back to shadow |
-
-### How It Works
-
-| Shadow State | Behavior |
-|---|---|
-| **Global shadow, no promotions** | All channels deployed but stopped. All mutating API requests return 409 Conflict. Dashboard shows historical statistics. |
-| **Per-channel promoted** | Promoted channels start normally (ports bind, polling begins). Non-promoted channels remain in shadow. |
-| **Full cutover** | All channels active. Shadow mode disabled. VMRouter and DataPruner initialized. |
-
-### Safety Guardrails
-
-- **Port conflicts surface naturally** — If Java Mirth still has a port bound, the promote fails with `EADDRINUSE` and the channel is auto-demoted back to shadow
-- **Recovery task is safe** — It only runs inside `Channel.start()`, which is skipped in shadow mode
-- **DataPruner is deferred** — Not initialized until full cutover, preventing deletion of Java's messages
-- **VMRouter is deferred** — Not wired until full cutover, preventing cross-channel routing interference
-- **Health probes are shadow-aware** — Stopped shadow channels return 200 with `status: shadow` instead of 503
-
-### Environment Variable
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MIRTH_SHADOW_MODE` | `false` | Enable shadow mode for safe takeover observation |
-
-This is separate from `MIRTH_MODE` (which controls schema behavior). Typical usage: `MIRTH_MODE=takeover MIRTH_SHADOW_MODE=true`.
+Transport-pluggable logging (Winston 3.x) with per-component debug control, runtime log level API, and text/JSON output formats. See the full [Centralized Logging Guide](docs/centralized-logging.md).
 
 ## Git-Backed Configuration Management
 
-> **Node.js-only feature** — Java Mirth has no built-in git integration.
+Manage Mirth configurations as code: decompose channel XML into reviewable file trees, sync with git, promote across environments, and deploy only what changed. See the full [Artifact Management Guide](docs/artifact-management.md).
 
-Manage Mirth configurations as code: decompose channel XML into reviewable file trees, sync with git repositories, promote across environments, and deploy only what changed.
+## Horizontal Scaling
 
-### Quick Start
-
-```bash
-# 1. Initialize an artifact repository
-mirth-cli artifact git init ./mirth-config
-
-# 2. Export all channels to decomposed file trees
-mirth-cli artifact export --all --mask-secrets
-
-# 3. Commit and push
-mirth-cli artifact git push -m "Initial export"
-
-# 4. View the decomposed structure
-ls mirth-config/channels/
-# → adt-receiver/  hl7-router/  emr-writer/
-ls mirth-config/channels/adt-receiver/
-# → channel.yaml  _raw.xml  source/  destinations/  scripts/
-```
-
-### Environment Setup
-
-```yaml
-# mirth-config/environments/base.yaml (shared defaults)
-MLLP_PORT: "6661"
-DB_HOST: "localhost"
-LOG_LEVEL: "INFO"
-
-# mirth-config/environments/prod.yaml (production overrides)
-MLLP_PORT: "6661"
-DB_HOST: "prod-db.internal"
-LOG_LEVEL: "WARN"
-# Secrets come from process.env, NOT this file
-```
-
-### Promotion Workflow
-
-```bash
-# Promote from dev to staging (validates version compatibility)
-mirth-cli artifact promote staging --source dev
-
-# Preview what would change (dry run)
-mirth-cli artifact promote prod --dry-run
-
-# Force promotion past version guards
-mirth-cli artifact promote prod --force
-```
-
-### Delta Deploy
-
-```bash
-# Deploy only channels changed since last sync
-mirth-cli artifact deploy --delta
-
-# Deploy from a specific git commit
-mirth-cli artifact deploy --from abc1234
-
-# Deploy specific channels only
-mirth-cli artifact deploy --channels "ADT Receiver,HL7 Router"
-
-# Rollback to a previous state
-mirth-cli artifact rollback abc1234
-```
-
-### CI/CD Integration Example
-
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy Mirth Config
-on:
-  push:
-    branches: [main]
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to production
-        run: |
-          mirth-cli login -u ${{ secrets.MIRTH_USER }} -p ${{ secrets.MIRTH_PASS }}
-          mirth-cli artifact import --all --env prod
-          mirth-cli artifact deploy --delta
-        env:
-          MIRTH_CLI_URL: ${{ secrets.MIRTH_URL }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
-```
-
-### Structural Diff
-
-```bash
-$ mirth-cli artifact diff "ADT Receiver"
-
-Channel: ADT Receiver (3 changes)
-
---- source/connector.yaml ---
-  port: 6661 → 6662
-  maxConnections: 10 → 20
-
---- destinations/dest-1/transformer.js ---
-@@ -5,3 +5,4 @@
- $c('sourceValue', 'fromSource');
-+$c('patientDOB', msg['PID']['PID.7']['PID.7.1'].toString());
- $c('patientMRN', msg['PID']['PID.3']['PID.3.1'].toString());
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MIRTH_ARTIFACT_REPO` | (none) | Path to git repository for artifact sync |
-| `MIRTH_ARTIFACT_ENV` | (none) | Active environment (dev, staging, prod) |
-| `MIRTH_ARTIFACT_AUTO_SYNC` | `false` | Enable filesystem watcher for auto-sync |
-| `MIRTH_ARTIFACT_REMOTE` | `origin` | Git remote name |
-
-## Horizontal Scaling (Container-Native)
-
-Node.js Mirth supports running multiple instances behind an external load balancer, sharing a single MySQL database. Each instance is a stateless container that can be scaled up/down by your orchestration platform.
-
-```
-External Load Balancer (managed by orchestrator / sysadmin)
-├─ L4 for MLLP/TCP (round-robin or sticky)
-├─ L7 for HTTP/REST API (round-robin)
-└─ Health checks: GET /api/health → 200/503
-
-┌──────────┐  ┌──────────┐  ┌──────────┐
-│ Instance 1│  │ Instance 2│  │ Instance N│  ← auto-scaled 1..N
-│ SERVER_ID │  │ SERVER_ID │  │ SERVER_ID │  ← unique UUID per instance
-│ =abc-001  │  │ =abc-002  │  │ =abc-00N  │
-└────┬──────┘  └────┬──────┘  └────┬──────┘
-     └──────────────┼──────────────┘
-                    │
-     Shared MySQL (managed DB)
-```
-
-### How It Works
-
-1. **Each instance gets a unique SERVER_ID** (from `MIRTH_SERVER_ID` env var, or auto-generated UUID)
-2. **All instances deploy all channels** — the external LB distributes incoming connections
-3. **Each message is tagged with the receiving instance's SERVER_ID** — no duplicate processing
-4. **Recovery tasks only touch their own messages** (`WHERE SERVER_ID = ?`)
-5. **Statistics are aggregated across instances** via the cluster statistics endpoint
-6. **Global maps can be shared** via database (D_GLOBAL_MAP) or Redis
-
-### Quick Start (Clustered)
-
-```bash
-# Instance 1
-MIRTH_CLUSTER_ENABLED=true \
-MIRTH_SERVER_ID=instance-1 \
-PORT=8081 \
-npm start
-
-# Instance 2 (same database)
-MIRTH_CLUSTER_ENABLED=true \
-MIRTH_SERVER_ID=instance-2 \
-PORT=8082 \
-npm start
-```
-
-### Health Check Endpoints
-
-These endpoints require **no authentication** and are designed for orchestrator probes:
-
-| Endpoint | Purpose | Orchestrator Mapping |
-|----------|---------|---------------------|
-| `GET /api/health` | Readiness — returns 503 during shutdown | K8s `readinessProbe`, ECS health check |
-| `GET /api/health/live` | Liveness — always returns 200 | K8s `livenessProbe` |
-| `GET /api/health/startup` | Startup — returns 503 until channels deployed | K8s `startupProbe`, Cloud Run startup |
-| `GET /api/health/channels/:id` | Channel health — 200 if channel STARTED | Custom routing rules |
-
-### Cluster API Endpoints
-
-| Endpoint | Auth | Description |
-|----------|------|-------------|
-| `GET /api/system/cluster/status` | Yes | All instances with deployed channels and heartbeat |
-| `GET /api/system/cluster/nodes` | Yes | Node list (SERVER_ID, hostname, status) |
-| `GET /api/system/cluster/statistics` | Yes | Cross-instance aggregated message statistics |
-| `POST /api/internal/dispatch` | Cluster secret | Inter-instance message forwarding |
-
-### Kubernetes Example
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mirth-nodejs
-spec:
-  replicas: 3
-  template:
-    spec:
-      containers:
-        - name: mirth
-          image: mirth-nodejs:latest
-          ports:
-            - containerPort: 8081  # REST API
-            - containerPort: 6662  # MLLP
-          env:
-            - name: MIRTH_CLUSTER_ENABLED
-              value: "true"
-            - name: MIRTH_SERVER_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name  # Pod name as SERVER_ID
-            - name: DB_HOST
-              value: mysql-service
-            - name: MIRTH_CLUSTER_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: mirth-secrets
-                  key: cluster-secret
-          readinessProbe:
-            httpGet:
-              path: /api/health
-              port: 8081
-            periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /api/health/live
-              port: 8081
-            periodSeconds: 10
-          startupProbe:
-            httpGet:
-              path: /api/health/startup
-              port: 8081
-            failureThreshold: 30
-            periodSeconds: 2
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mirth-service
-spec:
-  selector:
-    app: mirth-nodejs
-  ports:
-    - name: api
-      port: 8081
-      targetPort: 8081
-    - name: mllp
-      port: 6662
-      targetPort: 6662
-```
-
-### Differences from Java Mirth Clustering
-
-| Aspect | Java Mirth (Clustering Plugin) | Node.js Mirth (Container-Native) |
-|--------|-------------------------------|----------------------------------|
-| **Availability** | Commercial add-on (license required) | Built into core engine (free) |
-| **Node Discovery** | JGroups (TCP/UDP multicast) | Database (D_SERVERS) or Redis |
-| **Communication** | JGroups protocol stack | HTTP internal API + DB polling or Redis pub/sub |
-| **Server ID Storage** | `CONFIGURATION` table (`server.id` key) | `MIRTH_SERVER_ID` env var + `D_SERVERS` table |
-| **Global Map Sharing** | JGroups replicated cache | D_GLOBAL_MAP table or Redis |
-| **Event Bus** | JGroups channel | D_CLUSTER_EVENTS table or Redis pub/sub |
-| **Sequence IDs** | Single `FOR UPDATE` per message | Block-allocated (100 IDs per lock, ~99% less contention) |
-| **Load Balancing** | Built-in (plugin manages routing) | External (K8s Service, ALB, nginx, etc.) |
-| **Config** | Mirth Administrator GUI | Environment variables |
-| **Hybrid Support** | N/A | Java + Node.js can share same DB with different SERVER_IDs |
-
-### Cluster Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MIRTH_SERVER_ID` | auto UUID | Unique instance ID. Use pod name in K8s, task ID in ECS. |
-| `MIRTH_CLUSTER_ENABLED` | `false` | Enable cluster-aware features (heartbeat, SERVER_ID tagging) |
-| `MIRTH_CLUSTER_REDIS_URL` | (none) | Redis for fast maps + events. Falls back to database polling. |
-| `MIRTH_CLUSTER_SECRET` | (none) | Shared secret for inter-instance API. Set via secrets manager. |
-| `MIRTH_CLUSTER_HEARTBEAT_INTERVAL` | `10000` | How often to update D_SERVERS heartbeat (ms) |
-| `MIRTH_CLUSTER_HEARTBEAT_TIMEOUT` | `30000` | Mark instance suspect after this long without heartbeat (ms) |
-| `MIRTH_CLUSTER_SEQUENCE_BLOCK` | `100` | Pre-allocate this many message IDs per lock acquisition |
-
-### Graceful Shutdown
-
-On SIGTERM (sent by orchestrators during scale-down/rolling updates):
-1. Health probe returns 503 immediately (LB stops routing)
-2. In-flight messages complete processing
-3. Heartbeat stops, server deregisters from D_SERVERS
-4. Database pool closes
-5. Process exits 0
+Container-native clustering with health probes, block-allocated sequences, and database-backed global maps. No commercial clustering plugin required. See the full [Horizontal Scaling Guide](docs/horizontal-scaling.md).
 
 ## Features
 
 | Category | Features |
 |----------|----------|
-| **Connectors** | HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, **SMTP (email)**, **JMS (messaging)**, **WebService (SOAP)**, **DICOM (medical imaging)** |
-| **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, **HL7v3 (CDA)**, **NCPDP (pharmacy)**, **DICOM** |
-| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), VMRouter, DestinationSet, FileUtil, HTTPUtil, **DICOMUtil** |
-| **API** | Full REST API compatible with Mirth Administrator (14 servlets) with **message import/export** and **attachments** |
-| **Plugins** | Code Templates, **Data Pruner** (per-channel retention, event pruning, config persistence), XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, **ServerLog**, **DashboardStatus** |
+| **Connectors** | HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, SMTP, JMS, WebService (SOAP), DICOM |
+| **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, HL7v3 (CDA), NCPDP, DICOM |
+| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), VMRouter, DestinationSet, FileUtil, HTTPUtil, DICOMUtil |
+| **API** | Full REST API compatible with Mirth Administrator (14 servlets) with message import/export and attachments |
+| **Logging** | Centralized Winston-based logging with per-component debug control, runtime log level API, text/JSON output, file rotation |
+| **Plugins** | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
 | **CLI Tool** | Terminal-based monitor and management utility |
-| **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, **UUIDGenerator**, **NCPDPUtil**, **ContextFactory** |
+| **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, ContextFactory |
 | **Shadow Mode** | Safe read-only takeover with progressive per-channel cutover from Java Mirth |
 | **Cluster** | Container-native horizontal scaling, health probes, block-allocated sequences, database-backed global maps, graceful shutdown |
-| **Artifact Management** | **Git-backed config management**: decompose/assemble, export/import, structural diff, env promotion, delta deploy, version compatibility guards |
-| **Utilities** | ValueReplacer, ACKGenerator, JsonXmlUtil, SerializerFactory, **ErrorMessageBuilder** |
+| **Artifact Management** | Git-backed config management: decompose/assemble, export/import, structural diff, env promotion, delta deploy |
+| **Utilities** | ValueReplacer, ACKGenerator, JsonXmlUtil, SerializerFactory, ErrorMessageBuilder |
 
 ## Quick Start
 
@@ -476,8 +110,12 @@ DB_NAME=mirthdb
 PORT=8081
 NODE_ENV=development
 
-# Logging
-LOG_LEVEL=info
+# Logging (centralized, transport-pluggable)
+LOG_LEVEL=INFO                                    # TRACE, DEBUG, INFO, WARN, ERROR
+# MIRTH_DEBUG_COMPONENTS=http-connector,engine    # Per-component debug (comma-separated)
+# LOG_FORMAT=text                                 # text (human) or json (structured)
+# LOG_FILE=/var/log/mirth/server.log              # Optional file transport
+# LOG_TIMESTAMP_FORMAT=mirth                      # mirth (Java-style) or iso
 
 # Shadow Mode (optional — for safe Java → Node.js takeover)
 # MIRTH_SHADOW_MODE=true              # Deploy channels read-only, promote one-by-one
@@ -520,269 +158,21 @@ The server will start on `http://localhost:8081`. Connect Mirth Administrator to
 
 ## CLI Tool
 
-The `mirth-cli` command provides a terminal-based interface for monitoring and managing Mirth Connect channels, offering an alternative to the Mirth Administrator GUI.
-
-### CLI Installation
+The `mirth-cli` command provides a terminal-based interface for monitoring and managing Mirth Connect channels.
 
 ```bash
-# Option 1: Install globally (recommended for development)
+# Install globally
 npm run cli:link
 
-# Verify installation
-which mirth-cli        # Should show: ~/.nvm/versions/node/vX.X.X/bin/mirth-cli
-mirth-cli --version    # Should show: 0.1.0
-
-# Option 2: Run directly without global install
-node dist/cli/index.js <command>
-
-# Option 3: Run via npm script (requires -- to pass arguments)
-npm run cli -- <command>
-
-# To uninstall the global link
-npm run cli:unlink
+# Core commands
+mirth-cli login -u admin -p admin
+mirth-cli channels                     # List channels with status
+mirth-cli messages search <id> -s E    # Find errors
+mirth-cli send mllp localhost:6662 @test.hl7
+mirth-cli dashboard                    # Interactive real-time view
 ```
 
-**Note**: `npm run cli:link` builds the project and creates a global symlink, so you can use `mirth-cli` from anywhere. Changes to the source code take effect immediately after rebuilding (`npm run build`).
-
-### CLI Configuration
-
-```bash
-# Set server URL
-mirth-cli config set url http://localhost:8081
-
-# Login and save session
-mirth-cli login --user admin --password admin
-
-# View current configuration
-mirth-cli config
-```
-
-Configuration is stored in `~/.mirth-cli.json`.
-
-### CLI Commands
-
-#### Authentication
-```bash
-mirth-cli login                     # Interactive login
-mirth-cli login -u admin -p admin   # Login with credentials
-mirth-cli logout                    # Clear session
-mirth-cli whoami                    # Show current user
-```
-
-#### Channel Management
-```bash
-mirth-cli channels                  # List all channels with status
-mirth-cli channels list             # Same as above
-mirth-cli channels get <id|name>    # Get channel details
-mirth-cli channels deploy <id|name> # Deploy a channel
-mirth-cli channels undeploy <id|name>
-mirth-cli channels start <id|name>
-mirth-cli channels stop <id|name>
-mirth-cli channels pause <id|name>
-mirth-cli channels resume <id|name>
-mirth-cli channels stats            # Show statistics for all channels
-mirth-cli channels stats <id|name>  # Show statistics for one channel
-```
-
-#### Message Browsing
-```bash
-mirth-cli messages list <channelId>              # List recent messages
-mirth-cli messages search <channelId>            # Search with filters
-  --status <R|F|T|S|Q|E|P>                       # Filter by status
-  --from <datetime>                              # Messages from date
-  --to <datetime>                                # Messages to date
-  --limit <n>                                    # Limit results
-mirth-cli messages get <channelId> <messageId>   # Get message details
-mirth-cli messages export <channelId>            # Export messages
-  --output <file>                                # Output file
-  --format <json|xml>                            # Export format
-```
-
-#### Message Sending
-```bash
-# Send MLLP message
-mirth-cli send mllp localhost:6662 "MSH|^~\&|..."
-mirth-cli send mllp localhost:6662 @message.hl7  # From file
-
-# Send HTTP message
-mirth-cli send http http://localhost:8083/api @payload.json
-  --method POST                                  # HTTP method
-  --content-type application/json                # Content type
-  --header "Authorization: Bearer token"         # Add headers
-
-# Send HL7 (MLLP shorthand)
-mirth-cli send hl7 localhost:6662 @adt.hl7
-```
-
-#### Server Information
-```bash
-mirth-cli server info               # Show server version and info
-mirth-cli server status             # Show server status
-mirth-cli server stats              # Show system statistics
-```
-
-#### Event Browsing
-```bash
-mirth-cli events                    # List recent events
-mirth-cli events list               # Same as above
-mirth-cli events search             # Search with filters
-  --from <datetime>                 # Events from date
-  --to <datetime>                   # Events to date
-  --level <INFO|WARN|ERROR>         # Filter by level
-mirth-cli events errors             # Show only error events
-```
-
-#### Cross-Channel Message Trace
-```bash
-# Trace a message across VM-connected channels
-mirth-cli trace "ADT Receiver" 123
-
-# Verbose mode (full content, 2000 char limit)
-mirth-cli trace "ADT Receiver" 123 --verbose
-
-# Trace only backward (find root) or forward (find destinations)
-mirth-cli trace "ADT Receiver" 123 --direction backward
-mirth-cli trace "ADT Receiver" 123 --direction forward
-
-# Hide message content, show tree structure only
-mirth-cli trace "ADT Receiver" 123 --no-content
-
-# JSON output for scripting
-mirth-cli trace "ADT Receiver" 123 --json
-```
-
-The trace command reconstructs the complete message journey across VM-connected channels (Channel Writer/Reader), showing every hop from source to final destination(s).
-
-**Example output:**
-```
-Message Trace: ADT Receiver → HL7 Router → EMR Writer, Audit Log
-Hops: 4 | Depth: 2 | Latency: 222ms | Errors: 1
-
-● [SENT] ADT Receiver (msg #123)  14:30:45.123
-│  RAW: MSH|^~\&|EPIC|... (2,450 chars)
-│
-├──► [SENT] HL7 Router (msg #456)  +111ms
-│    │
-│    └──► [SENT] EMR Writer (msg #789)  +222ms
-│
-└──► [ERROR] Audit Log (msg #101)  +177ms
-     ERROR: Connection refused: localhost:5432
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-v, --verbose` | false | Full content display (2000 char limit vs 200) |
-| `-c, --content <types>` | `raw,transformed,response,error` | Content types to show |
-| `--max-depth <n>` | 10 | Maximum trace depth |
-| `--direction <dir>` | `both` | `both`, `backward`, or `forward` |
-| `--no-content` | - | Hide content, show tree structure only |
-| `--json` | - | Output raw JSON |
-
-#### Artifact Management (Git-Backed Config-as-Code)
-```bash
-# Export / Import
-mirth-cli artifact export [channel]              # Export channel to git directory
-mirth-cli artifact export --all --mask-secrets    # Export all, parameterize credentials
-mirth-cli artifact import [channel] --env prod    # Import with prod env vars
-
-# Git operations
-mirth-cli artifact git init [path]               # Initialize artifact repo
-mirth-cli artifact git status                    # Show sync status
-mirth-cli artifact git push -m "message"         # Export + commit + push
-mirth-cli artifact git pull --env staging        # Pull + import with staging vars
-mirth-cli artifact git log -n 20                 # Show recent sync history
-
-# Analysis
-mirth-cli artifact diff <channel>               # Structural diff vs git version
-mirth-cli artifact secrets <channel>             # Detect sensitive fields
-mirth-cli artifact deps                          # Show dependency graph
-
-# Promotion & Deployment
-mirth-cli artifact promote <target-env>          # Promote to environment
-mirth-cli artifact deploy --delta                # Deploy only changed artifacts
-mirth-cli artifact rollback <ref>                # Rollback to previous state
-```
-
-#### Interactive Dashboard
-```bash
-mirth-cli dashboard                 # Launch interactive dashboard with WebSocket
-mirth-cli dashboard --no-websocket  # Polling-only mode
-mirth-cli dashboard --refresh 10    # Custom polling interval (seconds)
-```
-
-The dashboard provides **real-time channel status monitoring** with WebSocket updates and comprehensive keyboard navigation.
-
-**Features:**
-- ✅ Real-time updates via WebSocket (`/ws/dashboardstatus`)
-- ✅ Automatic polling fallback when WebSocket unavailable
-- ✅ Channel groups with expand/collapse (▼/▶)
-- ✅ Multi-channel selection and batch operations
-- ✅ Search/filter mode (`/`)
-- ✅ Detail view panel with tabs
-- ✅ Vim-style navigation (`j`/`k`)
-- ✅ Help overlay (`?`)
-
-**Keyboard Shortcuts:**
-
-| Key | Action |
-|-----|--------|
-| `↑`/`k` | Move up |
-| `↓`/`j` | Move down |
-| `Enter` | Expand group / Show details |
-| `Space` | Toggle selection |
-| `s` | Start channel(s) |
-| `t` | Stop channel(s) |
-| `p` | Pause/resume |
-| `d` | Deploy |
-| `u` | Undeploy |
-| `/` | Search |
-| `?` | Help |
-| `a` | Select all |
-| `c` | Clear selection |
-| `r` | Refresh |
-| `q` | Quit |
-
-### Global Options
-
-All commands support these options:
-
-```bash
---url <url>         # Override server URL
---json              # Output as JSON (for scripting)
--v, --verbose       # Verbose output
-```
-
-### Example Session
-
-```bash
-# Setup and login
-$ mirth-cli config set url http://localhost:8081
-✔ Set url = http://localhost:8081
-
-$ mirth-cli login -u admin -p admin
-✔ Logged in as admin
-
-# Check channels
-$ mirth-cli channels
-┌──────────────────────────────────────┬──────────────────┬─────────┬──────┬──────┬─────┐
-│ ID                                   │ Name             │ Status  │ Recv │ Sent │ Err │
-├──────────────────────────────────────┼──────────────────┼─────────┼──────┼──────┼─────┤
-│ 550e8400-e29b-41d4-a716-446655440000 │ MLLP Router      │ STARTED │  150 │  148 │   2 │
-│ 6ba7b810-9dad-11d1-80b4-00c04fd430c8 │ HTTP Passthrough │ STOPPED │    0 │    0 │   0 │
-└──────────────────────────────────────┴──────────────────┴─────────┴──────┴──────┴─────┘
-
-# View errors
-$ mirth-cli messages search 550e8400... --status E
-$ mirth-cli messages get 550e8400... 147
-
-# Send test message
-$ mirth-cli send mllp localhost:6662 @test.hl7
-✔ Message sent successfully
-Response: MSA|AA|12345
-
-# JSON output for scripting
-$ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
-```
+See the full [CLI Reference](docs/cli-reference.md) for all commands, options, keyboard shortcuts, and example sessions.
 
 ## Architecture
 
@@ -811,6 +201,9 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 │  Artifact Management (Git-Backed Config-as-Code)               │
 │  Decompose/Assemble │ Git Sync │ Env Vars │ Promote │ Deploy   │
 ├─────────────────────────────────────────────────────────────────┤
+│  Logging (Winston 3.x + ServerLogController)                   │
+│  Per-Component Debug │ Runtime API │ Text/JSON │ File Rotation  │
+├─────────────────────────────────────────────────────────────────┤
 │                      Database Layer                             │
 │   (MySQL - Existing Mirth Schema + Cluster/Artifact Tables)    │
 └─────────────────────────────────────────────────────────────────┘
@@ -821,539 +214,50 @@ $ mirth-cli channels --json | jq '.[] | select(.status == "STARTED")'
 | Component | Location | Description |
 |-----------|----------|-------------|
 | **Donkey Engine** | `src/donkey/` | Message processing pipeline (Statistics, Queues, DestinationChain, ResponseSelector) |
-| **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM (fully wired cross-channel routing), SMTP, JMS, WebService, DICOM) |
+| **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM, SMTP, JMS, WebService, DICOM) |
 | **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 28 userutil classes |
-| **Userutil Classes** | `src/javascript/userutil/` | VMRouter, FileUtil, HTTPUtil, DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, DICOMUtil |
 | **Data Types** | `src/datatypes/` | 9 types: HL7v2, XML, JSON, Raw, Delimited, EDI/X12, HL7v3, NCPDP, DICOM |
-| **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (14 servlets, import/export, attachments) |
+| **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (14 servlets) |
 | **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
 | **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
-| **Cluster** | `src/cluster/` | Horizontal scaling: ClusterIdentity, ServerRegistry, SequenceAllocator, HealthCheck, EventBus, MapBackend, RemoteDispatcher |
-| **Artifact Management** | `src/artifact/` | Git-backed config: ChannelDecomposer, ChannelAssembler, GitClient, GitSyncService, PromotionPipeline, DeltaDetector, VariableResolver, ChannelDiff |
+| **Cluster** | `src/cluster/` | Horizontal scaling: ClusterIdentity, ServerRegistry, SequenceAllocator, HealthCheck, EventBus, MapBackend |
+| **Artifact Management** | `src/artifact/` | Git-backed config: ChannelDecomposer, GitSyncService, PromotionPipeline, DeltaDetector, VariableResolver |
+| **Logging** | `src/logging/` | Centralized logging: LoggerFactory, Logger, DebugModeRegistry, ConsoleTransport, FileTransport |
 | **Utilities** | `src/util/` | ValueReplacer, ACKGenerator, JsonXmlUtil, ErrorMessageBuilder, SerializerFactory |
 
 ## API Endpoints
 
-The REST API mirrors the Mirth Connect Server API with **14 fully-implemented servlets**:
-
-### Channel Operations
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/channels` | GET, POST, PUT, DELETE | Channel CRUD operations |
-| `/api/channels/{id}/status` | GET, POST | Channel status and control |
-| `/api/channels/_deploy` | POST | Deploy channels |
-| `/api/channels/_undeploy` | POST | Undeploy channels |
-| `/api/channels/statistics` | GET, POST | Channel statistics |
-| `/api/channels/{id}/messages` | GET, POST, DELETE | Message operations |
-| `/api/channels/{id}/messages/_search` | POST | Search with filters |
-| `/api/channels/{id}/messages/_reprocess` | POST | Reprocess messages |
-
-### Message Tracing (Node.js Extension)
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/messages/trace/{channelId}/{messageId}` | GET | Trace message across VM-connected channels |
-
-Query parameters: `includeContent`, `contentTypes`, `maxContentLength`, `maxDepth`, `maxChildren`, `direction`
-
-### Server & Configuration
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/server/configuration` | GET, PUT | Server configuration |
-| `/api/system/info` | GET | System information |
-| `/api/system/stats` | GET | System statistics |
-| `/api/usageData` | GET | Usage reporting |
-| `/api/databaseTasks` | GET, POST | Database maintenance |
-
-### Cluster & Health (Node.js Extension)
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/health` | GET | Readiness probe (no auth, 503 during shutdown) |
-| `/api/health/live` | GET | Liveness probe (no auth, always 200) |
-| `/api/health/startup` | GET | Startup probe (no auth, 503 until ready) |
-| `/api/health/channels/{id}` | GET | Channel health (no auth) |
-| `/api/system/cluster/status` | GET | All instances with deployed channels |
-| `/api/system/cluster/nodes` | GET | Node list with heartbeat status |
-| `/api/system/cluster/statistics` | GET | Cross-instance aggregated statistics |
-| `/api/internal/dispatch` | POST | Inter-instance forwarding (cluster secret) |
-
-### Shadow Mode (Node.js Extension)
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/system/shadow` | GET | Shadow status, promoted channels, deployed/promoted counts |
-| `/api/system/shadow/promote` | POST | Promote channel or trigger full cutover |
-| `/api/system/shadow/demote` | POST | Demote promoted channel back to shadow |
-
-### Artifact Management (Node.js Extension)
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/artifacts/export` | POST | Export channels to decomposed file tree |
-| `/api/artifacts/export/:channelId` | GET | Export single channel |
-| `/api/artifacts/import` | POST | Import from file tree (with env var resolution) |
-| `/api/artifacts/diff/:channelId` | GET | Structural diff current vs git version |
-| `/api/artifacts/sensitive/:channelId` | GET | Detect sensitive fields |
-| `/api/artifacts/deps` | GET | Dependency graph |
-| `/api/artifacts/git/status` | GET | Git repository status |
-| `/api/artifacts/git/push` | POST | Export + commit + push |
-| `/api/artifacts/git/pull` | POST | Pull + import + deploy |
-| `/api/artifacts/git/log` | GET | Recent commit history |
-| `/api/artifacts/promote` | POST | Promote to target environment |
-| `/api/artifacts/promote/status` | GET | Promotion pipeline status |
-| `/api/artifacts/delta` | GET | Changed artifacts between git refs |
-| `/api/artifacts/deploy` | POST | Deploy changed artifacts |
-
-### Administration
-| Endpoint | Methods | Description |
-|----------|---------|-------------|
-| `/api/users` | GET, POST, PUT, DELETE | User management |
-| `/api/events` | GET, POST, DELETE | Audit log |
-| `/api/events/_search` | POST | Event search |
-| `/api/alerts` | GET, POST, PUT, DELETE | Alert management |
-| `/api/extensions` | GET, PUT | Plugin management |
-| `/api/extensions/datapruner` | GET, POST, PUT | Data Pruner status, config, start/stop |
-| `/api/channelgroups` | GET, POST | Channel groups |
-| `/api/codeTemplates` | GET, POST, PUT, DELETE | Code template library |
+The REST API mirrors the Mirth Connect Server API with 14 fully-implemented servlets plus Node.js-only extensions for clustering, logging, shadow mode, and artifact management. See the full [API Reference](docs/api-reference.md).
 
 ## JavaScript Runtime
 
-### E4X Support
-
-All user scripts containing E4X syntax are automatically transpiled:
-
-```javascript
-// Original E4X (Mirth script)
-var patient = msg.PID['PID.5']['PID.5.1'].toString();
-msg.PID['PID.5']['PID.5.1'] = patient.toUpperCase();
-
-// Automatically transpiled to modern JavaScript
-var patient = msg.get('PID').get('PID.5').get('PID.5.1').toString();
-msg.get('PID').get('PID.5').get('PID.5.1').setValue(patient.toUpperCase());
-```
-
-### Scope Variables
-
-All standard Mirth scope variables are available:
-
-| Variable | Description |
-|----------|-------------|
-| `$c` / `channelMap` | Channel-scoped variables |
-| `$s` / `sourceMap` | Source connector variables |
-| `$g` / `globalMap` | Global variables (all channels) |
-| `$gc` / `globalChannelMap` | Global channel variables |
-| `$cfg` / `configurationMap` | Configuration variables |
-| `$r` / `responseMap` | Response variables |
-| `$co` / `connectorMap` | Connector variables |
-| `msg` | Current message |
-| `logger` | Logging utility |
-
-### Message Status Codes
-
-| Code | Status | Description |
-|------|--------|-------------|
-| R | RECEIVED | Message received by source |
-| F | FILTERED | Message filtered out |
-| T | TRANSFORMED | Message transformed |
-| S | SENT | Message sent successfully |
-| Q | QUEUED | Message queued for retry |
-| E | ERROR | Processing error |
-| P | PENDING | Awaiting processing |
+E4X transpilation, Mirth scope variables ($c, $s, $g, etc.), and message status codes. See the full [JavaScript Runtime Reference](docs/javascript-runtime.md).
 
 ## Development
 
-### Project Structure
+| Script | Purpose |
+|--------|---------|
+| `npm run build` | Compile TypeScript |
+| `npm run dev` | Development server with hot reload |
+| `npm start` | Production server |
+| `npm test` | Run test suite (2,976 tests) |
+| `npm run test:coverage` | Generate coverage report |
+| `npm run lint` | Check code style |
+| `npm run typecheck` | Type check without compiling |
 
-```
-src/
-├── index.ts              # Entry point
-├── server/               # Express server
-├── api/                  # REST API (servlets, middleware)
-├── controllers/          # Business logic
-├── donkey/               # Message engine
-│   ├── channel/          # Channel processing
-│   ├── message/          # Message models
-│   └── queue/            # Message queuing
-├── connectors/           # Protocol implementations
-│   ├── http/             # HTTP/REST
-│   ├── tcp/              # TCP/MLLP
-│   ├── jdbc/             # Database
-│   ├── file/             # File/SFTP/S3
-│   ├── vm/               # Inter-channel routing (VmReceiver, VmDispatcher)
-│   ├── smtp/             # Email (SmtpDispatcher via nodemailer)
-│   ├── jms/              # JMS messaging (STOMP protocol)
-│   ├── ws/               # WebService/SOAP (receiver + dispatcher)
-│   └── dicom/            # DICOM/DIMSE (C-STORE, C-ECHO)
-├── datatypes/            # Data type handlers
-│   ├── hl7v2/            # HL7 v2.x
-│   ├── xml/              # XML
-│   ├── json/             # JSON
-│   ├── raw/              # Pass-through
-│   ├── delimited/        # CSV, TSV, pipe-delimited
-│   ├── edi/              # EDI/X12 healthcare transactions
-│   ├── hl7v3/            # HL7 v3/CDA XML
-│   ├── ncpdp/            # NCPDP pharmacy claims (D.0, 5.1)
-│   └── dicom/            # DICOM medical imaging
-├── javascript/           # JS runtime
-│   ├── e4x/              # E4X transpiler
-│   ├── runtime/          # Script execution
-│   └── userutil/         # 28 Mirth utility classes
-│       ├── VMRouter.ts           # Inter-channel routing
-│       ├── DatabaseConnection.ts # SQL from scripts
-│       ├── AttachmentUtil.ts     # Message attachments
-│       ├── ChannelUtil.ts        # Channel operations
-│       ├── AlertSender.ts        # Send alerts
-│       ├── Future.ts             # Async wrapper
-│       ├── FileUtil.ts           # File I/O
-│       ├── UUIDGenerator.ts      # Crypto-based UUIDs
-│       ├── NCPDPUtil.ts          # Pharmacy overpunch
-│       ├── ContextFactory.ts     # JavaScript context info
-│       ├── DICOMUtil.ts          # DICOM operations
-│       └── ...                   # HTTPUtil, SMTPConnection, etc.
-├── artifact/             # Git-backed config management
-│   ├── ChannelDecomposer.ts   # XML → decomposed file tree
-│   ├── ChannelAssembler.ts    # File tree → XML
-│   ├── VariableResolver.ts    # Deploy-time ${VAR} resolution
-│   ├── ChannelDiff.ts         # Structural + script diffs
-│   ├── DependencySort.ts      # Topological sort
-│   ├── ArtifactController.ts  # Central orchestrator
-│   ├── git/                   # GitClient, GitSyncService, DeltaDetector
-│   └── promotion/             # PromotionPipeline, VersionCompatibility
-├── cli/                  # CLI tool
-│   ├── commands/         # Command implementations
-│   ├── lib/              # Utilities (ApiClient, ConfigManager)
-│   ├── ui/               # Ink dashboard components
-│   └── types/            # CLI-specific types
-├── cluster/              # Horizontal scaling
-│   ├── ClusterIdentity.ts      # SERVER_ID generation
-│   ├── ClusterConfig.ts         # Cluster env var configuration
-│   ├── ServerRegistry.ts        # D_SERVERS heartbeat + node tracking
-│   ├── SequenceAllocator.ts     # Block-allocated message IDs
-│   ├── HealthCheck.ts           # Orchestrator probe endpoints
-│   ├── MapBackend.ts            # Pluggable map storage (InMemory/DB/Redis)
-│   ├── ChannelRegistry.ts       # D_CHANNEL_DEPLOYMENTS tracking
-│   ├── RemoteDispatcher.ts      # Inter-instance HTTP forwarding
-│   └── EventBus.ts              # Pub/sub (Local/DB-polling/Redis)
-├── db/                   # Database access
-├── model/                # Domain models
-├── util/                 # Core utilities
-│   ├── ValueReplacer.ts  # ${variable} template replacement
-│   ├── ACKGenerator.ts   # HL7 ACK message generation
-│   ├── JsonXmlUtil.ts    # JSON ↔ XML conversion
-│   ├── ErrorMessageBuilder.ts
-│   └── SerializerFactory.ts
-└── plugins/              # Plugin implementations
-    ├── javascriptrule/   # Filter rules (UI filters)
-    ├── javascriptstep/   # Transformer steps (UI transformers)
-    ├── xsltstep/         # XSLT transformations
-    ├── mapper/           # Variable mapping
-    ├── messagebuilder/   # Message segment building
-    ├── serverlog/        # Real-time log streaming (WebSocket)
-    ├── dashboardstatus/  # Real-time channel status (WebSocket)
-    └── datapruner/       # Message pruning/archival
-```
+See the full [Development Guide](docs/development-guide.md) for project structure, test organization, and code quality tools.
 
-### Scripts
+## Testing & Validation
 
-```bash
-npm run build         # Compile TypeScript
-npm run dev           # Development server with ts-node
-npm start             # Production server
-npm test              # Run test suite
-npm run test:watch    # Run tests in watch mode
-npm run test:coverage # Generate coverage report
-npm run lint          # Check code style
-npm run lint:fix      # Fix linting issues
-npm run format        # Format with Prettier
-npm run typecheck     # Type check without compiling
-npm run cli           # Run CLI with ts-node
-```
-
-#### CLI Scripts
-
-```bash
-npm run cli -- channels           # Run CLI command directly
-npm run cli -- login -u admin     # Login via CLI
-npm link                          # Install mirth-cli globally
-```
-
-### Code Quality
-
-```bash
-npm run tech-debt        # Run lint + check outdated packages
-npm run tech-debt:dupes  # Find duplicate code
-npm run tech-debt:unused # Find unused exports
-```
-
-## Testing
-
-### Unit Tests
-
-```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npm test -- src/javascript/e4x/E4XTranspiler.test.ts
-
-# Run with coverage
-npm run test:coverage
-```
-
-### Test Structure
-
-```
-tests/
-├── unit/           # Unit tests
-│   ├── artifact/       # Artifact module tests (417 tests)
-│   ├── cluster/        # Cluster module tests (123 tests)
-│   ├── connectors/
-│   ├── datatypes/
-│   ├── db/             # DonkeyDao recovery tests
-│   ├── donkey/
-│   ├── javascript/
-│   ├── api/servlets/   # API endpoint tests (ArtifactServlet, etc.)
-│   └── cli/            # CLI command tests
-├── integration/    # Database and E2E tests
-├── api/            # API endpoint tests
-└── fixtures/       # Test data
-    ├── messages/   # Sample HL7, XML, JSON
-    ├── artifact/   # Channel XML fixtures for decomposer tests
-    └── example-channels/
-```
-
-## Validation Suite
-
-The `validation/` directory contains a comprehensive side-by-side comparison suite that validates Node.js behavior against the Java Mirth engine.
-
-### Running Validation
-
-```bash
-# Start Java Mirth (Docker)
-cd validation
-docker-compose up -d
-
-# Start Node.js Mirth (separate terminal)
-PORT=8081 npm run dev
-
-# Run validation suite
-cd validation
-npm run validate
-
-# Run specific priority level
-npm run validate -- --priority 1
-
-# Run specific scenario
-npm run validate -- --scenario 1.1
-```
-
-### Port Configuration
-
-| Service | Java Mirth | Node.js Mirth |
-|---------|------------|---------------|
-| REST API | https://localhost:8443 | http://localhost:8081 |
-| MLLP | localhost:6661 | localhost:6662 |
-| HTTP | localhost:8082 | localhost:8083 |
-| MySQL | localhost:3306 | localhost:3306 |
-
-### Validation Status (as of 2026-02-04)
-
-| Priority | Category | Status | Tests |
-|----------|----------|--------|-------|
-| 0 | Export Compatibility | ✅ Passing | Channel round-trip verified |
-| 1 | MLLP Message Flow | ✅ Passing | 3/3 scenarios |
-| 2 | JavaScript Runtime | ✅ Passing | E4X, userutil, XSLT verified |
-| 3 | Connectors | ✅ Passing | HTTP, TCP, File, JDBC, SMTP, JMS, WebService, DICOM |
-| 4 | Data Types | ✅ Passing | HL7v2, XML, JSON, Delimited, EDI, HL7v3, NCPDP, DICOM |
-| 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination |
-| 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect scenarios |
-
-**Total Tests: 2,976 passing** (2,559 core + 417 artifact)
+**2,976 tests passing** (2,559 core + 417 artifact). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). See the full [Development Guide](docs/development-guide.md#validation-suite).
 
 ## Version Management
 
-This project includes tooling to track and manage porting across Mirth Connect versions.
-
-### Current Version
-
-- **Node.js Port**: Targets Mirth Connect **3.9.1**
-- **Tested Versions**: 3.9.0, 3.9.1
-- **Planned Versions**: 3.10.x, 4.x
-
-### Version Manager CLI
-
-```bash
-# Check current version status
-npm run version-manager -- status
-
-# Compare two Java Mirth versions
-npm run version-manager -- diff 3.9.1 3.10.0
-
-# Generate upgrade tasks
-npm run version-manager -- upgrade tasks 3.10.0
-
-# Create version branch
-npm run version-manager -- branch create 3.10.0
-```
-
-### Upgrading to a New Version
-
-```bash
-# 1. See what changed
-npm run version-manager -- diff 3.9.1 3.10.0 --impact
-
-# 2. Generate upgrade tasks
-npm run version-manager -- upgrade tasks 3.10.0 --parallel-agents
-
-# 3. Create version branch
-npm run version-manager -- branch create 3.10.0
-
-# 4. Work through tasks in tasks/upgrade-3.10.0.md
-
-# 5. Validate
-npm run version-manager -- validate 3.10.0
-
-# 6. Merge when ready
-git checkout master && git merge feature/3.10.x
-```
-
-### Version Compatibility Matrix
-
-| Node.js Port | Java Mirth | Status |
-|--------------|------------|--------|
-| master | 3.9.1 | ✅ Validated |
-| feature/3.10.x | 3.10.0 | 📋 Planned |
-| feature/4.0.x | 4.0.0 | 📋 Planned |
-| feature/4.5.x | 4.5.2 | 📋 Planned |
+Currently targets Mirth Connect **3.9.1**. Includes tooling for version diffing, upgrade task generation, and compatibility validation. See the full [Development Guide](docs/development-guide.md#version-management).
 
 ## Database
 
-This project uses the **existing Mirth MySQL schema** — no modifications required in takeover mode.
-
-### Operational Mode Database Behavior
-
-| Mode | Core Tables | Channel Tables | User Data |
-|------|-------------|----------------|-----------|
-| **Takeover** | Verifies existing schema | Uses existing tables | Preserves all users |
-| **Standalone** | Creates with `IF NOT EXISTS` | Auto-creates on deploy | Seeds admin/admin |
-
-### Core Tables (Created in Standalone Mode)
-
-| Table | Purpose |
-|-------|---------|
-| `SCHEMA_INFO` | Version tracking (3.9.1) |
-| `CHANNEL` | Channel definitions |
-| `CONFIGURATION` | Server settings |
-| `PERSON` / `PERSON_PASSWORD` | User accounts |
-| `EVENT` | Audit log |
-| `ALERT` | Alert definitions |
-| `CODE_TEMPLATE` / `CODE_TEMPLATE_LIBRARY` | Templates |
-| `CHANNEL_GROUP` | Channel groupings |
-| `SCRIPT` | Global scripts |
-| `D_CHANNELS` | Channel ID → local ID mapping |
-| `D_SERVERS` | Cluster node registry (Node.js-only) |
-| `D_CHANNEL_DEPLOYMENTS` | Channel → instance deployment tracking (Node.js-only) |
-| `D_CLUSTER_EVENTS` | Inter-node event bus via DB polling (Node.js-only) |
-| `D_GLOBAL_MAP` | Shared global map for clustered mode (Node.js-only) |
-| `D_ARTIFACT_SYNC` | Git artifact sync tracking — commit ↔ revision mapping (Node.js-only) |
-
-### Per-Channel Tables (Auto-Created on Deploy)
-
-Each channel creates dynamic tables when deployed:
-
-| Table | Purpose |
-|-------|---------|
-| `D_M{id}` | Messages |
-| `D_MM{id}` | Message metadata |
-| `D_MC{id}` | Message content |
-| `D_MA{id}` | Message attachments |
-| `D_MS{id}` | Message statistics |
-| `D_MSQ{id}` | Message sequence |
-| `D_MCM{id}` | Custom metadata (user-defined fields) |
-
-**Note**: In takeover mode, existing channel tables are reused. In standalone mode, tables are created automatically when a channel is deployed.
-
-## Engine Behavior Differences from Java Mirth
-
-The Node.js engine maintains 100% API compatibility with the Java Mirth Administrator, but includes a few behavioral differences and extensions. These are documented here for compatibility awareness.
-
-### Additive Changes (Backward Compatible)
-
-| Change | Behavior | Compatibility |
-|--------|----------|---------------|
-| **SourceMap Persistence** | Node.js persists `sourceMap` data to the `D_MC` table (as `CONTENT_TYPE=14`) after message processing. Java Mirth keeps sourceMap in memory only. | Additive — Java Mirth ignores the extra `D_MC` rows. Does not affect message processing. |
-| **Trace API** | New endpoint `GET /api/messages/trace/:channelId/:messageId` for cross-channel message tracing. | Extension — does not exist in Java Mirth. Does not affect existing API endpoints. |
-| **Error Surfacing** | CLI passes `?returnErrors=true` on deploy/undeploy/start/stop operations. | Same as Java Mirth Administrator GUI behavior. Java API default (no param) silently swallows errors. |
-| **Cluster Tables** | 4 new tables (D_SERVERS, D_CHANNEL_DEPLOYMENTS, D_CLUSTER_EVENTS, D_GLOBAL_MAP) created in standalone mode or when cluster is enabled. | Additive — Java Mirth ignores unknown tables. Safe in shared databases. |
-| **Health Endpoints** | `GET /api/health/*` endpoints for orchestrator probes. No auth required. | Extension — Java Mirth does not have these endpoints. |
-| **Cluster API** | `GET /api/system/cluster/*` endpoints for node status and aggregated statistics. | Extension — not related to Java Mirth's clustering plugin endpoints. |
-| **Shadow Mode** | When `MIRTH_SHADOW_MODE=true`, channels deploy in read-only state. Operator promotes channels one-by-one for safe cutover from Java Mirth. | Extension — Java Mirth has no equivalent. Does not affect normal operation when disabled (default). |
-| **Graceful Shutdown** | SIGTERM triggers drain + deregister sequence instead of immediate exit. | Behavioral improvement — Java Mirth has similar graceful shutdown in its shutdown hook. |
-| **Block Sequence IDs** | SequenceAllocator pre-allocates 100 IDs per lock instead of 1. | Compatible — produces valid non-contiguous IDs. Gaps are harmless (IDs need only be unique). |
-| **Artifact Sync Table** | `D_ARTIFACT_SYNC` table tracks git sync operations (commit hash ↔ channel revision). | Additive — Java Mirth ignores unknown tables. Safe in shared databases. |
-| **Artifact API** | 14 REST endpoints under `/api/artifacts/*` for git-backed config management. | Extension — Java Mirth has no equivalent. Does not affect existing API endpoints. |
-| **Data Pruner Operational** | DataPruner is wired into server lifecycle, runs on schedule, reads per-channel pruning settings, skips in-flight messages (`PROCESSED=0`), cleans D_MCM tables, persists config to CONFIGURATION table, and prunes old audit events. | Matches Java Mirth behavior. Archive-before-delete phase not yet connected (planned). |
-
-### Bug Fixes Applied
-
-| Fix | Java Mirth Behavior | Node.js Behavior | Impact |
-|-----|---------------------|-------------------|--------|
-| **ContentType Enum** | `SOURCE_MAP = 14` in the engine (correct) | Fixed API layer to also use `SOURCE_MAP = 14` (was incorrectly `15` in the API models layer) | Ensures sourceMap content queries work correctly. The Java engine was not affected because its API layer uses a different code path. |
-
-### Node.js-Only Extensions
-
-These features exist only in the Node.js engine and have no Java Mirth equivalent:
-
-| Feature | Description | API Endpoint |
-|---------|-------------|-------------|
-| Cross-Channel Trace | Reconstructs complete message journey across VM-connected channels | `GET /api/messages/trace/:channelId/:messageId` |
-| Interactive Dashboard | Terminal-based real-time channel monitoring via Ink/React | CLI: `mirth-cli dashboard` |
-| Message Trace CLI | CLI command to trace messages with tree visualization | CLI: `mirth-cli trace <channel> <messageId>` |
-| Shadow Mode | Safe read-only takeover with progressive per-channel cutover | `GET/POST /api/system/shadow/*` |
-| Shadow Mode CLI | CLI commands for shadow status, promote, demote, cutover | CLI: `mirth-cli shadow <command>` |
-| Container-Native Clustering | Horizontal scaling without clustering plugin | `GET /api/system/cluster/*` |
-| Health Probes | Readiness/liveness/startup for orchestrators | `GET /api/health/*` |
-| Block Sequence Allocation | Pre-allocated message IDs for reduced DB contention | Internal (SequenceAllocator) |
-| Database-Backed GlobalMap | Shared global map across instances via D_GLOBAL_MAP | Internal (MapBackend) |
-| Git Artifact Sync | Git-backed config management, decompose/assemble, export/import | `GET/POST /api/artifacts/*` |
-| Artifact CLI | Export, import, diff, promote, deploy, rollback commands | CLI: `mirth-cli artifact <command>` |
-| Environment Promotion | Dev → staging → prod workflow with version compatibility guards | `POST /api/artifacts/promote` |
-| Delta Deploy | Deploy only changed artifacts with dependency cascades | `POST /api/artifacts/deploy` |
-
-### How SourceMap Tracing Works
-
-When messages flow through VM-connected channels (Channel Writer/Reader), the VM connector stores chain-tracking data in the sourceMap:
-- `sourceChannelIds[]` — ordered list of channel IDs the message has traversed
-- `sourceMessageIds[]` — corresponding message IDs at each hop
-
-The Node.js engine persists this sourceMap to the `D_MC` table after message processing, enabling the trace API to reconstruct the full message journey by following these references backward (to find the root) and forward (to find all downstream destinations).
-
-**Dependency graph**: The trace service builds a channel dependency graph by scanning all channel configurations for `transportName === 'Channel Writer'` destinations, scoping forward-trace queries to only relevant downstream channels.
-
-**VM cross-channel routing** is fully operational: `ChannelBuilder` wires both `VmReceiver` (Channel Reader source) and `VmDispatcher` (Channel Writer destination), and the `EngineController` adapter is connected during deployment to enable runtime message dispatch between channels.
-
-### Data Pruner
-
-The Data Pruner runs as a scheduled background task that removes old messages from per-channel tables based on retention policies configured per channel. It is automatically started on server startup via `dataPrunerController.initialize()`.
-
-**How it works:**
-
-1. On each scheduled run (default: every 12 hours), the pruner builds a task queue by scanning all channels
-2. Per-channel pruning settings are read from `ConfigurationController.getChannelMetadata()` — channels without explicit settings are skipped
-3. Channels with `messageStorageMode=DISABLED` are skipped (no messages stored)
-4. For each channel, messages older than the configured retention period are deleted in batches
-5. In-flight messages (`PROCESSED=0`) are never pruned, preventing data loss during pipeline processing
-6. All per-channel tables are cleaned: `D_M`, `D_MM`, `D_MC`, `D_MA`, `D_MCM` (custom metadata)
-7. Old audit events can be pruned when `pruneEvents` is enabled with a `maxEventAge` setting
-8. Configuration is persisted to the `CONFIGURATION` table and survives server restarts
-
-**REST API:**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/extensions/datapruner/status` | GET | Current pruner status (running, progress, last run) |
-| `/api/extensions/datapruner/_start` | POST | Trigger a manual pruning run |
-| `/api/extensions/datapruner/_stop` | POST | Stop a running pruning job |
-| `/api/extensions/datapruner/config` | GET, PUT | Read/update pruner configuration |
-
-**Remaining gap:** The `MessageArchiver` (archive-before-delete) is implemented but not yet connected to the pruning pipeline. See `plans/datapruner-archive-integration.md` for the integration plan.
+Uses the existing Mirth MySQL schema with no modifications in takeover mode. Node.js-only tables (D_SERVERS, D_CLUSTER_EVENTS, D_GLOBAL_MAP, D_ARTIFACT_SYNC) are additive and safe in shared databases. See the full [Database Schema & Engine Behavior](docs/database-schema.md).
 
 ## Troubleshooting
 

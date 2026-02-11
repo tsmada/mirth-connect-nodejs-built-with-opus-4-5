@@ -11,6 +11,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 - **REST API**: Express-based in `src/api/`
 - **Cluster**: Horizontal scaling in `src/cluster/`
 - **Artifact**: Git-backed config management in `src/artifact/`
+- **Logging**: Centralized logging with per-component debug in `src/logging/`
 - **CLI Tool**: Terminal monitor utility in `src/cli/`
 
 ### REST API Servlets (Implemented)
@@ -35,6 +36,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 | Internal | RemoteDispatcher.ts | Inter-instance message forwarding (cluster-only) |
 | Shadow | ShadowServlet.ts | Shadow mode promote/demote/status (Node.js-only) |
 | Artifact | ArtifactServlet.ts | Git-backed config management: export/import/diff/promote/deploy (Node.js-only) |
+| Logging | LoggingServlet.ts | Runtime log level control: global + per-component (Node.js-only) |
 
 ### CLI Monitor Utility (`src/cli/`)
 
@@ -819,6 +821,249 @@ npm run validate -- --priority 1
 | Shadow Mode CLI | `mirth-cli shadow status/promote/demote/cutover` | Shadow mode management commands |
 | Git Artifact Sync | `GET/POST /api/artifacts/*` | Git-backed config management, promotion, delta deploys |
 | Artifact CLI | `mirth-cli artifact export/import/diff/promote/deploy` | Artifact management commands |
+| Logging API | `GET/PUT/DELETE /api/system/logging/*` | Runtime log level control + per-component debug |
+
+### Centralized Logging System (`src/logging/`)
+
+**This is a Node.js-only feature with no Java Mirth equivalent.** Java Mirth uses Log4j 1.x with named loggers configured via XML files at startup — no runtime API. Node.js Mirth provides a centralized, transport-pluggable logging system with runtime log level control via REST API.
+
+#### Architecture
+
+```
+src/logging/
+├── config.ts              # Env var parsing (LOG_LEVEL, LOG_FORMAT, etc.)
+├── DebugModeRegistry.ts   # Per-component debug toggle (runtime + env)
+├── transports.ts          # LogTransport interface + ConsoleTransport + FileTransport
+├── Logger.ts              # Core Logger class (dual output: Winston + ServerLogController)
+├── LoggerFactory.ts       # Named logger creation + Winston root setup
+└── index.ts               # Barrel exports
+
+src/api/servlets/LoggingServlet.ts   # Runtime log level control API
+```
+
+#### How It Works
+
+Each log call writes to two outputs simultaneously:
+1. **Winston** — console, file, or cloud transport (extensible via `LogTransport` interface)
+2. **ServerLogController** — in-memory circular buffer for WebSocket dashboard streaming
+
+Winston's Console transport uses `process.stdout.write()`, NOT `console.log()`, so the existing `hookConsole()` backward-compatibility bridge does not intercept logger output. Any remaining unmigrated `console.*` calls still flow into ServerLogController with category `'console'`.
+
+**Level hierarchy:** Per-component override > Global `LOG_LEVEL` env var
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Global minimum: TRACE, DEBUG, INFO, WARN, ERROR |
+| `MIRTH_DEBUG_COMPONENTS` | (none) | Comma-separated component names to set to DEBUG |
+| `LOG_FORMAT` | `text` | Output format: `text` (Log4j-style) or `json` (structured) |
+| `LOG_FILE` | (none) | Optional file path for file transport |
+| `LOG_TIMESTAMP_FORMAT` | `mirth` | `mirth` = `yyyy-MM-dd HH:mm:ss,SSS`, `iso` = ISO 8601 |
+
+#### Output Formats
+
+**Text format** (default) — matches Java Mirth's Log4j pattern:
+```
+ INFO 2026-02-10 14:30:15,042 [server] Starting Mirth Connect Node.js Runtime...
+ INFO 2026-02-10 14:30:15,150 [server] Connected to database at localhost:3306
+ INFO 2026-02-10 14:30:16,320 [engine] Channel ADT Receiver deployed with state STARTED
+DEBUG 2026-02-10 14:30:17,001 [http-connector] Request received POST /api/channels
+ERROR 2026-02-10 14:30:18,500 [engine] Failed to deploy channel Lab Orders
+  at Error: EADDRINUSE: port 6661
+    at TcpReceiver.start (src/connectors/tcp/TcpReceiver.ts:45)
+```
+
+**JSON format** (`LOG_FORMAT=json`):
+```json
+{"level":"info","message":"Starting Mirth Connect Node.js Runtime...","component":"server","timestamp":"2026-02-10T14:30:15.042Z"}
+```
+
+#### Registered Components
+
+Components register themselves at module initialization. Currently registered:
+
+| Component Name | Description | Source Files |
+|---|---|---|
+| `server` | Server lifecycle | `Mirth.ts` |
+| `engine` | Channel deploy/start/stop | `EngineController.ts` |
+
+**Future components** (registered as migration progresses):
+
+| Component Name | Description | Debug Use Case |
+|---|---|---|
+| `http-connector` | HTTP source/destination | Debug request/response bodies, headers, routing |
+| `tcp-connector` | TCP/MLLP connections | Debug connection lifecycle, frame parsing, timeouts |
+| `file-connector` | File polling/writing | Debug poll cycles, file locks, directory scanning |
+| `jdbc-connector` | Database connector | Debug SQL queries, connection pool, result mapping |
+| `sftp-connector` | SFTP file transfer | Debug SSH handshake, key auth, directory listing |
+| `jms-connector` | JMS messaging (STOMP) | Debug queue/topic subscription, message ack |
+| `smtp-connector` | Email sending | Debug SMTP handshake, TLS, attachment encoding |
+| `webservice-connector` | SOAP endpoint | Debug WSDL generation, MTOM attachments, envelope |
+| `dicom-connector` | DICOM C-STORE/C-ECHO | Debug association negotiation, transfer syntax |
+| `vm-connector` | Channel Writer/Reader | Debug inter-channel routing, sourceMap chain |
+| `database` | DB pool/queries | Debug connection pool, query timing, deadlocks |
+| `javascript` | Script execution | Debug E4X transpilation, scope variable injection |
+| `api` | REST API server | Debug request handling, auth, content negotiation |
+| `cluster` | Cluster operations | Debug heartbeat, server registry, event bus |
+| `data-pruner` | Pruning engine | Debug task queue, batch deletes, archive phase |
+| `artifact` | Git artifact sync | Debug decompose/assemble, git operations, promotion |
+| `secrets` | Secret management | Debug provider init, cache refresh, resolution |
+
+#### Enabling Debug for Specific Connectors
+
+**At startup via environment:**
+```bash
+# Debug a single connector
+MIRTH_DEBUG_COMPONENTS=http-connector LOG_LEVEL=WARN node dist/index.js
+
+# Debug multiple connectors
+MIRTH_DEBUG_COMPONENTS=http-connector,tcp-connector,jdbc-connector node dist/index.js
+
+# Debug with TRACE level (most verbose)
+MIRTH_DEBUG_COMPONENTS=tcp-connector:TRACE node dist/index.js
+
+# Common troubleshooting combinations:
+# MLLP connectivity issues
+MIRTH_DEBUG_COMPONENTS=tcp-connector:TRACE LOG_LEVEL=WARN node dist/index.js
+
+# HTTP integration debugging
+MIRTH_DEBUG_COMPONENTS=http-connector,api LOG_LEVEL=WARN node dist/index.js
+
+# SFTP transfer problems
+MIRTH_DEBUG_COMPONENTS=sftp-connector:TRACE,file-connector LOG_LEVEL=WARN node dist/index.js
+
+# Database connector + pool issues
+MIRTH_DEBUG_COMPONENTS=jdbc-connector,database LOG_LEVEL=WARN node dist/index.js
+
+# Channel routing (VM connector) debugging
+MIRTH_DEBUG_COMPONENTS=vm-connector,engine LOG_LEVEL=WARN node dist/index.js
+
+# Script execution issues
+MIRTH_DEBUG_COMPONENTS=javascript LOG_LEVEL=WARN node dist/index.js
+
+# Full verbose mode (everything at DEBUG)
+LOG_LEVEL=DEBUG node dist/index.js
+
+# JSON output for log aggregation (CloudWatch, Datadog, etc.)
+LOG_FORMAT=json LOG_LEVEL=INFO node dist/index.js
+
+# Write to file
+LOG_FILE=/var/log/mirth/mirth.log LOG_LEVEL=INFO node dist/index.js
+```
+
+**At runtime via REST API** (no restart required):
+```bash
+# Check current logging state
+curl http://localhost:8081/api/system/logging \
+  -H "X-Session-ID: <session>"
+
+# Enable DEBUG for HTTP connector at runtime
+curl -X PUT http://localhost:8081/api/system/logging/components/http-connector \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session>" \
+  -d '{"level":"DEBUG"}'
+
+# Enable TRACE for MLLP debugging
+curl -X PUT http://localhost:8081/api/system/logging/components/tcp-connector \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session>" \
+  -d '{"level":"TRACE"}'
+
+# Raise global level to suppress noise while debugging one component
+curl -X PUT http://localhost:8081/api/system/logging/level \
+  -H "Content-Type: application/json" \
+  -H "X-Session-ID: <session>" \
+  -d '{"level":"WARN"}'
+
+# Stop debugging (clear override, revert to global level)
+curl -X DELETE http://localhost:8081/api/system/logging/components/http-connector \
+  -H "X-Session-ID: <session>"
+```
+
+#### REST API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/system/logging` | GET | Current global level + all component overrides |
+| `/api/system/logging/level` | PUT | Set global level `{ level: "DEBUG" }` |
+| `/api/system/logging/components/:name` | PUT | Set component level `{ level: "DEBUG" }` |
+| `/api/system/logging/components/:name` | DELETE | Clear component override (revert to global) |
+
+All endpoints require authentication. Not shadow-guarded (logging changes are safe in shadow mode).
+
+#### Usage in Code
+
+```typescript
+import { getLogger, registerComponent } from '../logging/index.js';
+
+// Register at module level (once per component)
+registerComponent('http-connector', 'HTTP source/destination connector');
+const logger = getLogger('http-connector');
+
+// Standard logging — component name is automatically included in output
+logger.info(`Listening on ${host}:${port}`);
+logger.warn('Connection timeout', { host, timeout: 30000 });
+logger.error('Failed to process request', error, { method: 'POST', url });
+
+// Guard expensive debug serialization
+if (logger.isDebugEnabled()) {
+  logger.debug(`Request payload: ${JSON.stringify(body)}`, { headers });
+}
+
+// Child logger for sub-components ("http-connector.poll")
+const pollLogger = logger.child('poll');
+pollLogger.debug('Polling cycle started');
+```
+
+#### Custom Transport Extensibility
+
+```typescript
+import { initializeLogging, LogTransport } from '../logging/index.js';
+
+// Example: CloudWatch transport
+class CloudWatchTransport implements LogTransport {
+  name = 'cloudwatch';
+  createWinstonTransport(): winston.transport {
+    return new WinstonCloudWatch({ logGroupName: '/mirth/production', ... });
+  }
+}
+
+// Pass custom transports at startup
+initializeLogging(serverLogController, [new CloudWatchTransport()]);
+```
+
+#### Server Lifecycle Integration
+
+In `src/server/Mirth.ts`:
+- `initializeLogging(serverLogController)` is called as the FIRST action in `start()`
+- `shutdownLogging()` is called at the end of `stop()` (flushes pending writes)
+- All `console.warn/log/error` calls replaced with `logger.info/error`
+
+#### Migration Status
+
+| Phase | Scope | Files | Console Calls | Status |
+|-------|-------|-------|---------------|--------|
+| 1 (done) | Core server + engine | 3 modified | 37 migrated | Complete |
+| 2 | Donkey engine | ~4 files | ~16 | Pending |
+| 3 | Connectors | ~15 files | ~60 | Pending |
+| 4 | API servlets | ~15 files | ~150 | Pending |
+| 5 | Plugins/cluster | ~20 files | ~80 | Pending |
+| 6 | CLI (internal only) | ~5 files | ~15 | Pending |
+
+CLI user-facing output (tables, spinners, chalk) stays as console — only internal error/debug logging migrates.
+
+#### Key Files
+
+| File | ~Lines | Tests | Purpose |
+|------|--------|-------|---------|
+| `config.ts` | 65 | 24 | Env var parsing, caching |
+| `DebugModeRegistry.ts` | 143 | 31 | Per-component debug toggle |
+| `transports.ts` | 110 | (in Logger tests) | Console + File transport |
+| `Logger.ts` | 136 | 26 | Dual-output logger |
+| `LoggerFactory.ts` | 181 | 18 | Factory + Winston setup |
+| `LoggingServlet.ts` | 100 | 13 | REST API (4 endpoints) |
+| **Total** | **~735** | **112** | |
 
 ### Git-Backed Artifact Management (`src/artifact/`)
 

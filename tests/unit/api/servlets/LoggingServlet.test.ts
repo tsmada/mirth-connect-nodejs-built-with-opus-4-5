@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import express from 'express';
 import { Server } from 'http';
 import { loggingRouter } from '../../../../src/api/servlets/LoggingServlet.js';
-import { resetLogging, registerComponent, setComponentLevel } from '../../../../src/logging/index.js';
+import { resetLogging, resetDebugRegistry, registerComponent, setComponentLevel } from '../../../../src/logging/index.js';
 import { LogLevel } from '../../../../src/plugins/serverlog/ServerLogItem.js';
 
 // Lightweight HTTP helper (same pattern as SecretsServlet tests)
@@ -57,6 +57,7 @@ describe('LoggingServlet', () => {
 
   beforeEach(() => {
     resetLogging();
+    resetDebugRegistry();
     app = createTestApp();
   });
 
