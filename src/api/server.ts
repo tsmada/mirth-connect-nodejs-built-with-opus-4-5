@@ -26,6 +26,7 @@ import { traceRouter } from './servlets/TraceServlet.js';
 import { shadowRouter } from './servlets/ShadowServlet.js';
 import { artifactRouter } from './servlets/ArtifactServlet.js';
 import { secretsRouter } from './servlets/SecretsServlet.js';
+import { loggingRouter } from './servlets/LoggingServlet.js';
 
 // Cluster health probes and routing
 import { healthRouter } from '../cluster/HealthCheck.js';
@@ -142,6 +143,7 @@ export function createApp(options: ServerOptions = {}): Express {
   app.use('/api/databaseTasks', authMiddleware({ required: true }), databaseTaskRouter);
   app.use('/api/system', authMiddleware({ required: true }), systemRouter);
   app.use('/api/system/cluster', authMiddleware({ required: true }), clusterRouter);
+  app.use('/api/system/logging', authMiddleware({ required: true }), loggingRouter);
   app.use('/api/usageData', authMiddleware({ required: true }), usageRouter);
 
   // Plugin routes
