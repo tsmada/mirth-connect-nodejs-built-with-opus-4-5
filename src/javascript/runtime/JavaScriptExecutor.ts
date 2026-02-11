@@ -25,6 +25,7 @@ import {
   buildBasicScope,
   buildChannelScope,
   buildFilterTransformerScope,
+  buildResponseTransformerScope,
   buildPreprocessorScope,
   buildPostprocessorScope,
   buildDeployScope,
@@ -291,6 +292,96 @@ export class JavaScriptExecutor {
   }
 
   /**
+   * Execute a response transformer script
+   *
+   * JRC-ECL-002 / JRC-SBD-020: Java's JavaScriptResponseTransformer.doTransform() reads
+   * back three scope variables after execution to update the Response object:
+   *   - responseStatus → response.setStatus()
+   *   - responseStatusMessage → response.setStatusMessage()
+   *   - responseErrorMessage → response.setError()
+   * It also reads back transformed data (msg or tmp) via getTransformedDataFromScope().
+   *
+   * Java ref: JavaScriptResponseTransformer.java:197-200
+   * Java ref: JavaScriptScopeUtil.getResponseDataFromScope():417-434
+   */
+  executeResponseTransformer(
+    transformerSteps: TransformerStep[],
+    connectorMessage: ConnectorMessage,
+    response: Response,
+    template: string,
+    inboundType: SerializationType,
+    outboundType: SerializationType,
+    scriptContext: ScriptContext,
+    options: ExecutionOptions = {}
+  ): ExecutionResult<string> {
+    const timeout = options.timeout ?? this.defaultTimeout;
+
+    // Build scope (injects response, responseStatus, responseStatusMessage, responseErrorMessage)
+    const scope = buildResponseTransformerScope(
+      scriptContext,
+      connectorMessage,
+      response,
+      template || undefined
+    );
+
+    // Generate script (no filter rules — response transformers have only transformer steps)
+    const generatedScript = this.scriptBuilder.generateResponseTransformerScript(
+      transformerSteps,
+      inboundType,
+      outboundType,
+      !!template
+    );
+
+    // Create context and execute
+    const context = this.createContext(scope);
+    const result = this.executeScript<unknown>(generatedScript, context, timeout);
+
+    if (result.success) {
+      // Sync maps back to connector message
+      syncMapsToConnectorMessage(scope, connectorMessage);
+
+      // Read back response data from scope (Java: getResponseDataFromScope)
+      const scopeStatus = scope['responseStatus'];
+      const scopeStatusMessage = scope['responseStatusMessage'];
+      const scopeErrorMessage = scope['responseErrorMessage'];
+
+      if (scopeStatus !== undefined) {
+        response.setStatus(scopeStatus as Status);
+      }
+      if (scopeStatusMessage !== undefined) {
+        response.setStatusMessage(scopeStatusMessage === null ? '' : String(scopeStatusMessage));
+      } else {
+        response.setStatusMessage('');
+      }
+      if (scopeErrorMessage !== undefined) {
+        response.setError(scopeErrorMessage === null ? '' : String(scopeErrorMessage));
+      } else {
+        response.setError('');
+      }
+
+      // Read back transformed data from scope (Java: getTransformedDataFromScope)
+      const hasTemplate = !!template;
+      const transformedVarName = hasTemplate ? 'tmp' : 'msg';
+      const transformedData = scope[transformedVarName];
+
+      let transformedString: string = '';
+      if (transformedData !== undefined && transformedData !== null) {
+        if (typeof transformedData === 'object' && typeof (transformedData as any).toXMLString === 'function') {
+          transformedString = (transformedData as any).toXMLString();
+        } else if (typeof transformedData === 'object' || Array.isArray(transformedData)) {
+          transformedString = JSON.stringify(transformedData);
+        } else {
+          transformedString = String(transformedData);
+        }
+      }
+
+      return { ...result, result: transformedString };
+    }
+
+    return { ...result, result: undefined } as ExecutionResult<string>;
+  }
+
+  /**
    * Execute a preprocessor script
    */
   executePreprocessor(
@@ -366,6 +457,96 @@ export class JavaScriptExecutor {
     }
 
     return { ...result, result: undefined };
+  }
+
+  /**
+   * Execute global + channel preprocessor scripts in sequence (JRC-SBD-015)
+   *
+   * Ported from: JavaScriptUtil.executePreprocessorScripts() (lines 168-235)
+   *
+   * Flow:
+   * 1. Execute global preprocessor with the raw message as input
+   * 2. If global preprocessor succeeds and returns a result, use that as input to channel preprocessor
+   * 3. Execute channel preprocessor with the (possibly modified) message
+   *
+   * If only one script is provided, it runs alone. If both are null/empty, returns the raw message unchanged.
+   * If the global preprocessor errors, the error propagates immediately (channel preprocessor is not run).
+   */
+  executePreprocessorScripts(
+    channelScript: string | null,
+    globalScript: string | null,
+    rawMessage: string,
+    connectorMessage: ConnectorMessage,
+    scriptContext: ScriptContext,
+    options: ExecutionOptions = {}
+  ): ExecutionResult<string> {
+    const startTime = Date.now();
+    let currentMessage = rawMessage;
+
+    // 1. Execute global preprocessor first (if provided)
+    if (globalScript && globalScript.trim()) {
+      const globalResult = this.executePreprocessor(
+        globalScript, currentMessage, connectorMessage, scriptContext, options
+      );
+      if (!globalResult.success) {
+        return globalResult; // Propagate error — channel preprocessor is not run
+      }
+      if (globalResult.result) {
+        currentMessage = globalResult.result;
+      }
+    }
+
+    // 2. Execute channel preprocessor with global result as input
+    if (channelScript && channelScript.trim()) {
+      return this.executePreprocessor(
+        channelScript, currentMessage, connectorMessage, scriptContext, options
+      );
+    }
+
+    return { success: true, result: currentMessage, executionTime: Date.now() - startTime };
+  }
+
+  /**
+   * Execute channel + global postprocessor scripts in sequence (JRC-SBD-015)
+   *
+   * Ported from: JavaScriptUtil.executePostprocessorScripts() (lines 260-303)
+   *
+   * Flow:
+   * 1. Execute channel postprocessor first — may return a Response
+   * 2. Execute global postprocessor with the channel's Response injected into scope
+   *
+   * If only one script is provided, it runs alone. If both are null/empty, returns success with no result.
+   * If the channel postprocessor errors, the error propagates immediately (global postprocessor is not run).
+   */
+  executePostprocessorScripts(
+    channelScript: string | null,
+    globalScript: string | null,
+    message: Message,
+    scriptContext: ScriptContext,
+    options: ExecutionOptions = {}
+  ): ExecutionResult<Response | undefined> {
+    const startTime = Date.now();
+    let channelResponse: Response | undefined;
+
+    // 1. Execute channel postprocessor first
+    if (channelScript && channelScript.trim()) {
+      const channelResult = this.executePostprocessor(
+        channelScript, message, scriptContext, undefined, options
+      );
+      if (!channelResult.success) {
+        return channelResult; // Propagate error — global postprocessor is not run
+      }
+      channelResponse = channelResult.result;
+    }
+
+    // 2. Execute global postprocessor with channel response
+    if (globalScript && globalScript.trim()) {
+      return this.executePostprocessor(
+        globalScript, message, scriptContext, channelResponse, options
+      );
+    }
+
+    return { success: true, result: channelResponse, executionTime: Date.now() - startTime };
   }
 
   /**

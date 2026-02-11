@@ -85,6 +85,10 @@ import { JsonUtil } from '../userutil/JsonUtil.js';
 import { Lists, ListBuilder } from '../userutil/Lists.js';
 import { Maps, MapBuilder } from '../userutil/Maps.js';
 
+// HTTP header/parameter wrappers (Java: com.mirth.connect.userutil)
+import { MessageHeaders } from '../userutil/MessageHeaders.js';
+import { MessageParameters } from '../userutil/MessageParameters.js';
+
 // ACK generation (Java: com.mirth.connect.server.userutil.ACKGenerator)
 import { ACKGenerator } from '../../util/ACKGenerator.js';
 
@@ -209,6 +213,10 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     ListBuilder,
     Maps,
     MapBuilder,
+
+    // HTTP header/parameter wrappers (Java: importPackage(Packages.com.mirth.connect.userutil))
+    MessageHeaders,
+    MessageParameters,
 
     // Serializer factory (Java: importPackage, used by data type scripts)
     SerializerFactory,
@@ -441,6 +449,9 @@ export function buildResponseTransformerScope(
   if (template !== undefined) {
     scope.template = template;
   }
+
+  // Phase array for transformer step execution (matches filter/transformer scope)
+  scope.phase = ['response_transform'];
 
   return scope;
 }

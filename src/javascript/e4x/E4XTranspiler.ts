@@ -449,17 +449,40 @@ export class E4XTranspiler {
   }
 
   /**
-   * Transform: xml += <tag/>
-   * To: xml = xml.append(XMLProxy.create('<tag/>'))
-   * Only when RHS starts with XMLProxy.create (already transpiled from XML literal)
+   * Transform: xml += <tag/> or xml += variable
+   * To: xml = xml.append(XMLProxy.create('<tag/>')) or xml = xml.append(variable)
+   *
+   * Two rules:
+   * 1. XMLProxy.create() RHS (most specific — existing rule)
+   * 2. Variable/expression RHS for XML-like identifiers (msg, tmp, xml*)
+   *    Skips numeric literals and string literals on RHS to avoid breaking
+   *    normal += operations like count += 1 or str += "text".
    */
   private transpileXMLAppend(code: string): string {
-    // Pattern: identifier += XMLProxy.create(...)
+    // Rule 1: identifier += XMLProxy.create(...) — most specific, runs first
     // The XML literal has already been transpiled to XMLProxy.create() by step 4
     code = code.replace(
       /(\w+(?:\.\w+|\[['"][^'"]+['"]\])*)\s*\+=\s*(XMLProxy\.create\([^)]+\))/g,
       '$1 = $1.append($2)'
     );
+
+    // Rule 2: XML-like identifier += variable/expression
+    // LHS must start with msg, tmp, or xml (common XML variable names in Mirth scripts)
+    // RHS must NOT be a numeric literal or string literal (those are normal +=)
+    // Uses replaceWithStringCheck to skip matches inside string literals
+    code = this.replaceWithStringCheck(code,
+      /((?:msg|tmp|xml)\w*(?:\.\w+|\[['"][^'"]+['"]\])*)\s*\+=\s*([^;\n]+)/g,
+      (_match, groups) => {
+        const lhs = groups[0] ?? '';
+        const rhs = (groups[1] ?? '').trim();
+        // Skip if RHS is a numeric literal, string literal, or already an .append() call
+        if (/^\d/.test(rhs) || /^['"]/.test(rhs) || rhs.includes('.append(')) {
+          return `${lhs} += ${groups[1]}`;
+        }
+        return `${lhs} = ${lhs}.append(${rhs})`;
+      }
+    );
+
     return code;
   }
 

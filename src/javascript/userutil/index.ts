@@ -184,3 +184,7 @@ export { Lists, ListBuilder } from './Lists.js';
 
 // Map builder utilities
 export { Maps, MapBuilder } from './Maps.js';
+
+// HTTP header/parameter wrappers
+export { MessageHeaders } from './MessageHeaders.js';
+export { MessageParameters } from './MessageParameters.js';
