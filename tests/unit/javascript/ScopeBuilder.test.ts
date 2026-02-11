@@ -210,7 +210,7 @@ describe('ScopeBuilder', () => {
       );
 
       expect(scope.template).toBe('template content');
-      expect(scope.phase).toBe('filter');
+      expect(scope.phase).toEqual(['filter']);
     });
   });
 
@@ -375,7 +375,7 @@ describe('ScopeBuilder', () => {
 
       expect(scope.connectorMessage).toBe(connectorMessage);
       expect(scope.template).toBe('template');
-      expect(scope.phase).toBe('filter');
+      expect(scope.phase).toEqual(['filter']);
       expect(scope.customVar).toBe('customValue');
     });
 

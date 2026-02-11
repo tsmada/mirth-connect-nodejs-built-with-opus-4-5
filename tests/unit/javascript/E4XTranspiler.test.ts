@@ -206,7 +206,7 @@ pid.@id = "123";`;
 
       const result = transpiler.transpile(input);
       expect(result.code).toContain('XMLProxy.create(rawData)');
-      expect(result.code).toContain("pid.attr('id')");
+      expect(result.code).toContain("pid.setAttr('id', \"123\")");
     });
   });
 

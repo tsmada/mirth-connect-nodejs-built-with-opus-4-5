@@ -172,3 +172,15 @@ export {
   type DicomObject,
   type DicomElement,
 } from './DICOMUtil.js';
+
+// XML utilities
+export { XmlUtil } from './XmlUtil.js';
+
+// JSON utilities
+export { JsonUtil } from './JsonUtil.js';
+
+// List builder utilities
+export { Lists, ListBuilder } from './Lists.js';
+
+// Map builder utilities
+export { Maps, MapBuilder } from './Maps.js';

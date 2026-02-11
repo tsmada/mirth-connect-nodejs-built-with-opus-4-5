@@ -51,17 +51,26 @@ export class E4XTranspiler {
     // 1. Handle default xml namespace declarations
     code = this.transpileDefaultNamespace(code);
 
+    // 1.5. Handle E4X filter predicates (before attributes, so @attr inside predicates gets converted)
+    code = this.transpileFilterPredicates(code);
+
     // 2. Handle for each loops (must be before other transformations)
     code = this.transpileForEach(code);
 
     // 3. Handle descendant operator (..)
     code = this.transpileDescendant(code);
 
+    // 3.5. Handle E4X wildcards (.* and .@*) — after descendants so ..* is handled first
+    code = this.transpileWildcards(code);
+
     // 4. Handle XML literals
     code = this.transpileXMLLiterals(code);
 
     // 5. Handle attribute access (@)
     code = this.transpileAttributes(code);
+
+    // 5.5. Handle XML append operator (+=)
+    code = this.transpileXMLAppend(code);
 
     // 6. Handle new XML() constructor
     code = this.transpileXMLConstructor(code);
@@ -73,17 +82,110 @@ export class E4XTranspiler {
   }
 
   /**
-   * Transform: default xml namespace = "uri"
-   * To: setDefaultXmlNamespace("uri")
+   * Transform: default xml namespace = "uri" or default xml namespace = variable
+   * To: setDefaultXmlNamespace("uri") or setDefaultXmlNamespace(variable)
    */
   private transpileDefaultNamespace(code: string): string {
-    // Match: default xml namespace = "..."
-    // Also handles: default xml namespace = '...'
-    const pattern = /default\s+xml\s+namespace\s*=\s*(["'])([^"']*)\1/g;
-
-    return code.replace(pattern, (_match, _quote, namespace) => {
+    // Match: default xml namespace = "..." or '...' (string literals)
+    const stringPattern = /default\s+xml\s+namespace\s*=\s*(["'])([^"']*)\1/g;
+    code = code.replace(stringPattern, (_match, _quote, namespace) => {
       return `setDefaultXmlNamespace("${namespace}")`;
     });
+
+    // Match: default xml namespace = identifier (variable reference, not string)
+    // The identifier can be dotted (e.g., config.namespace)
+    const varPattern = /default\s+xml\s+namespace\s*=\s*([\w.]+)/g;
+    code = code.replace(varPattern, (_match, identifier) => {
+      return `setDefaultXmlNamespace(${identifier})`;
+    });
+
+    return code;
+  }
+
+  /**
+   * Transform: expr.identifier.(predicate)
+   * To: expr.get('identifier').filter(function(__e4x_item) { with(__e4x_item) { return (predicate); } })
+   *
+   * E4X filtering predicates allow filtering XMLList children by expression.
+   * The predicate runs with each element as context (via `with`), so inner property
+   * access like OBX.3 resolves against the current element.
+   *
+   * Must run BEFORE attribute transpilation so @attr inside predicates gets converted.
+   */
+  private transpileFilterPredicates(code: string): string {
+    // Pattern: .identifier.(expression)
+    // The key distinction from a method call is that a method call has an identifier
+    // immediately before ( like .toString(). A predicate has .( after the identifier.
+    // E4X predicates: .name.(expr) — there's a dot then open paren with content that
+    // looks like a boolean expression (contains ==, !=, >, <, etc.)
+    //
+    // We need to match: .identifier.( and find the matching closing paren
+    // We must NOT match: .identifier( — that's a method call
+
+    let result = '';
+    let i = 0;
+
+    while (i < code.length) {
+      // Look for pattern: .identifier.(
+      // The identifier is preceded by . and followed by .(
+      const remaining = code.slice(i);
+      const predicateStart = remaining.match(/^\.(\w+)\.\(/);
+
+      if (predicateStart && !this.isInsideStringOrComment(code, i)) {
+        const identifier = predicateStart[1];
+        const parenStartIdx = i + predicateStart[0].length; // position after the (
+
+        // Find matching closing paren
+        const closeIdx = this.findMatchingParen(code, parenStartIdx - 1);
+        if (closeIdx !== -1) {
+          const predicate = code.slice(parenStartIdx, closeIdx);
+          result += `.get('${identifier}').filter(function(__e4x_item) { with(__e4x_item) { return (${predicate}); } })`;
+          i = closeIdx + 1;
+          continue;
+        }
+      }
+
+      result += code[i];
+      i++;
+    }
+
+    return result;
+  }
+
+  /**
+   * Find the index of the closing parenthesis matching the opening paren at `openIdx`.
+   * Returns -1 if not found.
+   */
+  private findMatchingParen(code: string, openIdx: number): number {
+    let depth = 0;
+    for (let i = openIdx; i < code.length; i++) {
+      if (this.isInsideStringOrComment(code, i)) continue;
+      if (code[i] === '(') depth++;
+      else if (code[i] === ')') {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Transform: .@* → .attributes() and identifier.* → identifier.children()
+   * Must NOT convert multiplication expressions like `count * 3`.
+   */
+  private transpileWildcards(code: string): string {
+    // .@* → .attributes() — attribute wildcard
+    code = code.replace(/\.@\*/g, '.attributes()');
+
+    // identifier.* → identifier.children() — child wildcard
+    // Only when .* appears after an identifier and is NOT followed by another identifier/number
+    // (which would be multiplication). Pattern: word.* at end or followed by non-word
+    // Guard: Must have a dot immediately before *, and the * must not be followed by \w or preceded by space+*
+    code = code.replace(/(\w)\.(\*)(?=\s*[^a-zA-Z0-9_.]|$)/g, (_match, lastChar, _star) => {
+      return `${lastChar}.children()`;
+    });
+
+    return code;
   }
 
   /**
@@ -108,6 +210,14 @@ export class E4XTranspiler {
     code = this.replaceWithStringCheck(code, destructPattern, (_match, groups) => {
       const [_declType, destructure, collection] = groups;
       return `for (const ${destructure} of ${(collection ?? '').trim()})`;
+    });
+
+    // Pattern for bare variable (no var/let/const): for each (x in expr)
+    const barePattern = /for\s+each\s*\(\s*(\w+)\s+in\s+([^)]+)\)/g;
+
+    code = this.replaceWithStringCheck(code, barePattern, (_match, groups) => {
+      const [varName, collection] = groups;
+      return `for (let ${varName} of ${(collection ?? '').trim()})`;
     });
 
     return code;
@@ -169,7 +279,8 @@ export class E4XTranspiler {
       // Pattern: identifier..name or )..name or ]..name or ')..name
       const pattern = /(\w+|\)|\]|['"])\.\.(\w+)/g;
 
-      result = result.replace(pattern, (_match, beforeChar, name) => {
+      result = this.replaceWithStringCheck(result, pattern, (_match, groups) => {
+        const [beforeChar, name] = groups;
         return `${beforeChar}.descendants('${name}')`;
       });
 
@@ -316,14 +427,39 @@ export class E4XTranspiler {
    * To: node.attr('attr')
    */
   private transpileAttributes(code: string): string {
-    // Pattern: .@identifier
+    // WRITE: .@attr = value → .setAttr('attr', value)
+    // Must come BEFORE read rule. Must not match == or != or === or !==
+    code = code.replace(/\.@(\w+)\s*=\s*(?!=)([^;,\n\)]+)/g, ".setAttr('$1', $2)");
+
+    // READ: .@identifier
     code = code.replace(/\.@(\w+)/g, ".attr('$1')");
 
     // Pattern: ['@identifier'] or ["@identifier"]
+    // Must run BEFORE bare @identifier rule below
     code = code.replace(/\[@(['"@])(\w+)\1\]/g, ".attr('$2')");
     code = code.replace(/\['@(\w+)'\]/g, ".attr('$1')");
     code = code.replace(/\["@(\w+)"\]/g, ".attr('$1')");
 
+    // Bare @identifier (inside predicates / with blocks) → attr('identifier')
+    // Must not match email-like patterns, decorators, or already-processed .@attr.
+    // Only match when preceded by non-word, non-dot, non-quote char or start of input.
+    code = code.replace(/(?<=^|[^.\w'"])@(\w+)/gm, "attr('$1')");
+
+    return code;
+  }
+
+  /**
+   * Transform: xml += <tag/>
+   * To: xml = xml.append(XMLProxy.create('<tag/>'))
+   * Only when RHS starts with XMLProxy.create (already transpiled from XML literal)
+   */
+  private transpileXMLAppend(code: string): string {
+    // Pattern: identifier += XMLProxy.create(...)
+    // The XML literal has already been transpiled to XMLProxy.create() by step 4
+    code = code.replace(
+      /(\w+(?:\.\w+|\[['"][^'"]+['"]\])*)\s*\+=\s*(XMLProxy\.create\([^)]+\))/g,
+      '$1 = $1.append($2)'
+    );
     return code;
   }
 
@@ -343,35 +479,81 @@ export class E4XTranspiler {
   }
 
   /**
-   * Check if position is inside a string literal
+   * Check if position is inside a string literal or comment.
+   * Tracks single-quoted, double-quoted, and template literal strings,
+   * as well as // line comments and /* block comments.
    */
-  private isInsideString(code: string, position: number): boolean {
+  private isInsideStringOrComment(code: string, position: number): boolean {
     let inString: string | null = null;
+    let inLineComment = false;
+    let inBlockComment = false;
     let escaped = false;
 
     for (let i = 0; i < position; i++) {
       const char = code[i];
+      const nextChar = i + 1 < code.length ? code[i + 1] : '';
 
+      // Handle line comment end
+      if (inLineComment) {
+        if (char === '\n') {
+          inLineComment = false;
+        }
+        continue;
+      }
+
+      // Handle block comment end
+      if (inBlockComment) {
+        if (char === '*' && nextChar === '/') {
+          inBlockComment = false;
+          i++; // skip the /
+        }
+        continue;
+      }
+
+      // Handle string escape
       if (escaped) {
         escaped = false;
         continue;
       }
 
-      if (char === '\\') {
-        escaped = true;
+      if (inString !== null) {
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === inString) {
+          inString = null;
+        }
         continue;
       }
 
-      if (inString === null) {
-        if (char === '"' || char === "'" || char === '`') {
-          inString = char;
-        }
-      } else if (char === inString) {
-        inString = null;
+      // Not in string or comment — check for starts
+      if (char === '/' && nextChar === '/') {
+        inLineComment = true;
+        i++; // skip second /
+        continue;
+      }
+
+      if (char === '/' && nextChar === '*') {
+        inBlockComment = true;
+        i++; // skip the *
+        continue;
+      }
+
+      if (char === '"' || char === "'" || char === '`') {
+        inString = char;
       }
     }
 
-    return inString !== null;
+    return inString !== null || inLineComment || inBlockComment;
+  }
+
+  /**
+   * Check if position is inside a string literal or comment.
+   * Legacy name preserved for backward compatibility with replaceWithStringCheck.
+   */
+  private isInsideString(code: string, position: number): boolean {
+    return this.isInsideStringOrComment(code, position);
   }
 
   /**

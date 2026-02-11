@@ -20,6 +20,7 @@ const parserOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
+  cdataPropName: '__cdata',
   preserveOrder: true,
   trimValues: false,
   parseTagValue: false,
@@ -31,6 +32,7 @@ const builderOptions: XmlBuilderOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
+  cdataPropName: '__cdata',
   preserveOrder: true,
   format: false,
   suppressEmptyNode: false,
@@ -121,7 +123,8 @@ export class XMLProxy {
       deleteProperty: (target, prop) => {
         if (typeof prop === 'string' && !isNaN(Number(prop))) {
           target.deleteAt(Number(prop));
-          return true;
+        } else if (typeof prop === 'string') {
+          target.removeChild(prop);
         }
         return true;
       },
@@ -276,6 +279,43 @@ export class XMLProxy {
         }
       }
     }
+  }
+
+  /**
+   * Remove all children with given name
+   */
+  removeChild(name: string): void {
+    for (const node of this.nodes) {
+      const tagName = this.getNodeTagName(node);
+      if (tagName) {
+        const children = node[tagName] as OrderedNode[];
+        if (Array.isArray(children)) {
+          // Remove all children matching the name
+          for (let i = children.length - 1; i >= 0; i--) {
+            if (this.getNodeTagName(children[i]!) === name) {
+              children.splice(i, 1);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Filter elements by predicate (E4X filtering predicate)
+   *
+   * Transpiled from: msg.OBX.(OBX.3 == 'WBC')
+   * Into: msg.get('OBX').filter(function(__e4x_item) { with(__e4x_item) { return (OBX.3 == 'WBC'); } })
+   */
+  filter(predicate: (item: XMLProxy) => boolean): XMLProxy {
+    const result: OrderedNode[] = [];
+    for (let i = 0; i < this.nodes.length; i++) {
+      const item = new XMLProxy([this.nodes[i]!], this.tagName, this._parent);
+      if (predicate(item)) {
+        result.push(this.nodes[i]!);
+      }
+    }
+    return new XMLProxy(result, this.tagName, this._parent);
   }
 
   /**
@@ -444,6 +484,50 @@ export class XMLProxy {
   }
 
   /**
+   * Get text content (E4X text() method)
+   */
+  text(): string {
+    return this.toString();
+  }
+
+  /**
+   * Get only element children (exclude text nodes) - E4X elements() method
+   */
+  elements(): XMLProxy {
+    const result: OrderedNode[] = [];
+    for (const node of this.nodes) {
+      const tagName = this.getNodeTagName(node);
+      if (tagName) {
+        const children = node[tagName];
+        if (Array.isArray(children)) {
+          for (const child of children as OrderedNode[]) {
+            if (!('#text' in child)) {
+              result.push(child);
+            }
+          }
+        }
+      }
+    }
+    return new XMLProxy(result, 'elements', this);
+  }
+
+  /**
+   * Return comment nodes (E4X comments() method).
+   * Stub: fast-xml-parser doesn't preserve comments with preserveOrder, so return empty.
+   */
+  comments(): XMLProxy {
+    return new XMLProxy([], 'comments', this);
+  }
+
+  /**
+   * Return processing instruction nodes (E4X processingInstructions() method).
+   * Stub: rarely used in Mirth scripts, returns empty to avoid TypeError.
+   */
+  processingInstructions(): XMLProxy {
+    return new XMLProxy([], 'processingInstructions', this);
+  }
+
+  /**
    * Convert to string (text content only)
    */
   toString(): string {
@@ -458,6 +542,14 @@ export class XMLProxy {
     for (const node of nodes) {
       if ('#text' in node) {
         texts.push(String(node['#text']));
+      } else if ('__cdata' in node) {
+        // CDATA is stored as __cdata: [{ "#text": "content" }] by fast-xml-parser
+        const cdataChildren = node['__cdata'];
+        if (Array.isArray(cdataChildren)) {
+          this.collectText(cdataChildren as OrderedNode[], texts);
+        } else if (typeof cdataChildren === 'string') {
+          texts.push(cdataChildren);
+        }
       } else {
         const tagName = this.getNodeTagName(node);
         if (tagName) {
@@ -554,7 +646,7 @@ export class XMLProxy {
 
   private getNodeTagName(node: OrderedNode): string {
     for (const key of Object.keys(node)) {
-      if (key !== ':@' && key !== '#text') {
+      if (key !== ':@' && key !== '#text' && key !== '__cdata') {
         return key;
       }
     }

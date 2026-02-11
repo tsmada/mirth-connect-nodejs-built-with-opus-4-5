@@ -45,7 +45,7 @@ describe('ScriptBuilder', () => {
       expect(script).toContain('function $gc(key, value)');
       expect(script).toContain('function $co(key, value)');
       expect(script).toContain('function $r(key, value)');
-      expect(script).toContain('function $cfg(key)');
+      expect(script).toContain('function $cfg(key, value)');
     });
 
     it('should include validate function', () => {
@@ -156,9 +156,10 @@ describe('ScriptBuilder', () => {
         true
       );
 
-      expect(script).toContain(
-        'if (doFilter() === true) { doTransform(); return true; } else { return false; }'
-      );
+      expect(script).toContain('if (doFilter() == true)');
+      expect(script).toContain('doTransform();');
+      expect(script).toContain('return true;');
+      expect(script).toContain('return false;');
     });
 
     it('should accept all when no filter rules', () => {
@@ -170,7 +171,7 @@ describe('ScriptBuilder', () => {
         true
       );
 
-      expect(script).toContain('function doFilter() { phase = "filter"; return true; }');
+      expect(script).toContain('function doFilter() { phase[0] = "filter"; return true; }');
     });
 
     it('should combine multiple filter rules with operators', () => {

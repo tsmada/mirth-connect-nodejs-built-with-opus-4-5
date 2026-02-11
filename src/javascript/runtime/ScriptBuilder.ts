@@ -103,6 +103,9 @@ export class ScriptBuilder {
     script.push('const XML = XMLProxy;');
     script.push('const XMLList = { create: () => [] };');
 
+    // importClass shim — prevents ReferenceError in old Rhino scripts
+    script.push('function importClass() { /* no-op: Rhino compatibility shim */ }');
+
     return script.join('\n');
   }
 
@@ -197,10 +200,8 @@ export class ScriptBuilder {
     // Generate transformer function
     this.appendTransformerScript(builder, transformerSteps);
 
-    // Execute filter then transformer (wrapped in IIFE for return statement)
-    builder.push('(function() {');
-    builder.push('  if (doFilter() === true) { doTransform(); return true; } else { return false; }');
-    builder.push('})();');
+    // Execute filter then transformer in IIFE (matches Java: serialization is inside doTransform)
+    builder.push('(function() { if (doFilter() == true) { doTransform(); return true; } else { return false; } })();');
 
     return builder.join('\n');
   }
@@ -320,7 +321,7 @@ export class ScriptBuilder {
       'function $gc(key, value) { if (arguments.length === 1) { return globalChannelMap.get(key); } else { return globalChannelMap.put(key, value); } }'
     );
     builder.push(
-      'function $cfg(key) { return configurationMap.get(key); }'
+      'function $cfg(key, value) { if (arguments.length === 1) { return configurationMap.get(key); } else { return configurationMap.put(key, value); } }'
     );
 
     // Transpile and wrap user script
@@ -369,8 +370,10 @@ export class ScriptBuilder {
       'function $g(key, value) { if (arguments.length === 1) { return globalMap.get(key); } else { return globalMap.put(key, value); } }'
     );
 
-    // Configuration map (read-only)
-    builder.push('function $cfg(key) { return configurationMap.get(key); }');
+    // Configuration map
+    builder.push(
+      'function $cfg(key, value) { if (arguments.length === 1) { return configurationMap.get(key); } else { return configurationMap.put(key, value); } }'
+    );
 
     // Secrets (read-only, direct vault access)
     builder.push(
@@ -399,18 +402,24 @@ function validate(mapping, defaultValue, replacement) {
     }
   }
   if (replacement !== undefined && replacement !== null) {
-    result = result.toString().replaceAll(replacement[0], replacement[1]);
+    if (Array.isArray(replacement[0])) {
+      for (var i = 0; i < replacement.length; i++) {
+        result = result.toString().replaceAll(replacement[i][0], replacement[i][1]);
+      }
+    } else {
+      result = result.toString().replaceAll(replacement[0], replacement[1]);
+    }
   }
   return result;
 }
 `);
 
-    // $ function - shortcut for getting mapped values
+    // $ function - shortcut for getting mapped values (Java lookup order)
     builder.push(`
 function $(string) {
   try {
-    if (typeof localMap !== 'undefined' && localMap.containsKey(string)) {
-      return localMap.get(string);
+    if (typeof responseMap !== 'undefined' && responseMap.containsKey(string)) {
+      return responseMap.get(string);
     }
   } catch (e) {}
   try {
@@ -436,6 +445,16 @@ function $(string) {
   try {
     if (typeof globalMap !== 'undefined' && globalMap.containsKey(string)) {
       return globalMap.get(string);
+    }
+  } catch (e) {}
+  try {
+    if (typeof configurationMap !== 'undefined' && configurationMap.containsKey(string)) {
+      return configurationMap.get(string);
+    }
+  } catch (e) {}
+  try {
+    if (typeof resultMap !== 'undefined' && resultMap.containsKey(string)) {
+      return resultMap.get(string);
     }
   } catch (e) {}
   return '';
@@ -464,6 +483,43 @@ function info(message) { logger.info(message); }
 function warn(message) { logger.warn(message); }
 function error(message) { logger.error(message); }
 `);
+
+    // createSegmentAfter - Insert HL7 segment after existing one
+    builder.push(`
+function createSegmentAfter(name, segment) {
+  var newSeg = XMLProxy.create('<' + name + '/>');
+  if (segment && segment.parent() && typeof segment.parent().insertChildAfter === 'function') {
+    segment.parent().insertChildAfter(segment, newSeg);
+  }
+  return newSeg;
+}
+`);
+
+    // getArrayOrXmlLength - Handle both XML and array length
+    builder.push(`
+function getArrayOrXmlLength(obj) {
+  if (obj === undefined || obj === null) return 0;
+  if (typeof obj.length === 'function') return obj.length();
+  if (typeof obj.length === 'number') return obj.length;
+  return 0;
+}
+`);
+
+    // Type coercion functions (used by Mapper plugin)
+    builder.push(`
+function newStringOrUndefined(value) {
+  if (value === undefined || value === null) return value;
+  return String(value);
+}
+function newBooleanOrUndefined(value) {
+  if (value === undefined || value === null) return value;
+  return Boolean(value);
+}
+function newNumberOrUndefined(value) {
+  if (value === undefined || value === null) return value;
+  return Number(value);
+}
+`);
   }
 
   /**
@@ -472,17 +528,51 @@ function error(message) { logger.error(message); }
   private appendAttachmentFunctions(builder: string[]): void {
     builder.push(`
 function getAttachmentIds(channelId, messageId) {
-  // Placeholder - would integrate with attachment storage
+  if (typeof AttachmentUtil !== 'undefined') {
+    return AttachmentUtil.getMessageAttachmentIds(connectorMessage);
+  }
   return [];
 }
 
-function getAttachment(channelId, messageId, attachmentId) {
-  // Placeholder - would integrate with attachment storage
+function getAttachments(base64Decode) {
+  if (typeof AttachmentUtil !== 'undefined') {
+    return AttachmentUtil.getMessageAttachments(connectorMessage, base64Decode !== false);
+  }
+  return [];
+}
+
+function getAttachment() {
+  if (typeof AttachmentUtil !== 'undefined') {
+    if (arguments.length >= 3) {
+      return AttachmentUtil.getMessageAttachment(arguments[0], arguments[1], arguments[2], !!arguments[3] || false);
+    } else {
+      return AttachmentUtil.getMessageAttachment(connectorMessage, arguments[0], !!arguments[1] || false);
+    }
+  }
   return null;
 }
 
 function addAttachment(data, type, base64Encode) {
-  // Placeholder - would integrate with attachment storage
+  if (typeof AttachmentUtil !== 'undefined') {
+    return AttachmentUtil.createAttachment(connectorMessage, data, type, !!base64Encode || false);
+  }
+  return null;
+}
+
+function updateAttachment() {
+  if (typeof AttachmentUtil !== 'undefined') {
+    if (arguments.length >= 5) {
+      return AttachmentUtil.updateAttachment(arguments[0], arguments[1], arguments[2], arguments[3], arguments[4], !!arguments[5] || false);
+    } else if (arguments.length >= 3) {
+      if (arguments[2] && arguments[2] instanceof Attachment) {
+        return AttachmentUtil.updateAttachment(arguments[0], arguments[1], arguments[2], !!arguments[3] || false);
+      } else {
+        return AttachmentUtil.updateAttachment(connectorMessage, arguments[0], arguments[1], arguments[2], !!arguments[3] || false);
+      }
+    } else {
+      return AttachmentUtil.updateAttachment(connectorMessage, arguments[0], !!arguments[1] || false);
+    }
+  }
   return null;
 }
 `);
@@ -496,7 +586,7 @@ function addAttachment(data, type, base64Encode) {
 
     if (enabledRules.length === 0) {
       // No rules = accept all
-      builder.push('function doFilter() { phase = "filter"; return true; }');
+      builder.push('function doFilter() { phase[0] = "filter"; return true; }');
       return;
     }
 
@@ -511,7 +601,7 @@ function addAttachment(data, type, base64Encode) {
 
     // Generate doFilter function that combines rules
     builder.push('function doFilter() {');
-    builder.push('  phase = "filter";');
+    builder.push('  phase[0] = "filter";');
     builder.push('  return (');
 
     const ruleExpressions: string[] = [];
@@ -539,8 +629,11 @@ function addAttachment(data, type, base64Encode) {
     const enabledSteps = steps.filter((s) => s.enabled);
 
     if (enabledSteps.length === 0) {
-      // No steps = do nothing
-      builder.push('function doTransform() { phase = "transform"; }');
+      // No steps = still need auto-serialization (matches Java behavior)
+      builder.push('function doTransform() {');
+      builder.push('  phase[0] = "transform";');
+      this.appendAutoSerialization(builder);
+      builder.push('}');
       return;
     }
 
@@ -555,12 +648,37 @@ function addAttachment(data, type, base64Encode) {
 
     // Generate doTransform function that calls all steps
     builder.push('function doTransform() {');
-    builder.push('  phase = "transform";');
+    builder.push('  phase[0] = "transform";');
 
     for (let i = 0; i < enabledSteps.length; i++) {
       builder.push(`  transformStep${i + 1}();`);
     }
 
+    // Auto-serialize msg (independent block — matches Java lines 333-342)
+    this.appendAutoSerialization(builder);
+
+    builder.push('}');
+  }
+
+  /**
+   * Append auto-serialization code for msg and tmp.
+   * Both are independent if-blocks (not else-if) matching Java lines 333-355.
+   * In Node.js, XMLProxy objects have toXMLString(); for plain objects/arrays we JSON.stringify.
+   */
+  private appendAutoSerialization(builder: string[]): void {
+    // Auto-serialize msg
+    builder.push("if (typeof msg === 'object' && typeof msg.toXMLString === 'function') {");
+    builder.push('  if (msg.hasSimpleContent()) { msg = msg.toXMLString(); }');
+    builder.push("} else if (typeof msg !== 'undefined' && msg !== null) {");
+    builder.push('  var toStringResult = Object.prototype.toString.call(msg);');
+    builder.push("  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { msg = JSON.stringify(msg); }");
+    builder.push('}');
+    // Auto-serialize tmp (INDEPENDENT — NOT else-if from msg block)
+    builder.push("if (typeof tmp === 'object' && typeof tmp.toXMLString === 'function') {");
+    builder.push('  if (tmp.hasSimpleContent()) { tmp = tmp.toXMLString(); }');
+    builder.push("} else if (typeof tmp !== 'undefined' && tmp !== null) {");
+    builder.push('  var toStringResult = Object.prototype.toString.call(tmp);');
+    builder.push("  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { tmp = JSON.stringify(tmp); }");
     builder.push('}');
   }
 

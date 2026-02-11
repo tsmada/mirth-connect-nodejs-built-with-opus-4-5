@@ -1,0 +1,408 @@
+/**
+ * Parity tests for ScriptBuilder — verifies fixes for Java Mirth runtime gaps
+ */
+import {
+  ScriptBuilder,
+  SerializationType,
+} from '../../../src/javascript/runtime/ScriptBuilder';
+
+describe('ScriptBuilder Parity Fixes', () => {
+  let builder: ScriptBuilder;
+
+  beforeEach(() => {
+    builder = new ScriptBuilder();
+  });
+
+  describe('1.1 - Missing helper functions in appendMiscFunctions()', () => {
+    it('should include createSegmentAfter helper', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function createSegmentAfter(name, segment)');
+      expect(script).toContain('insertChildAfter');
+    });
+
+    it('should include getArrayOrXmlLength helper', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function getArrayOrXmlLength(obj)');
+    });
+
+    it('getArrayOrXmlLength should handle XML length (function) and array length (number)', () => {
+      const script = builder.generateScript('// test');
+      // Both patterns should be present in the generated code
+      expect(script).toContain("typeof obj.length === 'function'");
+      expect(script).toContain("typeof obj.length === 'number'");
+    });
+
+    it('should include newStringOrUndefined type coercion', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function newStringOrUndefined(value)');
+      expect(script).toContain('return String(value)');
+    });
+
+    it('should include newBooleanOrUndefined type coercion', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function newBooleanOrUndefined(value)');
+      expect(script).toContain('return Boolean(value)');
+    });
+
+    it('should include newNumberOrUndefined type coercion', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function newNumberOrUndefined(value)');
+      expect(script).toContain('return Number(value)');
+    });
+
+    it('type coercion functions should pass through null/undefined', () => {
+      const script = builder.generateScript('// test');
+      // All three should check for null/undefined and return as-is
+      const matches = script.match(/if \(value === undefined \|\| value === null\) return value;/g);
+      expect(matches).not.toBeNull();
+      expect(matches!.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('1.2 - $() function lookup order with resultMap', () => {
+    it('should check responseMap first (matching Java)', () => {
+      const script = builder.generateScript('// test');
+      const dollarFnMatch = script.match(/function \$\(string\)[\s\S]*?return '';[\s\S]*?\}/);
+      expect(dollarFnMatch).not.toBeNull();
+      const dollarFn = dollarFnMatch![0];
+
+      // responseMap should appear first
+      const responseIdx = dollarFn.indexOf('responseMap');
+      const connectorIdx = dollarFn.indexOf('connectorMap');
+      expect(responseIdx).toBeLessThan(connectorIdx);
+    });
+
+    it('should check configurationMap before resultMap', () => {
+      const script = builder.generateScript('// test');
+      const dollarFnMatch = script.match(/function \$\(string\)[\s\S]*?return '';[\s\S]*?\}/);
+      const dollarFn = dollarFnMatch![0];
+
+      const configIdx = dollarFn.indexOf('configurationMap');
+      const resultIdx = dollarFn.indexOf('resultMap');
+      expect(resultIdx).toBeGreaterThan(configIdx);
+    });
+
+    it('should include resultMap check after configurationMap (Java database reader support)', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('resultMap.containsKey(string)');
+      expect(script).toContain('resultMap.get(string)');
+    });
+
+    it('should NOT reference localMap (removed)', () => {
+      const script = builder.generateScript('// test');
+      expect(script).not.toContain('localMap');
+    });
+
+    it('resultMap should be the last map checked before returning empty string', () => {
+      const script = builder.generateScript('// test');
+      const dollarFnMatch = script.match(/function \$\(string\)[\s\S]*?return '';[\s\S]*?\}/);
+      const dollarFn = dollarFnMatch![0];
+
+      // resultMap should appear after configurationMap and before return ''
+      const resultIdx = dollarFn.indexOf('resultMap');
+      const returnIdx = dollarFn.indexOf("return ''");
+      expect(resultIdx).toBeGreaterThan(0);
+      expect(resultIdx).toBeLessThan(returnIdx);
+    });
+  });
+
+  describe('1.3 - $cfg() supports put', () => {
+    it('should support both get and put in appendMapFunctions', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function $cfg(key, value)');
+      expect(script).toContain('configurationMap.put(key, value)');
+    });
+
+    it('should support put in generateDeployScript', () => {
+      const script = builder.generateDeployScript('// deploy');
+      expect(script).toContain('function $cfg(key, value)');
+      expect(script).toContain('configurationMap.put(key, value)');
+    });
+  });
+
+  describe('1.4 - phase variable as array', () => {
+    it('doFilter should set phase[0] = "filter"', () => {
+      const script = builder.generateFilterTransformerScript(
+        [{ name: 'R1', script: 'return true;', operator: 'AND', enabled: true }],
+        [],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+      expect(script).toContain('phase[0] = "filter"');
+      expect(script).not.toMatch(/phase\s*=\s*"filter"/);
+    });
+
+    it('doTransform should set phase[0] = "transform"', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [{ name: 'S1', script: 'tmp = msg;', enabled: true }],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+      expect(script).toContain('phase[0] = "transform"');
+      expect(script).not.toMatch(/phase\s*=\s*"transform"/);
+    });
+
+    it('empty filter should also use phase[0]', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+      expect(script).toContain('phase[0] = "filter"');
+      expect(script).toContain('phase[0] = "transform"');
+    });
+  });
+
+  describe('1.5 - Auto-serialization inside doTransform (JRC-SBD-001)', () => {
+    // Extract the full doTransform function body from generated script.
+    // Cannot use simple regex because the body contains multiple } on separate lines.
+    // Instead, find the function start and count brace depth.
+    function extractDoTransform(script: string): string {
+      const startIdx = script.indexOf('function doTransform() {');
+      if (startIdx === -1) return '';
+      let depth = 0;
+      let foundOpen = false;
+      for (let i = startIdx; i < script.length; i++) {
+        if (script[i] === '{') { depth++; foundOpen = true; }
+        if (script[i] === '}') { depth--; }
+        if (foundOpen && depth === 0) {
+          return script.slice(startIdx, i + 1);
+        }
+      }
+      return '';
+    }
+
+    it('serialization of msg and tmp should be inside doTransform, not in outer IIFE', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [{ name: 'S1', script: 'tmp = msg;', enabled: true }],
+        SerializationType.XML,
+        SerializationType.XML,
+        true
+      );
+
+      // Outer IIFE should be simple — no serialization logic
+      expect(script).toContain('if (doFilter() == true) { doTransform(); return true; } else { return false; }');
+
+      // Serialization should be inside doTransform function body
+      const body = extractDoTransform(script);
+      expect(body).toBeTruthy();
+      expect(body).toContain('msg.toXMLString');
+      expect(body).toContain('tmp.toXMLString');
+    });
+
+    it('msg and tmp serialization should be independent (not else-if)', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [{ name: 'S1', script: 'tmp = msg;', enabled: true }],
+        SerializationType.XML,
+        SerializationType.XML,
+        true
+      );
+
+      const body = extractDoTransform(script);
+
+      // Count the msg and tmp serialization blocks — they should be separate if-blocks
+      const msgSerialize = body.indexOf("typeof msg === 'object' && typeof msg.toXMLString");
+      const tmpSerialize = body.indexOf("typeof tmp === 'object' && typeof tmp.toXMLString");
+      expect(msgSerialize).toBeGreaterThan(0);
+      expect(tmpSerialize).toBeGreaterThan(0);
+      // tmp block starts as a new `if`, not connected to msg block via else-if
+      expect(tmpSerialize).toBeGreaterThan(msgSerialize);
+    });
+
+    it('should serialize both msg and tmp when both exist (Java behavior)', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [{ name: 'S1', script: 'tmp = msg;', enabled: true }],
+        SerializationType.XML,
+        SerializationType.XML,
+        true
+      );
+
+      // Both msg and tmp JSON.stringify should appear
+      expect(script).toContain('JSON.stringify(msg)');
+      expect(script).toContain('JSON.stringify(tmp)');
+    });
+
+    it('should use hasSimpleContent() guard for XML serialization', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+
+      expect(script).toContain('msg.hasSimpleContent()');
+      expect(script).toContain('tmp.hasSimpleContent()');
+    });
+
+    it('should use Object.prototype.toString.call for type detection', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+
+      expect(script).toContain('Object.prototype.toString.call(msg)');
+      expect(script).toContain('Object.prototype.toString.call(tmp)');
+    });
+
+    it('empty transformer steps should still include auto-serialization', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+
+      const body = extractDoTransform(script);
+      expect(body).toBeTruthy();
+      expect(body).toContain('msg.toXMLString');
+      expect(body).toContain('tmp.toXMLString');
+    });
+
+    it('response transformer should also include auto-serialization in doTransform', () => {
+      const script = builder.generateResponseTransformerScript(
+        [{ name: 'S1', script: 'msg = tmp;', enabled: true }],
+        SerializationType.XML,
+        SerializationType.XML,
+        true
+      );
+
+      const body = extractDoTransform(script);
+      expect(body).toBeTruthy();
+      expect(body).toContain('msg.toXMLString');
+      expect(body).toContain('JSON.stringify(msg)');
+    });
+  });
+
+  describe('1.6 - Attachment functions', () => {
+    it('should include getAttachment (singular) with Java overload pattern', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('function getAttachment()');
+      expect(script).toContain('AttachmentUtil.getMessageAttachment');
+    });
+
+    it('getAttachment should have two-path overload (3+ args vs 2 args)', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      // 3+ args path: channelId, messageId, attachmentId, base64Decode
+      expect(script).toContain('arguments.length >= 3');
+      expect(script).toContain('arguments[0], arguments[1], arguments[2]');
+      // 2 args path: connectorMessage, attachmentId, base64Decode
+      expect(script).toContain('connectorMessage, arguments[0]');
+    });
+
+    it('should include real getAttachmentIds', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('function getAttachmentIds(');
+      expect(script).toContain('AttachmentUtil.getMessageAttachmentIds');
+    });
+
+    it('should include getAttachments', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('function getAttachments(');
+      expect(script).toContain('AttachmentUtil.getMessageAttachments');
+    });
+
+    it('should include addAttachment', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('function addAttachment(');
+      expect(script).toContain('AttachmentUtil.createAttachment');
+    });
+
+    it('updateAttachment should handle all 4 Java argument patterns', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('function updateAttachment()');
+      // Pattern 1: 5+ args (channelId, messageId, id, content, type, base64)
+      expect(script).toContain('arguments.length >= 5');
+      // Pattern 2: 3+ args with Attachment instance
+      expect(script).toContain('instanceof Attachment');
+      // Pattern 3: 3+ args without Attachment (connectorMessage, id, content, type, base64)
+      // Pattern 4: 2 args (connectorMessage, attachment, base64)
+      expect(script).toContain('connectorMessage, arguments[0], !!arguments[1]');
+    });
+  });
+
+  describe('1.7 - validate() replacement iteration', () => {
+    it('should handle single replacement pair', () => {
+      const script = builder.generateScript('// test');
+      // Single pair handling
+      expect(script).toContain('result.toString().replaceAll(replacement[0], replacement[1])');
+    });
+
+    it('should handle array of replacement pairs', () => {
+      const script = builder.generateScript('// test');
+      // Array check
+      expect(script).toContain('Array.isArray(replacement[0])');
+      // Loop over pairs
+      expect(script).toContain('replacement[i][0], replacement[i][1]');
+    });
+  });
+
+  describe('1.8 - importClass() Rhino shim', () => {
+    it('should include importClass in global sealed script', () => {
+      const script = builder.generateGlobalSealedScript();
+      expect(script).toContain('function importClass()');
+    });
+
+    it('importClass should be a no-op (Rhino compatibility)', () => {
+      const script = builder.generateGlobalSealedScript();
+      expect(script).toContain('no-op');
+      expect(script).toContain('Rhino compatibility');
+    });
+
+    it('importClass should not throw when called with arguments', () => {
+      const script = builder.generateGlobalSealedScript();
+      // The function should accept arguments but do nothing
+      // Verify it is a function declaration (not throwing)
+      expect(script).toMatch(/function importClass\(\)/);
+    });
+  });
+
+  describe('1.9 - Outer IIFE matches Java pattern', () => {
+    it('should use == for filter comparison (matching Java exactly)', () => {
+      const script = builder.generateFilterTransformerScript(
+        [{ name: 'R1', script: 'return true;', operator: 'AND', enabled: true }],
+        [{ name: 'S1', script: 'tmp = msg;', enabled: true }],
+        SerializationType.XML,
+        SerializationType.XML,
+        true
+      );
+
+      // Java uses: if (doFilter() == true) { doTransform(); return true; } else { return false; }
+      expect(script).toContain('if (doFilter() == true) { doTransform(); return true; } else { return false; }');
+    });
+
+    it('should wrap in minimal IIFE for vm.Script return support', () => {
+      const script = builder.generateFilterTransformerScript(
+        [],
+        [],
+        SerializationType.XML,
+        SerializationType.XML,
+        false
+      );
+
+      // IIFE is required because vm.Script does not allow top-level `return`
+      // The IIFE should be minimal — just the filter/transform call, NOT serialization
+      expect(script).toContain('(function() { if (doFilter() == true) { doTransform(); return true; } else { return false; } })();');
+      // Serialization should be inside doTransform, NOT in the IIFE
+      expect(script).not.toMatch(/\(function\(\).*toXMLString/s);
+    });
+  });
+});

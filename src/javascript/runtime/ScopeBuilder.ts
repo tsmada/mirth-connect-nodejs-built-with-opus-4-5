@@ -27,6 +27,69 @@ import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Message } from '../../model/Message.js';
 import { Status } from '../../model/Status.js';
 
+// Real userutil implementations (replace placeholders)
+import { VMRouter as RealVMRouter } from '../userutil/VMRouter.js';
+import { AlertSender as RealAlertSender } from '../userutil/AlertSender.js';
+import { ValueReplacer } from '../../util/ValueReplacer.js';
+
+/**
+ * Stub VMRouter used when controllers aren't initialized yet (tests, early startup).
+ * Falls back to the real VMRouter once controllers are wired via setChannelController/setEngineController.
+ */
+class StubVMRouter {
+  routeMessage(_channelName: string, _message: string): void {
+    console.warn('[ROUTER] VMRouter not initialized - controllers not set');
+  }
+  routeMessageByChannelId(_channelId: string, _message: string): void {
+    console.warn('[ROUTER] VMRouter not initialized - controllers not set');
+  }
+}
+
+/**
+ * Create VMRouter, falling back to stub if controllers aren't initialized
+ */
+function createVMRouter(): RealVMRouter | StubVMRouter {
+  try {
+    return new RealVMRouter();
+  } catch {
+    return new StubVMRouter();
+  }
+}
+
+// Userutil classes (Java: importPackage)
+import { DatabaseConnectionFactory } from '../userutil/DatabaseConnectionFactory.js';
+import { DatabaseConnection } from '../userutil/DatabaseConnection.js';
+import { ContextFactory } from '../userutil/ContextFactory.js';
+import { FileUtil } from '../userutil/FileUtil.js';
+import { HTTPUtil } from '../userutil/HTTPUtil.js';
+import { DateUtil } from '../userutil/DateUtil.js';
+import { SMTPConnectionFactory } from '../userutil/SMTPConnectionFactory.js';
+import { SMTPConnection } from '../userutil/SMTPConnection.js';
+import { UUIDGenerator } from '../userutil/UUIDGenerator.js';
+import { RawMessage } from '../userutil/RawMessage.js';
+import { ResponseFactory } from '../userutil/ResponseFactory.js';
+import { ImmutableResponse } from '../userutil/ImmutableResponse.js';
+import { NCPDPUtil } from '../userutil/NCPDPUtil.js';
+import { DICOMUtil } from '../userutil/DICOMUtil.js';
+import { AttachmentUtil } from '../userutil/AttachmentUtil.js';
+import { ChannelUtil } from '../userutil/ChannelUtil.js';
+import { Attachment } from '../userutil/Attachment.js';
+import { DestinationSet } from '../userutil/DestinationSet.js';
+import { MirthCachedRowSet } from '../userutil/MirthCachedRowSet.js';
+import { Future } from '../userutil/Future.js';
+
+// Wave 8 userutil classes (Java: com.mirth.connect.userutil)
+import { XmlUtil } from '../userutil/XmlUtil.js';
+import { JsonUtil } from '../userutil/JsonUtil.js';
+import { Lists, ListBuilder } from '../userutil/Lists.js';
+import { Maps, MapBuilder } from '../userutil/Maps.js';
+
+// ACK generation (Java: com.mirth.connect.server.userutil.ACKGenerator)
+import { ACKGenerator } from '../../util/ACKGenerator.js';
+
+// Response class (Java: com.mirth.connect.userutil.Response)
+import { Response } from '../../model/Response.js';
+
 // Module-level secrets function setter (same pattern as VMRouter)
 let secretsFn: ((key: string) => string | undefined) | null = null;
 
@@ -55,43 +118,6 @@ export const defaultLogger: ScriptLogger = {
 };
 
 /**
- * Alert sender placeholder
- */
-export class AlertSender {
-  private channelId: string;
-
-  constructor(channelId: string) {
-    this.channelId = channelId;
-  }
-
-  sendAlert(message: string): void {
-    console.warn(`[ALERT] Channel ${this.channelId}: ${message}`);
-  }
-}
-
-/**
- * Router placeholder for message routing
- */
-export class VMRouter {
-  routeMessage(channelName: string, _message: string): void {
-    console.info(`[ROUTER] Routing to ${channelName}`);
-  }
-
-  routeMessageByChannelId(channelId: string, _message: string): void {
-    console.info(`[ROUTER] Routing to channel ${channelId}`);
-  }
-}
-
-/**
- * Template value replacer placeholder
- */
-export class TemplateValueReplacer {
-  replaceValues(template: string, _map: MirthMap): string {
-    return template;
-  }
-}
-
-/**
  * Context for script execution
  */
 export interface ScriptContext {
@@ -114,8 +140,8 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
   return {
     // Utilities
     logger,
-    router: new VMRouter(),
-    replacer: new TemplateValueReplacer(),
+    router: createVMRouter(),
+    replacer: new ValueReplacer(),
 
     // Global maps
     globalMap: GlobalMap.getInstance(),
@@ -138,7 +164,8 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     // E4X transpiler (for dynamic script execution)
     transpileE4X,
 
-    // Status enum values
+    // Status enum — both as object and individual values (Java exposes both patterns)
+    Status,
     RECEIVED: Status.RECEIVED,
     FILTERED: Status.FILTERED,
     TRANSFORMED: Status.TRANSFORMED,
@@ -146,6 +173,41 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     QUEUED: Status.QUEUED,
     ERROR: Status.ERROR,
     PENDING: Status.PENDING,
+
+    // Response class (Java: com.mirth.connect.userutil.Response)
+    Response,
+
+    // ACK generator (Java: com.mirth.connect.server.userutil.ACKGenerator)
+    ACKGenerator,
+
+    // Userutil classes (Java: importPackage(Packages.com.mirth.connect.server.userutil))
+    DatabaseConnectionFactory,
+    DatabaseConnection,
+    ContextFactory,
+    FileUtil,
+    HTTPUtil,
+    DateUtil,
+    SMTPConnectionFactory,
+    SMTPConnection,
+    UUIDGenerator,
+    RawMessage,
+    ResponseFactory,
+    ImmutableResponse,
+    NCPDPUtil,
+    DICOMUtil,
+    AttachmentUtil,
+    ChannelUtil,
+    Attachment,
+    MirthCachedRowSet,
+    Future,
+
+    // Userutil classes (Java: importPackage(Packages.com.mirth.connect.userutil))
+    XmlUtil,
+    JsonUtil,
+    Lists,
+    ListBuilder,
+    Maps,
+    MapBuilder,
 
     // Console for debugging
     console,
@@ -185,7 +247,7 @@ export function buildChannelScope(context: ScriptContext): Scope {
   scope.$gc = globalChannelMap;
 
   // Alerts
-  scope.alerts = new AlertSender(context.channelId);
+  scope.alerts = new RealAlertSender(context.channelId);
 
   return scope;
 }
@@ -255,7 +317,12 @@ export function buildFilterTransformerScope(
 
   // Template and phase
   scope.template = template;
-  scope.phase = phase;
+  scope.phase = [phase];  // Array with one element, matching Java's String[] phase
+
+  // Inject destinationSet for source connector scripts
+  if (context.metaDataId === 0 || context.metaDataId === undefined) {
+    scope.destinationSet = new DestinationSet(connectorMessage as any);
+  }
 
   return scope;
 }
@@ -272,6 +339,11 @@ export function buildPreprocessorScope(
 
   // Raw message is available as 'message'
   scope.message = rawMessage;
+
+  // Inject destinationSet for preprocessor
+  if (context.metaDataId === 0 || context.metaDataId === undefined) {
+    scope.destinationSet = new DestinationSet(connectorMessage as any);
+  }
 
   return scope;
 }
@@ -406,7 +478,7 @@ export class ScopeBuilder {
    */
   withFilterTransformer(template: string, phase: string): this {
     this.scope.template = template;
-    this.scope.phase = phase;
+    this.scope.phase = [phase];
     return this;
   }
 
