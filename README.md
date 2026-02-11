@@ -57,12 +57,12 @@ Container-native clustering with health probes, block-allocated sequences, and d
 |----------|----------|
 | **Connectors** | HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, SMTP, JMS, WebService (SOAP), DICOM |
 | **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, HL7v3 (CDA), NCPDP, DICOM |
-| **JavaScript** | E4X transpilation, Mirth scope variables ($c, $s, $g, $r, etc.), VMRouter, DestinationSet, FileUtil, HTTPUtil, DICOMUtil |
+| **JavaScript** | E4X transpilation (incl. attribute write, XML append), Mirth scope variables ($c, $s, $g, $r, etc.), ScriptBuilder helpers (type coercion, auto-serialization), VMRouter, DestinationSet, FileUtil, HTTPUtil, DICOMUtil, XmlUtil, JsonUtil |
 | **API** | Full REST API compatible with Mirth Administrator (14 servlets) with message import/export and attachments |
 | **Logging** | Centralized Winston-based logging with per-component debug control, runtime log level API, text/JSON output, file rotation |
 | **Plugins** | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
 | **CLI Tool** | Terminal-based monitor and management utility |
-| **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, ContextFactory |
+| **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, ContextFactory, XmlUtil, JsonUtil, Lists, Maps |
 | **Shadow Mode** | Safe read-only takeover with progressive per-channel cutover from Java Mirth |
 | **Cluster** | Container-native horizontal scaling, health probes, block-allocated sequences, database-backed global maps, graceful shutdown |
 | **Artifact Management** | Git-backed config management: decompose/assemble, export/import, structural diff, env promotion, delta deploy |
@@ -195,8 +195,8 @@ See the full [CLI Reference](docs/cli-reference.md) for all commands, options, k
 │  Connectors        │  Data Types      │  JavaScript Runtime    │
 │  HTTP, MLLP, TCP   │  HL7v2, XML      │  E4X Transpiler        │
 │  JDBC, File, SFTP  │  JSON, Raw       │  Scope Builder         │
-│  SMTP, JMS, SOAP   │  EDI, HL7v3      │  28 Userutil Classes   │
-│  DICOM             │  NCPDP, DICOM    │                        │
+│  SMTP, JMS, SOAP   │  EDI, HL7v3      │  32 Userutil Classes   │
+│  DICOM             │  NCPDP, DICOM    │  Script Builder        │
 ├─────────────────────────────────────────────────────────────────┤
 │  Artifact Management (Git-Backed Config-as-Code)               │
 │  Decompose/Assemble │ Git Sync │ Env Vars │ Promote │ Deploy   │
@@ -215,7 +215,7 @@ See the full [CLI Reference](docs/cli-reference.md) for all commands, options, k
 |-----------|----------|-------------|
 | **Donkey Engine** | `src/donkey/` | Message processing pipeline (Statistics, Queues, DestinationChain, ResponseSelector) |
 | **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM, SMTP, JMS, WebService, DICOM) |
-| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 28 userutil classes |
+| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 32 userutil classes, ScriptBuilder with Java-parity helpers |
 | **Data Types** | `src/datatypes/` | 9 types: HL7v2, XML, JSON, Raw, Delimited, EDI/X12, HL7v3, NCPDP, DICOM |
 | **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (14 servlets) |
 | **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
@@ -231,7 +231,7 @@ The REST API mirrors the Mirth Connect Server API with 14 fully-implemented serv
 
 ## JavaScript Runtime
 
-E4X transpilation, Mirth scope variables ($c, $s, $g, etc.), and message status codes. See the full [JavaScript Runtime Reference](docs/javascript-runtime.md).
+Full E4X transpilation (including attribute write, XML append, named property deletion), Mirth scope variables ($c, $s, $g, $r, $cfg, etc.), ScriptBuilder with Java-parity helper functions (type coercion, auto-serialization, validate replacement), and 32 userutil classes injected into script scope. See the full [JavaScript Runtime Reference](docs/javascript-runtime.md).
 
 ## Development
 
@@ -240,7 +240,7 @@ E4X transpilation, Mirth scope variables ($c, $s, $g, etc.), and message status 
 | `npm run build` | Compile TypeScript |
 | `npm run dev` | Development server with hot reload |
 | `npm start` | Production server |
-| `npm test` | Run test suite (2,976 tests) |
+| `npm test` | Run test suite (4,505 tests) |
 | `npm run test:coverage` | Generate coverage report |
 | `npm run lint` | Check code style |
 | `npm run typecheck` | Type check without compiling |
@@ -249,7 +249,7 @@ See the full [Development Guide](docs/development-guide.md) for project structur
 
 ## Testing & Validation
 
-**2,976 tests passing** (2,559 core + 417 artifact). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). See the full [Development Guide](docs/development-guide.md#validation-suite).
+**4,505 tests passing** (2,559 core + 417 artifact + 1,529 parity/unit). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). See the full [Development Guide](docs/development-guide.md#validation-suite).
 
 ## Version Management
 
@@ -267,7 +267,7 @@ Uses the existing Mirth MySQL schema with no modifications in takeover mode. Nod
 ```
 Error: Unexpected token in E4X expression
 ```
-Ensure your scripts don't mix E4X with template literals. The transpiler handles standard E4X patterns.
+Ensure your scripts don't mix E4X with template literals. The transpiler handles standard E4X patterns including XML literals, attribute read/write (`.@attr`), descendant access (`..`), `for each...in`, XML append (`+=`), and named property deletion (`delete msg.PID['PID.6']`).
 
 **Database Connection Failed**
 ```

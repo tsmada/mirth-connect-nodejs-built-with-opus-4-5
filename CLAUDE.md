@@ -521,6 +521,16 @@ ALL user scripts may contain E4X. Always transpile before execution:
 const transpiled = e4xTranspiler.transpile(userScript);
 ```
 
+**Supported E4X features:**
+- XML literals: `<tag/>` → `XMLProxy.create('<tag/>')`
+- Descendant access: `msg..PID` → `msg.descendants('PID')`
+- Attribute read: `msg.@version` → `msg.attr('version')`
+- Attribute write: `msg.@version = "2.5"` → `msg.setAttr('version', "2.5")`
+- XML append: `xml += <tag/>` → `xml = xml.append(XMLProxy.create('<tag/>'))`
+- `for each...in` loops
+- `delete msg.PID['PID.6']` (named property deletion via `removeChild()`)
+- `xml.text()`, `xml.elements()` (E4X built-in methods)
+
 ### Message Status Codes
 R=RECEIVED, F=FILTERED, T=TRANSFORMED, S=SENT, Q=QUEUED, E=ERROR, P=PENDING
 
@@ -781,13 +791,13 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 |----------|----------|--------|-------|
 | 0 | Export Compatibility | ✅ Passing | Channel round-trip works |
 | 1 | MLLP Message Flow | ✅ Passing | 3/3 tests, minor ACK format gaps |
-| 2 | JavaScript Runtime | ✅ Passing | E4X, userutil, XSLT verified (Wave 2) |
+| 2 | JavaScript Runtime | ✅ Passing | E4X, userutil, XSLT verified (Wave 2); parity fixes (Wave 8) |
 | 3 | Connectors | ✅ Passing | HTTP, TCP, File, JDBC, SMTP, JMS, WebService, DICOM (Wave 3-5) |
 | 4 | Data Types | ✅ Passing | HL7v2, XML, JSON, Delimited, EDI, HL7v3, NCPDP, DICOM (Wave 3-5) |
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 2,976 passing** (2,559 core + 417 artifact management)
+**Total Tests: 4,505 passing** (2,559 core + 417 artifact management + 1,529 parity/unit)
 
 ### Quick Validation Scripts
 
@@ -1591,6 +1601,22 @@ Parameters:
 
 See `.claude/agents/channel-deployer.md` for full specification.
 
+### js-runtime-checker
+Detect Java↔Node.js JavaScript runtime parity gaps — E4X transpilation errors, scope variable mismatches, userutil API drift, and script builder divergences.
+
+**Use for**: E4X transpiler audits, scope variable mismatch detection, userutil API comparison, script builder divergence analysis, sandbox security review.
+
+**Quick start**:
+```
+Use the js-runtime-checker agent to scan for all JavaScript runtime parity gaps.
+Parameters:
+- scope: full|e4x|scope|userutil|scripts
+- severity: critical|major|minor
+- bugCategories: ["e4x-transpilation-gap", "scope-variable-mismatch", "userutil-api-mismatch", "script-builder-divergence", "type-coercion-difference", "missing-userutil-method", "sandbox-escape-risk", "error-context-loss", "xml-namespace-handling", "script-timeout-behavior"]
+```
+
+See `.claude/agents/js-runtime-checker.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)
@@ -1618,16 +1644,16 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
          └──► [Worktree 8: feature/utils]             → Agent 8 ✅
 ```
 
-### Results (Combined Waves 1-7)
+### Results (Combined Waves 1-8)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 37 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7) |
-| Agents completed | 37 (100%) |
-| Total commits | 135+ |
-| Lines added | 65,800+ |
-| Tests added | 1,808+ |
-| Total tests passing | 2,976 |
+| Agents spawned | 41 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8) |
+| Agents completed | 41 (100%) |
+| Total commits | 140+ |
+| Lines added | 67,500+ |
+| Tests added | 1,869+ |
+| Total tests passing | 4,505 |
 
 ### Wave Summary
 
@@ -1640,7 +1666,8 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 | 5 | 4 | ~11,500 | 141 | 5 hrs | HL7v3, NCPDP, DICOM, validation P5 |
 | 6 | 4 | ~1,000 | 16 | 12 min | **Dual Operational Modes** (SchemaManager, mode integration) |
 | 7 | 7 | ~10,600 | 417 | ~30 min | **Git-Backed Artifact Management** (decomposer, git, promotion, API, CLI) |
-| **Total** | **37** | **~65,800** | **1,808** | **~18 hrs** | |
+| 8 | 4 | ~1,700 | 61 | ~20 min | **JavaScript Runtime Parity** (ScriptBuilder, ScopeBuilder, E4X, XMLProxy, XmlUtil, JsonUtil, Lists, Maps) |
+| **Total** | **41** | **~67,500** | **1,869** | **~18.5 hrs** | |
 
 ### Components Ported
 
@@ -2039,18 +2066,40 @@ Always trace the full lifecycle: construction -> wiring -> start -> runtime use.
 - D_ARTIFACT_SYNC table in SchemaManager
 - 14 test suites, 417 tests passing
 
+### Wave 8: JavaScript Runtime Parity Fixes (2026-02-10)
+
+**Closes 17 CRITICAL/MAJOR gaps between Java Mirth Rhino/E4X runtime and Node.js port.**
+
+4 parallel agents coordinated via team "js-runtime-parity". All modifications to shared files (ScriptBuilder, ScopeBuilder, E4XTranspiler, XMLProxy) done by dedicated agents.
+
+| Agent | Scope | Changes | Tests | Duration |
+|-------|-------|---------|-------|----------|
+| scriptbuilder-agent | ScriptBuilder.ts | 7 fixes (helpers, $(), $cfg, phase, serialization, attachments, validate) | 27 | ~5 min |
+| scopebuilder-agent | ScopeBuilder.ts | 4 fixes (19 userutil imports, destinationSet, phase array, real VMRouter) | 19 | ~5 min |
+| e4x-agent | E4XTranspiler.ts + XMLProxy.ts | 5 fixes (attr write, += append, deleteProperty, text, elements) | 11 | ~5 min |
+| userutil-agent | 4 new files + index.ts | XmlUtil, JsonUtil, Lists/ListBuilder, Maps/MapBuilder | 4 suites | ~5 min |
+
+**Key fixes:**
+- ScriptBuilder: `$()` lookup order matches Java (responseMap first, configurationMap last), `$cfg()` supports put, `phase[0]` array syntax, auto-serialization after doTransform(), attachment functions delegate to AttachmentUtil, type coercion helpers
+- ScopeBuilder: 19 userutil classes injected into scope (was missing `importPackage()` equivalent), `destinationSet` injected for source connectors, placeholder VMRouter/AlertSender replaced with real implementations
+- E4XTranspiler: Attribute write `.@attr = value` → `.setAttr()`, XML append `+=` operator
+- XMLProxy: Named property `delete` via `removeChild()`, `text()` and `elements()` E4X methods
+- New userutil: XmlUtil (prettyPrint, encode/decode, toJson), JsonUtil (prettyPrint, escape, toXml), Lists/Maps (fluent builders matching Java Collections-style API)
+- 8 new test files, 61 parity tests, 4,505 total tests passing
+
 ### Completion Status
 
-All Waves 1-7 are complete. The porting project has reached production-ready status:
+All Waves 1-8 are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-7):**
-- ✅ 28/28 Userutil classes (100%)
+**Completed (Waves 1-8):**
+- ✅ 32/32 Userutil classes (100%) — including XmlUtil, JsonUtil, Lists/ListBuilder, Maps/MapBuilder
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
 - ✅ 15/15 Plugins (JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, XSLT, ServerLog, DashboardStatus, DataPruner, etc.)
 - ✅ All Priority 0-6 validation scenarios
 - ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 - ✅ **Git-Backed Artifact Management** — Decompose/assemble, git sync, env promotion, delta deploy, structural diff (417 tests)
+- ✅ **JavaScript Runtime Parity** — ScriptBuilder helpers, $() lookup order, phase array, auto-serialization, E4X attribute write/append, XMLProxy text/elements/removeChild (61 tests)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)
