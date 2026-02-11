@@ -2,6 +2,7 @@
  * Parity tests for XMLProxy — text(), elements(), removeChild(), deleteProperty
  */
 import { XMLProxy } from '../../../src/javascript/e4x/XMLProxy';
+import { transpileE4X } from '../../../src/javascript/e4x/E4XTranspiler';
 
 describe('XMLProxy Parity Fixes', () => {
   const sampleXml = `
@@ -303,6 +304,42 @@ describe('XMLProxy Parity Fixes', () => {
       const xmlStr = xml.toXMLString();
       // Should contain either CDATA or the preserved content
       expect(xmlStr).toContain('keep me');
+    });
+  });
+
+  describe('Wave 11: JRC-ETG-001 - new XMLList() transpilation', () => {
+    it('should transpile new XMLList() to XMLProxy.createList()', () => {
+      const result = transpileE4X('var x = new XMLList();');
+      expect(result).toContain('XMLProxy.createList()');
+      expect(result).not.toContain('new XMLList');
+    });
+
+    it('should transpile new XMLList(str) with argument', () => {
+      const result = transpileE4X('var x = new XMLList("<item/>");');
+      expect(result).toContain('XMLProxy.createList("<item/>"');
+      expect(result).not.toContain('new XMLList');
+    });
+
+    it('should transpile XMLList() as function call', () => {
+      const result = transpileE4X('var x = XMLList();');
+      expect(result).toContain('XMLProxy.createList()');
+    });
+
+    it('should NOT transpile XMLProxy.createList as XMLList', () => {
+      const input = 'var x = XMLProxy.createList();';
+      const result = transpileE4X(input);
+      // Should not double-transform
+      expect(result).toBe(input);
+    });
+
+    it('XMLProxy.createList() should return empty list', () => {
+      const list = XMLProxy.createList();
+      expect(list.length()).toBe(0);
+    });
+
+    it('XMLProxy.createList(str) should parse XML', () => {
+      const list = XMLProxy.createList('<item>hello</item>');
+      expect(list.toString()).toBe('hello');
     });
   });
 });

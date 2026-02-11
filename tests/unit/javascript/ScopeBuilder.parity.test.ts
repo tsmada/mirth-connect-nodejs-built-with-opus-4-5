@@ -6,10 +6,15 @@
 import {
   buildBasicScope,
   buildChannelScope,
+  buildConnectorMessageScope,
   buildFilterTransformerScope,
   buildPreprocessorScope,
   buildPostprocessorScope,
+  buildResponseTransformerScope,
   buildAttachmentScope,
+  buildMessageReceiverScope,
+  buildMessageDispatcherScope,
+  buildBatchProcessorScope,
   ScriptContext,
 } from '../../../src/javascript/runtime/ScopeBuilder';
 import { ConnectorMessage } from '../../../src/model/ConnectorMessage';
@@ -22,7 +27,7 @@ import { XmlUtil } from '../../../src/javascript/userutil/XmlUtil';
 import { JsonUtil } from '../../../src/javascript/userutil/JsonUtil';
 import { Lists, ListBuilder } from '../../../src/javascript/userutil/Lists';
 import { Maps, MapBuilder } from '../../../src/javascript/userutil/Maps';
-import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../src/javascript/userutil/MirthMap';
+import { GlobalMap, ConfigurationMap, GlobalChannelMapStore, ResponseMap } from '../../../src/javascript/userutil/MirthMap';
 
 describe('ScopeBuilder Parity Fixes', () => {
   beforeEach(() => {
@@ -455,6 +460,124 @@ describe('ScopeBuilder Parity Fixes', () => {
         const scope = buildAttachmentScope(context, 'raw', sourceMapData, [], false);
         expect(scope.$s).toBeDefined();
         expect(scope.$s).toBe(scope.sourceMap);
+      });
+    });
+  });
+
+  describe('Wave 11 Parity Fixes (js-runtime-checker scan)', () => {
+    const context: ScriptContext = {
+      channelId: 'test-channel',
+      channelName: 'Test Channel',
+      metaDataId: 0,
+    };
+
+    function createMockConnectorMessage(): ConnectorMessage {
+      return new ConnectorMessage({
+        messageId: 1,
+        metaDataId: 0,
+        channelId: 'test-channel',
+        channelName: 'Test Channel',
+        connectorName: 'Source',
+        serverId: 'server-1',
+        receivedDate: new Date(),
+        status: Status.RECEIVED,
+      });
+    }
+
+    describe('JRC-SVM-001: ResponseMap destinationIdMap wiring', () => {
+      it('buildConnectorMessageScope should pass destinationIdMap to ResponseMap', () => {
+        const cm = createMockConnectorMessage();
+        // Attach a destinationIdMap to the mock
+        const destIdMap = new Map<string, number>([['HTTP Sender', 1], ['File Writer', 2]]);
+        (cm as any).getDestinationIdMap = () => destIdMap;
+
+        const scope = buildConnectorMessageScope(context, cm);
+        const responseMap = scope.responseMap as ResponseMap;
+
+        // ResponseMap should resolve destination names via destinationIdMap
+        responseMap.put('d1', 'response-from-http');
+        expect(responseMap.get('HTTP Sender')).toBe('response-from-http');
+      });
+
+      it('ResponseMap should work even without destinationIdMap', () => {
+        const cm = createMockConnectorMessage();
+        const scope = buildConnectorMessageScope(context, cm);
+        const responseMap = scope.responseMap as ResponseMap;
+
+        responseMap.put('d1', 'some-response');
+        expect(responseMap.get('d1')).toBe('some-response');
+        // Without destinationIdMap, name lookup returns undefined
+        expect(responseMap.get('HTTP Sender')).toBeUndefined();
+      });
+
+      it('$r function shorthand should also use destinationIdMap for lookups', () => {
+        const cm = createMockConnectorMessage();
+        const destIdMap = new Map<string, number>([['Dest A', 3]]);
+        (cm as any).getDestinationIdMap = () => destIdMap;
+
+        const scope = buildConnectorMessageScope(context, cm);
+        const responseMap = scope.responseMap as ResponseMap;
+        responseMap.put('d3', 'dest-a-response');
+
+        // $r is the same ResponseMap instance
+        expect(scope.$r).toBe(responseMap);
+        expect((scope.$r as ResponseMap).get('Dest A')).toBe('dest-a-response');
+      });
+    });
+
+    describe('JRC-SVM-002: Response transformer scope includes template', () => {
+      it('buildResponseTransformerScope should accept and inject template', () => {
+        const cm = createMockConnectorMessage();
+        const response = { status: Status.SENT, statusMessage: 'OK' };
+        const scope = buildResponseTransformerScope(context, cm, response, '<template/>');
+        expect(scope.template).toBe('<template/>');
+      });
+
+      it('buildResponseTransformerScope without template should not set template', () => {
+        const cm = createMockConnectorMessage();
+        const response = { status: Status.SENT };
+        const scope = buildResponseTransformerScope(context, cm, response);
+        expect(scope.template).toBeUndefined();
+      });
+
+      it('response variables should still be injected with template', () => {
+        const cm = createMockConnectorMessage();
+        const response = { status: Status.ERROR, statusMessage: 'Failed', error: 'Timeout' };
+        const scope = buildResponseTransformerScope(context, cm, response, '<tmpl/>');
+        expect(scope.responseStatus).toBe(Status.ERROR);
+        expect(scope.responseStatusMessage).toBe('Failed');
+        expect(scope.responseErrorMessage).toBe('Timeout');
+        expect(scope.template).toBe('<tmpl/>');
+      });
+    });
+
+    describe('JRC-SVM-003: Convenience scope builder methods', () => {
+      it('buildMessageReceiverScope should create channel scope with optional connector message', () => {
+        const cm = createMockConnectorMessage();
+        const scope = buildMessageReceiverScope(context, cm);
+        expect(scope.channelId).toBe('test-channel');
+        expect(scope.connectorMessage).toBe(cm);
+      });
+
+      it('buildMessageReceiverScope without connector message should still have channel context', () => {
+        const scope = buildMessageReceiverScope(context);
+        expect(scope.channelId).toBe('test-channel');
+        expect(scope.connectorMessage).toBeUndefined();
+      });
+
+      it('buildMessageDispatcherScope should create connector message scope', () => {
+        const cm = createMockConnectorMessage();
+        const scope = buildMessageDispatcherScope(context, cm);
+        expect(scope.channelId).toBe('test-channel');
+        expect(scope.connectorMessage).toBe(cm);
+      });
+
+      it('buildBatchProcessorScope should inject custom scope objects', () => {
+        const scopeObjects = { batchReader: { next: () => null }, batchSize: 100 };
+        const scope = buildBatchProcessorScope(context, scopeObjects);
+        expect(scope.channelId).toBe('test-channel');
+        expect(scope.batchReader).toBe(scopeObjects.batchReader);
+        expect(scope.batchSize).toBe(100);
       });
     });
   });

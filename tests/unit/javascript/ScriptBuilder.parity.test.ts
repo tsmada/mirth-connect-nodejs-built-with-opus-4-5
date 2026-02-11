@@ -476,6 +476,97 @@ describe('ScriptBuilder Parity Fixes', () => {
     });
   });
 
+  describe('Wave 11: JRC-SBD-001 - createSegmentAfter matches Java (walks to root)', () => {
+    it('should walk to root using while loop', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('while (msgObj.parent() != undefined) { msgObj = msgObj.parent(); }');
+    });
+
+    it('should use segment[0] for insertChildAfter (E4X XMLList indexing)', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('msgObj.insertChildAfter(segment[0],');
+    });
+
+    it('should return child from root at childIndex + 1', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('return msgObj.children()[segment[0].childIndex() + 1]');
+    });
+  });
+
+  describe('Wave 11: JRC-SBD-002 - getAttachments default matches Java', () => {
+    it('should use !!base64Decode || false (Java default: no decode)', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('!!base64Decode || false');
+      // Should NOT use the old inverted default
+      expect(script).not.toContain('base64Decode !== false');
+    });
+
+    it('getAttachments() with no args should default to false (no decode)', () => {
+      // Verify the pattern: !!undefined || false evaluates to false
+      const fn = new Function('base64Decode', 'return !!base64Decode || false');
+      expect(fn(undefined)).toBe(false);
+      expect(fn(true)).toBe(true);
+      expect(fn(false)).toBe(false);
+    });
+  });
+
+  describe('Wave 11: JRC-SBD-003 - validate() type-checks before replacement', () => {
+    it('should only apply replacements to string or XML types', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain("'string' === typeof result");
+      expect(script).toContain("typeof result.toXMLString === 'function'");
+    });
+
+    it('should NOT apply replacements to non-string/non-XML values (e.g. numbers)', () => {
+      const script = builder.generateScript('// test');
+      // The replacement block should be INSIDE the type check if-block
+      const validateMatch = script.match(/function validate[\s\S]*?^}/m);
+      expect(validateMatch).not.toBeNull();
+      const fn = validateMatch![0];
+      // The type check should appear before replacement iteration
+      const typeCheckIdx = fn.indexOf("'string' === typeof result");
+      const replacementIdx = fn.indexOf('replacement != undefined');
+      expect(typeCheckIdx).toBeGreaterThan(0);
+      expect(replacementIdx).toBeGreaterThan(typeCheckIdx);
+    });
+  });
+
+  describe('Wave 11: JRC-SBD-004 - Attachment functions always included', () => {
+    it('generateScript should include attachment functions even without includeAttachmentFunctions option', () => {
+      // Default builder with NO options
+      const script = builder.generateScript('// test');
+      expect(script).toContain('function getAttachmentIds(');
+      expect(script).toContain('function getAttachments(');
+      expect(script).toContain('function addAttachment(');
+      expect(script).toContain('function updateAttachment()');
+    });
+
+    it('generatePreprocessorScript should include attachment functions', () => {
+      const script = builder.generatePreprocessorScript('// preprocess');
+      expect(script).toContain('function getAttachments(');
+      expect(script).toContain('function addAttachment(');
+    });
+
+    it('generatePostprocessorScript should include attachment functions', () => {
+      const script = builder.generatePostprocessorScript('// postprocess');
+      expect(script).toContain('function getAttachments(');
+      expect(script).toContain('function addAttachment(');
+    });
+
+    it('generateDeployScript should include attachment functions', () => {
+      const script = builder.generateDeployScript('// deploy');
+      expect(script).toContain('function getAttachments(');
+      expect(script).toContain('function addAttachment(');
+    });
+
+    it('generateUndeployScript should include attachment functions', () => {
+      const script = builder.generateUndeployScript('// undeploy');
+      expect(script).toContain('function getAttachments(');
+      expect(script).toContain('function addAttachment(');
+    });
+  });
+
   describe('1.9 - Outer IIFE matches Java pattern', () => {
     it('should use == for filter comparison (matching Java exactly)', () => {
       const script = builder.generateFilterTransformerScript(

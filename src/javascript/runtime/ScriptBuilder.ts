@@ -121,13 +121,11 @@ export class ScriptBuilder {
     // Add map functions
     this.appendMapFunctions(builder);
 
+    // Add attachment functions (always included — matches Java: appendAttachmentFunctions is unconditional)
+    this.appendAttachmentFunctions(builder);
+
     // Add utility functions
     this.appendMiscFunctions(builder);
-
-    // Add attachment functions if requested
-    if (this.options.includeAttachmentFunctions) {
-      this.appendAttachmentFunctions(builder);
-    }
 
     // Add code templates if provided
     if (this.options.codeTemplates?.length) {
@@ -275,6 +273,9 @@ export class ScriptBuilder {
     // Add map functions
     this.appendMapFunctions(builder);
 
+    // Add attachment functions (always included — matches Java)
+    this.appendAttachmentFunctions(builder);
+
     // Add utility functions
     this.appendMiscFunctions(builder);
 
@@ -296,6 +297,9 @@ export class ScriptBuilder {
 
     // Add map functions
     this.appendMapFunctions(builder);
+
+    // Add attachment functions (always included — matches Java)
+    this.appendAttachmentFunctions(builder);
 
     // Add utility functions
     this.appendMiscFunctions(builder);
@@ -319,13 +323,11 @@ export class ScriptBuilder {
     // Add all map functions (matches Java: appendMapFunctions)
     this.appendMapFunctions(builder);
 
+    // Add attachment functions (always included — matches Java)
+    this.appendAttachmentFunctions(builder);
+
     // Add utility functions (matches Java: appendMiscFunctions)
     this.appendMiscFunctions(builder);
-
-    // Add attachment functions if requested
-    if (this.options.includeAttachmentFunctions) {
-      this.appendAttachmentFunctions(builder);
-    }
 
     // Add code templates if provided
     if (this.options.codeTemplates?.length) {
@@ -353,13 +355,11 @@ export class ScriptBuilder {
     // Add all map functions (matches Java: appendMapFunctions)
     this.appendMapFunctions(builder);
 
+    // Add attachment functions (always included — matches Java)
+    this.appendAttachmentFunctions(builder);
+
     // Add utility functions (matches Java: appendMiscFunctions)
     this.appendMiscFunctions(builder);
-
-    // Add attachment functions if requested
-    if (this.options.includeAttachmentFunctions) {
-      this.appendAttachmentFunctions(builder);
-    }
 
     // Add code templates if provided
     if (this.options.codeTemplates?.length) {
@@ -431,17 +431,19 @@ export class ScriptBuilder {
     builder.push(`
 function validate(mapping, defaultValue, replacement) {
   var result = mapping;
-  if (result == undefined || (result != null && result.toString().length == 0)) {
+  if ((result == undefined) || (result.toString().length == 0)) {
     if (defaultValue == undefined) {
       defaultValue = '';
     }
     result = defaultValue;
   }
-  if (replacement != undefined && replacement != null) {
+  if ('string' === typeof result || (typeof result === 'object' && result != null && typeof result.toXMLString === 'function')) {
     result = new String(result.toString());
-    for (var i = 0; i < replacement.length; i++) {
-      var entry = replacement[i];
-      result = result.replace(new RegExp(entry[0], 'g'), entry[1]);
+    if (replacement != undefined && replacement != null) {
+      for (var i = 0; i < replacement.length; i++) {
+        var entry = replacement[i];
+        result = result.replace(new RegExp(entry[0], 'g'), entry[1]);
+      }
     }
   }
   return result;
@@ -520,11 +522,10 @@ function error(message) { logger.error(message); }
     // createSegmentAfter - Insert HL7 segment after existing one
     builder.push(`
 function createSegmentAfter(name, segment) {
-  var newSeg = XMLProxy.create('<' + name + '/>');
-  if (segment && segment.parent() && typeof segment.parent().insertChildAfter === 'function') {
-    segment.parent().insertChildAfter(segment, newSeg);
-  }
-  return newSeg;
+  var msgObj = segment;
+  while (msgObj.parent() != undefined) { msgObj = msgObj.parent(); }
+  msgObj.insertChildAfter(segment[0], XMLProxy.create('<' + name + '></' + name + '>'));
+  return msgObj.children()[segment[0].childIndex() + 1];
 }
 `);
 
@@ -573,7 +574,7 @@ function getAttachmentIds(channelId, messageId) {
 
 function getAttachments(base64Decode) {
   if (typeof AttachmentUtil !== 'undefined') {
-    return AttachmentUtil.getMessageAttachments(connectorMessage, base64Decode !== false);
+    return AttachmentUtil.getMessageAttachments(connectorMessage, !!base64Decode || false);
   }
   return [];
 }

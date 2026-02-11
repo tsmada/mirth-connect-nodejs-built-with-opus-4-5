@@ -157,8 +157,12 @@ export class XMLProxy {
 
   /**
    * Create XMLList (array of XMLProxy)
+   * Accepts optional string argument for parsing (E4X: new XMLList(str))
    */
-  static createList(): XMLProxy {
+  static createList(str?: string): XMLProxy {
+    if (str !== undefined && str !== null && str !== '') {
+      return XMLProxy.create(str);
+    }
     return new XMLProxy([], 'list');
   }
 

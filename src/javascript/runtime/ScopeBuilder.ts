@@ -292,8 +292,9 @@ export function buildConnectorMessageScope(
   scope.connectorMap = connectorMap;
   scope.$co = connectorMap;
 
-  // Response map
-  const responseMap = new ResponseMap(connectorMessage.getResponseMap());
+  // Response map (with destinationIdMap for $r('Destination Name') lookups)
+  const destinationIdMap = (connectorMessage as any).getDestinationIdMap?.() as Map<string, number> | undefined;
+  const responseMap = new ResponseMap(connectorMessage.getResponseMap(), destinationIdMap);
   scope.responseMap = responseMap;
   scope.$r = responseMap;
 
@@ -387,7 +388,8 @@ export function buildPostprocessorScope(
     scope.channelMap = channelMap;
     scope.$c = channelMap;
 
-    const responseMap = new ResponseMap(mergedConnectorMessage.getResponseMap());
+    const postDestIdMap = (mergedConnectorMessage as any).getDestinationIdMap?.() as Map<string, number> | undefined;
+    const responseMap = new ResponseMap(mergedConnectorMessage.getResponseMap(), postDestIdMap);
     scope.responseMap = responseMap;
     scope.$r = responseMap;
   }
@@ -406,7 +408,8 @@ export function buildPostprocessorScope(
 export function buildResponseTransformerScope(
   context: ScriptContext,
   connectorMessage: ConnectorMessage,
-  response: { status: Status; statusMessage?: string; error?: string }
+  response: { status: Status; statusMessage?: string; error?: string },
+  template?: string
 ): Scope {
   const scope = buildConnectorMessageScope(context, connectorMessage);
 
@@ -415,6 +418,11 @@ export function buildResponseTransformerScope(
   scope.responseStatus = response.status;
   scope.responseStatusMessage = response.statusMessage ?? '';
   scope.responseErrorMessage = response.error ?? '';
+
+  // Template for response transformer (Java: add("template", scope, template))
+  if (template !== undefined) {
+    scope.template = template;
+  }
 
   return scope;
 }
@@ -493,6 +501,49 @@ export function syncMapsToConnectorMessage(
       targetMap.set(key, value);
     }
   }
+}
+
+/**
+ * Build scope for source connector receiver scripts (e.g., onMessageReceived)
+ * Java: JavaScriptScopeUtil.getMessageReceiverScope()
+ */
+export function buildMessageReceiverScope(
+  context: ScriptContext,
+  connectorMessage?: ConnectorMessage
+): Scope {
+  const scope = buildChannelScope(context);
+  if (connectorMessage) {
+    Object.assign(scope, buildConnectorMessageScope(context, connectorMessage));
+  }
+  return scope;
+}
+
+/**
+ * Build scope for destination connector dispatcher scripts (e.g., onMessageSent)
+ * Java: JavaScriptScopeUtil.getMessageDispatcherScope()
+ */
+export function buildMessageDispatcherScope(
+  context: ScriptContext,
+  connectorMessage: ConnectorMessage
+): Scope {
+  return buildConnectorMessageScope(context, connectorMessage);
+}
+
+/**
+ * Build scope for batch processing scripts with custom scope objects
+ * Java: JavaScriptScopeUtil.getBatchProcessorScope()
+ */
+export function buildBatchProcessorScope(
+  context: ScriptContext,
+  scopeObjects: Record<string, unknown>
+): Scope {
+  const scope = buildBasicScope(context.logger);
+  for (const [key, value] of Object.entries(scopeObjects)) {
+    scope[key] = value;
+  }
+  scope.channelId = context.channelId;
+  scope.channelName = context.channelName;
+  return scope;
 }
 
 /**

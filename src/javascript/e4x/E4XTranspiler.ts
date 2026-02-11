@@ -466,8 +466,17 @@ export class E4XTranspiler {
   /**
    * Transform: new XML(string) or XML(string)
    * To: XMLProxy.create(string)
+   *
+   * Transform: new XMLList(string) or XMLList(string)
+   * To: XMLProxy.createList(string)
    */
   private transpileXMLConstructor(code: string): string {
+    // Pattern: new XMLList(...)
+    code = code.replace(/new\s+XMLList\s*\(/g, 'XMLProxy.createList(');
+
+    // Pattern: XMLList(...) as function call (not preceded by new or .)
+    code = code.replace(/(?<![\w.])XMLList\s*\((?!Proxy)/g, 'XMLProxy.createList(');
+
     // Pattern: new XML(...)
     code = code.replace(/new\s+XML\s*\(/g, 'XMLProxy.create(');
 
