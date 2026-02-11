@@ -422,16 +422,20 @@ export function buildPostprocessorScope(
 export function buildResponseTransformerScope(
   context: ScriptContext,
   connectorMessage: ConnectorMessage,
-  response: { status: Status; statusMessage?: string; error?: string },
+  response: Response | { status: Status; statusMessage?: string; error?: string },
   template?: string
 ): Scope {
   const scope = buildConnectorMessageScope(context, connectorMessage);
 
-  // Response data
-  scope.response = response;
-  scope.responseStatus = response.status;
-  scope.responseStatusMessage = response.statusMessage ?? '';
-  scope.responseErrorMessage = response.error ?? '';
+  // JRC-SBD-014: Wrap response in ImmutableResponse (Java: addResponse wraps in ImmutableResponse)
+  // Scripts expect response.getNewMessageStatus() not response.getStatus()
+  const responseObj = response instanceof Response
+    ? response
+    : new Response({ status: response.status, statusMessage: response.statusMessage, error: response.error });
+  scope.response = new ImmutableResponse(responseObj);
+  scope.responseStatus = responseObj.getStatus();
+  scope.responseStatusMessage = responseObj.getStatusMessage();
+  scope.responseErrorMessage = responseObj.getError();
 
   // Template for response transformer (Java: add("template", scope, template))
   if (template !== undefined) {
@@ -555,8 +559,15 @@ export function buildBatchProcessorScope(
   for (const [key, value] of Object.entries(scopeObjects)) {
     scope[key] = value;
   }
-  scope.channelId = context.channelId;
-  scope.channelName = context.channelName;
+  if (context.channelId) {
+    // JRC-SVM-005: Match Java's addChannel() — injects alerts, channelId, channelName, globalChannelMap
+    scope.channelId = context.channelId;
+    scope.channelName = context.channelName;
+    scope.alerts = new RealAlertSender(context.channelId);
+    const globalChannelMap = GlobalChannelMapStore.getInstance().get(context.channelId);
+    scope.globalChannelMap = globalChannelMap;
+    scope.$gc = globalChannelMap;
+  }
   return scope;
 }
 

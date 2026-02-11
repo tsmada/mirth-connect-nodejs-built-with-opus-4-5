@@ -35,6 +35,8 @@ import {
 } from './ScopeBuilder.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Message } from '../../model/Message.js';
+import { Response } from '../../model/Response.js';
+import { Status } from '../../model/Status.js';
 
 /**
  * Script execution result
@@ -199,6 +201,29 @@ export class JavaScriptExecutor {
     // Sync maps back to connector message
     if (result.success) {
       syncMapsToConnectorMessage(scope, connectorMessage);
+
+      // JRC-SBD-012: Read transformed data back from VM scope
+      // Java: JavaScriptScopeUtil.getTransformedDataFromScope() reads scope["tmp"] (if template)
+      // or scope["msg"] (otherwise) and returns the serialized string to the pipeline.
+      // Without this, transformer modifications to msg are silently discarded.
+      const hasTemplate = !!template;
+      const transformedVarName = hasTemplate ? 'tmp' : 'msg';
+      const transformedData = scope[transformedVarName];
+
+      if (transformedData !== undefined && transformedData !== null) {
+        let transformedString: string;
+        if (typeof transformedData === 'object' && typeof (transformedData as any).toXMLString === 'function') {
+          // XML object — call toXMLString() (Java: Context.toString handles this)
+          transformedString = (transformedData as any).toXMLString();
+        } else if (typeof transformedData === 'object' || Array.isArray(transformedData)) {
+          // Object/Array — JSON.stringify (Java: NativeJSON.stringify)
+          transformedString = JSON.stringify(transformedData);
+        } else {
+          // Primitive (string, number, etc.) — String() conversion
+          transformedString = String(transformedData);
+        }
+        connectorMessage.setTransformedData(transformedString);
+      }
     }
 
     return result;
@@ -303,24 +328,44 @@ export class JavaScriptExecutor {
 
   /**
    * Execute a postprocessor script
+   *
+   * JRC-SBD-013: Java's executePostprocessorScripts() converts the script's return value
+   * into a Response object via getPostprocessorResponse(). If the return value is a Response,
+   * it's used directly. If it's any other non-null value, a new Response(SENT, value) is created.
    */
   executePostprocessor(
     userScript: string,
     message: Message,
     scriptContext: ScriptContext,
+    response?: Response,
     options: ExecutionOptions = {}
-  ): ExecutionResult<void> {
+  ): ExecutionResult<Response | undefined> {
     const timeout = options.timeout ?? this.defaultTimeout;
 
-    // Build scope
-    const scope = buildPostprocessorScope(scriptContext, message);
+    // Build scope (pass optional response from channel postprocessor for global postprocessor)
+    const scope = buildPostprocessorScope(scriptContext, message, response);
 
     // Generate script
     const generatedScript = this.scriptBuilder.generatePostprocessorScript(userScript);
 
     // Create context and execute
     const context = this.createContext(scope);
-    return this.executeScript<void>(generatedScript, context, timeout);
+    const result = this.executeScript<unknown>(generatedScript, context, timeout);
+
+    // Convert return value to Response (Java: getPostprocessorResponse)
+    if (result.success && result.result != null) {
+      if (result.result instanceof Response) {
+        return { ...result, result: result.result };
+      } else {
+        // Any non-null return → Response(SENT, value.toString())
+        return {
+          ...result,
+          result: new Response({ status: Status.SENT, message: String(result.result) }),
+        };
+      }
+    }
+
+    return { ...result, result: undefined };
   }
 
   /**
