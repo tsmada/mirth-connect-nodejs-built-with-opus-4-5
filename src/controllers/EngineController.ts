@@ -30,6 +30,10 @@ import { dashboardStatusController, ConnectionStatusEvent } from '../plugins/das
 import { ConnectionStatusEventType } from '../plugins/dashboardstatus/ConnectionLogItem.js';
 import type { StateChangeEvent } from '../donkey/channel/Channel.js';
 import { isShadowMode, isChannelActive, isChannelPromoted } from '../cluster/ShadowMode.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 /**
  * Deployment metadata for a channel.
@@ -253,7 +257,7 @@ export class EngineController {
 
     // Ensure channel tables exist before deployment
     await ensureChannelTables(channelId);
-    console.log(`Channel tables verified for ${channelConfig.name}`);
+    logger.debug(`Channel tables verified for ${channelConfig.name}`);
 
     try {
       // Build runtime channel with connectors
@@ -305,9 +309,9 @@ export class EngineController {
         }
       }
 
-      console.log(`Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`);
+      logger.info(`Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`);
     } catch (error) {
-      console.error(`Failed to deploy channel ${channelConfig.name}:`, error);
+      logger.error(`Failed to deploy channel ${channelConfig.name}`, error as Error);
       deployedChannels.delete(channelId);
       throw error;
     }
@@ -338,7 +342,7 @@ export class EngineController {
       runtimeChannel.updateCurrentState(DeployedState.UNDEPLOYING);
       await runtimeChannel.stop();
     } catch (error) {
-      console.error(`Error stopping channel ${name}:`, error);
+      logger.error(`Error stopping channel ${name}`, error as Error);
     }
 
     // Clear dashboard state for this channel
@@ -349,7 +353,7 @@ export class EngineController {
 
     // Remove from deployed channels
     deployedChannels.delete(channelId);
-    console.log(`Channel ${name} undeployed`);
+    logger.info(`Channel ${name} undeployed`);
   }
 
   /**
@@ -378,7 +382,7 @@ export class EngineController {
       // Channel.start() handles STARTING -> STARTED state transitions
       // and rollback on failure (STOPPING -> STOPPED)
       await runtimeChannel.start();
-      console.log(`Channel ${name} started`);
+      logger.info(`Channel ${name} started`);
     }
   }
 
@@ -395,7 +399,7 @@ export class EngineController {
     const { runtimeChannel, name } = deployment;
     // Channel.stop() handles STOPPING -> STOPPED state transitions
     await runtimeChannel.stop();
-    console.log(`Channel ${name} stopped`);
+    logger.info(`Channel ${name} stopped`);
   }
 
   /**
@@ -409,7 +413,7 @@ export class EngineController {
 
     const { runtimeChannel, name } = deployment;
     await runtimeChannel.stop();
-    console.log(`Channel ${name} halted`);
+    logger.info(`Channel ${name} halted`);
   }
 
   /**
@@ -425,7 +429,7 @@ export class EngineController {
     const { runtimeChannel, name } = deployment;
     // Channel.pause() handles PAUSING -> PAUSED state transitions
     await runtimeChannel.pause();
-    console.log(`Channel ${name} paused`);
+    logger.info(`Channel ${name} paused`);
   }
 
   /**
@@ -441,7 +445,7 @@ export class EngineController {
     const { runtimeChannel, name } = deployment;
     // Channel.resume() handles STARTING -> STARTED state transitions
     await runtimeChannel.resume();
-    console.log(`Channel ${name} resumed`);
+    logger.info(`Channel ${name} resumed`);
   }
 
   /**
@@ -452,7 +456,7 @@ export class EngineController {
     if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
-    console.log(`Connector ${metaDataId} on channel ${deployment.name} started`);
+    logger.info(`Connector ${metaDataId} on channel ${deployment.name} started`);
   }
 
   /**
@@ -463,7 +467,7 @@ export class EngineController {
     if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
-    console.log(`Connector ${metaDataId} on channel ${deployment.name} stopped`);
+    logger.info(`Connector ${metaDataId} on channel ${deployment.name} stopped`);
   }
 
   /**

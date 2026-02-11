@@ -28,6 +28,11 @@ import { registerServer, startHeartbeat, stopHeartbeat, deregisterServer } from 
 import { setShuttingDown, setStartupComplete } from '../cluster/HealthCheck.js';
 import { getClusterConfig } from '../cluster/ClusterConfig.js';
 import { setShadowMode, isShadowMode } from '../cluster/ShadowMode.js';
+import { initializeLogging, shutdownLogging, getLogger, registerComponent } from '../logging/index.js';
+import { serverLogController } from '../plugins/serverlog/ServerLogController.js';
+
+registerComponent('server', 'Server lifecycle');
+const logger = getLogger('server');
 
 // Global Donkey instance for EngineController to access
 let donkeyInstance: Donkey | null = null;
@@ -84,39 +89,42 @@ export class Mirth {
       throw new Error('Mirth is already running');
     }
 
-    console.warn('Starting Mirth Connect Node.js Runtime...');
+    // Initialize logging as the FIRST thing
+    initializeLogging(serverLogController);
+
+    logger.info('Starting Mirth Connect Node.js Runtime...');
 
     // Initialize database connection pool
-    console.warn('Connecting to database...');
+    logger.info('Connecting to database...');
     initPool(this.config.database);
-    console.warn(`Connected to database at ${this.config.database.host}:${this.config.database.port}`);
+    logger.info(`Connected to database at ${this.config.database.host}:${this.config.database.port}`);
 
     // Initialize schema based on operational mode
     const { detectMode, verifySchema, ensureCoreTables, seedDefaults } = await import('../db/SchemaManager.js');
 
     this.detectedMode = await detectMode();
-    console.warn(`Operational mode: ${this.detectedMode}`);
+    logger.info(`Operational mode: ${this.detectedMode}`);
 
     // Check for shadow mode
     const shadowEnabled = process.env['MIRTH_SHADOW_MODE'] === 'true';
     if (shadowEnabled) {
       setShadowMode(true);
-      console.warn('SHADOW MODE ACTIVE: Read-only observer -- no message processing');
-      console.warn('    Use mirth-cli shadow promote <channel> to activate channels');
+      logger.warn('SHADOW MODE ACTIVE: Read-only observer -- no message processing');
+      logger.info('Use mirth-cli shadow promote <channel> to activate channels');
     }
 
     if (this.detectedMode === 'standalone') {
-      console.warn('Standalone mode: ensuring core tables exist...');
+      logger.info('Standalone mode: ensuring core tables exist...');
       await ensureCoreTables();
       await seedDefaults();
-      console.warn('Core schema initialized');
+      logger.info('Core schema initialized');
     } else {
       // Takeover mode - verify existing schema
       const result = await verifySchema();
       if (!result.compatible) {
         throw new Error(`Schema incompatible: ${result.errors.join(', ')}`);
       }
-      console.warn(`Takeover mode: schema verified (version ${result.version})`);
+      logger.info(`Takeover mode: schema verified (version ${result.version})`);
     }
 
     // Initialize dashboard status controller with server ID
@@ -151,7 +159,7 @@ export class Mirth {
       // Initialize data pruner (scheduled background cleanup)
       await dataPrunerController.initialize();
     } else {
-      console.warn('Shadow mode: VMRouter and DataPruner initialization deferred until cutover');
+      logger.info('Shadow mode: VMRouter and DataPruner initialization deferred until cutover');
     }
 
     // Initialize Secrets Manager (if configured)
@@ -159,7 +167,7 @@ export class Mirth {
     if (secretsProviders) {
       const { SecretsManager } = await import('../secrets/SecretsManager.js');
       await SecretsManager.initialize();
-      console.warn(`Secrets providers initialized: ${secretsProviders}`);
+      logger.info(`Secrets providers initialized: ${secretsProviders}`);
 
       // Wire secrets as ConfigurationMap fallback
       const { createConfigMapFallback } = await import('../secrets/integration/ConfigMapBackend.js');
@@ -173,9 +181,7 @@ export class Mirth {
     }
 
     this.running = true;
-    console.warn(
-      `Mirth Connect started on port ${this.config.httpPort} (HTTP)`
-    );
+    logger.info(`Mirth Connect started on port ${this.config.httpPort} (HTTP)`);
   }
 
   async stop(): Promise<void> {
@@ -183,7 +189,7 @@ export class Mirth {
       return;
     }
 
-    console.warn('Stopping Mirth Connect...');
+    logger.info('Stopping Mirth Connect...');
 
     // Signal health checks to return 503
     setShuttingDown(true);
@@ -200,11 +206,11 @@ export class Mirth {
       for (const channel of channels) {
         try {
           if (channel.getState() !== 'STOPPED') {
-            console.warn(`Stopping channel: ${channel.getName()}`);
+            logger.info(`Stopping channel: ${channel.getName()}`);
             await channel.stop();
           }
         } catch (error) {
-          console.error(`Error stopping channel ${channel.getName()}:`, error);
+          logger.error(`Error stopping channel ${channel.getName()}`, error as Error);
         }
       }
     }
@@ -241,7 +247,8 @@ export class Mirth {
 
     this.running = false;
     setStartupComplete(false);
-    console.warn('Mirth Connect stopped');
+    await shutdownLogging();
+    logger.info('Mirth Connect stopped');
   }
 
   /**
@@ -250,11 +257,11 @@ export class Mirth {
    */
   installSignalHandlers(): void {
     const shutdown = async (signal: string) => {
-      console.warn(`Received ${signal}, initiating graceful shutdown...`);
+      logger.info(`Received ${signal}, initiating graceful shutdown...`);
       try {
         await this.stop();
       } catch (err) {
-        console.error('Error during graceful shutdown:', err);
+        logger.error('Error during graceful shutdown', err as Error);
       }
       process.exit(0);
     };
@@ -315,7 +322,7 @@ export class Mirth {
     setVmRouterChannelController({
       getDeployedChannelByName: (name) => EngineController.getDeployedChannelByName(name),
     });
-    console.warn('VMRouter singletons initialized');
+    logger.info('VMRouter singletons initialized');
   }
 
   /**
@@ -325,7 +332,7 @@ export class Mirth {
   async completeShadowCutover(): Promise<void> {
     this.initializeVMRouter();
     await dataPrunerController.initialize();
-    console.warn('Shadow mode cutover complete: VMRouter and DataPruner initialized');
+    logger.info('Shadow mode cutover complete: VMRouter and DataPruner initialized');
   }
 
   /**
@@ -335,11 +342,11 @@ export class Mirth {
   private async loadAndDeployChannels(): Promise<void> {
     try {
       const channelConfigs = await ChannelController.getAllChannels();
-      console.warn(`Found ${channelConfigs.length} channel(s) in database`);
+      logger.info(`Found ${channelConfigs.length} channel(s) in database`);
 
       for (const channelConfig of channelConfigs) {
         if (!channelConfig.enabled) {
-          console.warn(`Skipping disabled channel: ${channelConfig.name}`);
+          logger.debug(`Skipping disabled channel: ${channelConfig.name}`);
           continue;
         }
 
@@ -347,14 +354,14 @@ export class Mirth {
           // Use EngineController to deploy - this ensures state is tracked
           // in both EngineController.channelStates AND Donkey engine
           await EngineController.deployChannel(channelConfig.id);
-          console.warn(`Deployed channel: ${channelConfig.name} (${channelConfig.id})`);
+          logger.info(`Deployed channel: ${channelConfig.name} (${channelConfig.id})`);
         } catch (channelError) {
-          console.error(`Failed to deploy channel ${channelConfig.name}:`, channelError);
+          logger.error(`Failed to deploy channel ${channelConfig.name}`, channelError as Error);
           // Continue with other channels
         }
       }
     } catch (error) {
-      console.error('Failed to load channels from database:', error);
+      logger.error('Failed to load channels from database', error as Error);
       // Don't throw - allow server to start even if channels fail to load
     }
   }
