@@ -293,10 +293,14 @@ export function buildConnectorMessageScope(
   scope.$co = connectorMap;
 
   // Response map (with destinationIdMap for $r('Destination Name') lookups)
-  const destinationIdMap = (connectorMessage as any).getDestinationIdMap?.() as Map<string, number> | undefined;
+  const destinationIdMap = connectorMessage.getDestinationIdMap();
   const responseMap = new ResponseMap(connectorMessage.getResponseMap(), destinationIdMap);
   scope.responseMap = responseMap;
   scope.$r = responseMap;
+
+  // Override AlertSender with connector-message-aware version
+  // (Java: addConnectorMessage line 142 — passes ImmutableConnectorMessage with channelId + metaDataId + connectorName)
+  scope.alerts = new RealAlertSender(connectorMessage);
 
   // Message content
   if (rawContent) {
@@ -373,26 +377,36 @@ export function buildPostprocessorScope(
   // Full message object
   scope.message = message;
 
-  // Use source connector message for map access
-  // In Java Mirth, there's getMergedConnectorMessage() but we use source as fallback
-  const mergedConnectorMessage = message.getSourceConnectorMessage();
-  if (mergedConnectorMessage) {
-    const sourceMap = new SourceMap(mergedConnectorMessage.getSourceMap());
-    scope.sourceMap = sourceMap;
-    scope.$s = sourceMap;
+  // Java: addMessage() → message.getMergedConnectorMessage() creates a synthetic
+  // ConnectorMessage merging maps from ALL connectors (source + destinations).
+  // This enables $r('HTTP Sender'), $c('key'), $s('key') in postprocessor scripts.
+  const mergedConnectorMessage = message.getMergedConnectorMessage();
 
-    const channelMap = new ChannelMap(
-      mergedConnectorMessage.getChannelMap(),
-      sourceMap
-    );
-    scope.channelMap = channelMap;
-    scope.$c = channelMap;
+  scope.connectorMessage = mergedConnectorMessage;
+  scope.connector = mergedConnectorMessage.getConnectorName();
 
-    const postDestIdMap = (mergedConnectorMessage as any).getDestinationIdMap?.() as Map<string, number> | undefined;
-    const responseMap = new ResponseMap(mergedConnectorMessage.getResponseMap(), postDestIdMap);
-    scope.responseMap = responseMap;
-    scope.$r = responseMap;
-  }
+  // Source map (from source connector only)
+  const sourceMap = new SourceMap(mergedConnectorMessage.getSourceMap());
+  scope.sourceMap = sourceMap;
+  scope.$s = sourceMap;
+
+  // Channel map (merged from source + all destinations)
+  const channelMap = new ChannelMap(mergedConnectorMessage.getChannelMap(), sourceMap);
+  scope.channelMap = channelMap;
+  scope.$c = channelMap;
+
+  // Connector map (empty for merged — connector maps are per-connector)
+  const connectorMap = new MirthMap(mergedConnectorMessage.getConnectorMap());
+  scope.connectorMap = connectorMap;
+  scope.$co = connectorMap;
+
+  // Response map (merged from source + all destinations, with destinationIdMap)
+  const responseMap = new ResponseMap(
+    mergedConnectorMessage.getResponseMap(),
+    mergedConnectorMessage.getDestinationIdMap()
+  );
+  scope.responseMap = responseMap;
+  scope.$r = responseMap;
 
   // Inject response if provided (Java overload with Response parameter)
   if (response) {

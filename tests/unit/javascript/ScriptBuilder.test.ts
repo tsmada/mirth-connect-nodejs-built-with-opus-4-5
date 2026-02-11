@@ -189,9 +189,9 @@ describe('ScriptBuilder', () => {
         false
       );
 
-      expect(script).toContain('filterRule1()');
-      expect(script).toContain('&& filterRule2()');
-      expect(script).toContain('|| filterRule3()');
+      expect(script).toContain('(filterRule1() == true)');
+      expect(script).toContain('&& (filterRule2() == true)');
+      expect(script).toContain('|| (filterRule3() == true)');
     });
 
     it('should skip disabled rules and steps', () => {

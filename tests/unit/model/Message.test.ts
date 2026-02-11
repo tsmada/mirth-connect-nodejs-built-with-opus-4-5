@@ -148,6 +148,148 @@ describe('Message', () => {
     });
   });
 
+  describe('getMergedConnectorMessage', () => {
+    it('should merge channelMap from source + all destinations', () => {
+      const message = createTestMessage();
+      const source = createConnectorMessage(0, Status.TRANSFORMED);
+      source.getChannelMap().set('srcKey', 'srcVal');
+      source.getChannelMap().set('shared', 'fromSrc');
+
+      const dest1 = createConnectorMessage(1, Status.SENT);
+      dest1.getChannelMap().set('d1Key', 'd1Val');
+      dest1.getChannelMap().set('shared', 'fromDest1');
+
+      const dest2 = createConnectorMessage(2, Status.SENT);
+      dest2.getChannelMap().set('d2Key', 'd2Val');
+
+      message.setConnectorMessage(0, source);
+      message.setConnectorMessage(1, dest1);
+      message.setConnectorMessage(2, dest2);
+
+      const merged = message.getMergedConnectorMessage();
+      expect(merged.getChannelMap().get('srcKey')).toBe('srcVal');
+      expect(merged.getChannelMap().get('d1Key')).toBe('d1Val');
+      expect(merged.getChannelMap().get('d2Key')).toBe('d2Val');
+      // Later destination overwrites earlier values
+      expect(merged.getChannelMap().get('shared')).toBe('fromDest1');
+    });
+
+    it('should merge responseMap from source + all destinations', () => {
+      const message = createTestMessage();
+      const source = createConnectorMessage(0, Status.TRANSFORMED);
+      source.getResponseMap().set('Source', 'ack');
+
+      const dest1 = createConnectorMessage(1, Status.SENT);
+      dest1.getResponseMap().set('d1', 'http-resp');
+
+      const dest2 = createConnectorMessage(2, Status.SENT);
+      dest2.getResponseMap().set('d2', 'file-resp');
+
+      message.setConnectorMessage(0, source);
+      message.setConnectorMessage(1, dest1);
+      message.setConnectorMessage(2, dest2);
+
+      const merged = message.getMergedConnectorMessage();
+      expect(merged.getResponseMap().get('Source')).toBe('ack');
+      expect(merged.getResponseMap().get('d1')).toBe('http-resp');
+      expect(merged.getResponseMap().get('d2')).toBe('file-resp');
+    });
+
+    it('should use sourceMap from source connector only', () => {
+      const message = createTestMessage();
+      const source = createConnectorMessage(0, Status.TRANSFORMED);
+      source.getSourceMap().set('srcMapKey', 'srcMapVal');
+
+      const dest1 = createConnectorMessage(1, Status.SENT);
+      dest1.getSourceMap().set('destSrcKey', 'shouldNotAppear');
+
+      message.setConnectorMessage(0, source);
+      message.setConnectorMessage(1, dest1);
+
+      const merged = message.getMergedConnectorMessage();
+      expect(merged.getSourceMap().get('srcMapKey')).toBe('srcMapVal');
+      expect(merged.getSourceMap().get('destSrcKey')).toBeUndefined();
+    });
+
+    it('should build destinationIdMap from connector names', () => {
+      const message = createTestMessage();
+      message.setConnectorMessage(0, createConnectorMessage(0, Status.TRANSFORMED));
+
+      const dest1 = new ConnectorMessage({
+        messageId: 1, metaDataId: 1, channelId: 'test-channel',
+        channelName: 'Test Channel', connectorName: 'HTTP Sender',
+        serverId: 'test-server', receivedDate: new Date(), status: Status.SENT,
+      });
+      const dest2 = new ConnectorMessage({
+        messageId: 1, metaDataId: 2, channelId: 'test-channel',
+        channelName: 'Test Channel', connectorName: 'File Writer',
+        serverId: 'test-server', receivedDate: new Date(), status: Status.SENT,
+      });
+
+      message.setConnectorMessage(1, dest1);
+      message.setConnectorMessage(2, dest2);
+
+      const merged = message.getMergedConnectorMessage();
+      const destIdMap = merged.getDestinationIdMap();
+      expect(destIdMap).toBeDefined();
+      expect(destIdMap!.get('HTTP Sender')).toBe(1);
+      expect(destIdMap!.get('File Writer')).toBe(2);
+    });
+
+    it('should handle message with no connector messages', () => {
+      const message = createTestMessage();
+      const merged = message.getMergedConnectorMessage();
+      expect(merged.getChannelId()).toBe('test-channel');
+      expect(merged.getSourceMap().size).toBe(0);
+      expect(merged.getChannelMap().size).toBe(0);
+      expect(merged.getResponseMap().size).toBe(0);
+    });
+
+    it('should handle message with source only (no destinations)', () => {
+      const message = createTestMessage();
+      const source = createConnectorMessage(0, Status.TRANSFORMED);
+      source.getChannelMap().set('key', 'val');
+      message.setConnectorMessage(0, source);
+
+      const merged = message.getMergedConnectorMessage();
+      expect(merged.getChannelMap().get('key')).toBe('val');
+      expect(merged.getDestinationIdMap()?.size).toBe(0);
+    });
+
+    it('should use sourceMap from first destination if no source', () => {
+      const message = createTestMessage();
+      const dest1 = createConnectorMessage(1, Status.SENT);
+      dest1.getSourceMap().set('fromDest', 'val');
+      message.setConnectorMessage(1, dest1);
+
+      const merged = message.getMergedConnectorMessage();
+      expect(merged.getSourceMap().get('fromDest')).toBe('val');
+    });
+
+    it('should merge destinations in metaDataId order', () => {
+      const message = createTestMessage();
+      const source = createConnectorMessage(0, Status.TRANSFORMED);
+      message.setConnectorMessage(0, source);
+
+      // Add in reverse order to verify sorting
+      const dest3 = createConnectorMessage(3, Status.SENT);
+      dest3.getChannelMap().set('order', 'third');
+      message.setConnectorMessage(3, dest3);
+
+      const dest1 = createConnectorMessage(1, Status.SENT);
+      dest1.getChannelMap().set('order', 'first');
+      message.setConnectorMessage(1, dest1);
+
+      const dest2 = createConnectorMessage(2, Status.SENT);
+      dest2.getChannelMap().set('order', 'second');
+      message.setConnectorMessage(2, dest2);
+
+      const merged = message.getMergedConnectorMessage();
+      // Last writer wins — dest3 (metaDataId 3) writes last
+      expect(merged.getChannelMap().get('order')).toBe('third');
+    });
+  });
+
   describe('setProcessed', () => {
     it('should update processed status', () => {
       const message = createTestMessage();

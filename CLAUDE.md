@@ -797,7 +797,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 4,633 passing** (2,559 core + 417 artifact management + 1,657 parity/unit)
+**Total Tests: 4,699 passing** (2,559 core + 417 artifact management + 1,723 parity/unit)
 
 ### Quick Validation Scripts
 
@@ -1644,16 +1644,16 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
          └──► [Worktree 8: feature/utils]             → Agent 8 ✅
 ```
 
-### Results (Combined Waves 1-10)
+### Results (Combined Waves 1-12)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 49 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10) |
-| Agents completed | 49 (100%) |
-| Total commits | 150+ |
-| Lines added | 68,000+ |
-| Tests added | 1,997+ |
-| Total tests passing | 4,633 |
+| Agents spawned | 50 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12) |
+| Agents completed | 50 (100%) |
+| Total commits | 160+ |
+| Lines added | 69,000+ |
+| Tests added | 2,063+ |
+| Total tests passing | 4,699 |
 
 ### Wave Summary
 
@@ -1669,7 +1669,9 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 | 8 | 4 | ~1,700 | 61 | ~20 min | **JavaScript Runtime Parity** (ScriptBuilder, ScopeBuilder, E4X, XMLProxy, XmlUtil, JsonUtil, Lists, Maps) |
 | 9 | 4 | ~300 | 19 | ~15 min | **JavaScript Runtime Parity** (E4X filter predicates, wildcards, CDATA, for-each bare vars) |
 | 10 | 4 | ~250 | 42 | ~3 min | **JavaScript Runtime Parity** (ResponseMap d#, ChannelMap, validate regex, createSegment, namespace) |
-| **Total** | **49** | **~68,000** | **1,997** | **~19 hrs** | |
+| 11 | 1 | ~200 | 28 | ~10 min | **JS Runtime Checker Mop-Up** (destinationIdMap wiring, response transformer template, createSegmentAfter, getAttachments default, validate type-check, XMLList transpilation) |
+| 12 | 0 | ~200 | 38 | ~5 min | **JS Runtime Parity** (getMergedConnectorMessage, filter == true, attachments in filter/transformer, code templates in all generators, AlertSender context, SourceMap.put) |
+| **Total** | **50** | **~69,000** | **2,063** | **~19 hrs** | |
 
 ### Components Ported
 
@@ -2067,6 +2069,58 @@ override get(key: string): unknown {
 }
 ```
 
+**28. Automated Cross-Codebase Scanning Catches "Implemented but Not Wired" Bugs (Wave 11)**
+The `js-runtime-checker` agent found 17 gaps that manual review missed over 3 prior waves. The most critical pattern: code that **exists** but **isn't connected**. For example, `destinationIdMap` was available on `ConnectorMessage` but never passed to `ResponseMap` during scope construction — so `$r('HTTP Sender')` silently returned `undefined`. Similarly, `buildResponseTransformerScope` accepted a `template` parameter in Java but the Node.js port omitted it, causing `ReferenceError` in response transformers that reference `template`. These "wiring gaps" are invisible to unit tests (which mock the scope) but break real channels:
+```typescript
+// ❌ Before — destinationIdMap exists on ConnectorMessage but never reaches ResponseMap
+const responseMap = new ResponseMap(connectorMessage.getResponseMap());
+
+// ✅ After — wired through to enable $r('Destination Name') → d# lookup
+const destinationIdMap = connectorMessage.getDestinationIdMap?.();
+const responseMap = new ResponseMap(connectorMessage.getResponseMap(), destinationIdMap);
+```
+Lesson: after manual porting waves, run automated inventory-based scanning to catch integration gaps.
+
+**29. Java's getAttachments() No-Args Defaults to false (Wave 11)**
+Java's `Attachment.getAttachments(base64Decode)` defaults to `false` when called with no args — attachments are returned as-is without base64 decoding. The Node.js port had `base64Decode !== false` which inverted this (no-args → `true` → decode). The fix: `!!base64Decode || false`. This is subtle because most test channels don't use attachments, so the bug only surfaces in production attachment-heavy channels.
+
+**30. validate() Type Guards Must Match Java (Wave 11)**
+Java's `validate()` only applies regex replacement patterns to `String` and `XML` types. The Node.js port applied replacements to all types including numbers, which could corrupt numeric fields. The fix adds an explicit type check before the replacement loop:
+```javascript
+if ('string' === typeof result ||
+    (typeof result === 'object' && result != null && typeof result.toXMLString === 'function')) {
+  // Only apply replacements to strings and XML objects
+}
+```
+
+**31. Postprocessor Requires Merged Connector Message, Not Source (Wave 12)**
+Java's `getMergedConnectorMessage()` creates a synthetic ConnectorMessage merging maps from ALL connectors (source + destinations). Without it, `$r('HTTP Sender')` in postprocessor scripts returns `undefined` because the source connector's responseMap doesn't contain destination responses. The merged message also needs a `destinationIdMap` (connectorName → metaDataId) to bridge human-readable names ("HTTP Sender") to internal keys ("d1"):
+```typescript
+// ❌ Before — only source connector's maps visible
+const mergedConnectorMessage = message.getSourceConnectorMessage();
+
+// ✅ After — merged maps from source + all destinations
+const mergedConnectorMessage = message.getMergedConnectorMessage();
+// Now $r('HTTP Sender') → destinationIdMap → d1 → response data
+```
+This is one of the most common patterns in production Mirth channels.
+
+**32. Java's Filter Rule `== true` Is a Deliberate Type Guard (Wave 12)**
+Java wraps each filter rule call with `== true`: `(filterRule1() == true)`. JavaScript's loose equality `"accept" == true` evaluates to `false`, which matches Java's `Boolean.TRUE.equals("accept")`. Without this wrapping, Node.js filter rules accept any truthy value, diverging from Java behavior:
+```typescript
+// ❌ Before — truthy strings like "accept" pass the filter
+const expr = `filterRule${i + 1}()`;
+
+// ✅ After — matches Java: only boolean true passes
+const expr = `(filterRule${i + 1}() == true)`;
+```
+
+**33. Code Templates Must Be Available in ALL Script Contexts (Wave 12)**
+Java's `generateScript()` pipeline unconditionally calls `appendCodeTemplates()` for every script type. The Node.js port only included code templates in `generateScript()`, `generateDeployScript()`, and `generateUndeployScript()` — missing filter/transformer, response transformer, preprocessor, and postprocessor. This means shared utility functions (date formatters, HL7 helpers, validation functions) from code template libraries throw `ReferenceError` in the most commonly used script types.
+
+**34. AlertSender Connector Context Requires Override in Connector Scope (Wave 12)**
+Java's `addConnectorMessage()` creates AlertSender with the full `ImmutableConnectorMessage`, providing `channelId`, `metaDataId`, and `connectorName`. The Node.js port created AlertSender with only `channelId` in `buildChannelScope()` and never overrode it in `buildConnectorMessageScope()`. Alert events from connector scripts lacked `metaDataId` and `connectorName`, making it impossible to identify which connector triggered the alert.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -2173,11 +2227,63 @@ override get(key: string): unknown {
 - XMLProxy: `namespace('')` extracts default namespace URI from `xmlns` attribute, `namespace('prefix')` extracts from `xmlns:prefix`
 - 42 new parity tests, 935 JS runtime tests, 4,633 total tests passing
 
+### Wave 11: JS Runtime Checker Mop-Up Scan (2026-02-11)
+
+**Automated cross-codebase scan using `js-runtime-checker` agent. Found 17 gaps, fixed 8, deferred 9 minor.**
+
+Single `js-runtime-checker` agent ran a full inventory of 34 Node.js source files against Java Mirth's Rhino/E4X codebase (JavaScriptBuilder.java, JavaScriptScopeUtil.java, 46 userutil files). Unlike Waves 8-10 which used manual comparison, this wave used automated cross-reference scanning across all 10 bug categories.
+
+| Finding | File | Fix | Tests |
+|---------|------|-----|-------|
+| JRC-SVM-001 (critical) | ScopeBuilder.ts | Wire `destinationIdMap` from ConnectorMessage to ResponseMap — enables `$r('Destination Name')` | 3 |
+| JRC-SVM-002 (critical) | ScopeBuilder.ts | Add `template` parameter to `buildResponseTransformerScope` — prevents ReferenceError | 3 |
+| JRC-SVM-003 (major) | ScopeBuilder.ts | Add `buildMessageReceiverScope`, `buildMessageDispatcherScope`, `buildBatchProcessorScope` | 4 |
+| JRC-SBD-001 (major) | ScriptBuilder.ts | `createSegmentAfter` walks to root and returns tree node (matching Java exactly) | 3 |
+| JRC-SBD-002 (major) | ScriptBuilder.ts | `getAttachments()` no-args defaults to false (no decode) matching Java | 2 |
+| JRC-SBD-003 (major) | ScriptBuilder.ts | `validate()` type-checks before applying replacements (strings/XML only) | 2 |
+| JRC-SBD-004 (major) | ScriptBuilder.ts | Attachment functions always included in all script types (unconditional) | 5 |
+| JRC-ETG-001 (major) | E4XTranspiler.ts + XMLProxy.ts | `new XMLList()` and `XMLList()` transpiled to `XMLProxy.createList()` | 6 |
+
+**Deferred (9 minor):** convenience vars (`regex`, `xml`, `xmllist`), `importClass` deprecation log, `useAttachmentList` variant, unmodifiable sourceMap copy, Response wrapping, ImmutableResponse wrapping, logger phase name, `Namespace()`/`QName()` constructors, script timeout mechanism.
+
+**Key insight:** The most dangerous bugs were "wiring gaps" — code that existed in isolation but wasn't connected at the integration point (e.g., `destinationIdMap` on ConnectorMessage never passed to ResponseMap constructor in scope builder). These are invisible to unit tests that mock scope construction.
+
+- 28 new parity tests, 963 JS runtime tests, 4,661 total tests passing
+- Full scan report archived at `plans/js-runtime-checker-scan.md`
+
+### Wave 12: JS Runtime Parity Fixes (2026-02-11)
+
+**Follow-up scan found 6 remaining gaps (1 critical, 4 major, 1 minor) in core script execution paths.**
+
+Direct implementation without parallel agents — all changes made to 4 source files + 4 test files.
+
+| Finding | Severity | File | Fix | Tests |
+|---------|----------|------|-----|-------|
+| JRC-SBD-008 | **Critical** | Message.ts, ScopeBuilder.ts | `getMergedConnectorMessage()` — merges maps from ALL connectors for postprocessor; enables `$r('HTTP Sender')` | 10 |
+| JRC-SBD-009 | Major | ScriptBuilder.ts | Filter rule `== true` wrapping — prevents truthy non-booleans from passing filter | 3 |
+| JRC-SBD-010 | Major | ScriptBuilder.ts | Attachment functions (`getAttachments`, `addAttachment`, etc.) added to filter/transformer and response transformer scripts | 6 |
+| JRC-SBD-011 | Major | ScriptBuilder.ts | Code templates included in filter/transformer, response transformer, preprocessor, and postprocessor generators | 9 |
+| JRC-SVM-004 | Major | ScopeBuilder.ts | AlertSender in connector scope overridden with connector-message-aware version (metaDataId + connectorName) | 2 |
+| JRC-TCD-004 | Minor | MirthMap.ts | SourceMap.put() warning removed — Java SourceMap.put() is a plain delegate | 3 |
+
+**Key fix:** The most impactful change is `getMergedConnectorMessage()`. Java's postprocessor creates a synthetic ConnectorMessage that unions channelMap and responseMap from ALL connectors (source + destinations). It also builds a `destinationIdMap` (connectorName → metaDataId) enabling the ubiquitous `$r('HTTP Sender')` pattern. Without this, postprocessor scripts silently received `undefined` for all destination responses.
+
+**Files modified:**
+| File | Changes |
+|------|---------|
+| `src/model/ConnectorMessage.ts` | Added `destinationIdMap` field with getter/setter |
+| `src/model/Message.ts` | Added `getMergedConnectorMessage()` method |
+| `src/javascript/runtime/ScriptBuilder.ts` | Filter `== true`, attachment functions in 2 generators, code templates in 4 generators |
+| `src/javascript/runtime/ScopeBuilder.ts` | Postprocessor uses merged message, AlertSender override in connector scope |
+| `src/javascript/userutil/MirthMap.ts` | Removed SourceMap.put() warning |
+
+- 38 new parity tests, 1,001 JS runtime tests, 4,699 total tests passing
+
 ### Completion Status
 
-All Waves 1-10 are complete. The porting project has reached production-ready status:
+All Waves 1-12 are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-10):**
+**Completed (Waves 1-12):**
 - ✅ 32/32 Userutil classes (100%) — including XmlUtil, JsonUtil, Lists/ListBuilder, Maps/MapBuilder
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -2185,7 +2291,7 @@ All Waves 1-10 are complete. The porting project has reached production-ready st
 - ✅ All Priority 0-6 validation scenarios
 - ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 - ✅ **Git-Backed Artifact Management** — Decompose/assemble, git sync, env promotion, delta deploy, structural diff (417 tests)
-- ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 3 waves of fixes (Waves 8-10, 122 parity tests)
+- ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 5 waves of fixes (Waves 8-12, 188 parity tests, verified by automated js-runtime-checker scan)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)

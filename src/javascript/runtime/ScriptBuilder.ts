@@ -159,8 +159,18 @@ export class ScriptBuilder {
     // Add map functions
     this.appendMapFunctions(builder);
 
+    // Add attachment functions (always included — matches Java: appendAttachmentFunctions is unconditional)
+    this.appendAttachmentFunctions(builder);
+
     // Add utility functions
     this.appendMiscFunctions(builder);
+
+    // Add code templates if provided
+    if (this.options.codeTemplates?.length) {
+      for (const template of this.options.codeTemplates) {
+        builder.push(this.transpile(template));
+      }
+    }
 
     // Initialize msg based on inbound type
     switch (inboundType) {
@@ -221,8 +231,18 @@ export class ScriptBuilder {
     // Add map functions
     this.appendMapFunctions(builder);
 
+    // Add attachment functions (always included — matches Java: appendAttachmentFunctions is unconditional)
+    this.appendAttachmentFunctions(builder);
+
     // Add utility functions
     this.appendMiscFunctions(builder);
+
+    // Add code templates if provided
+    if (this.options.codeTemplates?.length) {
+      for (const template of this.options.codeTemplates) {
+        builder.push(this.transpile(template));
+      }
+    }
 
     // Initialize msg based on inbound type
     switch (inboundType) {
@@ -279,6 +299,13 @@ export class ScriptBuilder {
     // Add utility functions
     this.appendMiscFunctions(builder);
 
+    // Add code templates if provided
+    if (this.options.codeTemplates?.length) {
+      for (const template of this.options.codeTemplates) {
+        builder.push(this.transpile(template));
+      }
+    }
+
     // Transpile and wrap user script
     const transpiled = this.transpile(userScript);
     builder.push('function doPreprocess() {');
@@ -303,6 +330,13 @@ export class ScriptBuilder {
 
     // Add utility functions
     this.appendMiscFunctions(builder);
+
+    // Add code templates if provided
+    if (this.options.codeTemplates?.length) {
+      for (const template of this.options.codeTemplates) {
+        builder.push(this.transpile(template));
+      }
+    }
 
     // Transpile and wrap user script
     const transpiled = this.transpile(userScript);
@@ -645,7 +679,7 @@ function updateAttachment() {
     const ruleExpressions: string[] = [];
     for (let i = 0; i < enabledRules.length; i++) {
       const rule = enabledRules[i]!;
-      const expr = `filterRule${i + 1}()`;
+      const expr = `(filterRule${i + 1}() == true)`;
 
       if (i === 0) {
         ruleExpressions.push(expr);

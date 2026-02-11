@@ -105,12 +105,13 @@ describe('MirthMap', () => {
 });
 
 describe('SourceMap', () => {
-  it('should allow put with warning', () => {
+  it('should allow put without warning (Java parity: plain delegate)', () => {
     const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
     const map = new SourceMap();
     map.put('key1', 'value1');
     expect(map.get('key1')).toBe('value1');
-    expect(consoleSpy).toHaveBeenCalled();
+    // Java SourceMap.put() is a plain delegate — no warning (Wave 12 fix JRC-TCD-004)
+    expect(consoleSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
 });

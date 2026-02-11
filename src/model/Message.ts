@@ -125,6 +125,68 @@ export class Message {
   }
 
   /**
+   * Create a synthetic ConnectorMessage merging maps from ALL connectors.
+   * Ported from: Message.java lines 115-164 (getMergedConnectorMessage)
+   *
+   * Merge behavior:
+   * - sourceMap: from source connector only (or first destination if no source)
+   * - channelMap: source + all destinations merged (later overwrites earlier)
+   * - responseMap: source + all destinations merged (later overwrites earlier)
+   * - destinationIdMap: built from destination connectorName → metaDataId
+   *
+   * Used by postprocessor scripts so $r('HTTP Sender'), $c('key'), $s('key')
+   * see the merged state from all connectors.
+   */
+  getMergedConnectorMessage(): ConnectorMessage {
+    const source = this.connectorMessages.get(0);
+
+    const merged = new ConnectorMessage({
+      messageId: this.messageId,
+      metaDataId: 0,
+      channelId: this.channelId,
+      channelName: source?.getChannelName() ?? '',
+      connectorName: source?.getConnectorName() ?? 'Source',
+      serverId: this.serverId,
+      receivedDate: source?.getReceivedDate() ?? new Date(),
+      status: source?.getStatus() ?? Status.RECEIVED,
+    });
+
+    let sourceMapData: Map<string, unknown> | undefined;
+
+    if (source) {
+      sourceMapData = source.getSourceMap();
+      for (const [k, v] of source.getResponseMap()) merged.getResponseMap().set(k, v);
+      for (const [k, v] of source.getChannelMap()) merged.getChannelMap().set(k, v);
+
+      const rawData = source.getRawData();
+      if (rawData) merged.setRawData(rawData);
+    }
+
+    // Merge destination maps in metaDataId order
+    const destinationIdMap = new Map<string, number>();
+    const ordered = [...this.connectorMessages.entries()]
+      .filter(([id]) => id > 0)
+      .sort(([a], [b]) => a - b);
+
+    for (const [metaDataId, cm] of ordered) {
+      if (!sourceMapData) sourceMapData = cm.getSourceMap();
+      for (const [k, v] of cm.getResponseMap()) merged.getResponseMap().set(k, v);
+      for (const [k, v] of cm.getChannelMap()) merged.getChannelMap().set(k, v);
+      destinationIdMap.set(cm.getConnectorName(), metaDataId);
+    }
+
+    // Set sourceMap on merged
+    if (sourceMapData) {
+      for (const [k, v] of sourceMapData) merged.getSourceMap().set(k, v);
+    }
+
+    // Set destinationIdMap for $r('Destination Name') lookups
+    merged.setDestinationIdMap(destinationIdMap);
+
+    return merged;
+  }
+
+  /**
    * Get the merged status based on all connector messages
    */
   getMergedStatus(): Status {

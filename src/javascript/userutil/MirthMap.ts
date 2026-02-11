@@ -131,17 +131,9 @@ export class SourceMap extends MirthMap {
   }
 
   /**
-   * SourceMap.put logs a warning but still allows the put (matching Java behavior)
+   * SourceMap.put is a plain delegate — Java SourceMap does NOT log any warning.
+   * (The Node.js port incorrectly added a console.warn; removed for parity.)
    */
-  override put(key: string, value: unknown): unknown {
-    // In Java, this logs a warning but still allows the operation
-    // We replicate that behavior here
-    console.warn(
-      `Warning: Modifying sourceMap directly. Key: ${key}. ` +
-        `Consider using channelMap instead for better clarity.`
-    );
-    return super.put(key, value);
-  }
 }
 
 /**

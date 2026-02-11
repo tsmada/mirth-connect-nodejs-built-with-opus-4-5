@@ -59,6 +59,9 @@ export class ConnectorMessage {
   private channelMap: Map<string, unknown> = new Map();
   private responseMap: Map<string, unknown> = new Map();
 
+  // Destination name → metaDataId mapping (for ResponseMap $r('name') lookups)
+  private destinationIdMap?: Map<string, number>;
+
   // Processing errors
   private processingError?: string;
   private postProcessorError?: string;
@@ -256,6 +259,14 @@ export class ConnectorMessage {
 
   getResponseMap(): Map<string, unknown> {
     return this.responseMap;
+  }
+
+  getDestinationIdMap(): Map<string, number> | undefined {
+    return this.destinationIdMap;
+  }
+
+  setDestinationIdMap(map: Map<string, number>): void {
+    this.destinationIdMap = map;
   }
 
   // Error handling
