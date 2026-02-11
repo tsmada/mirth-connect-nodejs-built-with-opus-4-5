@@ -8,12 +8,16 @@ import {
   buildChannelScope,
   buildFilterTransformerScope,
   buildPreprocessorScope,
+  buildPostprocessorScope,
+  buildAttachmentScope,
   ScriptContext,
 } from '../../../src/javascript/runtime/ScopeBuilder';
 import { ConnectorMessage } from '../../../src/model/ConnectorMessage';
+import { Message } from '../../../src/model/Message';
 import { Status } from '../../../src/model/Status';
 import { Response } from '../../../src/model/Response';
 import { ACKGenerator } from '../../../src/util/ACKGenerator';
+import { SerializerFactory } from '../../../src/util/SerializerFactory';
 import { XmlUtil } from '../../../src/javascript/userutil/XmlUtil';
 import { JsonUtil } from '../../../src/javascript/userutil/JsonUtil';
 import { Lists, ListBuilder } from '../../../src/javascript/userutil/Lists';
@@ -332,6 +336,126 @@ describe('ScopeBuilder Parity Fixes', () => {
     it('replacer should exist', () => {
       const scope = buildBasicScope();
       expect(scope.replacer).toBeDefined();
+    });
+  });
+
+  describe('Wave 10 Parity Fixes', () => {
+    const context: ScriptContext = {
+      channelId: 'test-channel',
+      channelName: 'Test Channel',
+      metaDataId: 0,
+    };
+
+    function createMockConnectorMessage(): ConnectorMessage {
+      return new ConnectorMessage({
+        messageId: 1,
+        metaDataId: 0,
+        channelId: 'test-channel',
+        channelName: 'Test Channel',
+        connectorName: 'Source',
+        serverId: 'server-1',
+        receivedDate: new Date(),
+        status: Status.RECEIVED,
+      });
+    }
+
+    function createMockMessage(): Message {
+      const msg = new Message({
+        messageId: 1,
+        serverId: 'server-1',
+        channelId: 'test-channel',
+        receivedDate: new Date(),
+        processed: false,
+      });
+      const cm = createMockConnectorMessage();
+      msg.setConnectorMessage(0, cm);
+      return msg;
+    }
+
+    describe('SerializerFactory in scope', () => {
+      it('buildBasicScope() should include SerializerFactory', () => {
+        const scope = buildBasicScope();
+        expect(scope.SerializerFactory).toBeDefined();
+      });
+
+      it('SerializerFactory should be the actual class (not undefined)', () => {
+        const scope = buildBasicScope();
+        expect(scope.SerializerFactory).toBe(SerializerFactory);
+      });
+    });
+
+    describe('Postprocessor response parameter', () => {
+      it('buildPostprocessorScope() without response should NOT have response in scope', () => {
+        const msg = createMockMessage();
+        const scope = buildPostprocessorScope(context, msg);
+        expect(scope.response).toBeUndefined();
+      });
+
+      it('buildPostprocessorScope() with response should inject response into scope', () => {
+        const msg = createMockMessage();
+        const response = new Response({ status: Status.SENT, message: 'OK' });
+        const scope = buildPostprocessorScope(context, msg, response);
+        expect(scope.response).toBe(response);
+      });
+    });
+
+    describe('Sandbox timer protection', () => {
+      it('setTimeout should be undefined in basic scope', () => {
+        const scope = buildBasicScope();
+        expect(scope.setTimeout).toBeUndefined();
+      });
+
+      it('setInterval should be undefined in basic scope', () => {
+        const scope = buildBasicScope();
+        expect(scope.setInterval).toBeUndefined();
+      });
+
+      it('setImmediate should be undefined in basic scope', () => {
+        const scope = buildBasicScope();
+        expect(scope.setImmediate).toBeUndefined();
+      });
+
+      it('queueMicrotask should be undefined in basic scope', () => {
+        const scope = buildBasicScope();
+        expect(scope.queueMicrotask).toBeUndefined();
+      });
+    });
+
+    describe('Attachment scope builder', () => {
+      it('buildAttachmentScope() should inject message, sourceMap, mirth_attachments, binary', () => {
+        const sourceMapData = new Map<string, unknown>([['key1', 'value1']]);
+        const attachments = [{ id: 'att-1', content: 'data' }];
+        const scope = buildAttachmentScope(context, '<raw/>', sourceMapData, attachments, false);
+
+        expect(scope.message).toBe('<raw/>');
+        expect(scope.sourceMap).toBeDefined();
+        expect(scope.mirth_attachments).toBeDefined();
+        expect(scope.binary).toBeDefined();
+      });
+
+      it('mirth_attachments should be the array passed in', () => {
+        const sourceMapData = new Map<string, unknown>();
+        const attachments = [{ id: 'att-1' }, { id: 'att-2' }];
+        const scope = buildAttachmentScope(context, 'raw', sourceMapData, attachments, true);
+
+        expect(scope.mirth_attachments).toBe(attachments);
+      });
+
+      it('binary should be the boolean passed in', () => {
+        const sourceMapData = new Map<string, unknown>();
+        const scope = buildAttachmentScope(context, 'raw', sourceMapData, [], true);
+        expect(scope.binary).toBe(true);
+
+        const scope2 = buildAttachmentScope(context, 'raw', sourceMapData, [], false);
+        expect(scope2.binary).toBe(false);
+      });
+
+      it('sourceMap should be accessible via $s shorthand', () => {
+        const sourceMapData = new Map<string, unknown>([['testKey', 'testVal']]);
+        const scope = buildAttachmentScope(context, 'raw', sourceMapData, [], false);
+        expect(scope.$s).toBeDefined();
+        expect(scope.$s).toBe(scope.sourceMap);
+      });
     });
   });
 });

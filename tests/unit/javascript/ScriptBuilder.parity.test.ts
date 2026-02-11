@@ -340,18 +340,25 @@ describe('ScriptBuilder Parity Fixes', () => {
   });
 
   describe('1.7 - validate() replacement iteration', () => {
-    it('should handle single replacement pair', () => {
+    it('should use new RegExp for replacement (not literal replaceAll)', () => {
       const script = builder.generateScript('// test');
-      // Single pair handling
-      expect(script).toContain('result.toString().replaceAll(replacement[0], replacement[1])');
+      expect(script).toContain('new RegExp(entry[0]');
+      expect(script).not.toContain('replaceAll');
     });
 
-    it('should handle array of replacement pairs', () => {
+    it('should iterate replacement as array of pairs with entry[0], entry[1]', () => {
       const script = builder.generateScript('// test');
-      // Array check
-      expect(script).toContain('Array.isArray(replacement[0])');
-      // Loop over pairs
-      expect(script).toContain('replacement[i][0], replacement[i][1]');
+      expect(script).toContain('var entry = replacement[i]');
+      expect(script).toContain("result.replace(new RegExp(entry[0], 'g'), entry[1])");
+    });
+
+    it('should use loose equality (==) matching Java behavior', () => {
+      const script = builder.generateScript('// test');
+      const validateMatch = script.match(/function validate[\s\S]*?^}/m);
+      expect(validateMatch).not.toBeNull();
+      const validateFn = validateMatch![0];
+      expect(validateFn).toContain('result == undefined');
+      expect(validateFn).toContain('replacement != undefined');
     });
   });
 
@@ -372,6 +379,100 @@ describe('ScriptBuilder Parity Fixes', () => {
       // The function should accept arguments but do nothing
       // Verify it is a function declaration (not throwing)
       expect(script).toMatch(/function importClass\(\)/);
+    });
+  });
+
+  describe('1.10 - createSegment attachment to parent', () => {
+    it('should assign segment to msgObj[name][index] when called with 3 args', () => {
+      const script = builder.generateScript('// test');
+      expect(script).toContain('msgObj[name][index] = XMLProxy.create');
+      expect(script).toContain('return msgObj[name][index]');
+    });
+
+    it('should return detached segment when called with 1 arg (name only)', () => {
+      const script = builder.generateScript('// test');
+      // When msgObj is undefined/null, return a standalone segment
+      expect(script).toContain("if (typeof msgObj === 'undefined' || msgObj === null)");
+      expect(script).toContain("return XMLProxy.create('<' + name + '></' + name + '>')");
+    });
+
+    it('should use <name></name> not <name/> format', () => {
+      const script = builder.generateScript('// test');
+      // Java uses new XML('<' + name + '></' + name + '>'), not self-closing
+      const createSegMatch = script.match(/function createSegment[\s\S]*?^}/m);
+      expect(createSegMatch).not.toBeNull();
+      const fn = createSegMatch![0];
+      expect(fn).not.toContain("'/>');");
+      expect(fn).toContain("'></' + name + '>');");
+    });
+  });
+
+  describe('1.11 - Deploy script includes all helpers', () => {
+    it('deploy script should include $co, $c, $s, $r map functions', () => {
+      const script = builder.generateDeployScript('// deploy');
+      expect(script).toContain('function $co(');
+      expect(script).toContain('function $c(');
+      expect(script).toContain('function $s(');
+      expect(script).toContain('function $r(');
+    });
+
+    it('deploy script should include validate() function', () => {
+      const script = builder.generateDeployScript('// deploy');
+      expect(script).toContain('function validate(mapping, defaultValue, replacement)');
+    });
+
+    it('deploy script should include createSegment() function', () => {
+      const script = builder.generateDeployScript('// deploy');
+      expect(script).toContain('function createSegment(');
+    });
+  });
+
+  describe('1.12 - importPackage shim', () => {
+    it('should include importPackage in global sealed script', () => {
+      const script = builder.generateGlobalSealedScript();
+      expect(script).toContain('function importPackage()');
+    });
+
+    it('importPackage should be a no-op Rhino compatibility shim', () => {
+      const script = builder.generateGlobalSealedScript();
+      expect(script).toContain('importPackage');
+      expect(script).toMatch(/function importPackage\(\).*no-op.*Rhino/);
+    });
+  });
+
+  describe('1.13 - getAttachmentIds 2-arg overload', () => {
+    it('should check arguments.length === 2 for channelId/messageId overload', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('arguments.length === 2');
+      expect(script).toContain('AttachmentUtil.getMessageAttachmentIds(channelId, messageId)');
+    });
+
+    it('should fall back to connectorMessage when called with 0 args', () => {
+      const b = new ScriptBuilder({ includeAttachmentFunctions: true });
+      const script = b.generateScript('// test');
+      expect(script).toContain('AttachmentUtil.getMessageAttachmentIds(connectorMessage)');
+    });
+  });
+
+  describe('1.14 - Undeploy uses doUndeploy wrapper', () => {
+    it('undeploy script should contain doUndeploy function', () => {
+      const script = builder.generateUndeployScript('// undeploy');
+      expect(script).toContain('function doUndeploy()');
+      expect(script).toContain('doUndeploy();');
+    });
+
+    it('undeploy script should NOT be generated via string replacement of deploy', () => {
+      const script = builder.generateUndeployScript('// undeploy');
+      // Should NOT contain doDeploy at all
+      expect(script).not.toContain('doDeploy');
+    });
+
+    it('undeploy script should include all helpers like deploy', () => {
+      const script = builder.generateUndeployScript('// undeploy');
+      expect(script).toContain('function $co(');
+      expect(script).toContain('function validate(');
+      expect(script).toContain('function createSegment(');
     });
   });
 

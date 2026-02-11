@@ -106,6 +106,9 @@ export class ScriptBuilder {
     // importClass shim — prevents ReferenceError in old Rhino scripts
     script.push('function importClass() { /* no-op: Rhino compatibility shim */ }');
 
+    // importPackage shim — prevents ReferenceError in old Rhino scripts
+    script.push('function importPackage() { /* no-op: Rhino compatibility shim */ }');
+
     return script.join('\n');
   }
 
@@ -313,16 +316,23 @@ export class ScriptBuilder {
   generateDeployScript(userScript: string): string {
     const builder: string[] = [];
 
-    // Add map functions (limited set for deploy)
-    builder.push(
-      'function $g(key, value) { if (arguments.length === 1) { return globalMap.get(key); } else { return globalMap.put(key, value); } }'
-    );
-    builder.push(
-      'function $gc(key, value) { if (arguments.length === 1) { return globalChannelMap.get(key); } else { return globalChannelMap.put(key, value); } }'
-    );
-    builder.push(
-      'function $cfg(key, value) { if (arguments.length === 1) { return configurationMap.get(key); } else { return configurationMap.put(key, value); } }'
-    );
+    // Add all map functions (matches Java: appendMapFunctions)
+    this.appendMapFunctions(builder);
+
+    // Add utility functions (matches Java: appendMiscFunctions)
+    this.appendMiscFunctions(builder);
+
+    // Add attachment functions if requested
+    if (this.options.includeAttachmentFunctions) {
+      this.appendAttachmentFunctions(builder);
+    }
+
+    // Add code templates if provided
+    if (this.options.codeTemplates?.length) {
+      for (const template of this.options.codeTemplates) {
+        builder.push(this.transpile(template));
+      }
+    }
 
     // Transpile and wrap user script
     const transpiled = this.transpile(userScript);
@@ -338,7 +348,34 @@ export class ScriptBuilder {
    * Generate undeploy script
    */
   generateUndeployScript(userScript: string): string {
-    return this.generateDeployScript(userScript).replace(/doDeploy/g, 'doUndeploy');
+    const builder: string[] = [];
+
+    // Add all map functions (matches Java: appendMapFunctions)
+    this.appendMapFunctions(builder);
+
+    // Add utility functions (matches Java: appendMiscFunctions)
+    this.appendMiscFunctions(builder);
+
+    // Add attachment functions if requested
+    if (this.options.includeAttachmentFunctions) {
+      this.appendAttachmentFunctions(builder);
+    }
+
+    // Add code templates if provided
+    if (this.options.codeTemplates?.length) {
+      for (const template of this.options.codeTemplates) {
+        builder.push(this.transpile(template));
+      }
+    }
+
+    // Transpile and wrap user script
+    const transpiled = this.transpile(userScript);
+    builder.push('function doUndeploy() {');
+    builder.push(transpiled);
+    builder.push('}');
+    builder.push('doUndeploy();');
+
+    return builder.join('\n');
   }
 
   /**
@@ -394,20 +431,17 @@ export class ScriptBuilder {
     builder.push(`
 function validate(mapping, defaultValue, replacement) {
   var result = mapping;
-  if (result === undefined || result === null || result.toString().length === 0) {
-    if (defaultValue === undefined) {
-      result = '';
-    } else {
-      result = defaultValue;
+  if (result == undefined || (result != null && result.toString().length == 0)) {
+    if (defaultValue == undefined) {
+      defaultValue = '';
     }
+    result = defaultValue;
   }
-  if (replacement !== undefined && replacement !== null) {
-    if (Array.isArray(replacement[0])) {
-      for (var i = 0; i < replacement.length; i++) {
-        result = result.toString().replaceAll(replacement[i][0], replacement[i][1]);
-      }
-    } else {
-      result = result.toString().replaceAll(replacement[0], replacement[1]);
+  if (replacement != undefined && replacement != null) {
+    result = new String(result.toString());
+    for (var i = 0; i < replacement.length; i++) {
+      var entry = replacement[i];
+      result = result.replace(new RegExp(entry[0], 'g'), entry[1]);
     }
   }
   return result;
@@ -463,16 +497,15 @@ function $(string) {
 
     // createSegment helper for HL7
     builder.push(`
-function createSegment(name, msg, index) {
-  if (typeof msg === 'undefined' || msg === null) {
-    return XMLProxy.create('<' + name + '/>');
+function createSegment(name, msgObj, index) {
+  if (typeof msgObj === 'undefined' || msgObj === null) {
+    return XMLProxy.create('<' + name + '></' + name + '>');
   }
   if (typeof index === 'undefined') {
     index = 0;
   }
-  var seg = XMLProxy.create('<' + name + '/>');
-  // Insert at appropriate position
-  return seg;
+  msgObj[name][index] = XMLProxy.create('<' + name + '></' + name + '>');
+  return msgObj[name][index];
 }
 `);
 
@@ -529,7 +562,11 @@ function newNumberOrUndefined(value) {
     builder.push(`
 function getAttachmentIds(channelId, messageId) {
   if (typeof AttachmentUtil !== 'undefined') {
-    return AttachmentUtil.getMessageAttachmentIds(connectorMessage);
+    if (arguments.length === 2) {
+      return AttachmentUtil.getMessageAttachmentIds(channelId, messageId);
+    } else {
+      return AttachmentUtil.getMessageAttachmentIds(connectorMessage);
+    }
   }
   return [];
 }

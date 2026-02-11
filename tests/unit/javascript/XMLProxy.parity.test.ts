@@ -240,6 +240,43 @@ describe('XMLProxy Parity Fixes', () => {
     });
   });
 
+  describe('namespace() extraction from xmlns attributes (Wave 10)', () => {
+    it('should return default namespace from xmlns attribute', () => {
+      const xml = XMLProxy.create('<ClinicalDocument xmlns="urn:hl7-org:v3"/>');
+      expect(xml.namespace('')).toBe('urn:hl7-org:v3');
+    });
+
+    it('should return prefixed namespace from xmlns:prefix attribute', () => {
+      const xml = XMLProxy.create('<root xmlns:hl7="urn:hl7-org:v3"/>');
+      expect(xml.namespace('hl7')).toBe('urn:hl7-org:v3');
+    });
+
+    it('should return empty string default when no xmlns present', () => {
+      const xml = XMLProxy.create('<root/>');
+      expect(xml.namespace('')).toBe('');
+    });
+
+    it('should return undefined for unknown prefix', () => {
+      const xml = XMLProxy.create('<root xmlns="urn:default"/>');
+      expect(xml.namespace('unknown')).toBeUndefined();
+    });
+
+    it('should work with namespace-heavy CDA documents', () => {
+      const xml = XMLProxy.create(
+        '<ClinicalDocument xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>'
+      );
+      expect(xml.namespace('')).toBe('urn:hl7-org:v3');
+      expect(xml.namespace('xsi')).toBe('http://www.w3.org/2001/XMLSchema-instance');
+    });
+
+    it('namespace() with no args should return default namespace from xmlns', () => {
+      const xml = XMLProxy.create('<root xmlns="urn:test"/>');
+      // When called with no args, should detect xmlns
+      const ns = xml.namespace();
+      expect(ns).toBe('urn:test');
+    });
+  });
+
   describe('CDATA preservation (Fix 4.4)', () => {
     it('should preserve CDATA content in toString()', () => {
       const xml = XMLProxy.create('<root><![CDATA[some <special> content & stuff]]></root>');

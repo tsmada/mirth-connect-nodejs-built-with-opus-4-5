@@ -136,7 +136,7 @@ describe('ChannelMap', () => {
     expect(channelMap.get('key')).toBe('channelValue');
   });
 
-  it('should check containsKey in both maps', () => {
+  it('should check containsKey only in channelMap delegate (not sourceMap)', () => {
     const sourceMap = new SourceMap();
     jest.spyOn(console, 'warn').mockImplementation();
     sourceMap.put('sourceKey', 'sourceValue');
@@ -144,7 +144,7 @@ describe('ChannelMap', () => {
     const channelMap = new ChannelMap(undefined, sourceMap);
     channelMap.put('channelKey', 'channelValue');
 
-    expect(channelMap.containsKey('sourceKey')).toBe(true);
+    expect(channelMap.containsKey('sourceKey')).toBe(false);
     expect(channelMap.containsKey('channelKey')).toBe(true);
     expect(channelMap.containsKey('nonexistent')).toBe(false);
   });
@@ -249,5 +249,84 @@ describe('ConfigurationMap', () => {
 
     expect(map.get('server.name')).toBe('Test Server');
     expect(map.get('server.port')).toBe(8080);
+  });
+});
+
+describe('Wave 10 Parity Fixes', () => {
+  describe('ResponseMap d# destination name lookup', () => {
+    let responseMap: ResponseMap;
+
+    beforeEach(() => {
+      const destIdMap = new Map<string, number>([
+        ['Dest Name', 1],
+        ['Lab Orders', 2],
+      ]);
+      responseMap = new ResponseMap(undefined, destIdMap);
+      responseMap.put('d1', 'response-from-dest-1');
+      responseMap.put('d2', 'response-from-dest-2');
+    });
+
+    it('$r("Dest Name") should resolve via destinationIdMap to d1 value', () => {
+      expect(responseMap.get('Dest Name')).toBe('response-from-dest-1');
+      expect(responseMap.get('Lab Orders')).toBe('response-from-dest-2');
+    });
+
+    it('containsKey("Dest Name") should return true when d# key exists', () => {
+      expect(responseMap.containsKey('Dest Name')).toBe(true);
+      expect(responseMap.containsKey('Lab Orders')).toBe(true);
+    });
+
+    it('direct d# key access should still work', () => {
+      expect(responseMap.get('d1')).toBe('response-from-dest-1');
+      expect(responseMap.get('d2')).toBe('response-from-dest-2');
+      expect(responseMap.containsKey('d1')).toBe(true);
+    });
+
+    it('unknown destination name should return undefined', () => {
+      expect(responseMap.get('Unknown Dest')).toBeUndefined();
+      expect(responseMap.containsKey('Unknown Dest')).toBe(false);
+    });
+  });
+
+  describe('ChannelMap containsKey and get parity', () => {
+    let sourceMap: SourceMap;
+    let channelMap: ChannelMap;
+
+    beforeEach(() => {
+      jest.spyOn(console, 'warn').mockImplementation();
+      jest.spyOn(console, 'error').mockImplementation();
+      sourceMap = new SourceMap();
+      sourceMap.put('sourceOnly', 'source-value');
+      channelMap = new ChannelMap(undefined, sourceMap);
+      channelMap.put('channelOnly', 'channel-value');
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('containsKey() should NOT find sourceMap-only keys', () => {
+      expect(channelMap.containsKey('sourceOnly')).toBe(false);
+      expect(channelMap.containsKey('channelOnly')).toBe(true);
+    });
+
+    it('get() should still fall back to sourceMap (with warning)', () => {
+      expect(channelMap.get('sourceOnly')).toBe('source-value');
+    });
+
+    it('get() should log error when falling back to sourceMap', () => {
+      channelMap.get('sourceOnly');
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('The source map entry "sourceOnly" was retrieved from the channel map')
+      );
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining("Please use sourceMap.get('sourceOnly') instead")
+      );
+    });
+
+    it('get() should return undefined when key not in channelMap or sourceMap', () => {
+      expect(channelMap.get('nonexistent')).toBeUndefined();
+      expect(console.error).not.toHaveBeenCalled();
+    });
   });
 });

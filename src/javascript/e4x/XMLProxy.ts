@@ -388,12 +388,32 @@ export class XMLProxy {
 
   /**
    * Get/set namespace
+   *
+   * When called with a string argument, looks up namespace URI by prefix:
+   *   namespace('')     → default namespace (xmlns="...")
+   *   namespace('hl7')  → prefixed namespace (xmlns:hl7="...")
+   *
+   * When called with no arguments, returns default namespace.
    */
-  namespace(ns?: string): string | void {
-    if (ns !== undefined) {
-      this.defaultNamespace = ns;
+  namespace(prefix?: string): string | void {
+    if (prefix !== undefined) {
+      // When called with a string argument, look up namespace by prefix
+      // namespace('') returns the default namespace
+      // namespace('hl7') returns the namespace for prefix 'hl7'
+      const nsUri = this.extractNamespaceUri(prefix);
+      if (nsUri !== undefined) {
+        return nsUri;
+      }
+      // Fall back to stored default or set it
+      if (prefix === '') {
+        return this.defaultNamespace;
+      }
+      // For non-empty prefix with no match, return undefined
+      return undefined;
     } else {
-      return this.defaultNamespace;
+      // No argument: return default namespace
+      const defaultNs = this.extractNamespaceUri('');
+      return defaultNs !== undefined ? defaultNs : this.defaultNamespace;
     }
   }
 
@@ -402,6 +422,25 @@ export class XMLProxy {
    */
   setDefaultNamespace(ns: string): void {
     this.defaultNamespace = ns;
+  }
+
+  /**
+   * Extract namespace URI from xmlns attributes on the element
+   */
+  private extractNamespaceUri(prefix: string): string | undefined {
+    if (this.nodes.length === 0) return undefined;
+
+    const node = this.nodes[0]!;
+    const attrs = node[':@'] as Record<string, string> | undefined;
+    if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) return undefined;
+
+    if (prefix === '') {
+      // Look for default namespace: @_xmlns
+      return attrs['@_xmlns'];
+    } else {
+      // Look for prefixed namespace: @_xmlns:prefix
+      return attrs[`@_xmlns:${prefix}`];
+    }
   }
 
   /**

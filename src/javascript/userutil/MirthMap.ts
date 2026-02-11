@@ -160,20 +160,31 @@ export class ChannelMap extends MirthMap {
   }
 
   /**
-   * Get with fallback to sourceMap if not found in channelMap
+   * Get with fallback to sourceMap if not found in channelMap.
+   * Java logs an ERROR when the sourceMap fallback fires, warning
+   * developers that this retrieval method is deprecated.
    */
   override get(key: string): unknown {
     if (this.data.has(key)) {
       return this.data.get(key);
     }
-    return this.sourceMap.get(key);
+    if (this.sourceMap.containsKey(key)) {
+      console.error(
+        `The source map entry "${key}" was retrieved from the channel map. ` +
+        `This method of retrieval has been deprecated and will soon be removed. ` +
+        `Please use sourceMap.get('${key}') instead.`
+      );
+      return this.sourceMap.get(key);
+    }
+    return undefined;
   }
 
   /**
-   * Check both channelMap and sourceMap
+   * Check only the channelMap delegate (not sourceMap).
+   * Java's ChannelMap.containsKey() only checks the delegate.
    */
   override containsKey(key: string): boolean {
-    return this.data.has(key) || this.sourceMap.containsKey(key);
+    return this.data.has(key);
   }
 
   /**
@@ -197,6 +208,32 @@ export class ResponseMap extends MirthMap {
   ) {
     super(initial);
     this.destinationIdMap = destinationIdMap ?? new Map();
+  }
+
+  /**
+   * Get value by key, with fallback to d# lookup via destinationIdMap.
+   * Java's ResponseMap.get(key) checks direct key first, then tries
+   * "d" + destinationIdMap.get(key) for destination name lookups.
+   */
+  override get(key: string): unknown {
+    let value = this.data.get(key);
+    if (value === undefined && this.destinationIdMap.has(key)) {
+      const metaDataId = this.destinationIdMap.get(key)!;
+      value = this.data.get(`d${metaDataId}`);
+    }
+    return value;
+  }
+
+  /**
+   * Check if key exists, with fallback to d# lookup via destinationIdMap.
+   */
+  override containsKey(key: string): boolean {
+    if (this.data.has(key)) return true;
+    if (this.destinationIdMap.has(key)) {
+      const metaDataId = this.destinationIdMap.get(key)!;
+      return this.data.has(`d${metaDataId}`);
+    }
+    return false;
   }
 
   /**

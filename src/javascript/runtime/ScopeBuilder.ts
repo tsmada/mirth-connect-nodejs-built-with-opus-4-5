@@ -31,6 +31,7 @@ import { Status } from '../../model/Status.js';
 import { VMRouter as RealVMRouter } from '../userutil/VMRouter.js';
 import { AlertSender as RealAlertSender } from '../userutil/AlertSender.js';
 import { ValueReplacer } from '../../util/ValueReplacer.js';
+import { SerializerFactory } from '../../util/SerializerFactory.js';
 
 /**
  * Stub VMRouter used when controllers aren't initialized yet (tests, early startup).
@@ -209,8 +210,18 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     Maps,
     MapBuilder,
 
+    // Serializer factory (Java: importPackage, used by data type scripts)
+    SerializerFactory,
+
     // Console for debugging
     console,
+
+    // Sandbox: disable timer functions to prevent scripts from scheduling code
+    // that outlives the vm.Script timeout (DoS prevention)
+    setTimeout: undefined,
+    setInterval: undefined,
+    setImmediate: undefined,
+    queueMicrotask: undefined,
 
     // Built-in functions that scripts might use
     parseInt,
@@ -353,7 +364,8 @@ export function buildPreprocessorScope(
  */
 export function buildPostprocessorScope(
   context: ScriptContext,
-  message: Message
+  message: Message,
+  response?: Response
 ): Scope {
   const scope = buildChannelScope(context);
 
@@ -378,6 +390,11 @@ export function buildPostprocessorScope(
     const responseMap = new ResponseMap(mergedConnectorMessage.getResponseMap());
     scope.responseMap = responseMap;
     scope.$r = responseMap;
+  }
+
+  // Inject response if provided (Java overload with Response parameter)
+  if (response) {
+    scope.response = response;
   }
 
   return scope;
@@ -407,6 +424,36 @@ export function buildResponseTransformerScope(
  */
 export function buildDeployScope(context: ScriptContext): Scope {
   return buildChannelScope(context);
+}
+
+/**
+ * Build scope for attachment processing scripts
+ * Java: JavaScriptScopeUtil.getAttachmentScope()
+ */
+export function buildAttachmentScope(
+  context: ScriptContext,
+  rawData: string,
+  sourceMapData: Map<string, unknown>,
+  attachments: unknown[],
+  isBinary: boolean
+): Scope {
+  const scope = buildChannelScope(context);
+
+  // Raw message data
+  scope.message = rawData;
+
+  // SourceMap (immutable in Java via Collections.unmodifiableMap)
+  const sourceMap = new SourceMap(sourceMapData);
+  scope.sourceMap = sourceMap;
+  scope.$s = sourceMap;
+
+  // Attachment list
+  scope.mirth_attachments = attachments;
+
+  // Binary flag
+  scope.binary = isBinary;
+
+  return scope;
 }
 
 /**

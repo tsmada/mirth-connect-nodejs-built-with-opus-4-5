@@ -251,14 +251,16 @@ describe('ScriptBuilder', () => {
       expect(script).toContain('doDeploy();');
     });
 
-    it('should include limited map functions', () => {
+    it('should include all map functions (matches Java appendMapFunctions)', () => {
       const script = builder.generateDeployScript('// deploy');
 
       expect(script).toContain('function $g(');
       expect(script).toContain('function $gc(');
       expect(script).toContain('function $cfg(');
-      expect(script).not.toContain('function $c(');
-      expect(script).not.toContain('function $s(');
+      expect(script).toContain('function $c(');
+      expect(script).toContain('function $s(');
+      expect(script).toContain('function $co(');
+      expect(script).toContain('function $r(');
     });
   });
 
