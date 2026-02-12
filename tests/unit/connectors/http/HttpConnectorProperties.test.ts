@@ -187,6 +187,8 @@ describe('HttpReceiverProperties interface', () => {
       responseDataTypeBinary: false,
       responseStatusCode: '201',
       responseHeaders: new Map([['X-Custom', ['value']]]),
+      useResponseHeadersVariable: false,
+      responseHeadersVariable: '',
       staticResources: [
         {
           contextPath: '/static',
@@ -228,6 +230,10 @@ describe('HttpDispatcherProperties interface', () => {
       responseIncludeMetadata: true,
       responseBinaryMimeTypes: 'application/pdf',
       responseBinaryMimeTypesRegex: false,
+      useHeadersVariable: false,
+      headersVariable: '',
+      useParametersVariable: false,
+      parametersVariable: '',
     };
 
     expect(props.host).toBe('https://api.example.com');
