@@ -7,7 +7,10 @@
  * - Connect to remote TCP server
  * - MLLP message framing
  * - Wait for ACK response
- * - Connection pooling/keep-alive
+ * - Connection map for persistent connections (keyed by dispatcherId+host+port)
+ * - Connection event dispatching for dashboard status
+ * - Socket timeout with queueOnResponseTimeout
+ * - Send timeout thread for closing idle persistent connections
  */
 
 import * as net from 'net';
@@ -18,10 +21,12 @@ import { ContentType } from '../../model/ContentType.js';
 import {
   TcpDispatcherProperties,
   getDefaultTcpDispatcherProperties,
+  TransmissionMode,
   frameMessage,
   unframeMessage,
   hasCompleteMessage,
 } from './TcpConnectorProperties.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 
 export interface TcpDispatcherConfig {
   name?: string;
@@ -40,8 +45,18 @@ export interface TcpDispatcherConfig {
  */
 export class TcpDispatcher extends DestinationConnector {
   private properties: TcpDispatcherProperties;
-  private socket: net.Socket | null = null;
-  private connected: boolean = false;
+
+  /**
+   * CPC-CLG-002: Persistent connection map matching Java's ConcurrentHashMap<String, Socket>.
+   * Key format: dispatcherId + host + port (+ localAddress + localPort if overriding)
+   */
+  private connectedSockets: Map<string, net.Socket> = new Map();
+
+  /**
+   * Timeout threads for closing idle persistent connections.
+   * Matches Java's timeoutThreads ConcurrentHashMap<String, Thread>.
+   */
+  private timeoutTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(config: TcpDispatcherConfig) {
     super({
@@ -84,50 +99,244 @@ export class TcpDispatcher extends DestinationConnector {
       return;
     }
 
-    // Connect immediately if keep-alive is enabled
-    if (this.properties.keepConnectionOpen) {
-      await this.connect();
-    }
+    // CPC-MCE-001: Dispatch IDLE event on deploy (matching Java onDeploy)
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
 
     this.running = true;
   }
 
   /**
    * Stop the TCP dispatcher
+   * Closes all persistent connections and clears timeout timers.
    */
   async stop(): Promise<void> {
     if (!this.running) {
       return;
     }
 
-    await this.disconnect();
+    // Clear all timeout timers
+    for (const [, timer] of this.timeoutTimers) {
+      clearTimeout(timer);
+    }
+    this.timeoutTimers.clear();
+
+    // Close all persistent connections
+    for (const [socketKey, socket] of this.connectedSockets) {
+      this.closeSocketQuietly(socketKey, socket);
+    }
+    this.connectedSockets.clear();
+
     this.running = false;
   }
 
   /**
-   * Connect to the remote host
+   * Build the socket key for the connection map.
+   * Matches Java: dispatcherId + remoteAddress + remotePort [+ localAddress + localPort]
    */
-  private async connect(): Promise<void> {
-    if (this.connected && this.socket) {
-      return;
+  private getSocketKey(connectorMessage: ConnectorMessage): string {
+    let key = `${connectorMessage.getMetaDataId()}${this.properties.host}${this.properties.port}`;
+    if (this.properties.localAddress) {
+      key += `${this.properties.localAddress}${this.properties.localPort ?? 0}`;
     }
+    return key;
+  }
 
+  /**
+   * Send message to the TCP destination.
+   * CPC-MCE-001: Full connection event lifecycle
+   * CPC-CLG-002: Persistent connection map
+   * CPC-MEH-003: Socket timeout with queueOnResponseTimeout
+   * CPC-STG-002: CONNECTING/SENDING/WAITING_FOR_RESPONSE states
+   */
+  async send(connectorMessage: ConnectorMessage): Promise<void> {
+    const socketKey = this.getSocketKey(connectorMessage);
+    let socket: net.Socket | null = null;
+
+    try {
+      // Cancel existing timeout timer for this socket key
+      const existingTimer = this.timeoutTimers.get(socketKey);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        this.timeoutTimers.delete(socketKey);
+      }
+
+      // CPC-CLG-002: Look up existing socket in connection map
+      socket = this.connectedSockets.get(socketKey) ?? null;
+
+      // Check if we need a new socket
+      if (!this.properties.keepConnectionOpen || !socket || socket.destroyed) {
+        // Close existing stale socket
+        if (socket) {
+          this.closeSocketQuietly(socketKey, socket);
+          this.connectedSockets.delete(socketKey);
+        }
+
+        // CPC-STG-002: CONNECTING state
+        const connectInfo = `Trying to connect on ${this.properties.host}:${this.properties.port}...`;
+        this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTING, connectInfo);
+
+        socket = await this.connectSocket();
+
+        // CPC-CLG-002: Store in connection map
+        this.connectedSockets.set(socketKey, socket);
+
+        // CPC-MCE-001: CONNECTED + ConnectorCountEvent
+        const connInfo = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;
+        this.dispatchConnectorCountEvent(true, connInfo);
+      }
+
+      // CPC-MCE-001: SENDING event
+      const sendInfo = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;
+      this.dispatchConnectionEvent(ConnectionStatusEventType.SENDING, sendInfo);
+
+      // Get message content
+      const content = this.getContent(connectorMessage);
+
+      // Frame the message
+      const framedMessage = frameMessage(
+        content,
+        this.properties.transmissionMode,
+        this.properties.startOfMessageBytes,
+        this.properties.endOfMessageBytes
+      );
+
+      // Send the data
+      await this.writeToSocket(socket, framedMessage);
+
+      // Handle response
+      if (!this.properties.ignoreResponse) {
+        // CPC-STG-002: WAITING_FOR_RESPONSE state
+        const waitInfo = `Waiting for response from ${socket.remoteAddress}:${socket.remotePort} (Timeout: ${this.properties.responseTimeout} ms)...`;
+        this.dispatchConnectionEvent(ConnectionStatusEventType.WAITING_FOR_RESPONSE, waitInfo);
+
+        try {
+          const response = await this.readResponse(socket);
+
+          // Set send date
+          connectorMessage.setSendDate(new Date());
+
+          if (response) {
+            connectorMessage.setContent({
+              contentType: ContentType.RESPONSE,
+              content: response,
+              dataType: this.properties.dataType,
+              encrypted: false,
+            });
+          }
+
+          connectorMessage.setStatus(Status.SENT);
+        } catch (readError: unknown) {
+          // CPC-MEH-003: Socket timeout handling with queueOnResponseTimeout
+          const isTimeout = readError instanceof Error &&
+            readError.message.includes('timeout');
+
+          if (isTimeout) {
+            if (this.properties.queueOnResponseTimeout) {
+              // Leave status as QUEUED for retry (Java default behavior)
+              connectorMessage.setStatus(Status.QUEUED);
+              connectorMessage.setProcessingError('Timeout waiting for response');
+            } else {
+              connectorMessage.setStatus(Status.ERROR);
+              connectorMessage.setProcessingError('Timeout waiting for response');
+            }
+          } else {
+            connectorMessage.setStatus(Status.ERROR);
+            connectorMessage.setProcessingError(
+              readError instanceof Error ? readError.message : String(readError)
+            );
+          }
+
+          const errMsg = readError instanceof Error ? readError.message : String(readError);
+          // CPC-MCE-001: FAILURE event on read error
+          this.dispatchConnectionEvent(
+            ConnectionStatusEventType.FAILURE,
+            `Error receiving response from ${socket.remoteAddress}:${socket.remotePort}: ${errMsg}`
+          );
+
+          // Close broken socket
+          this.closeSocketQuietly(socketKey, socket);
+          this.connectedSockets.delete(socketKey);
+          return;
+        }
+      } else {
+        // Ignoring response - always SENT
+        connectorMessage.setSendDate(new Date());
+        connectorMessage.setStatus(Status.SENT);
+      }
+
+      // Store connection info in connector map
+      connectorMessage.getConnectorMap().set('remoteHost', this.properties.host);
+      connectorMessage.getConnectorMap().set('remotePort', this.properties.port);
+
+      // Handle connection lifecycle after send
+      if (this.properties.keepConnectionOpen) {
+        if (this.properties.sendTimeout > 0) {
+          // Start a timer to close the connection after sendTimeout idle period
+          this.startTimeoutTimer(socketKey);
+        }
+      } else {
+        // Close immediately if not keeping alive
+        this.closeSocketQuietly(socketKey, socket);
+        this.connectedSockets.delete(socketKey);
+      }
+
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      // CPC-MCE-001: FAILURE event on send error
+      const failMsg = socket
+        ? `Error sending message (${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}): ${errorMessage}`
+        : `Error sending message: ${errorMessage}`;
+      this.dispatchConnectionEvent(ConnectionStatusEventType.FAILURE, failMsg);
+
+      connectorMessage.setStatus(Status.ERROR);
+      connectorMessage.setProcessingError(errorMessage);
+
+      // Clean up broken connection
+      if (socket) {
+        const timer = this.timeoutTimers.get(socketKey);
+        if (timer) {
+          clearTimeout(timer);
+          this.timeoutTimers.delete(socketKey);
+        }
+        this.closeSocketQuietly(socketKey, socket);
+        this.connectedSockets.delete(socketKey);
+      }
+
+      throw error;
+    } finally {
+      // CPC-MCE-001: IDLE event after send completes (matching Java's finally block)
+      if (socket) {
+        const addr = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;
+        this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE, addr);
+      }
+    }
+  }
+
+  /**
+   * Get response from the last send
+   */
+  async getResponse(connectorMessage: ConnectorMessage): Promise<string | null> {
+    const response = connectorMessage.getResponseContent();
+    return response?.content || null;
+  }
+
+  /**
+   * Create and connect a new socket.
+   */
+  private async connectSocket(): Promise<net.Socket> {
     return new Promise((resolve, reject) => {
-      this.socket = new net.Socket();
+      const socket = new net.Socket();
 
       const timeout = setTimeout(() => {
-        this.socket?.destroy();
+        socket.destroy();
         reject(new Error('Connection timeout'));
       }, this.properties.socketTimeout);
 
-      this.socket.on('error', (error) => {
+      socket.on('error', (error) => {
         clearTimeout(timeout);
-        this.connected = false;
         reject(error);
-      });
-
-      this.socket.on('close', () => {
-        this.connected = false;
       });
 
       const connectOptions: net.SocketConnectOpts = {
@@ -142,122 +351,35 @@ export class TcpDispatcher extends DestinationConnector {
         connectOptions.localPort = this.properties.localPort;
       }
 
-      this.socket.connect(connectOptions, () => {
+      socket.connect(connectOptions, () => {
         clearTimeout(timeout);
-        this.connected = true;
-        resolve();
+
+        // Configure socket options (matching Java initSocket)
+        socket.setNoDelay(true);
+        socket.setKeepAlive(this.properties.keepConnectionOpen);
+
+        resolve(socket);
       });
     });
   }
 
   /**
-   * Disconnect from the remote host
+   * Write data to socket.
    */
-  private async disconnect(): Promise<void> {
-    if (this.socket) {
-      this.socket.destroy();
-      this.socket = null;
-      this.connected = false;
-    }
+  private writeToSocket(socket: net.Socket, data: Buffer): Promise<void> {
+    return new Promise((resolve, reject) => {
+      socket.write(data, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   }
 
   /**
-   * Send message to the TCP destination
+   * Read response from socket with timeout.
+   * CPC-MEH-003: Throws on timeout to trigger queueOnResponseTimeout logic.
    */
-  async send(connectorMessage: ConnectorMessage): Promise<void> {
-    try {
-      // Ensure connection
-      if (!this.connected || !this.socket) {
-        await this.connect();
-      }
-
-      // Get message content
-      const content = this.getContent(connectorMessage);
-
-      // Frame the message
-      const framedMessage = frameMessage(
-        content,
-        this.properties.transmissionMode,
-        this.properties.startOfMessageBytes,
-        this.properties.endOfMessageBytes
-      );
-
-      // Send message and wait for response
-      const response = await this.sendAndWaitForResponse(framedMessage);
-
-      // Set send date
-      connectorMessage.setSendDate(new Date());
-
-      // Set response
-      if (response) {
-        connectorMessage.setContent({
-          contentType: ContentType.RESPONSE,
-          content: response,
-          dataType: this.properties.dataType,
-          encrypted: false,
-        });
-      }
-
-      // Update status
-      connectorMessage.setStatus(Status.SENT);
-
-      // Store in connector map
-      connectorMessage.getConnectorMap().set('remoteHost', this.properties.host);
-      connectorMessage.getConnectorMap().set('remotePort', this.properties.port);
-
-      // Close connection if not keeping alive
-      if (!this.properties.keepConnectionOpen) {
-        await this.disconnect();
-      }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      connectorMessage.setStatus(Status.ERROR);
-      connectorMessage.setProcessingError(errorMessage);
-
-      // Close broken connection
-      await this.disconnect();
-      throw error;
-    }
-  }
-
-  /**
-   * Get response from the last send
-   */
-  async getResponse(connectorMessage: ConnectorMessage): Promise<string | null> {
-    const response = connectorMessage.getResponseContent();
-    return response?.content || null;
-  }
-
-  /**
-   * Get content to send from connector message
-   */
-  private getContent(connectorMessage: ConnectorMessage): string {
-    // Use template if provided
-    if (this.properties.template) {
-      return this.properties.template;
-    }
-
-    const encodedContent = connectorMessage.getEncodedContent();
-    if (encodedContent) {
-      return encodedContent.content;
-    }
-
-    const rawData = connectorMessage.getRawData();
-    return rawData || '';
-  }
-
-  /**
-   * Send data and wait for response
-   */
-  private async sendAndWaitForResponse(data: Buffer): Promise<string | null> {
-    if (!this.socket) {
-      throw new Error('Socket not connected');
-    }
-
-    // Capture socket reference - we've verified it's not null above
-    const socket = this.socket;
-
+  private readResponse(socket: net.Socket): Promise<string | null> {
     return new Promise((resolve, reject) => {
       let buffer = Buffer.alloc(0);
       let responseReceived = false;
@@ -265,8 +387,8 @@ export class TcpDispatcher extends DestinationConnector {
       const timeout = setTimeout(() => {
         if (!responseReceived) {
           cleanup();
-          // If no response within timeout, resolve with null (may be one-way)
-          resolve(null);
+          // CPC-MEH-003: Throw timeout error instead of resolving null
+          reject(new Error('Response timeout'));
         }
       }, this.properties.responseTimeout);
 
@@ -308,36 +430,93 @@ export class TcpDispatcher extends DestinationConnector {
 
       const cleanup = () => {
         clearTimeout(timeout);
-        socket?.removeListener('data', onData);
-        socket?.removeListener('error', onError);
-        socket?.removeListener('close', onClose);
+        socket.removeListener('data', onData);
+        socket.removeListener('error', onError);
+        socket.removeListener('close', onClose);
       };
 
       socket.on('data', onData);
       socket.on('error', onError);
       socket.on('close', onClose);
-
-      // Send the data
-      socket.write(data, (err) => {
-        if (err) {
-          cleanup();
-          reject(err);
-        }
-      });
     });
   }
 
   /**
-   * Check if connected
+   * Start a timeout timer for a persistent connection.
+   * After sendTimeout ms of idle time, the socket is closed.
+   * Matches Java's startThread() pattern.
    */
-  isConnected(): boolean {
-    return this.connected;
+  private startTimeoutTimer(socketKey: string): void {
+    // Clear any existing timer
+    const existing = this.timeoutTimers.get(socketKey);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    const timer = setTimeout(() => {
+      this.timeoutTimers.delete(socketKey);
+      const socket = this.connectedSockets.get(socketKey);
+      if (socket) {
+        this.closeSocketQuietly(socketKey, socket);
+        this.connectedSockets.delete(socketKey);
+      }
+    }, this.properties.sendTimeout);
+
+    this.timeoutTimers.set(socketKey, timer);
   }
 
   /**
-   * Get the socket (for testing)
+   * Close a socket quietly (no throw), dispatching DISCONNECTED event.
    */
-  getSocket(): net.Socket | null {
-    return this.socket;
+  private closeSocketQuietly(socketKey: string, socket: net.Socket): void {
+    try {
+      if (!socket.destroyed) {
+        const addr = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;
+        socket.destroy();
+        // CPC-MCE-001: DISCONNECTED + ConnectorCountEvent on socket close
+        this.dispatchConnectorCountEvent(false, addr);
+      }
+    } catch {
+      // Ignore close errors
+    }
+  }
+
+  /**
+   * Get content to send from connector message
+   */
+  private getContent(connectorMessage: ConnectorMessage): string {
+    // Use template if provided
+    if (this.properties.template && this.properties.template !== '${message.encodedData}') {
+      return this.properties.template;
+    }
+
+    const encodedContent = connectorMessage.getEncodedContent();
+    if (encodedContent) {
+      return encodedContent.content;
+    }
+
+    const rawData = connectorMessage.getRawData();
+    return rawData || '';
+  }
+
+  /**
+   * Check if connected (any persistent connection exists)
+   */
+  isConnected(): boolean {
+    return this.connectedSockets.size > 0;
+  }
+
+  /**
+   * Get the number of persistent connections (for testing)
+   */
+  getConnectionCount(): number {
+    return this.connectedSockets.size;
+  }
+
+  /**
+   * Get the connection map (for testing)
+   */
+  getConnectedSockets(): Map<string, net.Socket> {
+    return this.connectedSockets;
   }
 }
