@@ -449,6 +449,9 @@ export class DICOMReceiver extends SourceConnector {
     // Send Association Accept
     await this.sendAssociateAc(socket, association, acceptedContexts);
     association.state = AssociationState.ASSOCIATED;
+
+    // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.CONNECTED))
+    this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTED, `Association from ${association.callingAE}`);
   }
 
   /**
@@ -942,6 +945,9 @@ export class DICOMReceiver extends SourceConnector {
 
     association.state = AssociationState.CLOSED;
     socket.end();
+
+    // Java: dispatch IDLE when association closes normally
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
@@ -951,13 +957,22 @@ export class DICOMReceiver extends SourceConnector {
     association.state = AssociationState.CLOSED;
     this.associations.delete(socket);
     socket.destroy();
+
+    // Java: dispatch IDLE when association is aborted
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
    * Handle socket close
    */
   private handleClose(socket: net.Socket): void {
+    const hadAssociation = this.associations.has(socket);
     this.associations.delete(socket);
+
+    // Java: dispatch IDLE when socket closes (association ended)
+    if (hadAssociation) {
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+    }
   }
 
   /**
