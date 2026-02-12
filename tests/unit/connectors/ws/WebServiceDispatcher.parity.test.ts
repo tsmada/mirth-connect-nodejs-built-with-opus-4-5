@@ -339,4 +339,86 @@ describe('WebServiceDispatcher.replaceConnectorProperties (CPC-RCP-003)', () => 
 
     expect(result.wsdlUrl).toBe('fromChannel');
   });
+
+  // CPC-W18-018: Attachment resolution tests
+  it('should resolve ${variable} in attachmentContents', () => {
+    const connectorMessage = createConnectorMessage({
+      channelMap: new Map([
+        ['fileContent', 'base64EncodedPDF=='],
+        ['xmlPayload', '<Document>test</Document>'],
+      ]),
+    });
+
+    const result = dispatcher.replaceConnectorProperties(
+      {
+        ...dispatcher.getProperties(),
+        attachmentContents: ['${fileContent}', '${xmlPayload}', 'literal-content'],
+      },
+      connectorMessage
+    );
+
+    expect(result.attachmentContents).toEqual([
+      'base64EncodedPDF==',
+      '<Document>test</Document>',
+      'literal-content',
+    ]);
+  });
+
+  it('should resolve ${variable} in attachmentTypes', () => {
+    const connectorMessage = createConnectorMessage({
+      channelMap: new Map([['mimeType', 'application/pdf']]),
+    });
+
+    const result = dispatcher.replaceConnectorProperties(
+      {
+        ...dispatcher.getProperties(),
+        attachmentTypes: ['${mimeType}', 'text/xml'],
+      },
+      connectorMessage
+    );
+
+    expect(result.attachmentTypes).toEqual(['application/pdf', 'text/xml']);
+  });
+
+  it('should resolve all three attachment arrays together', () => {
+    const connectorMessage = createConnectorMessage({
+      channelMap: new Map([
+        ['attachName', 'report.pdf'],
+        ['attachContent', 'JVBERi0='],
+        ['attachType', 'application/pdf'],
+      ]),
+    });
+
+    const result = dispatcher.replaceConnectorProperties(
+      {
+        ...dispatcher.getProperties(),
+        attachmentNames: ['${attachName}'],
+        attachmentContents: ['${attachContent}'],
+        attachmentTypes: ['${attachType}'],
+      },
+      connectorMessage
+    );
+
+    expect(result.attachmentNames).toEqual(['report.pdf']);
+    expect(result.attachmentContents).toEqual(['JVBERi0=']);
+    expect(result.attachmentTypes).toEqual(['application/pdf']);
+  });
+
+  it('should handle empty attachment arrays without errors', () => {
+    const connectorMessage = createConnectorMessage();
+
+    const result = dispatcher.replaceConnectorProperties(
+      {
+        ...dispatcher.getProperties(),
+        attachmentNames: [],
+        attachmentContents: [],
+        attachmentTypes: [],
+      },
+      connectorMessage
+    );
+
+    expect(result.attachmentNames).toEqual([]);
+    expect(result.attachmentContents).toEqual([]);
+    expect(result.attachmentTypes).toEqual([]);
+  });
 });

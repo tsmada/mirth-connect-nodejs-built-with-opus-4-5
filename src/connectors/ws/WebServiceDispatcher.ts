@@ -196,10 +196,20 @@ export class WebServiceDispatcher extends DestinationConnector {
       resolved.headers = resolvedHeaders;
     }
 
-    // Resolve attachment names
-    if (resolved.attachmentNames.length > 0) {
+    // Resolve attachment names, contents, and types (CPC-W18-018)
+    if (resolved.attachmentNames && resolved.attachmentNames.length > 0) {
       resolved.attachmentNames = resolved.attachmentNames.map(
-        name => this.resolveVariables(name, connectorMessage)
+        (name: string) => this.resolveVariables(name, connectorMessage)
+      );
+    }
+    if (resolved.attachmentContents && resolved.attachmentContents.length > 0) {
+      resolved.attachmentContents = resolved.attachmentContents.map(
+        (c: string) => this.resolveVariables(c, connectorMessage)
+      );
+    }
+    if (resolved.attachmentTypes && resolved.attachmentTypes.length > 0) {
+      resolved.attachmentTypes = resolved.attachmentTypes.map(
+        (t: string) => this.resolveVariables(t, connectorMessage)
       );
     }
 
