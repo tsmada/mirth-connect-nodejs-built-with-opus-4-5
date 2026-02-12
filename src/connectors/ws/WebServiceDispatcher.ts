@@ -164,11 +164,104 @@ export class WebServiceDispatcher extends DestinationConnector {
   }
 
   /**
+   * CPC-RCP-003: Resolve ${variable} placeholders in connector properties.
+   * Matches Java WebServiceDispatcher.replaceConnectorProperties() (line 394):
+   * Resolves wsdlUrl, service, port, locationURI, soapAction, envelope,
+   * username, password, header names/values, and attachment names.
+   */
+  replaceConnectorProperties(
+    props: WebServiceDispatcherProperties,
+    connectorMessage: ConnectorMessage
+  ): WebServiceDispatcherProperties {
+    const resolved = { ...props };
+
+    // Resolve core string properties
+    resolved.wsdlUrl = this.resolveVariables(resolved.wsdlUrl, connectorMessage);
+    resolved.service = this.resolveVariables(resolved.service, connectorMessage);
+    resolved.port = this.resolveVariables(resolved.port, connectorMessage);
+    resolved.locationURI = this.resolveVariables(resolved.locationURI, connectorMessage);
+    resolved.soapAction = this.resolveVariables(resolved.soapAction, connectorMessage);
+    resolved.envelope = this.resolveVariables(resolved.envelope, connectorMessage);
+    resolved.username = this.resolveVariables(resolved.username, connectorMessage);
+    resolved.password = this.resolveVariables(resolved.password, connectorMessage);
+
+    // Resolve header names and values
+    if (resolved.headers.size > 0) {
+      const resolvedHeaders = new Map<string, string[]>();
+      for (const [key, values] of resolved.headers) {
+        const resolvedKey = this.resolveVariables(key, connectorMessage);
+        const resolvedValues = values.map(v => this.resolveVariables(v, connectorMessage));
+        resolvedHeaders.set(resolvedKey, resolvedValues);
+      }
+      resolved.headers = resolvedHeaders;
+    }
+
+    // Resolve attachment names
+    if (resolved.attachmentNames.length > 0) {
+      resolved.attachmentNames = resolved.attachmentNames.map(
+        name => this.resolveVariables(name, connectorMessage)
+      );
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Simple ${variable} resolution using connector message maps.
+   * Checks channelMap, then sourceMap, then connectorMap.
+   * Matches Java ValueReplacer pattern used by replaceConnectorProperties.
+   */
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
+
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
+      // Check channel map
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const v = channelMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check source map
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const v = sourceMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check connector map
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const v = connectorMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      return match;
+    });
+  }
+
+  /**
    * Send SOAP message.
    * CPC-WS-001: Dispatches SENDING before invoke, IDLE in finally.
    * CPC-WS-002: Nuanced error classification matching Java.
+   * CPC-RCP-003: Resolves ${variable} placeholders before sending.
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
+    // CPC-RCP-003: Resolve connector properties with message context
+    const resolvedProps = this.replaceConnectorProperties(this.properties, connectorMessage);
+    const savedProps = this.properties;
+    this.properties = resolvedProps;
+
     // CPC-WS-001: Dispatch SENDING event before invoke
     this.dispatchConnectionEvent(ConnectionStatusEventType.SENDING);
 
@@ -209,6 +302,8 @@ export class WebServiceDispatcher extends DestinationConnector {
         this.handleSendError(connectorMessage, error);
       }
     } finally {
+      // CPC-RCP-003: Restore original (unresolved) properties
+      this.properties = savedProps;
       // CPC-WS-001: Dispatch IDLE event in finally block
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }

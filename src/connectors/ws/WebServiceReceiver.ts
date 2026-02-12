@@ -224,7 +224,8 @@ export class WebServiceReceiver extends SourceConnector {
 
   /**
    * Handle incoming SOAP request.
-   * CPC-WS-003: Dispatches RECEIVING on request start, IDLE in finally.
+   * CPC-MCE-006: Dispatches CONNECTED on arrival, RECEIVING during parse, IDLE in finally.
+   * CPC-WS-003: Event lifecycle matches Java's WebServiceReceiver.
    */
   private async handleSoapRequest(
     req: Request,
@@ -232,7 +233,10 @@ export class WebServiceReceiver extends SourceConnector {
   ): Promise<void> {
     this.processingCount++;
 
-    // CPC-WS-003: Dispatch RECEIVING event when a request begins
+    // CPC-MCE-006: Dispatch CONNECTED when a new SOAP request arrives
+    this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTED);
+
+    // CPC-WS-003: Dispatch RECEIVING event during body parsing
     this.dispatchConnectionEvent(ConnectionStatusEventType.RECEIVING);
 
     try {
