@@ -431,8 +431,8 @@ export class WebServiceDispatcher extends DestinationConnector {
 
     const envelope = this.properties.envelope;
 
-    // Build headers
-    const headers = this.buildHttpHeaders();
+    // Build headers (CPC-W19-004: passes connectorMessage for useHeadersVariable lookup)
+    const headers = this.buildHttpHeaders(connectorMessage);
 
     // Determine endpoint location
     let endpointLocation = this.properties.locationURI;
@@ -575,19 +575,115 @@ export class WebServiceDispatcher extends DestinationConnector {
   }
 
   /**
-   * Build HTTP headers
+   * Build HTTP headers, applying useHeadersVariable runtime lookup if enabled.
+   * CPC-W19-004: Matches Java's getHeaders() → HttpUtil.getTableMap() pattern.
    */
-  private buildHttpHeaders(): Record<string, string> {
+  private buildHttpHeaders(connectorMessage: ConnectorMessage): Record<string, string> {
+    const headersMap = this.getHeaders(this.properties, connectorMessage);
     const headers: Record<string, string> = {};
 
-    // Add custom headers
-    if (!this.properties.useHeadersVariable) {
-      for (const [key, values] of this.properties.headers) {
-        headers[key] = values.join(', ');
-      }
+    for (const [key, values] of headersMap) {
+      headers[key] = values.join(', ');
     }
 
     return headers;
+  }
+
+  /**
+   * Get headers for the SOAP request.
+   * CPC-W19-004: Matches Java WebServiceDispatcher.getHeaders() (line 754-755)
+   * which delegates to HttpUtil.getTableMap().
+   *
+   * When useHeadersVariable is true, looks up the variable name from message maps
+   * (responseMap → connectorMap → channelMap → sourceMap) and uses the resulting
+   * Map as the HTTP headers. Otherwise, returns the static headers from properties.
+   */
+  private getHeaders(
+    props: WebServiceDispatcherProperties,
+    connectorMessage: ConnectorMessage
+  ): Map<string, string[]> {
+    if (props.useHeadersVariable && props.headersVariable) {
+      return this.getTableMapFromVariable(props.headersVariable, connectorMessage);
+    }
+    return props.headers;
+  }
+
+  /**
+   * Look up a Map variable from message maps and normalize to Map<string, string[]>.
+   * Matches Java HttpUtil.getTableMap(String mapVariable, MessageMaps, ConnectorMessage).
+   *
+   * Lookup order matches Java MessageMaps.get():
+   *   responseMap → connectorMap → channelMap → sourceMap
+   *
+   * Value normalization:
+   * - If value is an array/list, each entry is String-coerced
+   * - If value is a scalar, it becomes a single-element list
+   */
+  private getTableMapFromVariable(
+    variableName: string,
+    connectorMessage: ConnectorMessage
+  ): Map<string, string[]> {
+    const result = new Map<string, string[]>();
+
+    // Lookup variable from message maps (matches Java MessageMaps.get() order)
+    // Java order: responseMap → connectorMap → channelMap → sourceMap
+    let source: unknown = undefined;
+
+    const responseMap = connectorMessage.getResponseMap?.();
+    if (source === undefined && responseMap?.has(variableName)) {
+      source = responseMap.get(variableName);
+    }
+
+    const connectorMap = connectorMessage.getConnectorMap?.();
+    if (source === undefined && connectorMap?.has(variableName)) {
+      source = connectorMap.get(variableName);
+    }
+
+    const channelMap = connectorMessage.getChannelMap?.();
+    if (source === undefined && channelMap?.has(variableName)) {
+      source = channelMap.get(variableName);
+    }
+
+    const sourceMap = connectorMessage.getSourceMap?.();
+    if (source === undefined && sourceMap?.has(variableName)) {
+      source = sourceMap.get(variableName);
+    }
+
+    if (source == null) {
+      // Java: logger.warn("Map variable '" + mapVariable + "' not found.");
+      return result;
+    }
+
+    // Normalize the source into Map<string, string[]>
+    try {
+      const entries: Iterable<[unknown, unknown]> =
+        source instanceof Map
+          ? source.entries()
+          : typeof source === 'object' && source !== null
+            ? Object.entries(source)
+            : [];
+
+      for (const [rawKey, rawValue] of entries) {
+        try {
+          const key = String(rawKey);
+
+          if (Array.isArray(rawValue)) {
+            const validEntries = rawValue.map((v) => String(v));
+            if (validEntries.length > 0) {
+              result.set(key, validEntries);
+            }
+          } else {
+            result.set(key, [String(rawValue)]);
+          }
+        } catch {
+          // Java: logger.trace("Error getting map entry... Skipping entry.");
+        }
+      }
+    } catch {
+      // Java: logger.warn("Error getting values from map...");
+    }
+
+    return result;
   }
 
   /**
