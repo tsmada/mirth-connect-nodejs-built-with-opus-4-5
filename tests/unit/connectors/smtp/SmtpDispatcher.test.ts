@@ -171,15 +171,10 @@ describe('SmtpDispatcher', () => {
       expect(dispatcher.isRunning()).toBe(false);
     });
 
-    it('should create transporter on start', async () => {
+    it('should be running after start (no persistent transporter)', async () => {
       await dispatcher.start();
-      expect(dispatcher.getTransporter()).not.toBeNull();
-    });
-
-    it('should clear transporter on stop', async () => {
-      await dispatcher.start();
-      await dispatcher.stop();
-      expect(dispatcher.getTransporter()).toBeNull();
+      // CPC-SMTP-003: Java creates per-message connections, no persistent transporter
+      expect(dispatcher.isRunning()).toBe(true);
     });
   });
 
@@ -449,7 +444,7 @@ describe('SmtpDispatcher', () => {
   });
 
   describe('verifyConnection', () => {
-    it('should create transporter if not exists', async () => {
+    it('should return false when no SMTP server is running', async () => {
       const dispatcher = new SmtpDispatcher({
         metaDataId: 1,
         properties: {
@@ -458,12 +453,9 @@ describe('SmtpDispatcher', () => {
         },
       });
 
-      // This will fail since no SMTP server is running, but it should create the transporter
-      await dispatcher.verifyConnection();
-
-      // Connection will fail without an SMTP server, but transporter should be created
-      expect(dispatcher.getTransporter()).not.toBeNull();
-      // Result depends on whether an SMTP server is actually running
+      // This will fail since no SMTP server is running
+      const result = await dispatcher.verifyConnection();
+      expect(result).toBe(false);
     });
   });
 
