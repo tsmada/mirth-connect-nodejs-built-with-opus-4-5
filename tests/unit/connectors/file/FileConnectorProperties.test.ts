@@ -16,8 +16,9 @@ describe('FileConnectorProperties', () => {
 
       expect(props.scheme).toBe(FileScheme.FILE);
       expect(props.host).toBe('');
-      expect(props.username).toBe('');
-      expect(props.password).toBe('');
+      expect(props.anonymous).toBe(true);       // Java default: true
+      expect(props.username).toBe('anonymous');  // Java default: "anonymous"
+      expect(props.password).toBe('anonymous');  // Java default: "anonymous"
       expect(props.directory).toBe('');
       expect(props.fileFilter).toBe('*');
       expect(props.regex).toBe(false);
@@ -28,6 +29,7 @@ describe('FileConnectorProperties', () => {
       expect(props.afterProcessingAction).toBe(AfterProcessingAction.NONE);
       expect(props.pollInterval).toBe(5000);
       expect(props.sortBy).toBe(FileSortBy.DATE);
+      expect(props.secure).toBe(true);           // Java default: true (FTPS)
     });
 
     it('should return independent instances', () => {
@@ -45,8 +47,9 @@ describe('FileConnectorProperties', () => {
 
       expect(props.scheme).toBe(FileScheme.FILE);
       expect(props.host).toBe('');
-      expect(props.username).toBe('');
-      expect(props.password).toBe('');
+      expect(props.anonymous).toBe(true);       // Java default: true
+      expect(props.username).toBe('anonymous');  // Java default: "anonymous"
+      expect(props.password).toBe('anonymous');  // Java default: "anonymous"
       expect(props.directory).toBe('');
       expect(props.outputPattern).toContain('${date:');
       expect(props.outputPattern).toContain('${UUID}');
@@ -54,6 +57,7 @@ describe('FileConnectorProperties', () => {
       expect(props.template).toBe('');
       expect(props.binary).toBe(false);
       expect(props.charsetEncoding).toBe('UTF-8');
+      expect(props.secure).toBe(true);           // Java default: true (FTPS)
     });
 
     it('should return independent instances', () => {

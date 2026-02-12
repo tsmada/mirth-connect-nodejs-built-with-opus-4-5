@@ -51,6 +51,8 @@ export interface FileReceiverProperties {
   host: string;
   /** Port for remote connections */
   port?: number;
+  /** Whether to use anonymous FTP login (Java default: true) */
+  anonymous: boolean;
   /** Username for authentication */
   username: string;
   /** Password for authentication */
@@ -115,6 +117,8 @@ export interface FileDispatcherProperties {
   host: string;
   /** Port for remote connections */
   port?: number;
+  /** Whether to use anonymous FTP login (Java default: true) */
+  anonymous: boolean;
   /** Username for authentication */
   username: string;
   /** Password for authentication */
@@ -159,8 +163,9 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     scheme: FileScheme.FILE,
     host: '',
     port: undefined,
-    username: '',
-    password: '',
+    anonymous: true,       // Java default: true
+    username: 'anonymous', // Java default: "anonymous"
+    password: 'anonymous', // Java default: "anonymous"
     directory: '',
     fileFilter: '*',
     regex: false,
@@ -179,7 +184,7 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     sortDescending: false,
     batchSize: 0, // 0 = unlimited
     passive: true,
-    secure: false,
+    secure: true,          // Java default: true (FTPS)
     validateConnection: true,
     timeout: 10000,
     maxRetryCount: 3,
@@ -195,8 +200,9 @@ export function getDefaultFileDispatcherProperties(): FileDispatcherProperties {
     scheme: FileScheme.FILE,
     host: '',
     port: undefined,
-    username: '',
-    password: '',
+    anonymous: true,       // Java default: true
+    username: 'anonymous', // Java default: "anonymous"
+    password: 'anonymous', // Java default: "anonymous"
     directory: '',
     outputPattern: 'output_${date:yyyyMMddHHmmss}_${UUID}.txt',
     outputAppend: true,  // Java default: true (was false — CPC-DVM-007)
@@ -206,7 +212,7 @@ export function getDefaultFileDispatcherProperties(): FileDispatcherProperties {
     errorOnExists: false,
     tempFilename: '',
     passive: true,
-    secure: false,
+    secure: true,          // Java default: true (FTPS)
     validateConnection: true,
     timeout: 10000,
     keepConnectionOpen: true,  // Java default: true (CPC-RCG-003)
