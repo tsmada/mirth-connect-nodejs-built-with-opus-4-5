@@ -58,6 +58,14 @@ export const MLLP_FRAME = {
 };
 
 /**
+ * Respond-on-new-connection modes for TcpReceiver.
+ * Matches Java TcpReceiverProperties constants.
+ */
+export const NEW_CONNECTION_DISABLED = 0;
+export const NEW_CONNECTION = 1;
+export const NEW_CONNECTION_ON_RECOVERY = 2;
+
+/**
  * TCP Receiver (Source) Properties
  */
 export interface TcpReceiverProperties {
@@ -79,6 +87,8 @@ export interface TcpReceiverProperties {
   maxConnections: number;
   /** Response mode */
   responseMode: ResponseMode;
+  /** Respond on new connection mode (0=disabled, 1=new connection, 2=new connection on recovery) */
+  respondOnNewConnection: number;
   /** Start of message byte (for FRAME mode) */
   startOfMessageBytes: number[];
   /** End of message byte (for FRAME mode) */
@@ -89,6 +99,10 @@ export interface TcpReceiverProperties {
   reconnectInterval: number;
   /** Buffer size */
   bufferSize: number;
+  /** Server mode bind retry attempts (Java default: 10) */
+  bindRetryAttempts: number;
+  /** Server mode bind retry interval in milliseconds */
+  bindRetryInterval: number;
 }
 
 /**
@@ -103,12 +117,18 @@ export interface TcpDispatcherProperties {
   transmissionMode: TransmissionMode;
   /** Character encoding */
   charsetEncoding: string;
-  /** Send timeout in milliseconds */
+  /** Send timeout in milliseconds — Java default: 5000 */
   sendTimeout: number;
-  /** Response timeout in milliseconds */
+  /** Response timeout in milliseconds — Java default: 5000 */
   responseTimeout: number;
-  /** Keep socket connection open */
+  /** Keep socket connection open — Java default: false */
   keepConnectionOpen: boolean;
+  /** Check if remote host has closed connection before reusing socket */
+  checkRemoteHost: boolean;
+  /** Ignore response from remote endpoint */
+  ignoreResponse: boolean;
+  /** Queue message for retry on response timeout instead of ERROR */
+  queueOnResponseTimeout: boolean;
   /** Start of message bytes (for FRAME mode) */
   startOfMessageBytes: number[];
   /** End of message bytes (for FRAME mode) */
@@ -141,11 +161,14 @@ export function getDefaultTcpReceiverProperties(): TcpReceiverProperties {
     keepConnectionOpen: true,
     maxConnections: 10,
     responseMode: ResponseMode.AUTO,
+    respondOnNewConnection: NEW_CONNECTION_DISABLED,
     startOfMessageBytes: [MLLP_FRAME.START_BLOCK],
     endOfMessageBytes: [MLLP_FRAME.END_BLOCK, MLLP_FRAME.CARRIAGE_RETURN],
     dataType: 'HL7V2',
     reconnectInterval: 5000,
     bufferSize: 65536,
+    bindRetryAttempts: 10,
+    bindRetryInterval: 1000,
   };
 }
 
@@ -153,17 +176,21 @@ export function getDefaultTcpReceiverProperties(): TcpReceiverProperties {
  * Default TCP Dispatcher properties
  */
 export function getDefaultTcpDispatcherProperties(): TcpDispatcherProperties {
+  // Java defaults from TcpDispatcherProperties.java constructor
   return {
-    host: 'localhost',
-    port: 6661,
+    host: '127.0.0.1',
+    port: 6660,
     transmissionMode: TransmissionMode.MLLP,
     charsetEncoding: 'UTF-8',
-    sendTimeout: 10000,
-    responseTimeout: 10000,
-    keepConnectionOpen: true,
+    sendTimeout: 5000,          // Java default: "5000"
+    responseTimeout: 5000,      // Java default: "5000"
+    keepConnectionOpen: false,   // Java default: false
+    checkRemoteHost: false,      // Java default: false
+    ignoreResponse: false,       // Java default: false
+    queueOnResponseTimeout: true, // Java default: true
     startOfMessageBytes: [MLLP_FRAME.START_BLOCK],
     endOfMessageBytes: [MLLP_FRAME.END_BLOCK, MLLP_FRAME.CARRIAGE_RETURN],
-    template: '',
+    template: '${message.encodedData}',
     dataType: 'HL7V2',
     bufferSize: 65536,
     localAddress: undefined,

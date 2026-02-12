@@ -16,10 +16,12 @@ export enum ConnectionStatusEventType {
   RECEIVING = 'RECEIVING',
   SENDING = 'SENDING',
   WAITING = 'WAITING',
+  WAITING_FOR_RESPONSE = 'WAITING_FOR_RESPONSE',
   CONNECTED = 'CONNECTED',
   CONNECTING = 'CONNECTING',
   DISCONNECTED = 'DISCONNECTED',
   INFO = 'INFO',
+  FAILURE = 'FAILURE',
 }
 
 /**
@@ -32,6 +34,7 @@ export function isStateEvent(eventType: ConnectionStatusEventType): boolean {
     case ConnectionStatusEventType.CONNECTING:
     case ConnectionStatusEventType.DISCONNECTED:
     case ConnectionStatusEventType.WAITING:
+    case ConnectionStatusEventType.WAITING_FOR_RESPONSE:
       return true;
     default:
       return false;

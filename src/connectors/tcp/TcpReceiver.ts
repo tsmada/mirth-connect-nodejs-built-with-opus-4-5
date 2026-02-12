@@ -4,11 +4,14 @@
  * Purpose: TCP source connector that receives messages over TCP/MLLP
  *
  * Key behaviors to replicate:
- * - Server mode: Listen for incoming connections
- * - Client mode: Connect to remote host
+ * - Server mode: Listen for incoming connections with bind retry
+ * - Client mode: Connect to remote host with reconnect
  * - MLLP message framing
  * - ACK response generation
- * - Multiple simultaneous connections
+ * - Multiple simultaneous connections with maxConnections enforcement
+ * - Connection event dispatching for dashboard status
+ * - Per-socket state tracking
+ * - respondOnNewConnection support
  */
 
 import * as net from 'net';
@@ -27,6 +30,17 @@ import {
 import { ACKGenerator } from '../../util/ACKGenerator.js';
 import type { Message } from '../../model/Message.js';
 import { Status } from '../../model/Status.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
+
+/**
+ * Per-socket state tracking.
+ * Matches Java's TcpReader state variables.
+ */
+interface SocketState {
+  socket: net.Socket;
+  reading: boolean;
+  canRead: boolean;
+}
 
 export interface TcpReceiverConfig {
   name?: string;
@@ -43,6 +57,7 @@ export class TcpReceiver extends SourceConnector {
   private server: net.Server | null = null;
   private clientSocket: net.Socket | null = null;
   private connections: Set<net.Socket> = new Set();
+  private socketStates: Map<net.Socket, SocketState> = new Map();
   private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(config: TcpReceiverConfig) {
@@ -81,6 +96,10 @@ export class TcpReceiver extends SourceConnector {
       throw new Error('TCP Receiver is already running');
     }
 
+    // CPC-MCE-001: Dispatch IDLE + ConnectorCountEvent on deploy (matching Java onDeploy)
+    this.dispatchConnectorCountEvent(false, undefined, this.properties.maxConnections);
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+
     if (this.properties.serverMode === ServerMode.SERVER) {
       await this.startServer();
     } else {
@@ -92,6 +111,7 @@ export class TcpReceiver extends SourceConnector {
 
   /**
    * Stop the TCP receiver
+   * CPC-RCG-001: Complete socket cleanup on stop
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -104,11 +124,21 @@ export class TcpReceiver extends SourceConnector {
       this.reconnectTimer = null;
     }
 
+    // Mark all readers as unable to read (matching Java's onStop logic)
+    for (const [, state] of this.socketStates) {
+      state.canRead = false;
+      // If the reader is currently blocking on read, close the socket to unblock it
+      if (state.reading) {
+        state.socket.destroy();
+      }
+    }
+
     // Close all client connections
     for (const socket of this.connections) {
       socket.destroy();
     }
     this.connections.clear();
+    this.socketStates.clear();
 
     // Close client socket
     if (this.clientSocket) {
@@ -129,8 +159,36 @@ export class TcpReceiver extends SourceConnector {
 
   /**
    * Start in server mode (listen for connections)
+   * CPC-CLG-003: Bind retry on EADDRINUSE matching Java (10 attempts, 1s interval)
    */
   private async startServer(): Promise<void> {
+    const maxAttempts = this.properties.bindRetryAttempts;
+    const retryInterval = this.properties.bindRetryInterval;
+    let bindAttempts = 0;
+
+    while (true) {
+      try {
+        bindAttempts++;
+        await this.attemptBind();
+        return; // Success
+      } catch (error: unknown) {
+        const isAddressInUse = error instanceof Error &&
+          ('code' in error && (error as NodeJS.ErrnoException).code === 'EADDRINUSE');
+
+        if (isAddressInUse && bindAttempts < maxAttempts) {
+          // Retry after interval, matching Java's createServerSocket() behavior
+          await new Promise<void>(resolve => setTimeout(resolve, retryInterval));
+        } else {
+          throw error;
+        }
+      }
+    }
+  }
+
+  /**
+   * Attempt to bind the server socket once.
+   */
+  private attemptBind(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server = net.createServer((socket) => {
         this.handleConnection(socket);
@@ -140,7 +198,11 @@ export class TcpReceiver extends SourceConnector {
         if (!this.running) {
           reject(error);
         } else {
-          console.error('TCP Server error:', error);
+          // CPC-MCE-001: FAILURE event on server error
+          this.dispatchConnectionEvent(
+            ConnectionStatusEventType.FAILURE,
+            `Server error: ${error.message}`
+          );
         }
       });
 
@@ -158,12 +220,21 @@ export class TcpReceiver extends SourceConnector {
       this.clientSocket = new net.Socket();
 
       this.clientSocket.on('error', (error) => {
-        console.error('TCP Client error:', error);
+        // CPC-MCE-001: FAILURE event on client error
+        this.dispatchConnectionEvent(
+          ConnectionStatusEventType.FAILURE,
+          `Client error: ${error.message}`
+        );
         this.scheduleReconnect();
       });
 
       this.clientSocket.on('close', () => {
         if (this.running) {
+          // CPC-MCE-001: INFO event on client reconnect wait
+          this.dispatchConnectionEvent(
+            ConnectionStatusEventType.INFO,
+            `Client socket finished, waiting ${this.properties.reconnectInterval} ms...`
+          );
           this.scheduleReconnect();
         }
       });
@@ -196,8 +267,7 @@ export class TcpReceiver extends SourceConnector {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.running) {
-        this.startClient().catch((err) => {
-          console.error('Reconnect failed:', err);
+        this.startClient().catch(() => {
           this.scheduleReconnect();
         });
       }
@@ -206,15 +276,31 @@ export class TcpReceiver extends SourceConnector {
 
   /**
    * Handle incoming connection
+   * CPC-CLG-004: maxConnections enforcement
+   * CPC-MCE-001: Connection event dispatching
+   * CPC-STG-001: Per-socket state tracking
    */
   private handleConnection(socket: net.Socket): void {
-    // Check connection limit
+    // CPC-CLG-004: Enforce maxConnections
     if (this.connections.size >= this.properties.maxConnections) {
       socket.destroy();
       return;
     }
 
     this.connections.add(socket);
+
+    // CPC-STG-001: Track per-socket state
+    const state: SocketState = {
+      socket,
+      reading: false,
+      canRead: true,
+    };
+    this.socketStates.set(socket, state);
+
+    // CPC-MCE-001: CONNECTED + ConnectorCountEvent on new connection
+    const addr = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;
+    this.dispatchConnectorCountEvent(true, addr);
+
     let buffer = Buffer.alloc(0);
 
     socket.on('data', async (data) => {
@@ -228,12 +314,24 @@ export class TcpReceiver extends SourceConnector {
           this.properties.endOfMessageBytes
         )
       ) {
+        // CPC-MCE-001: RECEIVING event
+        this.dispatchConnectionEvent(
+          ConnectionStatusEventType.RECEIVING,
+          `Message received from ${socket.localAddress}:${socket.localPort}, processing...`
+        );
+
+        // Mark as reading
+        const socketState = this.socketStates.get(socket);
+        if (socketState) socketState.reading = true;
+
         const message = unframeMessage(
           buffer,
           this.properties.transmissionMode,
           this.properties.startOfMessageBytes,
           this.properties.endOfMessageBytes
         );
+
+        if (socketState) socketState.reading = false;
 
         if (message) {
           // Calculate message length for buffer advancement
@@ -242,6 +340,12 @@ export class TcpReceiver extends SourceConnector {
 
           // Process the message
           await this.processMessage(socket, message);
+
+          // CPC-MCE-001: IDLE event after processing
+          this.dispatchConnectionEvent(
+            ConnectionStatusEventType.IDLE,
+            addr
+          );
         } else {
           break;
         }
@@ -250,17 +354,38 @@ export class TcpReceiver extends SourceConnector {
 
     socket.on('close', () => {
       this.connections.delete(socket);
+      this.socketStates.delete(socket);
+      // CPC-MCE-001: DISCONNECTED + ConnectorCountEvent on socket close
+      this.dispatchConnectorCountEvent(false, addr);
     });
 
     socket.on('error', (error) => {
-      console.error('Socket error:', error);
+      // CPC-MCE-001: FAILURE event on socket error
+      this.dispatchConnectionEvent(
+        ConnectionStatusEventType.FAILURE,
+        `Error receiving message from ${socket.localAddress}:${socket.localPort}: ${error.message}`
+      );
       this.connections.delete(socket);
+      this.socketStates.delete(socket);
     });
 
     // Set timeout if configured
     if (this.properties.receiveTimeout > 0) {
       socket.setTimeout(this.properties.receiveTimeout, () => {
-        socket.destroy();
+        if (!this.properties.keepConnectionOpen) {
+          // CPC-MCE-001: FAILURE event on timeout (non-keepalive)
+          this.dispatchConnectionEvent(
+            ConnectionStatusEventType.FAILURE,
+            `Timeout waiting for message from ${socket.localAddress}:${socket.localPort}.`
+          );
+          socket.destroy();
+        } else {
+          // CPC-MCE-001: INFO event on timeout (keepalive)
+          this.dispatchConnectionEvent(
+            ConnectionStatusEventType.INFO,
+            `Timeout waiting for message from ${socket.localAddress}:${socket.localPort}.`
+          );
+        }
       });
     }
   }
@@ -310,7 +435,12 @@ export class TcpReceiver extends SourceConnector {
       // Send response if configured
       await this.sendResponse(socket, message, dispatchResult);
     } catch (error) {
-      console.error('Error processing TCP message:', error);
+      // CPC-MCE-001: FAILURE event on processing error
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.dispatchConnectionEvent(
+        ConnectionStatusEventType.FAILURE,
+        `Error processing message: ${errMsg}`
+      );
       // Send error ACK if response is configured
       try {
         await this.sendResponse(socket, message, null);
@@ -347,6 +477,12 @@ export class TcpReceiver extends SourceConnector {
     if (this.properties.responseMode === ResponseMode.NONE) {
       return;
     }
+
+    // CPC-MCE-001: INFO event when sending response
+    this.dispatchConnectionEvent(
+      ConnectionStatusEventType.INFO,
+      `Sending response to ${socket.localAddress}:${socket.localPort}...`
+    );
 
     if (this.properties.responseMode === ResponseMode.AUTO) {
       // Determine ACK code based on processing result
@@ -436,6 +572,13 @@ export class TcpReceiver extends SourceConnector {
    */
   getConnectionCount(): number {
     return this.connections.size;
+  }
+
+  /**
+   * Get socket states (for testing)
+   */
+  getSocketStates(): Map<net.Socket, SocketState> {
+    return this.socketStates;
   }
 
   /**
