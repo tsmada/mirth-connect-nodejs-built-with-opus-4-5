@@ -74,11 +74,98 @@ export class DICOMDispatcher extends DestinationConnector {
   }
 
   /**
+   * CPC-W18-004: Resolve ${variable} placeholders in connector properties before each send.
+   * Matches Java DICOMDispatcher.replaceConnectorProperties() (line 88):
+   * Resolves host, port, localHost, localPort, applicationEntity, localApplicationEntity,
+   * username, passcode, template, keyStore, keyStorePW, trustStore, trustStorePW, keyPW.
+   * Returns a shallow clone — original properties are NOT modified.
+   */
+  replaceConnectorProperties(
+    props: DICOMDispatcherProperties,
+    connectorMessage: ConnectorMessage
+  ): DICOMDispatcherProperties {
+    const resolved = { ...props };
+
+    // Network
+    resolved.host = this.resolveVariables(resolved.host, connectorMessage);
+    resolved.port = this.resolveVariables(resolved.port, connectorMessage);
+    resolved.localHost = this.resolveVariables(resolved.localHost, connectorMessage);
+    resolved.localPort = this.resolveVariables(resolved.localPort, connectorMessage);
+
+    // Identity
+    resolved.applicationEntity = this.resolveVariables(resolved.applicationEntity, connectorMessage);
+    resolved.localApplicationEntity = this.resolveVariables(resolved.localApplicationEntity, connectorMessage);
+
+    // Authentication
+    resolved.username = this.resolveVariables(resolved.username, connectorMessage);
+    resolved.passcode = this.resolveVariables(resolved.passcode, connectorMessage);
+
+    // Content
+    resolved.template = this.resolveVariables(resolved.template, connectorMessage);
+
+    // TLS
+    resolved.keyStore = this.resolveVariables(resolved.keyStore, connectorMessage);
+    resolved.keyStorePW = this.resolveVariables(resolved.keyStorePW, connectorMessage);
+    resolved.trustStore = this.resolveVariables(resolved.trustStore, connectorMessage);
+    resolved.trustStorePW = this.resolveVariables(resolved.trustStorePW, connectorMessage);
+    resolved.keyPW = this.resolveVariables(resolved.keyPW, connectorMessage);
+
+    return resolved;
+  }
+
+  /**
+   * Simple ${variable} resolution using connector message maps.
+   * Checks channelMap, then sourceMap, then connectorMap.
+   * Matches Java ValueReplacer.replaceValues() map lookup order.
+   */
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
+
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
+      // Check channel map
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const v = channelMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check source map
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const v = sourceMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check connector map
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const v = connectorMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      return match; // Leave unresolved variables as-is
+    });
+  }
+
+  /**
    * Send a DICOM message
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
+    // CPC-W18-004: Resolve ${variable} placeholders before each send
+    const resolvedProps = this.replaceConnectorProperties(this.properties, connectorMessage);
+
     // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.WRITING, info))
-    const info = `Host: ${this.properties.host}`;
+    const info = `Host: ${resolvedProps.host}`;
     this.dispatchConnectionEvent(ConnectionStatusEventType.WRITING, info);
 
     let connection: DicomConnection | null = null;
@@ -97,8 +184,8 @@ export class DICOMDispatcher extends DestinationConnector {
       // Extract SOP Class and Instance UIDs from DICOM data
       const { sopClassUid, sopInstanceUid } = this.extractSopUids(dicomData);
 
-      // Create connection with configured parameters
-      connection = this.createConnection(sopClassUid);
+      // Create connection with configured parameters (using resolved props)
+      connection = this.createConnection(sopClassUid, resolvedProps);
 
       // Establish association
       await connection.associate();
@@ -110,7 +197,7 @@ export class DICOMDispatcher extends DestinationConnector {
       this.handleStoreResponse(connectorMessage, status);
 
       // Handle storage commitment if configured
-      if (this.properties.stgcmt && status === DicomStatus.SUCCESS) {
+      if (resolvedProps.stgcmt && status === DicomStatus.SUCCESS) {
         // Storage commitment handling would go here
         // For now, just log that it was requested
         console.log('Storage commitment requested but not yet implemented');
@@ -283,44 +370,46 @@ export class DICOMDispatcher extends DestinationConnector {
   }
 
   /**
-   * Create DICOM connection with properties
+   * Create DICOM connection with properties.
+   * Accepts resolved props so ${variable} substitution is applied before connection setup.
    */
-  private createConnection(sopClassUid: string): DicomConnection {
+  private createConnection(sopClassUid: string, props?: DICOMDispatcherProperties): DicomConnection {
+    const p = props ?? this.properties;
     const params: Partial<AssociationParams> = {
-      callingAE: this.properties.localApplicationEntity || 'MIRTH',
-      calledAE: this.properties.applicationEntity || 'DCMRCV',
-      host: this.properties.host,
-      port: parseInt(this.properties.port, 10),
-      maxPduLengthSend: parseInt(this.properties.sndpdulen, 10) * 1024,
-      maxPduLengthReceive: parseInt(this.properties.rcvpdulen, 10) * 1024,
+      callingAE: p.localApplicationEntity || 'MIRTH',
+      calledAE: p.applicationEntity || 'DCMRCV',
+      host: p.host,
+      port: parseInt(p.port, 10),
+      maxPduLengthSend: parseInt(p.sndpdulen, 10) * 1024,
+      maxPduLengthReceive: parseInt(p.rcvpdulen, 10) * 1024,
       sopClasses: [SopClass.VERIFICATION, sopClassUid],
       transferSyntaxes: this.getTransferSyntaxes(),
-      connectTimeout: parseInt(this.properties.connectTo, 10) || 30000,
-      associationTimeout: parseInt(this.properties.acceptTo, 10),
+      connectTimeout: parseInt(p.connectTo, 10) || 30000,
+      associationTimeout: parseInt(p.acceptTo, 10),
     };
 
     // Java: dcmSnd.setLocalHost/setLocalPort — bind outbound to specific network interface
-    if (this.properties.localHost) {
-      params.localHost = this.properties.localHost;
-      if (this.properties.localPort) {
-        params.localPort = parseInt(this.properties.localPort, 10);
+    if (p.localHost) {
+      params.localHost = p.localHost;
+      if (p.localPort) {
+        params.localPort = parseInt(p.localPort, 10);
       }
     }
 
     // Configure TLS if enabled
-    if (this.properties.tls !== DicomTlsMode.NO_TLS) {
-      params.tlsMode = this.properties.tls as DicomTlsMode;
+    if (p.tls !== DicomTlsMode.NO_TLS) {
+      params.tlsMode = p.tls as DicomTlsMode;
       params.tlsOptions = {
-        rejectUnauthorized: !this.properties.noClientAuth,
+        rejectUnauthorized: !p.noClientAuth,
       };
 
-      if (this.properties.keyStore && this.properties.keyStorePW) {
-        params.tlsOptions.pfx = fs.readFileSync(this.properties.keyStore);
-        params.tlsOptions.passphrase = this.properties.keyStorePW;
+      if (p.keyStore && p.keyStorePW) {
+        params.tlsOptions.pfx = fs.readFileSync(p.keyStore);
+        params.tlsOptions.passphrase = p.keyStorePW;
       }
 
-      if (this.properties.trustStore && this.properties.trustStorePW) {
-        params.tlsOptions.ca = fs.readFileSync(this.properties.trustStore);
+      if (p.trustStore && p.trustStorePW) {
+        params.tlsOptions.ca = fs.readFileSync(p.trustStore);
       }
     }
 
