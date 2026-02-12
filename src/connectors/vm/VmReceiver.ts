@@ -12,6 +12,7 @@
 
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { RawMessage } from '../../model/RawMessage.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   VmReceiverProperties,
   getDefaultVmReceiverProperties,
@@ -126,6 +127,7 @@ export class VmReceiver extends SourceConnector {
    *
    * Unlike network connectors, starting a VM receiver just marks it as ready
    * to receive routed messages - there's no port to bind.
+   * Matches Java VmReceiver.onStart() which dispatches IDLE event.
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -133,11 +135,14 @@ export class VmReceiver extends SourceConnector {
     }
 
     this.running = true;
+    // Dispatch via base class for dashboard integration
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     this.dispatchStatusEvent(VmConnectionStatus.IDLE);
   }
 
   /**
    * Stop the VM receiver
+   * Matches Java VmReceiver.onStop()/onHalt() which dispatches DISCONNECTED event.
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -145,6 +150,8 @@ export class VmReceiver extends SourceConnector {
     }
 
     this.running = false;
+    // Dispatch via base class for dashboard integration
+    this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
     this.dispatchStatusEvent(VmConnectionStatus.DISCONNECTED);
   }
 
