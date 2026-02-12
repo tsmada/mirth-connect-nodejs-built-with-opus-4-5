@@ -48,6 +48,15 @@ export interface HttpReceiverProperties {
 
   /** Static resources to serve */
   staticResources?: HttpStaticResource[];
+
+  /** Use authentication for incoming requests (CPC-MAM-001) */
+  useAuthentication?: boolean;
+  /** Authentication type for incoming requests */
+  authenticationType?: 'Basic' | 'Digest';
+  /** Username for authentication */
+  username?: string;
+  /** Password for authentication */
+  password?: string;
 }
 
 /**

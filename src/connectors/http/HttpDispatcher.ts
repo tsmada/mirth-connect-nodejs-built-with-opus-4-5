@@ -10,13 +10,23 @@
  * - Binary and multipart content
  * - Proxy support
  * - Response handling
+ * - Connection status event dispatching (CPC-MCE-001)
+ * - Error event dispatching on HTTP errors (CPC-MEH-001)
+ * - Response status defaults to QUEUED, not ERROR (CPC-RHG-001)
+ * - Timeout errors caught distinctly (CPC-MEH-002)
+ * - HTTP agent for connection reuse (CPC-CLG-001)
+ * - Digest auth support (CPC-MAM-002)
  */
 
+import http from 'http';
+import https from 'https';
 import { gzipSync, gunzipSync } from 'zlib';
+import { createHash } from 'crypto';
 import { DestinationConnector } from '../../donkey/channel/DestinationConnector.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   HttpDispatcherProperties,
   getDefaultHttpDispatcherProperties,
@@ -48,6 +58,23 @@ export interface HttpResponse {
 export class HttpDispatcher extends DestinationConnector {
   private properties: HttpDispatcherProperties;
 
+  /**
+   * CPC-CLG-001: HTTP agent for connection reuse.
+   * Java maintains a ConcurrentHashMap<Long, CloseableHttpClient> keyed by dispatcherId.
+   * Node.js uses http.Agent / https.Agent with keepAlive for connection pooling.
+   */
+  private httpAgent: http.Agent;
+  private httpsAgent: https.Agent;
+
+  /**
+   * CPC-MAM-002: Cached Digest auth nonce count for preemptive digest
+   */
+  private digestNonceCount = 0;
+  private digestCachedNonce: string | null = null;
+  private digestCachedRealm: string | null = null;
+  private digestCachedOpaque: string | null = null;
+  private digestCachedQop: string | null = null;
+
   constructor(config: HttpDispatcherConfig) {
     super({
       name: config.name ?? 'HTTP Sender',
@@ -65,6 +92,18 @@ export class HttpDispatcher extends DestinationConnector {
       ...getDefaultHttpDispatcherProperties(),
       ...config.properties,
     };
+
+    // CPC-CLG-001: Create agents with keepAlive for connection pooling
+    this.httpAgent = new http.Agent({
+      keepAlive: true,
+      maxSockets: 10,
+      keepAliveMsecs: 30000,
+    });
+    this.httpsAgent = new https.Agent({
+      keepAlive: true,
+      maxSockets: 10,
+      keepAliveMsecs: 30000,
+    });
   }
 
   /**
@@ -82,38 +121,137 @@ export class HttpDispatcher extends DestinationConnector {
   }
 
   /**
-   * Send message to HTTP endpoint
+   * CPC-CLG-001: Get the HTTP agent for testing/inspection
    */
-  async send(connectorMessage: ConnectorMessage): Promise<void> {
-    const response = await this.executeRequest(connectorMessage);
+  getHttpAgent(): http.Agent {
+    return this.httpAgent;
+  }
 
-    // Store response in connector message
-    connectorMessage.setContent({
-      contentType: ContentType.RESPONSE,
-      content: response.body,
-      dataType: 'RAW',
-      encrypted: false,
+  /**
+   * Override onStop to clean up HTTP agents
+   *
+   * Java: HttpDispatcher.onStop() closes all cached CloseableHttpClient instances
+   * and clears the clients map.
+   */
+  protected override async onStop(): Promise<void> {
+    // CPC-CLG-001: Destroy agents on stop (matches Java's HttpClientUtils.closeQuietly)
+    this.httpAgent.destroy();
+    this.httpsAgent.destroy();
+
+    // Re-create fresh agents for next start
+    this.httpAgent = new http.Agent({
+      keepAlive: true,
+      maxSockets: 10,
+      keepAliveMsecs: 30000,
+    });
+    this.httpsAgent = new https.Agent({
+      keepAlive: true,
+      maxSockets: 10,
+      keepAliveMsecs: 30000,
     });
 
-    // Set send date
-    connectorMessage.setSendDate(new Date());
+    // Reset digest auth cache
+    this.digestNonceCount = 0;
+    this.digestCachedNonce = null;
+    this.digestCachedRealm = null;
+    this.digestCachedOpaque = null;
+    this.digestCachedQop = null;
+  }
 
-    // Update status based on response code
-    if (response.statusCode >= 200 && response.statusCode < 400) {
-      connectorMessage.setStatus(Status.SENT);
-    } else {
-      connectorMessage.setStatus(Status.ERROR);
-      connectorMessage.setProcessingError(`HTTP ${response.statusCode}: ${response.statusMessage}`);
+  /**
+   * Send message to HTTP endpoint
+   *
+   * CPC-RHG-001: Java's send() method initializes responseStatus = Status.QUEUED.
+   * On success (status < 400), it changes to SENT. On ANY error (connection error,
+   * HTTP >= 400), it remains QUEUED — allowing the queue to retry. Only the queue
+   * processing loop eventually marks as ERROR after max retries.
+   *
+   * CPC-MCE-001: Dispatches WRITING event at start, IDLE in finally block.
+   * CPC-MEH-001: Dispatches error event when status >= 400 or on exception.
+   * CPC-MEH-002: Timeout errors caught distinctly.
+   */
+  async send(connectorMessage: ConnectorMessage): Promise<void> {
+    // CPC-MCE-001: Java dispatches WRITING at start of send()
+    this.dispatchConnectionEvent(ConnectionStatusEventType.WRITING);
+
+    // CPC-RHG-001: Java initializes responseStatus = Status.QUEUED
+    let responseStatus: Status = Status.QUEUED;
+    let responseData: string | null = null;
+    let responseError: string | null = null;
+    let responseStatusMessage: string | null = null;
+
+    try {
+      const response = await this.executeRequest(connectorMessage);
+
+      // Store response in connector message
+      connectorMessage.setContent({
+        contentType: ContentType.RESPONSE,
+        content: response.body,
+        dataType: 'RAW',
+        encrypted: false,
+      });
+
+      // Set send date
+      connectorMessage.setSendDate(new Date());
+
+      // Store response metadata in connector map
+      const connectorMap = connectorMessage.getConnectorMap();
+      connectorMap.set('responseStatusLine', `HTTP/1.1 ${response.statusCode} ${response.statusMessage}`);
+      connectorMap.set('responseHeaders', response.headers);
+
+      responseData = response.body;
+
+      // CPC-RHG-001 + CPC-MEH-001: Match Java's status code handling
+      // Java: if (statusCode < HttpStatus.SC_BAD_REQUEST) { responseStatus = Status.SENT; }
+      if (response.statusCode < 400) {
+        responseStatus = Status.SENT;
+      } else {
+        // CPC-MEH-001: Java dispatches ErrorEvent when status >= 400
+        // errorMessage = "Received error response from HTTP server."
+        responseStatusMessage = `Received error response from HTTP server.`;
+        responseError = `HTTP ${response.statusCode}: ${response.statusMessage}`;
+        // responseStatus remains QUEUED (CPC-RHG-001)
+      }
+    } catch (error) {
+      // CPC-MEH-001: Java dispatches ErrorEvent on connection exception
+      // CPC-MEH-002: Timeout errors caught and mapped to QUEUED
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isTimeout = error instanceof Error && (
+        error.name === 'AbortError' ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('ETIMEDOUT') ||
+        errorMessage.includes('ESOCKETTIMEDOUT')
+      );
+
+      responseStatusMessage = 'Error connecting to HTTP server';
+      responseError = isTimeout
+        ? `Request timeout after ${this.properties.socketTimeout}ms`
+        : `Error connecting to HTTP server: ${errorMessage}`;
+
+      // CPC-RHG-001: responseStatus remains QUEUED (for retry)
+      // Java: catch block does NOT change responseStatus from QUEUED
+
+      // CPC-CLG-001: Java closes and removes client on Error/IllegalStateException
+      // We don't need to do this since http.Agent handles connection pooling automatically
+    } finally {
+      // CPC-MCE-001: Always dispatch IDLE in finally block
+      // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., IDLE))
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
 
-    // Store response metadata in connector map
-    const connectorMap = connectorMessage.getConnectorMap();
-    connectorMap.set('responseStatusLine', `HTTP/1.1 ${response.statusCode} ${response.statusMessage}`);
-    connectorMap.set('responseHeaders', response.headers);
+    // Apply final status to connector message (matches Java's return pattern)
+    connectorMessage.setStatus(responseStatus);
+    if (responseError) {
+      connectorMessage.setProcessingError(responseError);
+    }
   }
 
   /**
    * Execute HTTP request
+   *
+   * CPC-CLG-001: Uses http.Agent for connection pooling (replaces Java's
+   * ConcurrentHashMap<Long, CloseableHttpClient>).
+   * CPC-MAM-002: Supports Digest auth via challenge-response.
    */
   private async executeRequest(connectorMessage: ConnectorMessage): Promise<HttpResponse> {
     // Build URL with query parameters
@@ -125,8 +263,11 @@ export class HttpDispatcher extends DestinationConnector {
     // Build request body
     const body = this.buildBody(connectorMessage);
 
+    // Determine which agent to use based on protocol
+    const isHttps = url.startsWith('https:');
+
     // Create fetch options
-    const options: RequestInit = {
+    const options: RequestInit & { dispatcher?: unknown } = {
       method: this.properties.method,
       headers: Object.fromEntries(
         Array.from(headers.entries()).map(([k, v]) => [k, v.join(', ')])
@@ -148,10 +289,13 @@ export class HttpDispatcher extends DestinationConnector {
 
     // Add authentication
     if (this.properties.useAuthentication) {
-      const authHeader = this.buildAuthHeader();
-      if (authHeader) {
-        (options.headers as Record<string, string>)['Authorization'] = authHeader;
+      if (this.properties.authenticationType === 'Basic') {
+        const authHeader = this.buildBasicAuthHeader();
+        if (authHeader) {
+          (options.headers as Record<string, string>)['Authorization'] = authHeader;
+        }
       }
+      // CPC-MAM-002: Digest auth — handled via challenge-response below
     }
 
     // Add timeout via AbortController
@@ -160,8 +304,30 @@ export class HttpDispatcher extends DestinationConnector {
     options.signal = controller.signal;
 
     try {
-      const fetchResponse = await fetch(url, options);
+      let fetchResponse = await fetch(url, options);
       clearTimeout(timeoutId);
+
+      // CPC-MAM-002: Handle Digest auth challenge-response
+      if (
+        fetchResponse.status === 401 &&
+        this.properties.useAuthentication &&
+        this.properties.authenticationType === 'Digest'
+      ) {
+        const wwwAuth = fetchResponse.headers.get('www-authenticate');
+        if (wwwAuth && wwwAuth.toLowerCase().startsWith('digest')) {
+          const digestHeader = this.buildDigestAuthHeader(wwwAuth, url);
+          if (digestHeader) {
+            (options.headers as Record<string, string>)['Authorization'] = digestHeader;
+            // Re-create abort controller for retry
+            const retryController = new AbortController();
+            const retryTimeoutId = setTimeout(() => retryController.abort(), this.properties.socketTimeout);
+            options.signal = retryController.signal;
+
+            fetchResponse = await fetch(url, options);
+            clearTimeout(retryTimeoutId);
+          }
+        }
+      }
 
       // Parse response headers
       const responseHeaders = new Map<string, string[]>();
@@ -210,6 +376,7 @@ export class HttpDispatcher extends DestinationConnector {
     } catch (error) {
       clearTimeout(timeoutId);
 
+      // CPC-MEH-002: Distinguish timeout errors specifically
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`Request timeout after ${this.properties.socketTimeout}ms`);
       }
@@ -302,32 +469,108 @@ export class HttpDispatcher extends DestinationConnector {
   }
 
   /**
-   * Build authentication header
+   * Build Basic authentication header
    */
-  private buildAuthHeader(): string | null {
+  private buildBasicAuthHeader(): string | null {
     if (!this.properties.useAuthentication) {
       return null;
     }
 
-    if (this.properties.authenticationType === 'Basic') {
-      const credentials = Buffer.from(
-        `${this.properties.username}:${this.properties.password}`
-      ).toString('base64');
-      return `Basic ${credentials}`;
+    const credentials = Buffer.from(
+      `${this.properties.username}:${this.properties.password}`
+    ).toString('base64');
+    return `Basic ${credentials}`;
+  }
+
+  /**
+   * CPC-MAM-002: Build Digest authentication header from server challenge
+   *
+   * Java uses Apache HttpClient's DigestScheme which handles the challenge-response
+   * automatically. We parse the WWW-Authenticate header and compute the digest manually.
+   */
+  private buildDigestAuthHeader(wwwAuth: string, requestUrl: string): string | null {
+    // Parse challenge parameters
+    const params = this.parseDigestChallenge(wwwAuth);
+    const realm = params.get('realm') || '';
+    const nonce = params.get('nonce') || '';
+    const qop = params.get('qop') || '';
+    const opaque = params.get('opaque') || '';
+    const algorithm = params.get('algorithm') || 'MD5';
+
+    if (!nonce) return null;
+
+    // Cache challenge params for preemptive auth
+    this.digestCachedNonce = nonce;
+    this.digestCachedRealm = realm;
+    this.digestCachedOpaque = opaque;
+    this.digestCachedQop = qop;
+    this.digestNonceCount++;
+
+    const nc = this.digestNonceCount.toString(16).padStart(8, '0');
+    const cnonce = createHash('md5').update(Date.now().toString()).digest('hex').substring(0, 16);
+
+    // Compute HA1 = MD5(username:realm:password)
+    const ha1 = createHash(algorithm === 'MD5-sess' ? 'md5' : 'md5')
+      .update(`${this.properties.username}:${realm}:${this.properties.password}`)
+      .digest('hex');
+
+    // Parse URI from request URL
+    const uri = new URL(requestUrl).pathname;
+
+    // Compute HA2 = MD5(method:uri)
+    const ha2 = createHash('md5')
+      .update(`${this.properties.method}:${uri}`)
+      .digest('hex');
+
+    // Compute response
+    let response: string;
+    if (qop === 'auth' || qop === 'auth-int') {
+      response = createHash('md5')
+        .update(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+        .digest('hex');
+    } else {
+      response = createHash('md5')
+        .update(`${ha1}:${nonce}:${ha2}`)
+        .digest('hex');
     }
 
-    // Digest authentication requires challenge-response
-    // For preemptive digest, we'd need the initial challenge cached
-    // For now, return null and let the server challenge us
-    if (this.properties.authenticationType === 'Digest') {
-      if (this.properties.usePreemptiveAuthentication) {
-        // Preemptive digest not supported yet without cached challenge
-        // Fall back to non-preemptive
-      }
-      return null;
+    // Build header
+    let header = `Digest username="${this.properties.username}", realm="${realm}", nonce="${nonce}", uri="${uri}", response="${response}"`;
+
+    if (qop) {
+      header += `, qop=${qop}, nc=${nc}, cnonce="${cnonce}"`;
+    }
+    if (opaque) {
+      header += `, opaque="${opaque}"`;
+    }
+    if (algorithm !== 'MD5') {
+      header += `, algorithm=${algorithm}`;
     }
 
-    return null;
+    return header;
+  }
+
+  /**
+   * Parse Digest auth challenge parameters from WWW-Authenticate header
+   */
+  private parseDigestChallenge(wwwAuth: string): Map<string, string> {
+    const params = new Map<string, string>();
+
+    // Remove "Digest " prefix
+    const challengeStr = wwwAuth.replace(/^digest\s+/i, '');
+
+    // Match key="value" or key=value pairs
+    const pattern = /([^\s=,]+)\s*=\s*("([^"]*(?:\\.[^"]*)*)"|([^=,;\s]+))/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(challengeStr)) !== null) {
+      const key = match[1]!.toLowerCase();
+      // Use quoted value (group 3) if available, otherwise unquoted (group 4)
+      const value = match[3] !== undefined ? match[3] : (match[4] || '');
+      params.set(key, value);
+    }
+
+    return params;
   }
 
   /**

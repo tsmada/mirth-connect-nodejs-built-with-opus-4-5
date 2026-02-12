@@ -10,6 +10,8 @@
  * - Support binary content detection
  * - Handle responses based on message processing result
  * - GZIP compression support
+ * - Connection status event dispatching (CPC-MCE-001)
+ * - Basic auth support (CPC-MAM-001)
  */
 
 import express, { Express, Request, Response, NextFunction } from 'express';
@@ -17,6 +19,7 @@ import { Server } from 'http';
 import { gunzipSync, gzipSync } from 'zlib';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { ListenerInfo } from '../../api/models/DashboardStatus.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   HttpReceiverProperties,
   getDefaultHttpReceiverProperties,
@@ -68,6 +71,8 @@ export class HttpReceiver extends SourceConnector {
 
   /**
    * Start the HTTP server
+   *
+   * Java: HttpReceiver.onStart() dispatches IDLE on success, FAILURE on error
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -79,6 +84,11 @@ export class HttpReceiver extends SourceConnector {
     // Configure middleware
     this.configureMiddleware();
 
+    // Configure authentication middleware (CPC-MAM-001)
+    if (this.properties.useAuthentication) {
+      this.configureAuthentication();
+    }
+
     // Configure routes
     this.configureRoutes();
 
@@ -87,10 +97,16 @@ export class HttpReceiver extends SourceConnector {
       try {
         this.server = this.app!.listen(this.properties.port, this.properties.host, () => {
           this.running = true;
+          // CPC-MCE-001: Dispatch IDLE event after successful start
+          // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., IDLE))
+          this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
           resolve();
         });
 
         this.server.on('error', (err) => {
+          // CPC-MCE-001: Java dispatches FAILURE on start error
+          // We use DISCONNECTED as the closest equivalent
+          this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED, err.message);
           reject(err);
         });
 
@@ -106,6 +122,11 @@ export class HttpReceiver extends SourceConnector {
 
   /**
    * Stop the HTTP server
+   *
+   * Java: HttpReceiver.onStop() stops the Jetty server
+   * Note: Java does NOT dispatch a DISCONNECTED event in onStop() — the IDLE event
+   * from the finally block in RequestHandler covers it. But we dispatch DISCONNECTED
+   * for dashboard accuracy since there's no active request handler at shutdown.
    */
   async stop(): Promise<void> {
     if (!this.running || !this.server) {
@@ -120,6 +141,8 @@ export class HttpReceiver extends SourceConnector {
           this.running = false;
           this.server = null;
           this.app = null;
+          // CPC-MCE-001: Dispatch DISCONNECTED on stop
+          this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
           resolve();
         }
       });
@@ -157,6 +180,46 @@ export class HttpReceiver extends SourceConnector {
   }
 
   /**
+   * Configure Basic auth middleware (CPC-MAM-001)
+   *
+   * Java uses Jetty's ConstraintSecurityHandler with a custom Authenticator
+   * that delegates to AuthenticatorProvider. We implement Basic auth inline
+   * since the Java plugin architecture is not needed.
+   */
+  private configureAuthentication(): void {
+    if (!this.app) return;
+
+    const username = this.properties.username ?? '';
+    const password = this.properties.password ?? '';
+    const authType = this.properties.authenticationType ?? 'Basic';
+
+    if (authType === 'Basic') {
+      this.app.use((req: Request, res: Response, next: NextFunction) => {
+        const authHeader = req.headers['authorization'];
+
+        if (!authHeader || !authHeader.startsWith('Basic ')) {
+          res.setHeader('WWW-Authenticate', 'Basic realm="Mirth Connect"');
+          res.status(401).send('Authentication required');
+          return;
+        }
+
+        const base64Credentials = authHeader.slice(6); // Remove 'Basic '
+        const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+        const [reqUsername, reqPassword] = credentials.split(':');
+
+        if (reqUsername === username && reqPassword === password) {
+          next();
+        } else {
+          res.setHeader('WWW-Authenticate', 'Basic realm="Mirth Connect"');
+          res.status(401).send('Invalid credentials');
+        }
+      });
+    }
+    // Digest auth on receiver side is handled by Java's plugin system
+    // and rarely used in practice — Basic is the common case
+  }
+
+  /**
    * Configure Express routes
    */
   private configureRoutes(): void {
@@ -181,14 +244,27 @@ export class HttpReceiver extends SourceConnector {
 
   /**
    * Handle incoming HTTP request
+   *
+   * Java: RequestHandler.handle() dispatches:
+   * 1. CONNECTED when request arrives
+   * 2. RECEIVING after parsing request body (in getMessage())
+   * 3. IDLE in finally block after dispatch completes
    */
   private async handleRequest(req: Request, res: Response): Promise<void> {
+    // CPC-MCE-001: Dispatch CONNECTED when request arrives
+    // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., CONNECTED))
+    this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTED);
+
     try {
       // Build source map with request metadata
       const sourceMap = this.buildSourceMap(req);
 
       // Get message content
       const messageContent = this.getMessageContent(req);
+
+      // CPC-MCE-001: Dispatch RECEIVING after parsing request
+      // Java: in getMessage(), after parsing body
+      this.dispatchConnectionEvent(ConnectionStatusEventType.RECEIVING);
 
       // Dispatch the message through the channel
       await this.dispatchRawMessage(messageContent, sourceMap);
@@ -197,6 +273,10 @@ export class HttpReceiver extends SourceConnector {
       await this.sendResponse(req, res);
     } catch (error) {
       await this.sendErrorResponse(res, error);
+    } finally {
+      // CPC-MCE-001: Always return to IDLE after handling request
+      // Java: in finally block of RequestHandler.handle()
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
   }
 
