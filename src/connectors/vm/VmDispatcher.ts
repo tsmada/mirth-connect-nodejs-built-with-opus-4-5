@@ -14,8 +14,10 @@
 import { DestinationConnector } from '../../donkey/channel/DestinationConnector.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { RawMessage } from '../../model/RawMessage.js';
+import { Response } from '../../model/Response.js';
 import { Status } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   VmDispatcherProperties,
   getDefaultVmDispatcherProperties,
@@ -202,7 +204,7 @@ export class VmDispatcher extends DestinationConnector {
   }
 
   /**
-   * Start the VM dispatcher
+   * Start the VM dispatcher — matches Java onStart() (line 68-70)
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -210,11 +212,13 @@ export class VmDispatcher extends DestinationConnector {
     }
 
     this.running = true;
+    // Dispatch IDLE via base class (dashboard integration) — matches Java line 69
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     this.dispatchStatusEvent(VmDispatcherStatus.IDLE);
   }
 
   /**
-   * Stop the VM dispatcher
+   * Stop the VM dispatcher — matches Java onStop()/onHalt() (lines 73-80)
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -222,6 +226,8 @@ export class VmDispatcher extends DestinationConnector {
     }
 
     this.running = false;
+    // Dispatch DISCONNECTED via base class (dashboard integration) — matches Java line 74/79
+    this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
     this.dispatchStatusEvent(VmDispatcherStatus.DISCONNECTED);
   }
 
@@ -295,7 +301,15 @@ export class VmDispatcher extends DestinationConnector {
   }
 
   /**
-   * Send message to the target channel
+   * Send message to the target channel.
+   *
+   * Matches Java VmDispatcher.send() behavior:
+   * - Always initializes responseStatus = QUEUED (Java line 102)
+   * - On success, sets SENT (Java line 167)
+   * - On error, leaves status as QUEUED — the Donkey engine layer decides
+   *   whether to queue or error based on connector queue configuration (CPC-MEH-006)
+   * - Returns a Response object with validateResponse flag for response
+   *   validator wiring (CPC-RHG-002)
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
     // Replace properties with values from connector message
@@ -303,6 +317,11 @@ export class VmDispatcher extends DestinationConnector {
     const targetChannelId = props.channelId;
     const currentChannelId = connectorMessage.getChannelId();
 
+    // Dispatch SENDING event — matches Java line 97
+    this.dispatchConnectionEvent(
+      ConnectionStatusEventType.SENDING,
+      `Target Channel: ${targetChannelId}`
+    );
     this.dispatchStatusEvent(
       VmDispatcherStatus.SENDING,
       `Target Channel: ${targetChannelId}`
@@ -311,7 +330,8 @@ export class VmDispatcher extends DestinationConnector {
     let responseData: string | null = null;
     let responseError: string | null = null;
     let responseStatusMessage: string | null = null;
-    let responseStatus = Status.QUEUED; // Always set to QUEUED initially
+    let responseStatus = Status.QUEUED; // Always set to QUEUED — matches Java line 102
+    let validateResponse = false;
 
     try {
       if (targetChannelId !== 'none') {
@@ -375,31 +395,40 @@ export class VmDispatcher extends DestinationConnector {
           );
         }
 
-        responseStatus = Status.SENT;
-        responseStatusMessage = `Message routed successfully to channel id: ${targetChannelId}`;
-      } else {
-        // channelId is "none" - no routing
-        responseStatus = Status.SENT;
-        responseStatusMessage = 'No target channel configured (channelId = none)';
+        // Check if response validation is requested — matches Java line 164
+        validateResponse = props.validateResponse ?? false;
       }
+
+      responseStatus = Status.SENT;
+      responseStatusMessage = `Message routed successfully to channel id: ${targetChannelId}`;
     } catch (error) {
+      // CPC-MEH-006: On error, responseStatus stays QUEUED — matches Java line 102/169-172
+      // Java's VmDispatcher.send() returns Response(QUEUED, ...) on error.
+      // The Donkey engine layer decides whether to actually queue or error.
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
       responseStatusMessage = `Error routing message to channel id: ${targetChannelId} - ${errorMessage}`;
       responseError = errorMessage;
-
-      // Don't throw - let the response be set with error status
-      console.error(
-        `VM Dispatcher error routing to ${targetChannelId}:`,
-        error
-      );
     } finally {
+      // Dispatch IDLE event in finally — matches Java line 174
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
       this.dispatchStatusEvent(VmDispatcherStatus.IDLE);
     }
 
-    // Update connector message with results
-    connectorMessage.setStatus(responseStatus);
+    // Build response matching Java's return statement (line 177):
+    //   return new Response(responseStatus, responseData, responseStatusMessage, responseError, validateResponse)
+    const response = new Response(responseStatus, responseData ?? '', responseStatusMessage ?? '', responseError ?? '');
+
+    // CPC-RHG-002: Wire response validator when validateResponse is true.
+    // Java's DestinationConnector.send() calls responseValidator.validate() on the response.
+    // The validateResponse flag comes from vmDispatcherProperties.getDestinationConnectorProperties().isValidateResponse()
+    if (validateResponse && this.responseValidator) {
+      this.responseValidator.validate(response.getMessage() || null, connectorMessage);
+    }
+
+    // Update connector message status from response
+    connectorMessage.setStatus(response.getStatus());
     connectorMessage.setSendDate(new Date());
 
     // Set response content
@@ -418,6 +447,9 @@ export class VmDispatcher extends DestinationConnector {
 
     if (responseError) {
       connectorMessage.setProcessingError(responseError);
+      // Re-throw so the Channel layer's error handler runs
+      // (Channel.ts overrides status to SENT after send() returns normally)
+      throw new Error(responseError);
     }
   }
 
