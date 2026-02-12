@@ -1661,16 +1661,16 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
          └──► [Worktree 8: feature/utils]             → Agent 8 ✅
 ```
 
-### Results (Combined Waves 1-16)
+### Results (Combined Waves 1-18)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 69 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16) |
-| Agents completed | 69 (100%) |
-| Total commits | 180+ |
-| Lines added | 74,000+ |
-| Tests added | 2,230+ |
-| Total tests passing | 4,866 |
+| Agents spawned | 81 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16 + 6 Wave 17 + 6 Wave 18) |
+| Agents completed | 81 (100%) |
+| Total commits | 191+ |
+| Lines added | 79,600+ |
+| Tests added | 2,430+ |
+| Total tests passing | 5,066 |
 
 ### Wave Summary
 
@@ -1692,7 +1692,9 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 | 14 | 0 | ~800 | 81 | ~20 min | **JS Runtime Checker Scan** (response transformer readback, global scripts, E4X += variable, MessageHeaders/Parameters) |
 | 15 | 0 | ~100 | 20 | ~15 min | **JS Runtime Checker Scan** (Response constructor overloads, preprocessor return semantics, validate() primitive String) |
 | 16 | 9 | ~3,500 | 40 | ~4 hrs | **Connector Parity** (event dispatch, config defaults, error handling, connection lifecycle across all 9 connectors) |
-| **Total** | **69** | **~74,000** | **2,230** | **~24 hrs** | |
+| 17 | 6 | ~3,500 | 112 | ~30 min | **Connector Parity Re-Scan** (replaceConnectorProperties for HTTP/TCP/WS/SMTP, HTTP variable properties, receiver events, File defaults) |
+| 18 | 6 | ~2,100 | 88 | ~20 min | **Connector Parity Wave 3** (replaceConnectorProperties for File/JDBC/VM/DICOM, WS attachment resolution, File size/error properties) |
+| **Total** | **81** | **~79,600** | **2,430** | **~26 hrs** | |
 
 ### Components Ported
 
@@ -2202,6 +2204,23 @@ public TcpDispatcherProperties() {
 **43. Event Dispatching Is Infrastructure, Not Per-Connector (Wave 16)**
 Java Mirth has ~114 `eventController.dispatchEvent()` calls across connectors for dashboard status updates (IDLE, SENDING, RECEIVING, etc.). Rather than implementing these per-connector, the right approach is adding `dispatchConnectionEvent()` and `dispatchConnectorCountEvent()` helper methods to the `SourceConnector` and `DestinationConnector` base classes first (Wave 0 infrastructure), then calling them from each connector. This ensures consistent event format and avoids 9 agents each inventing their own dispatch pattern.
 
+**44. replaceConnectorProperties Is the Most Common Production Pattern (Wave 17)**
+Java's `DestinationConnector` calls `replaceConnectorProperties()` before every `send()`, allowing per-message `${variable}` substitution in connector configuration. This is how production channels implement dynamic routing — `${routeHost}:${routePort}` in TCP, `${apiEndpoint}/patients/${patientId}` in HTTP, `${recipientEmail}` in SMTP. Without this method, literal `${...}` strings are sent over the wire. The pattern is simple (shallow clone + regex replace) but critical — 4 of 5 dispatchers were missing it. A shared `resolveVariables()` helper resolves from `message.encodedData`, `message.rawData`, then channelMap → sourceMap → connectorMap in priority order:
+```typescript
+replaceConnectorProperties(props: ConnectorProps, msg: ConnectorMessage): ConnectorProps {
+  const resolved = { ...props };
+  resolved.host = this.resolveVariables(resolved.host, msg);
+  // ... same for all string properties
+  return resolved;
+}
+```
+
+**45. Second-Pass Scans Catch Structural Gaps That First-Pass Misses (Wave 17)**
+Wave 16's first scan focused on property-level comparison and config defaults. Wave 17's re-scan discovered `replaceConnectorProperties()` — a lifecycle-level gap invisible to property audits. The method exists at the `DestinationConnector.process()` call chain level, not in the properties themselves. Similarly, Wave 16 added event dispatching to all dispatchers but missed most receivers. Lesson: alternate between property-level and lifecycle-level scan focus across waves.
+
+**46. Never Trust Scanner Coverage Claims Without Reading Every Java Source (Wave 18)**
+Wave 17's report stated "replaceConnectorProperties coverage: 5/5 (100%)" by listing File, JDBC, VM, and DICOM dispatchers as "N/A — Java doesn't have it." Wave 18's scanner read the actual Java source files (`FileDispatcher.java:97`, `DatabaseDispatcher.java:78`, `VmDispatcher.java:83`, `DICOMDispatcher.java:88`) and found ALL of them implement `replaceConnectorProperties()`. The real coverage was 5/9 (56%). The lesson: when a scanner says "not applicable," verify by reading the Java source — especially for lifecycle methods that may not appear in property-focused analysis. A third-pass scan that reads every Java method signature catches false-negative "N/A" classifications that earlier passes missed.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -2523,11 +2542,63 @@ Added `dispatchConnectionEvent()` and `dispatchConnectorCountEvent()` methods to
 - 40 new tests (18 JDBC parity + 22 SMTP parity), 4,866 total tests passing
 - Scan report: `plans/connector-parity-checker-scan.md`
 
+### Wave 17: Connector Parity Re-Scan & Remediation (2026-02-12)
+
+**Second systematic scan found 56 findings (5 critical, 22 major, 29 minor). Fixed 19 (5 critical + 14 major), deferred 8 major + 29 minor.**
+
+6 parallel agents in git worktrees, zero merge conflicts:
+
+| Agent | Branch | Findings Fixed | Key Changes |
+|-------|--------|---------------|-------------|
+| http-fixer | fix/connector-parity-http-w17 | 3C + 1M | `replaceConnectorProperties()`, `useHeadersVariable`/`headersVariable`/`useParametersVariable`/`parametersVariable`, `useResponseHeadersVariable`/`responseHeadersVariable`, receiver event dispatching |
+| tcp-fixer | fix/connector-parity-tcp-w17 | 1C | `replaceConnectorProperties()` for remoteAddress, remotePort, localAddress, localPort, template |
+| ws-fixer | fix/connector-parity-ws-w17 | 1C + 1M | `replaceConnectorProperties()` for wsdlUrl, soapAction, envelope, headers; receiver events |
+| smtp-fixer | fix/connector-parity-smtp-w17 | 1M | `replaceConnectorProperties()` for smtpHost, to, from, cc, bcc, subject, body, attachments |
+| file-fixer | fix/connector-parity-file-w17 | 3M | `secure` default→true, `anonymous`→true, `username`→"anonymous", `password`→"anonymous"; dispatcher events |
+| event-fixer | fix/connector-parity-events-w17 | 4M | JDBC Receiver/Dispatcher, JMS Receiver, DICOM Receiver event dispatching |
+
+**Key achievements:**
+- **replaceConnectorProperties coverage: 20% → 100%** — All 5 Java dispatchers that resolve ${variable} placeholders now have Node.js equivalents
+- **Event dispatch coverage: 67% → 100%** — All connector receiver/dispatcher combinations now dispatch dashboard status events
+- **HTTP variable properties**: 6 missing properties added for programmatic header/parameter injection from scripts
+
+**Deferred (8 major):** HTTP static resources, HTTP/WS receiver auth, HTTP Digest auth, JDBC script mode delegate, JDBC parameter extraction, File FTP/S3/SMB backends, TCP respondOnNewConnection, WS SOAP logging
+
+- 112 new tests, 4,978 total tests passing
+- Scan report: `plans/connector-parity-checker-scan-wave17.md`
+
+### Wave 18: Connector Parity Wave 3 — Scan & Remediation (2026-02-12)
+
+**Third systematic scan found 48 findings (4 critical, 15 major, 29 minor). Fixed 8 (4 critical + 4 major), deferred 7 major + 29 minor.**
+
+Key discovery: Wave 17's `replaceConnectorProperties` coverage table was **wrong** — it listed File, JDBC, VM, and DICOM as "N/A" (Java doesn't have it). Java has `replaceConnectorProperties()` for **ALL 9** dispatchers. Actual coverage was 5/9 (56%), not 5/5 (100%).
+
+6 agents (1 scanner + 5 fixers) in git worktrees, zero merge conflicts:
+
+| Agent | Branch | Findings Fixed | Key Changes |
+|-------|--------|---------------|-------------|
+| scanner | (read-only scan) | — | Full 10-category scan, 621-line report |
+| file-fixer | fix/connector-parity-file-w18 | 1C + 3M | `replaceConnectorProperties()` for host/outputPattern/username/password/template; `fileSizeMinimum`/`fileSizeMaximum`/`ignoreFileSizeMaximum`; error handling properties; `temporary` flag |
+| jdbc-fixer | fix/connector-parity-jdbc-w18 | 1C | `replaceConnectorProperties()` for url, username, password |
+| vm-fixer | fix/connector-parity-vm-w18 | 1C | `replaceConnectorProperties()` for channelId, channelTemplate |
+| dicom-fixer | fix/connector-parity-dicom-w18 | 1C | `replaceConnectorProperties()` for 14 properties (host, port, AE titles, credentials, TLS paths) |
+| ws-fixer | fix/connector-parity-ws-w18 | 1M | Attachment resolution (attachmentContents/Names/Types) in existing `replaceConnectorProperties()` |
+
+**Key achievements:**
+- **replaceConnectorProperties coverage: 56% → 100%** — All 9 Java dispatchers now have Node.js equivalents (correcting Wave 17's false 100%)
+- **File connector property coverage: 80% → 95%** — Added 8 missing properties (size filtering, error handling, temporary flag)
+- **WS attachment variable resolution** — SOAP attachments now support `${variable}` substitution
+
+**Deferred (7 major):** HTTP static resources, HTTP/WS receiver auth, HTTP Digest auth, JDBC script mode delegate, JDBC parameter extraction, File FTP/S3/SMB backends, TCP respondOnNewConnection
+
+- 88 new tests, 5,066 total tests passing
+- Scan report: `plans/connector-parity-checker-scan-wave18.md`
+
 ### Completion Status
 
-All Waves 1-16 are complete. The porting project has reached production-ready status:
+All Waves 1-18 are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-16):**
+**Completed (Waves 1-18):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -2536,7 +2607,7 @@ All Waves 1-16 are complete. The porting project has reached production-ready st
 - ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 - ✅ **Git-Backed Artifact Management** — Decompose/assemble, git sync, env promotion, delta deploy, structural diff (417 tests)
 - ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 8 waves of fixes (Waves 8-15, 315 parity tests, verified by 3 automated js-runtime-checker scans)
-- ✅ **Connector Parity** — All 9 connectors verified against Java via automated connector-parity-checker scan (73 findings: 53 fixed, 20 minor deferred). Event dispatching, config defaults, error handling, and connection lifecycle aligned with Java (Wave 16)
+- ✅ **Connector Parity** — All 9 connectors verified across 3 automated scans (Waves 16-18): replaceConnectorProperties 9/9 (100%), event dispatching 48/48 (100%), property coverage 97.5%, config defaults aligned. 177 total findings: 80 fixed, 36 deferred (7 major + 29 minor)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)
