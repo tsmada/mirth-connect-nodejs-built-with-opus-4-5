@@ -77,7 +77,9 @@ export interface FileReceiverProperties {
   errorDirectory: string;
   /** Action to take on error */
   errorAction: AfterProcessingAction;
-  /** Check for file age before processing (ms) */
+  /** Whether to check file age before processing (Java default: true) */
+  checkFileAge: boolean;
+  /** Minimum file age in ms before processing (Java default: 1000) */
   fileAge: number;
   /** Polling interval in milliseconds */
   pollInterval: number;
@@ -95,6 +97,10 @@ export interface FileReceiverProperties {
   validateConnection: boolean;
   /** Timeout for connections (ms) */
   timeout: number;
+  /** Maximum number of connection retry attempts for SFTP/FTP (0 = no retry) */
+  maxRetryCount: number;
+  /** Delay between retry attempts in ms */
+  retryDelay: number;
   /** SFTP-specific scheme properties */
   sftpSchemeProperties?: SftpSchemeProperties;
 }
@@ -117,7 +123,7 @@ export interface FileDispatcherProperties {
   directory: string;
   /** Output filename pattern */
   outputPattern: string;
-  /** Append to existing file */
+  /** Append to existing file (Java default: true) */
   outputAppend: boolean;
   /** File content template */
   template: string;
@@ -125,7 +131,7 @@ export interface FileDispatcherProperties {
   binary: boolean;
   /** Character encoding for text files */
   charsetEncoding: string;
-  /** Create parent directories if needed */
+  /** Error if destination file already exists */
   errorOnExists: boolean;
   /** Temporary file extension during write */
   tempFilename: string;
@@ -137,6 +143,10 @@ export interface FileDispatcherProperties {
   validateConnection: boolean;
   /** Timeout for connections (ms) */
   timeout: number;
+  /** Keep SFTP/FTP connection open between sends (Java default: true) */
+  keepConnectionOpen: boolean;
+  /** Max idle time for kept-open connections in ms (0 = no limit, Java default: 0) */
+  maxIdleTime: number;
   /** SFTP-specific scheme properties */
   sftpSchemeProperties?: SftpSchemeProperties;
 }
@@ -162,7 +172,8 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     moveToDirectory: '',
     errorDirectory: '',
     errorAction: AfterProcessingAction.NONE,
-    fileAge: 0,
+    checkFileAge: true,   // Java default: true
+    fileAge: 1000,        // Java default: 1000ms
     pollInterval: 5000,
     sortBy: FileSortBy.DATE,
     sortDescending: false,
@@ -171,6 +182,8 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     secure: false,
     validateConnection: true,
     timeout: 10000,
+    maxRetryCount: 3,
+    retryDelay: 5000,
   };
 }
 
@@ -186,7 +199,7 @@ export function getDefaultFileDispatcherProperties(): FileDispatcherProperties {
     password: '',
     directory: '',
     outputPattern: 'output_${date:yyyyMMddHHmmss}_${UUID}.txt',
-    outputAppend: false,
+    outputAppend: true,  // Java default: true (was false — CPC-DVM-007)
     template: '',
     binary: false,
     charsetEncoding: 'UTF-8',
@@ -196,6 +209,8 @@ export function getDefaultFileDispatcherProperties(): FileDispatcherProperties {
     secure: false,
     validateConnection: true,
     timeout: 10000,
+    keepConnectionOpen: true,  // Java default: true (CPC-RCG-003)
+    maxIdleTime: 0,            // Java default: 0 (no eviction)
   };
 }
 
