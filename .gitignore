@@ -41,3 +41,4 @@ temp/
 
 # Tech debt reports
 reports/
+node_modules

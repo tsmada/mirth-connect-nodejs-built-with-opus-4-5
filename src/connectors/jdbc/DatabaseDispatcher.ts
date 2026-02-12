@@ -130,6 +130,69 @@ export class DatabaseDispatcher extends DestinationConnector {
   }
 
   /**
+   * CPC-W18-002: Resolve ${variable} placeholders in connector properties before each send.
+   * Matches Java DatabaseDispatcher.replaceConnectorProperties() (line 78):
+   * Resolves url, username, password.
+   * Returns a shallow clone — original properties are NOT modified.
+   */
+  replaceConnectorProperties(
+    props: DatabaseDispatcherProperties,
+    connectorMessage: ConnectorMessage
+  ): DatabaseDispatcherProperties {
+    const resolved = { ...props };
+
+    resolved.url = this.resolveVariables(resolved.url, connectorMessage);
+    resolved.username = this.resolveVariables(resolved.username, connectorMessage);
+    resolved.password = this.resolveVariables(resolved.password, connectorMessage);
+
+    return resolved;
+  }
+
+  /**
+   * Simple ${variable} resolution using connector message maps.
+   * Checks channelMap, then sourceMap, then connectorMap.
+   * Matches Java ValueReplacer.replaceValues() map lookup order.
+   */
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
+
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
+      // Check channel map
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const v = channelMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check source map
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const v = sourceMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check connector map
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const v = connectorMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      return match; // Leave unresolved variables as-is
+    });
+  }
+
+  /**
    * Send message to database
    *
    * Matches Java DatabaseDispatcher.send() event lifecycle:
@@ -147,7 +210,10 @@ export class DatabaseDispatcher extends DestinationConnector {
       throw new Error('Connection pool not initialized');
     }
 
-    const info = `URL: ${this.properties.url}`;
+    // CPC-W18-002: Resolve ${variable} placeholders before each send
+    const resolvedProps = this.replaceConnectorProperties(this.properties, connectorMessage);
+
+    const info = `URL: ${resolvedProps.url}`;
     this.dispatchConnectionEvent(ConnectionStatusEventType.READING, info);
 
     let conn: PoolConnection | null = null;
@@ -155,9 +221,9 @@ export class DatabaseDispatcher extends DestinationConnector {
     try {
       conn = await this.pool.getConnection();
 
-      // Get the query and parameters
-      const query = this.properties.query;
-      const params = this.properties.parameters || [];
+      // Get the query and parameters (use resolved props for consistency)
+      const query = resolvedProps.query;
+      const params = resolvedProps.parameters || [];
 
       // Execute query
       const [result] = await conn.execute<ResultSetHeader>(query, params);
