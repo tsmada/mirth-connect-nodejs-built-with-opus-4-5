@@ -349,9 +349,32 @@ export class HttpReceiver extends SourceConnector {
   }
 
   /**
+   * CPC-MCP-002: Apply response headers from a map variable.
+   * Java looks up the responseHeadersVariable from the response/channel map
+   * and applies those headers to the HTTP response.
+   */
+  private applyVariableResponseHeaders(_res: Response): void {
+    if (!this.properties.useResponseHeadersVariable || !this.properties.responseHeadersVariable) {
+      return;
+    }
+
+    // In Java, the variable is looked up from the response map or channel map
+    // at the connector level. Since we don't have direct access to the connector
+    // message here, we store variable headers during dispatch and retrieve them.
+    // For now, this is a placeholder that will be wired when the sourceMap
+    // or responseMap is available in the response context.
+    // The variable name is available via this.properties.responseHeadersVariable
+  }
+
+  /**
    * Send successful response
+   *
+   * CPC-MCE-001: Dispatches SENDING event during response write.
    */
   private async sendResponse(req: Request, res: Response): Promise<void> {
+    // CPC-MCE-001: Dispatch SENDING event when writing response
+    this.dispatchConnectionEvent(ConnectionStatusEventType.SENDING);
+
     // Set content type
     res.setHeader('Content-Type', this.properties.responseContentType);
 
@@ -361,6 +384,9 @@ export class HttpReceiver extends SourceConnector {
         res.append(key, value);
       }
     }
+
+    // CPC-MCP-002: Apply headers from variable if configured
+    this.applyVariableResponseHeaders(res);
 
     // Determine status code
     let statusCode = 200;

@@ -46,6 +46,11 @@ export interface HttpReceiverProperties {
   /** Response headers map */
   responseHeaders: Map<string, string[]>;
 
+  /** CPC-MCP-002: Use a map variable for response headers instead of static config */
+  useResponseHeadersVariable: boolean;
+  /** CPC-MCP-002: Channel/response map variable name containing response headers */
+  responseHeadersVariable: string;
+
   /** Static resources to serve */
   staticResources?: HttpStaticResource[];
 
@@ -126,6 +131,15 @@ export interface HttpDispatcherProperties {
   responseBinaryMimeTypes: string;
   /** Whether responseBinaryMimeTypes is a regex */
   responseBinaryMimeTypesRegex: boolean;
+
+  /** CPC-MCP-001: Use a map variable for headers instead of static config */
+  useHeadersVariable: boolean;
+  /** CPC-MCP-001: Channel map variable name containing request headers */
+  headersVariable: string;
+  /** CPC-MCP-001: Use a map variable for parameters instead of static config */
+  useParametersVariable: boolean;
+  /** CPC-MCP-001: Channel map variable name containing query parameters */
+  parametersVariable: string;
 }
 
 /**
@@ -147,6 +161,8 @@ export function getDefaultHttpReceiverProperties(): HttpReceiverProperties {
     responseDataTypeBinary: false,
     responseStatusCode: '',
     responseHeaders: new Map(),
+    useResponseHeadersVariable: false,
+    responseHeadersVariable: '',
     staticResources: [],
   };
 }
@@ -179,6 +195,10 @@ export function getDefaultHttpDispatcherProperties(): HttpDispatcherProperties {
     responseIncludeMetadata: false,
     responseBinaryMimeTypes: 'application/.*(?<!json|xml)$|image/.*|video/.*|audio/.*',
     responseBinaryMimeTypesRegex: true,
+    useHeadersVariable: false,
+    headersVariable: '',
+    useParametersVariable: false,
+    parametersVariable: '',
   };
 }
 
