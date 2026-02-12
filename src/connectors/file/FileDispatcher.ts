@@ -7,9 +7,11 @@
  * - Write files to local filesystem (FILE scheme)
  * - Write files to SFTP server (SFTP scheme)
  * - Support output filename patterns
- * - Append vs overwrite modes
+ * - Append vs overwrite modes (Java default: append=true)
  * - Binary and text mode writing
  * - Temporary file usage for atomic writes
+ * - Connection event dispatching (IDLE on deploy, WRITING before write, IDLE after)
+ * - keepConnectionOpen / maxIdleTime for SFTP/FTP connection reuse
  */
 
 import * as fs from 'fs/promises';
@@ -18,6 +20,7 @@ import { DestinationConnector } from '../../donkey/channel/DestinationConnector.
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   FileDispatcherProperties,
   getDefaultFileDispatcherProperties,
@@ -46,6 +49,11 @@ export interface FileDispatcherConfig {
 export class FileDispatcher extends DestinationConnector {
   private properties: FileDispatcherProperties;
   private sftpConnection: SftpConnection | null = null;
+
+  /** Timer for idle connection eviction (CPC-RCG-003) */
+  private idleTimer: NodeJS.Timeout | null = null;
+  /** Timestamp of last SFTP operation */
+  private lastSftpActivityTime = 0;
 
   constructor(config: FileDispatcherConfig) {
     super({
@@ -82,6 +90,7 @@ export class FileDispatcher extends DestinationConnector {
 
   /**
    * Start the file dispatcher
+   * Matches Java FileDispatcher.onDeploy()
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -115,15 +124,24 @@ export class FileDispatcher extends DestinationConnector {
     }
 
     this.running = true;
+
+    // Start idle eviction timer for keepConnectionOpen with maxIdleTime (CPC-RCG-003)
+    this.startIdleEviction();
+
+    // Java: onDeploy() dispatches IDLE after initialization
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
    * Stop the file dispatcher
+   * Matches Java FileDispatcher.onStop()
    */
   async stop(): Promise<void> {
     if (!this.running) {
       return;
     }
+
+    this.stopIdleEviction();
 
     // Clean up SFTP connection if active
     if (this.sftpConnection) {
@@ -136,6 +154,9 @@ export class FileDispatcher extends DestinationConnector {
 
   /**
    * Send a message to the file destination
+   * Matches Java FileDispatcher.send() event dispatch pattern:
+   * - WRITING (with info message) before write
+   * - IDLE after write (in finally)
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
     if (!this.running) {
@@ -144,12 +165,19 @@ export class FileDispatcher extends DestinationConnector {
       return;
     }
 
+    // Generate output filename first for the WRITING event info
+    const filename = this.generateFilename(connectorMessage);
+    const info = `${this.properties.host || this.properties.directory}/${filename}`;
+
+    // Java: dispatches WRITING with info before write
+    this.dispatchConnectionEvent(
+      ConnectionStatusEventType.WRITING,
+      `Writing file to: ${info}`
+    );
+
     try {
       // Get content to write
       const content = this.getContent(connectorMessage);
-
-      // Generate output filename
-      const filename = this.generateFilename(connectorMessage);
 
       // Dispatch based on scheme
       let filePath: string;
@@ -160,6 +188,7 @@ export class FileDispatcher extends DestinationConnector {
 
         case FileScheme.SFTP:
           filePath = await this.writeSftpFile(filename, content);
+          this.lastSftpActivityTime = Date.now();
           break;
 
         default:
@@ -190,6 +219,16 @@ export class FileDispatcher extends DestinationConnector {
       connectorMessage.setStatus(Status.ERROR);
       connectorMessage.setProcessingError(errorMessage);
       throw error;
+    } finally {
+      // Java: dispatches IDLE in finally block after each write
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+
+      // If keepConnectionOpen is false, destroy the SFTP connection after each send
+      // Java: fileConnector.destroyConnection() vs releaseConnection()
+      if (!this.properties.keepConnectionOpen && this.sftpConnection) {
+        await this.sftpConnection.disconnect();
+        this.sftpConnection = null;
+      }
     }
   }
 
@@ -227,6 +266,8 @@ export class FileDispatcher extends DestinationConnector {
     if (!canWrite) {
       throw new Error(`Cannot write to SFTP directory: ${this.properties.directory}`);
     }
+
+    this.lastSftpActivityTime = Date.now();
   }
 
   /**
@@ -237,6 +278,52 @@ export class FileDispatcher extends DestinationConnector {
       await this.initializeSftpConnection();
     }
     return this.sftpConnection!;
+  }
+
+  /**
+   * Start idle connection eviction timer (CPC-RCG-003)
+   * Matches Java FileConnector connection pool eviction with maxIdleTime.
+   * When keepConnectionOpen=true and maxIdleTime>0, periodically check
+   * if the SFTP connection has been idle too long and close it.
+   */
+  private startIdleEviction(): void {
+    if (
+      this.properties.scheme !== FileScheme.SFTP &&
+      this.properties.scheme !== FileScheme.FTP
+    ) {
+      return; // Only applies to remote connections
+    }
+
+    if (!this.properties.keepConnectionOpen) {
+      return; // Connections are destroyed after each send, no eviction needed
+    }
+
+    if (this.properties.maxIdleTime <= 0) {
+      return; // 0 = no eviction
+    }
+
+    // Check every second (Java: timeBetweenEvictionRunsMillis = 1000)
+    this.idleTimer = setInterval(() => {
+      if (this.sftpConnection && this.sftpConnection.isConnected()) {
+        const idleTime = Date.now() - this.lastSftpActivityTime;
+        if (idleTime > this.properties.maxIdleTime) {
+          this.sftpConnection.disconnect().catch(() => {
+            // Ignore disconnect errors during eviction
+          });
+          this.sftpConnection = null;
+        }
+      }
+    }, 1000);
+  }
+
+  /**
+   * Stop idle eviction timer
+   */
+  private stopIdleEviction(): void {
+    if (this.idleTimer) {
+      clearInterval(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 
   /**

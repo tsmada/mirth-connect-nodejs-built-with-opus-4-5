@@ -10,13 +10,17 @@
  * - File filtering (glob and regex patterns)
  * - After-processing actions (move, delete)
  * - Binary and text mode reading
- * - File age checking
+ * - File age checking (checkFileAge + fileAge defaults: true/1000ms)
  * - Sorting options
+ * - Connection event dispatching (IDLE, POLLING, READING)
+ * - Connection retry with configurable backoff for SFTP/FTP
+ * - pollId/pollSequenceId/pollComplete sourceMap entries
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   FileReceiverProperties,
   getDefaultFileReceiverProperties,
@@ -44,6 +48,9 @@ export class FileReceiver extends SourceConnector {
   private properties: FileReceiverProperties;
   private pollTimer: NodeJS.Timeout | null = null;
   private sftpConnection: SftpConnection | null = null;
+
+  /** Monotonically increasing poll counter for generating unique pollIds */
+  private pollCounter = 0;
 
   constructor(config: FileReceiverConfig) {
     super({
@@ -75,6 +82,7 @@ export class FileReceiver extends SourceConnector {
 
   /**
    * Start the file receiver
+   * Matches Java FileReceiver.onDeploy() + onStart()
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -92,7 +100,7 @@ export class FileReceiver extends SourceConnector {
         break;
 
       case FileScheme.SFTP:
-        await this.initializeSftpConnection();
+        await this.initializeSftpConnectionWithRetry();
         break;
 
       case FileScheme.FTP:
@@ -109,11 +117,16 @@ export class FileReceiver extends SourceConnector {
     // Set running before starting polling to avoid race condition
     // where the first poll() call sees running=false and exits immediately
     this.running = true;
+
+    // Java: onDeploy() dispatches IDLE after initialization
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+
     this.startPolling();
   }
 
   /**
    * Stop the file receiver
+   * Matches Java FileReceiver.onStop()
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -129,6 +142,9 @@ export class FileReceiver extends SourceConnector {
     }
 
     this.running = false;
+
+    // Java: onStop() dispatches IDLE after cleanup
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
@@ -149,6 +165,33 @@ export class FileReceiver extends SourceConnector {
       }
       throw error;
     }
+  }
+
+  /**
+   * Initialize SFTP connection with retry logic (CPC-MEH-004)
+   * Java uses FileConnector connection pool which retries on borrow failure.
+   */
+  private async initializeSftpConnectionWithRetry(): Promise<void> {
+    const maxRetries = this.properties.maxRetryCount;
+    const retryDelay = this.properties.retryDelay;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        await this.initializeSftpConnection();
+        return; // Success
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        if (attempt < maxRetries) {
+          // Wait before retrying with linear backoff
+          const delay = retryDelay * (attempt + 1);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Failed to establish SFTP connection');
   }
 
   /**
@@ -180,11 +223,11 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
-   * Ensure SFTP connection is active, reconnecting if needed
+   * Ensure SFTP connection is active, reconnecting with retry if needed (CPC-MEH-004)
    */
   private async ensureSftpConnection(): Promise<SftpConnection> {
     if (!this.sftpConnection || !this.sftpConnection.isConnected()) {
-      await this.initializeSftpConnection();
+      await this.initializeSftpConnectionWithRetry();
     }
     return this.sftpConnection!;
   }
@@ -218,13 +261,26 @@ export class FileReceiver extends SourceConnector {
 
   /**
    * Execute poll to discover and process files
+   * Matches Java FileReceiver.poll() event dispatch pattern:
+   * - POLLING at start
+   * - READING before each file
+   * - IDLE after each file and after poll completes (in finally)
    */
   private async poll(): Promise<void> {
     if (!this.running) {
       return;
     }
 
+    // Java: poll() dispatches POLLING at start
+    this.dispatchConnectionEvent(ConnectionStatusEventType.POLLING);
+
     try {
+      // Generate poll tracking IDs (CPC-MCP-027)
+      // Java: String pollId = "" + System.nanoTime();
+      this.pollCounter++;
+      const pollId = String(Date.now()) + '-' + String(this.pollCounter);
+      let pollSequenceId = 1;
+
       // List files based on scheme
       let files: FileInfo[];
       switch (this.properties.scheme) {
@@ -252,12 +308,25 @@ export class FileReceiver extends SourceConnector {
           ? sortedFiles.slice(0, this.properties.batchSize)
           : sortedFiles;
 
-      // Process each file
-      for (const file of filesToProcess) {
-        await this.processFile(file);
+      // Process each file with poll tracking
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i]!;
+        const pollComplete = i === filesToProcess.length - 1;
+
+        // Java: dispatches READING before processing each file
+        this.dispatchConnectionEvent(ConnectionStatusEventType.READING);
+
+        await this.processFile(file, pollId, pollSequenceId, pollComplete);
+        pollSequenceId++;
+
+        // Java: dispatches IDLE after each file
+        this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
       }
     } catch (error) {
       console.error('File poll error:', error);
+    } finally {
+      // Java: poll() dispatches IDLE in finally block
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
   }
 
@@ -332,6 +401,7 @@ export class FileReceiver extends SourceConnector {
 
   /**
    * Filter files based on pattern and age
+   * Matches Java FileReceiver.isFileValid() with checkFileAge/fileAge (CPC-DVM-005)
    */
   private filterFiles(files: FileInfo[]): FileInfo[] {
     const now = Date.now();
@@ -351,8 +421,8 @@ export class FileReceiver extends SourceConnector {
         }
       }
 
-      // Check file age
-      if (this.properties.fileAge > 0) {
+      // Check file age — Java has separate checkFileAge boolean + fileAge value
+      if (this.properties.checkFileAge && this.properties.fileAge > 0) {
         const age = now - file.lastModified.getTime();
         if (age < this.properties.fileAge) {
           return false;
@@ -392,18 +462,32 @@ export class FileReceiver extends SourceConnector {
 
   /**
    * Process a single file
+   * Matches Java FileReceiver.processFile() sourceMap entries (CPC-MCP-027)
    */
-  private async processFile(file: FileInfo): Promise<void> {
+  private async processFile(
+    file: FileInfo,
+    pollId: string,
+    pollSequenceId: number,
+    pollComplete: boolean
+  ): Promise<void> {
     try {
       // Read file content
       const content = await this.readFile(file);
 
-      // Build source map
+      // Build source map — matches Java's sourceMap entries exactly
       const sourceMapData = new Map<string, unknown>();
       sourceMapData.set('originalFilename', file.name);
       sourceMapData.set('fileDirectory', file.directory);
       sourceMapData.set('fileSize', file.size);
       sourceMapData.set('fileLastModified', file.lastModified.toISOString());
+      // Java: sourceMap.put("pollId", pollId)
+      sourceMapData.set('pollId', pollId);
+      // Java: sourceMap.put("pollSequenceId", pollSequenceId.get())
+      sourceMapData.set('pollSequenceId', pollSequenceId);
+      // Java: if (pollComplete) { sourceMap.put("pollComplete", true); }
+      if (pollComplete) {
+        sourceMapData.set('pollComplete', true);
+      }
 
       // Dispatch message
       await this.dispatchRawMessage(content, sourceMapData);
@@ -519,10 +603,11 @@ export class FileReceiver extends SourceConnector {
         await fs.unlink(file.path);
         break;
 
-      case FileScheme.SFTP:
+      case FileScheme.SFTP: {
         const sftp = await this.ensureSftpConnection();
         await sftp.delete(file.name, file.directory, false);
         break;
+      }
 
       default:
         throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
@@ -534,18 +619,20 @@ export class FileReceiver extends SourceConnector {
    */
   private async moveFile(file: FileInfo, toDirectory: string): Promise<void> {
     switch (this.properties.scheme) {
-      case FileScheme.FILE:
+      case FileScheme.FILE: {
         const destPath = path.join(toDirectory, file.name);
         // Ensure destination directory exists
         await fs.mkdir(toDirectory, { recursive: true });
         // Move file
         await fs.rename(file.path, destPath);
         break;
+      }
 
-      case FileScheme.SFTP:
+      case FileScheme.SFTP: {
         const sftp = await this.ensureSftpConnection();
         await sftp.move(file.name, file.directory, file.name, toDirectory);
         break;
+      }
 
       default:
         throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
