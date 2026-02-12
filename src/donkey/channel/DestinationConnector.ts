@@ -20,6 +20,9 @@ import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DestinationQueue } from '../queue/DestinationQueue.js';
 import { ResponseValidator } from '../message/ResponseValidator.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
+import { dashboardStatusController } from '../../plugins/dashboardstatus/DashboardStatusController.js';
+import type { ConnectionStatusEvent, ConnectorCountEvent } from '../../plugins/dashboardstatus/DashboardStatusController.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -198,6 +201,55 @@ export abstract class DestinationConnector {
         state: newState,
       });
     }
+  }
+
+  /**
+   * Dispatch a ConnectionStatusEvent to the DashboardStatusController.
+   * Matches Java Mirth's eventController.dispatchEvent(new ConnectionStatusEvent(...)) pattern.
+   *
+   * Subclasses call this at lifecycle boundaries:
+   * - onStart: IDLE
+   * - onSend: SENDING/WRITING → IDLE (in finally)
+   * - onError: with error message
+   * - onStop: DISCONNECTED
+   */
+  protected dispatchConnectionEvent(
+    state: ConnectionStatusEventType,
+    message?: string
+  ): void {
+    if (!this.channel) return;
+    const event: ConnectionStatusEvent = {
+      channelId: this.channel.getId(),
+      metadataId: this.metaDataId,
+      state,
+      message,
+      channelName: this.channel.getName(),
+      connectorType: this.transportName,
+    };
+    dashboardStatusController.processEvent(event);
+  }
+
+  /**
+   * Dispatch a ConnectorCountEvent (e.g., persistent connections opened/closed).
+   * Matches Java's ConnectorCountEvent pattern for tracking concurrent connections.
+   */
+  protected dispatchConnectorCountEvent(
+    increment: boolean,
+    message?: string,
+    maximum?: number
+  ): void {
+    if (!this.channel) return;
+    const event: ConnectorCountEvent = {
+      channelId: this.channel.getId(),
+      metadataId: this.metaDataId,
+      state: increment ? ConnectionStatusEventType.CONNECTED : ConnectionStatusEventType.DISCONNECTED,
+      message,
+      channelName: this.channel.getName(),
+      connectorType: this.transportName,
+      increment,
+      maximum,
+    };
+    dashboardStatusController.processEvent(event);
   }
 
   isQueueEnabled(): boolean {

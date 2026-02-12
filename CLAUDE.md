@@ -1617,6 +1617,23 @@ Parameters:
 
 See `.claude/agents/js-runtime-checker.md` for full specification.
 
+### connector-parity-checker
+Detect Java↔Node.js connector implementation parity gaps including missing config properties, default value mismatches, error handling gaps, connection lifecycle differences, and protocol behavior divergences.
+
+**Use for**: Connector property gap analysis, connection lifecycle audits, authentication method audits, protocol behavior comparison, pre-takeover connector validation.
+
+**Quick start**:
+```
+Use the connector-parity-checker agent to scan all connectors for parity gaps.
+Parameters:
+- scope: full|connector|receiver|dispatcher
+- connectorType: http (required when scope: connector)
+- severity: critical|major|minor
+- bugCategories: ["missing-config-property", "default-value-mismatch", "missing-error-handler", "connection-lifecycle-gap", "missing-auth-method", "protocol-behavior-gap", "state-transition-gap", "missing-connector-event", "response-handling-gap", "resource-cleanup-gap"]
+```
+
+See `.claude/agents/connector-parity-checker.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)

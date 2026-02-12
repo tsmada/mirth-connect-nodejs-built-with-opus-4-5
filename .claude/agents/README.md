@@ -22,6 +22,7 @@ Agents are reusable AI assistants with specific expertise. They follow documente
 | [api-parity-checker](./api-parity-checker.md) | Detect Java↔Node.js REST API servlet gaps | Missing endpoints, parameter mismatches, permission drift, response format differences |
 | [channel-deployer](./channel-deployer.md) | Design and build git-backed channel config management and promotion | Git sync, channel diff, env promotion, decomposed export, sensitive data handling |
 | [js-runtime-checker](./js-runtime-checker.md) | Detect Java↔Node.js JavaScript runtime parity gaps | E4X transpilation gaps, scope variable mismatches, userutil API drift, script builder divergences |
+| [connector-parity-checker](./connector-parity-checker.md) | Detect Java↔Node.js connector implementation gaps | Missing config properties, connection lifecycle gaps, protocol behavior differences, auth method gaps |
 
 ## How to Invoke an Agent
 
