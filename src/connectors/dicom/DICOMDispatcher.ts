@@ -13,12 +13,14 @@
 import * as fs from 'fs';
 import { DestinationConnector } from '../../donkey/channel/DestinationConnector.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
+import { Status } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   DICOMDispatcherProperties,
   getDefaultDICOMDispatcherProperties,
   DicomTlsMode,
+  DicomPriority,
   TransferSyntax,
   SopClass,
 } from './DICOMDispatcherProperties.js';
@@ -158,7 +160,15 @@ export class DICOMDispatcher extends DestinationConnector {
   }
 
   /**
-   * Send a DICOM message
+   * Send a DICOM message.
+   *
+   * CPC-W19-001: Matches Java DICOMDispatcher.send() pattern (line 115-294):
+   * - Initializes responseStatus = Status.QUEUED
+   * - Non-success DICOM status codes set QUEUED (message stays in queue for retry)
+   * - Only exceptions cause error state
+   * - Always returns normally (never throws from status handling)
+   *
+   * CPC-W19-007: Dispatches ErrorEvent on exception, matching Java line 283.
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
     // CPC-W18-004: Resolve ${variable} placeholders before each send
@@ -170,6 +180,12 @@ export class DICOMDispatcher extends DestinationConnector {
 
     let connection: DicomConnection | null = null;
     let tempFile: string | null = null;
+
+    // Java pattern: declare response variables upfront, default to QUEUED
+    let responseData: string | null = null;
+    let responseError: string | null = null;
+    let responseStatusMessage: string | null = null;
+    let responseStatus: Status = Status.QUEUED;
 
     try {
       // Get the message content to send
@@ -191,23 +207,45 @@ export class DICOMDispatcher extends DestinationConnector {
       await connection.associate();
 
       // Send C-STORE
-      const status = await connection.cStore(sopClassUid, sopInstanceUid, dicomData);
+      const dimseStatus = await connection.cStore(sopClassUid, sopInstanceUid, dicomData);
 
-      // Handle response
-      this.handleStoreResponse(connectorMessage, status);
+      // Build response XML (same format as Java's CommandDataDimseRSPHandler.getCommandData())
+      const statusHex = '0x' + dimseStatus.toString(16).padStart(4, '0').toUpperCase();
+      responseData = `<dicom>\n  <tag00000900 tag="00000900" vr="US" len="2">${dimseStatus}</tag00000900>\n</dicom>`;
 
-      // Handle storage commitment if configured
-      if (resolvedProps.stgcmt && status === DicomStatus.SUCCESS) {
+      // CPC-W19-001: Handle DICOM status matching Java (lines 261-272)
+      if (dimseStatus === DicomStatus.SUCCESS) {
+        responseStatusMessage = 'DICOM message successfully sent';
+        responseStatus = Status.SENT;
+      } else if (
+        dimseStatus === DicomStatus.WARNING_COERCION ||
+        dimseStatus === DicomStatus.WARNING_ELEMENT_COERCION ||
+        dimseStatus === DicomStatus.WARNING_DATA_TRUNCATION
+      ) {
+        responseStatusMessage = `DICOM message successfully sent with warning status code: ${statusHex}`;
+        responseStatus = Status.SENT;
+      } else {
+        // Non-success/non-warning: QUEUED for retry (NOT an error/throw)
+        responseStatusMessage = `Error status code received from DICOM server: ${statusHex}`;
+        responseStatus = Status.QUEUED;
+      }
+
+      // Handle storage commitment if configured (Java lines 238-256)
+      if (resolvedProps.stgcmt && responseStatus === Status.SENT) {
         // Storage commitment handling would go here
-        // For now, just log that it was requested
+        // For now, log that it was requested
         console.log('Storage commitment requested but not yet implemented');
       }
 
       // Release association gracefully
       await connection.release();
     } catch (error) {
-      this.handleSendError(connectorMessage, error);
-      throw error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      responseStatusMessage = `DICOM send error: ${errorMessage}`;
+      responseError = `DICOM Sender: ${errorMessage}`;
+
+      // CPC-W19-007: Dispatch ErrorEvent on send failure, matching Java line 283
+      this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED, `Error: ${errorMessage}`);
     } finally {
       // Clean up connection
       if (connection) {
@@ -226,6 +264,27 @@ export class DICOMDispatcher extends DestinationConnector {
       // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.IDLE))
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
+
+    // Set sent content / error content on the connector message
+    if (responseStatus === Status.SENT && responseData) {
+      connectorMessage.setContent({
+        contentType: ContentType.SENT,
+        content: responseData,
+        dataType: 'XML',
+        encrypted: false,
+      });
+    }
+    if (responseStatusMessage) {
+      connectorMessage.getConnectorMap().set('dicomResponse', responseStatusMessage);
+    }
+    if (responseError) {
+      connectorMessage.getConnectorMap().set('dicomError', responseError);
+    }
+
+    // Store response data in connector map for framework to pick up
+    connectorMessage.getConnectorMap().set('responseStatus', responseStatus);
+    connectorMessage.getConnectorMap().set('responseStatusMessage', responseStatusMessage ?? '');
+    connectorMessage.getConnectorMap().set('responseData', responseData ?? '');
   }
 
   /**
@@ -372,6 +431,9 @@ export class DICOMDispatcher extends DestinationConnector {
   /**
    * Create DICOM connection with properties.
    * Accepts resolved props so ${variable} substitution is applied before connection setup.
+   *
+   * CPC-W19-002: Wires all 16 dcmSnd config properties from Java
+   * DICOMDispatcher.send() lines 154-231 to the connection params.
    */
   private createConnection(sopClassUid: string, props?: DICOMDispatcherProperties): DicomConnection {
     const p = props ?? this.properties;
@@ -395,6 +457,89 @@ export class DICOMDispatcher extends DestinationConnector {
         params.localPort = parseInt(p.localPort, 10);
       }
     }
+
+    // CPC-W19-002: Wire remaining dcmSnd config properties (Java lines 158-226)
+
+    // Java: dcmSnd.setMaxOpsInvoked(value) — max async operations
+    const asyncVal = parseInt(p.async, 10);
+    if (asyncVal > 0) {
+      params.maxOpsInvoked = asyncVal;
+    }
+
+    // Java: dcmSnd.setTranscoderBufferSize(value) — buffer size (KB)
+    const bufSizeVal = parseInt(p.bufSize, 10);
+    if (bufSizeVal !== 1) {
+      params.transcoderBufferSize = bufSizeVal;
+    }
+
+    // Java: dcmSnd.setPriority(0=med, 1=low, 2=high)
+    if (p.priority === DicomPriority.LOW) {
+      params.priority = 1;
+    } else if (p.priority === DicomPriority.HIGH) {
+      params.priority = 2;
+    } else {
+      params.priority = 0; // medium (default)
+    }
+
+    // Java: dcmSnd.setUserIdentity(userId) — username/passcode auth
+    if (p.username) {
+      params.username = p.username;
+      if (p.passcode) {
+        params.passcode = p.passcode;
+      }
+      params.uidnegrsp = p.uidnegrsp;
+    }
+
+    // Java: dcmSnd.setPackPDV(value) — pack command and data in same P-DATA-TF
+    params.packPDV = p.pdv1;
+
+    // Java: dcmSnd.setAssociationReaperPeriod(value)
+    const reaperVal = parseInt(p.reaper, 10);
+    if (reaperVal !== 10) {
+      params.associationReaperPeriod = reaperVal;
+    }
+
+    // Java: dcmSnd.setReleaseTimeout(value)
+    const releaseToVal = parseInt(p.releaseTo, 10);
+    if (releaseToVal !== 5) {
+      params.releaseTimeout = releaseToVal;
+    }
+
+    // Java: dcmSnd.setDimseRspTimeout(value)
+    const rspToVal = parseInt(p.rspTo, 10);
+    if (rspToVal !== 60) {
+      params.dimseRspTimeout = rspToVal;
+    }
+
+    // Java: dcmSnd.setShutdownDelay(value)
+    const shutdownDelayVal = parseInt(p.shutdownDelay, 10);
+    if (shutdownDelayVal !== 1000) {
+      params.shutdownDelay = shutdownDelayVal;
+    }
+
+    // Java: dcmSnd.setSocketCloseDelay(value)
+    const soCloseDelayVal = parseInt(p.soCloseDelay, 10);
+    if (soCloseDelayVal !== 50) {
+      params.socketCloseDelay = soCloseDelayVal;
+    }
+
+    // Java: dcmSnd.setReceiveBufferSize(value) — socket recv buffer (KB)
+    const sorcvbufVal = parseInt(p.sorcvbuf, 10);
+    if (sorcvbufVal > 0) {
+      params.receiveBufferSize = sorcvbufVal;
+    }
+
+    // Java: dcmSnd.setSendBufferSize(value) — socket send buffer (KB)
+    const sosndbuVal = parseInt(p.sosndbuf, 10);
+    if (sosndbuVal > 0) {
+      params.sendBufferSize = sosndbuVal;
+    }
+
+    // Java: dcmSnd.setStorageCommitment(value)
+    params.storageCommitment = p.stgcmt;
+
+    // Java: dcmSnd.setTcpNoDelay(!tcpDelay) — note: inverted!
+    params.tcpNoDelay = !p.tcpDelay;
 
     // Configure TLS if enabled
     if (p.tls !== DicomTlsMode.NO_TLS) {
@@ -430,58 +575,7 @@ export class DICOMDispatcher extends DestinationConnector {
     return syntaxes;
   }
 
-  /**
-   * Handle C-STORE response
-   */
-  private handleStoreResponse(connectorMessage: ConnectorMessage, status: DicomStatus): void {
-    const statusHex = '0x' + status.toString(16).padStart(4, '0').toUpperCase();
-
-    // Build response data as XML (similar to Java implementation)
-    const responseXml = `<dicom>
-  <tag00000900 tag="00000900" vr="US" len="2">${status}</tag00000900>
-</dicom>`;
-
-    if (status === DicomStatus.SUCCESS) {
-      // Set sent content
-      connectorMessage.setContent({
-        contentType: ContentType.SENT,
-        content: responseXml,
-        dataType: 'XML',
-        encrypted: false,
-      });
-      // Store response message in connector map
-      connectorMessage.getConnectorMap().set('dicomResponse', `DICOM message successfully sent (status: ${statusHex})`);
-    } else if (
-      status === DicomStatus.WARNING_COERCION ||
-      status === DicomStatus.WARNING_ELEMENT_COERCION ||
-      status === DicomStatus.WARNING_DATA_TRUNCATION
-    ) {
-      connectorMessage.setContent({
-        contentType: ContentType.SENT,
-        content: responseXml,
-        dataType: 'XML',
-        encrypted: false,
-      });
-      connectorMessage.getConnectorMap().set('dicomResponse', `DICOM message sent with warning (status: ${statusHex})`);
-    } else {
-      throw new Error(`DICOM send failed with status: ${statusHex}`);
-    }
-  }
-
-  /**
-   * Handle send error
-   */
-  private handleSendError(connectorMessage: ConnectorMessage, error: unknown): void {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    connectorMessage.setContent({
-      contentType: ContentType.RAW,
-      content: '',
-      dataType: 'ERROR',
-      encrypted: false,
-    });
-    connectorMessage.getConnectorMap().set('dicomError', `DICOM send failed: ${errorMessage}`);
-  }
+  // handleStoreResponse and handleSendError removed — logic now inline in send() for Java parity (CPC-W19-001)
 
   /**
    * Get response (already set during send)

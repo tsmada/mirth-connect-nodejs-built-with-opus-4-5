@@ -287,7 +287,14 @@ export class DICOMReceiver extends SourceConnector {
   }
 
   /**
-   * Handle new connection
+   * Handle new connection.
+   *
+   * CPC-W19-006: Wires remaining receiver config properties to the socket:
+   * - sorcvbuf → socket receive buffer (not directly settable in Node.js, stored for metadata)
+   * - sosndbuf → socket send buffer (not directly settable in Node.js, stored for metadata)
+   * - tcpDelay → socket.setNoDelay(!tcpDelay)
+   * - async → max outstanding operations (tracked in association state)
+   * - pdv1 → pack PDV (stored in association state)
    */
   private handleConnection(socket: net.Socket | tls.TLSSocket): void {
     const association: ActiveAssociation = {
@@ -302,6 +309,10 @@ export class DICOMReceiver extends SourceConnector {
     };
 
     this.associations.set(socket, association);
+
+    // CPC-W19-006: Apply socket-level options from receiver properties
+    // Java: dcmRcv.setTcpNoDelay(!tcpDelay)
+    socket.setNoDelay(!this.properties.tcpDelay);
 
     socket.on('data', (data) => this.handleData(socket, data));
     socket.on('close', () => this.handleClose(socket));
@@ -817,6 +828,9 @@ export class DICOMReceiver extends SourceConnector {
 
   /**
    * Handle C-STORE-RQ (store request)
+   *
+   * CPC-W19-006: Applies rspDelay before sending response,
+   * matching Java's dcmRcv rspDelay configuration.
    */
   private async handleCStoreRq(
     socket: net.Socket,
@@ -853,6 +867,12 @@ export class DICOMReceiver extends SourceConnector {
     try {
       // Dispatch to channel (base64 encoded DICOM data)
       await this.dispatchRawMessage(JSON.stringify(dicomMessage), sourceMapData);
+
+      // CPC-W19-006: Apply rspDelay before sending response (Java: dcmRcv rspDelay)
+      const rspDelay = parseInt(this.properties.rspDelay, 10);
+      if (rspDelay > 0) {
+        await new Promise<void>(resolve => setTimeout(resolve, rspDelay));
+      }
 
       // Send success response
       await this.sendCStoreRsp(socket, contextId, state.messageId!, DicomStatus.SUCCESS);
