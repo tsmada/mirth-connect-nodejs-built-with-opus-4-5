@@ -9,12 +9,15 @@
  * - Route to channel for processing
  * - Return SOAP response
  * - Support authentication
+ * - Connection status event dispatching (IDLE/RECEIVING)
+ * - onUndeploy cleanup hook
  */
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import { createServer, Server as HttpServer } from 'http';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { ListenerInfo } from '../../api/models/DashboardStatus.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   WebServiceReceiverProperties,
   getDefaultWebServiceReceiverProperties,
@@ -95,7 +98,8 @@ export class WebServiceReceiver extends SourceConnector {
   }
 
   /**
-   * Start the SOAP endpoint
+   * Start the SOAP endpoint.
+   * CPC-WS-003: Dispatches IDLE event after server starts (matching Java's onStart).
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -170,6 +174,9 @@ export class WebServiceReceiver extends SourceConnector {
 
       this.server!.on('error', reject);
     });
+
+    // CPC-WS-003: Dispatch IDLE event after server starts — matches Java's onStart
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
@@ -195,13 +202,38 @@ export class WebServiceReceiver extends SourceConnector {
   }
 
   /**
-   * Handle incoming SOAP request
+   * Called on halt (forced stop). Delegates to stop().
+   * Matches Java's onHalt which just calls onStop.
+   */
+  async halt(): Promise<void> {
+    await this.stop();
+  }
+
+  /**
+   * CPC-WS-006: Undeploy cleanup hook.
+   * Matches Java's onUndeploy which calls configuration.configureConnectorUndeploy(this).
+   * In the Node.js port, this ensures the server is stopped and resources are freed.
+   */
+  async onUndeploy(): Promise<void> {
+    if (this.running) {
+      await this.stop();
+    }
+    this.app = null;
+    this.server = null;
+  }
+
+  /**
+   * Handle incoming SOAP request.
+   * CPC-WS-003: Dispatches RECEIVING on request start, IDLE in finally.
    */
   private async handleSoapRequest(
     req: Request,
     res: Response
   ): Promise<void> {
     this.processingCount++;
+
+    // CPC-WS-003: Dispatch RECEIVING event when a request begins
+    this.dispatchConnectionEvent(ConnectionStatusEventType.RECEIVING);
 
     try {
       // Get request body as string
@@ -306,6 +338,8 @@ export class WebServiceReceiver extends SourceConnector {
       );
     } finally {
       this.processingCount--;
+      // CPC-WS-003: Dispatch IDLE event after processing completes
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
   }
 
