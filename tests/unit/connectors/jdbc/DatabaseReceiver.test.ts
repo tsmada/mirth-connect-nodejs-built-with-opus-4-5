@@ -23,7 +23,7 @@ describe('DatabaseReceiver', () => {
       expect(receiver.isRunning()).toBe(false);
 
       const props = receiver.getProperties();
-      expect(props.driver).toBe('');
+      expect(props.driver).toBe('Please Select One');
       expect(props.url).toBe('');
       expect(props.useScript).toBe(false);
     });

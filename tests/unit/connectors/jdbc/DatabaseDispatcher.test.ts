@@ -26,7 +26,7 @@ describe('DatabaseDispatcher', () => {
       expect(dispatcher.isRunning()).toBe(false);
 
       const props = dispatcher.getProperties();
-      expect(props.driver).toBe('');
+      expect(props.driver).toBe('Please Select One');
       expect(props.url).toBe('');
       expect(props.useScript).toBe(false);
     });
@@ -63,7 +63,7 @@ describe('DatabaseDispatcher', () => {
     it('should get default properties', () => {
       const props = dispatcher.getProperties();
 
-      expect(props.driver).toBe('');
+      expect(props.driver).toBe('Please Select One');
       expect(props.url).toBe('');
       expect(props.username).toBe('');
       expect(props.password).toBe('');

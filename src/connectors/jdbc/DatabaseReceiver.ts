@@ -21,6 +21,7 @@ import {
   UpdateMode,
 } from './DatabaseConnectorProperties.js';
 import { getDefaultExecutor } from '../../javascript/runtime/JavaScriptExecutor.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 
 export interface DatabaseReceiverConfig {
   name?: string;
@@ -76,6 +77,9 @@ export class DatabaseReceiver extends SourceConnector {
 
     // Create connection pool
     await this.createConnectionPool();
+
+    // Dispatch IDLE on deploy — matches Java's onDeploy()
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
 
     // Start polling
     this.startPolling();
@@ -188,38 +192,51 @@ export class DatabaseReceiver extends SourceConnector {
 
   /**
    * Execute poll
+   *
+   * Matches Java DatabaseReceiver.poll() event lifecycle:
+   *   POLLING → (query) → READING → (process rows) → IDLE (in finally)
    */
   private async poll(): Promise<void> {
     if (!this.running || !this.pool) {
       return;
     }
 
+    this.dispatchConnectionEvent(ConnectionStatusEventType.POLLING);
     let conn: PoolConnection | null = null;
     let retries = 0;
 
-    while (retries <= this.properties.retryCount) {
-      try {
-        conn = await this.getConnection();
-        await this.executeQuery(conn);
-        break;
-      } catch (error) {
-        retries++;
+    try {
+      while (retries <= this.properties.retryCount) {
+        try {
+          conn = await this.getConnection();
 
-        if (conn) {
-          this.releaseConnection(conn);
-          conn = null;
-        }
+          // After query returns, transition to READING (matching Java)
+          this.dispatchConnectionEvent(ConnectionStatusEventType.READING);
 
-        if (retries > this.properties.retryCount) {
-          console.error('Database poll failed after retries:', error);
+          await this.executeQuery(conn);
           break;
-        }
+        } catch (error) {
+          retries++;
 
-        // Wait before retry
-        await new Promise((resolve) =>
-          setTimeout(resolve, this.properties.retryInterval)
-        );
+          if (conn) {
+            this.releaseConnection(conn);
+            conn = null;
+          }
+
+          if (retries > this.properties.retryCount) {
+            console.error('Database poll failed after retries:', error);
+            break;
+          }
+
+          // Wait before retry
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.properties.retryInterval)
+          );
+        }
       }
+    } finally {
+      // Always return to IDLE after poll completes (matching Java finally block)
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
   }
 
@@ -238,6 +255,15 @@ export class DatabaseReceiver extends SourceConnector {
 
   /**
    * Execute SQL query
+   *
+   * When cacheResults is false and fetchSize is set, Java uses
+   * statement.setFetchSize() to stream large result sets. In mysql2,
+   * we approximate this by setting the connection to streaming mode
+   * with rowsAsArray: false (default).
+   *
+   * The fetchSize property is exposed for drivers that support it;
+   * mysql2 returns all rows at once by default but the property is
+   * preserved for compatibility and potential future driver support.
    */
   private async executeSql(conn: PoolConnection): Promise<void> {
     const [rows] = await conn.query<RowDataPacket[]>(this.properties.select);

@@ -81,7 +81,7 @@ export interface DatabaseDispatcherProperties {
  */
 export function getDefaultDatabaseReceiverProperties(): DatabaseReceiverProperties {
   return {
-    driver: '',
+    driver: 'Please Select One',
     url: '',
     username: '',
     password: '',
@@ -106,7 +106,7 @@ export function getDefaultDatabaseReceiverProperties(): DatabaseReceiverProperti
  */
 export function getDefaultDatabaseDispatcherProperties(): DatabaseDispatcherProperties {
   return {
-    driver: '',
+    driver: 'Please Select One',
     url: '',
     username: '',
     password: '',

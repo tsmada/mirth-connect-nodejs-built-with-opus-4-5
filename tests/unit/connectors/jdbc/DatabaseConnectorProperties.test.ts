@@ -12,7 +12,7 @@ describe('DatabaseConnectorProperties', () => {
     it('should return default receiver properties', () => {
       const props = getDefaultDatabaseReceiverProperties();
 
-      expect(props.driver).toBe('');
+      expect(props.driver).toBe('Please Select One');
       expect(props.url).toBe('');
       expect(props.username).toBe('');
       expect(props.password).toBe('');
@@ -43,7 +43,7 @@ describe('DatabaseConnectorProperties', () => {
     it('should return default dispatcher properties', () => {
       const props = getDefaultDatabaseDispatcherProperties();
 
-      expect(props.driver).toBe('');
+      expect(props.driver).toBe('Please Select One');
       expect(props.url).toBe('');
       expect(props.username).toBe('');
       expect(props.password).toBe('');
