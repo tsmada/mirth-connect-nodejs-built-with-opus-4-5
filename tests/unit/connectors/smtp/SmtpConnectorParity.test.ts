@@ -22,6 +22,12 @@ import {
   GlobalChannelMapStore,
 } from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
+import {
+  ErrorEventType,
+  setAlertEventController,
+  type ErrorEvent,
+  type IEventController,
+} from '../../../../src/javascript/userutil/AlertSender';
 import nodemailer from 'nodemailer';
 
 // Mock nodemailer
@@ -29,6 +35,9 @@ jest.mock('nodemailer');
 
 // Track dispatched events
 const dispatchedEvents: Array<{ state: ConnectionStatusEventType; message?: string }> = [];
+
+// Track dispatched error events (CPC-W19-005)
+const errorEvents: ErrorEvent[] = [];
 
 // Mock dashboardStatusController.processEvent
 jest.mock('../../../../src/plugins/dashboardstatus/DashboardStatusController', () => ({
@@ -91,6 +100,15 @@ describe('SMTP Connector Parity Tests', () => {
     GlobalChannelMapStore.resetInstance();
     resetDefaultExecutor();
     dispatchedEvents.length = 0;
+    errorEvents.length = 0;
+
+    // Set up mock event controller for ErrorEvent capture (CPC-W19-005)
+    const mockEventController: IEventController = {
+      dispatchEvent: jest.fn((event: ErrorEvent) => {
+        errorEvents.push(event);
+      }),
+    };
+    setAlertEventController(mockEventController);
 
     mockSendMail = jest.fn().mockResolvedValue({
       messageId: '<test-msg-id@example.com>',
@@ -150,18 +168,18 @@ describe('SMTP Connector Parity Tests', () => {
       expect(lastEvent.state).toBe(ConnectionStatusEventType.IDLE);
     });
 
-    it('should dispatch error info event on failure', async () => {
+    it('should dispatch ErrorEvent on failure via alert event controller (CPC-W19-005)', async () => {
       mockSendMail.mockRejectedValue(new Error('SMTP auth failed'));
       const dispatcher = createDispatcherWithChannel();
       const msg = createMockConnectorMessage();
 
       await expect(dispatcher.send(msg)).rejects.toThrow();
 
-      const errorEvent = dispatchedEvents.find(
-        (e) => e.state === ConnectionStatusEventType.INFO && e.message?.includes('Error sending email')
-      );
-      expect(errorEvent).toBeDefined();
-      expect(errorEvent!.message).toContain('SMTP auth failed');
+      // CPC-W19-005: Error now dispatched as ErrorEvent (alert system), not ConnectionStatusEvent.INFO
+      expect(errorEvents).toHaveLength(1);
+      expect(errorEvents[0]!.eventType).toBe(ErrorEventType.DESTINATION_CONNECTOR);
+      expect(errorEvents[0]!.errorMessage).toContain('Error sending email message');
+      expect(errorEvents[0]!.errorMessage).toContain('SMTP auth failed');
     });
 
     it('should dispatch WRITING with info string matching Java format', async () => {
@@ -488,18 +506,23 @@ describe('SMTP Connector Parity Tests', () => {
       ]);
     });
 
-    it('should match Java error sequence: WRITING → error → IDLE', async () => {
+    it('should match Java error sequence: WRITING → IDLE (ErrorEvent via alert pipeline)', async () => {
       mockSendMail.mockRejectedValue(new Error('fail'));
       const dispatcher = createDispatcherWithChannel();
       const msg = createMockConnectorMessage();
 
       await expect(dispatcher.send(msg)).rejects.toThrow();
 
+      // CPC-W19-005: ConnectionStatusEvent sequence on error is WRITING → IDLE
+      // ErrorEvent is dispatched separately via the alert event controller
       expect(dispatchedEvents.map((e) => e.state)).toEqual([
         ConnectionStatusEventType.WRITING,
-        ConnectionStatusEventType.INFO, // error event
         ConnectionStatusEventType.IDLE,
       ]);
+
+      // ErrorEvent dispatched via alert controller (separate from dashboard events)
+      expect(errorEvents).toHaveLength(1);
+      expect(errorEvents[0]!.eventType).toBe(ErrorEventType.DESTINATION_CONNECTOR);
     });
 
     it('should set SENT status and response on success', async () => {
