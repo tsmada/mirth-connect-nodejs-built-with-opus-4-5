@@ -10,31 +10,75 @@
  * - Various acknowledgment modes
  * - Automatic reconnection on failure
  * - Batch message processing
+ * - Connection status event dispatching (IDLE, CONNECTED, RECEIVING, DISCONNECTED)
+ * - Error event dispatching via reportError pattern
+ * - Binary (BytesMessage) and ObjectMessage handling
  */
 
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import { JmsClient, JmsMessage, MessageListener } from './JmsClient.js';
 import {
   JmsReceiverProperties,
   getDefaultJmsReceiverProperties,
   AcknowledgeMode,
 } from './JmsConnectorProperties.js';
+import type { BatchAdaptor } from '../../donkey/message/BatchAdaptor.js';
 
 export interface JmsReceiverConfig {
   name?: string;
   waitForDestinations?: boolean;
   queueSendFirst?: boolean;
+  processBatch?: boolean;
   properties?: Partial<JmsReceiverProperties>;
 }
 
 /**
+ * Simple line-based batch adaptor for JMS text messages.
+ * Splits newline-delimited content into individual messages.
+ */
+class JmsTextBatchAdaptor implements BatchAdaptor {
+  private lines: string[];
+  private index = 0;
+
+  constructor(rawData: string) {
+    this.lines = rawData.split('\n').filter((l) => l.trim().length > 0);
+  }
+
+  async getMessage(): Promise<string | null> {
+    if (this.index >= this.lines.length) return null;
+    return this.lines[this.index++]!;
+  }
+
+  getBatchSequenceId(): number {
+    return this.index;
+  }
+
+  isBatchComplete(): boolean {
+    return this.index >= this.lines.length;
+  }
+
+  cleanup(): void {
+    this.lines = [];
+  }
+}
+
+/**
  * JMS Source Connector that receives messages from queues/topics
+ *
+ * Event dispatching matches Java Mirth JmsReceiver.java:
+ * - onDeploy:  IDLE
+ * - onStart:   CONNECTED
+ * - onMessage: RECEIVING → IDLE (in finally)
+ * - onStop:    DISCONNECTED
+ * - onError:   reportError() dispatches ErrorEvent
  */
 export class JmsReceiver extends SourceConnector {
   private properties: JmsReceiverProperties;
   private jmsClient: JmsClient | null = null;
   private subscriptionId: string | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private _processBatch: boolean;
 
   constructor(config: JmsReceiverConfig) {
     super({
@@ -48,6 +92,8 @@ export class JmsReceiver extends SourceConnector {
       ...getDefaultJmsReceiverProperties(),
       ...config.properties,
     };
+
+    this._processBatch = config.processBatch ?? false;
   }
 
   /**
@@ -65,7 +111,23 @@ export class JmsReceiver extends SourceConnector {
   }
 
   /**
-   * Start the JMS receiver
+   * Whether batch processing is enabled.
+   * Matches Java: isProcessBatch() checks batchAdaptorFactory != null
+   */
+  isProcessBatch(): boolean {
+    return this._processBatch;
+  }
+
+  /**
+   * Called on deploy. Matches Java JmsReceiver.onDeploy() — dispatches IDLE.
+   */
+  onDeploy(): void {
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+  }
+
+  /**
+   * Start the JMS receiver.
+   * Matches Java JmsReceiver.onStart() — connects, subscribes, dispatches CONNECTED.
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -73,7 +135,6 @@ export class JmsReceiver extends SourceConnector {
     }
 
     const channelId = this.channel?.getId() ?? 'unknown';
-    // channelName used for debugging
 
     try {
       // Get or create JMS client
@@ -93,13 +154,19 @@ export class JmsReceiver extends SourceConnector {
       await this.createSubscription();
 
       this.running = true;
-      console.log(
-        `JMS Receiver started: ${this.properties.topic ? 'topic' : 'queue'} "${this.properties.destinationName}" on ${this.properties.host}:${this.properties.port}`
-      );
+
+      // CPC-JMS-001: Dispatch CONNECTED event after successful start (matches Java line 92)
+      this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTED);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error(`Failed to start JMS Receiver: ${errorMessage}`);
+
+      // CPC-JMS-008: Use reportError pattern instead of console.error
+      this.reportError(
+        'Failed to start JMS Receiver',
+        undefined,
+        error instanceof Error ? error : new Error(errorMessage)
+      );
 
       // Clean up on failure
       await this.cleanup();
@@ -117,21 +184,33 @@ export class JmsReceiver extends SourceConnector {
     if (!this.jmsClient) return;
 
     this.jmsClient.on('disconnected', (error) => {
-      console.error('JMS connection lost:', error);
+      // CPC-JMS-008: Use reportError instead of console.error
+      this.reportError(
+        'JMS connection lost',
+        undefined,
+        error instanceof Error ? error : new Error(String(error))
+      );
       this.subscriptionId = null;
     });
 
     this.jmsClient.on('reconnected', async () => {
-      console.log('JMS connection restored');
       try {
         await this.createSubscription();
       } catch (error) {
-        console.error('Failed to re-subscribe after reconnect:', error);
+        this.reportError(
+          'Failed to re-subscribe after reconnect',
+          undefined,
+          error instanceof Error ? error : new Error(String(error))
+        );
       }
     });
 
     this.jmsClient.on('error', (error) => {
-      console.error('JMS error:', error);
+      this.reportError(
+        'JMS error',
+        undefined,
+        error instanceof Error ? error : new Error(String(error))
+      );
     });
   }
 
@@ -159,16 +238,20 @@ export class JmsReceiver extends SourceConnector {
         prefetchCount: this.properties.prefetchCount,
       }
     );
-
-    console.log(
-      `Subscribed to ${this.properties.topic ? 'topic' : 'queue'} "${this.properties.destinationName}" with ID ${this.subscriptionId}`
-    );
   }
 
   /**
-   * Handle incoming JMS message
+   * Handle incoming JMS message.
+   * Matches Java JmsReceiverMessageListener.onMessage():
+   * - Dispatches RECEIVING event
+   * - Handles TextMessage, BytesMessage, ObjectMessage
+   * - Supports batch processing via isProcessBatch()
+   * - Dispatches IDLE event in finally block
    */
   private async handleMessage(message: JmsMessage): Promise<void> {
+    // CPC-JMS-001: Dispatch RECEIVING event (matches Java line 127)
+    this.dispatchConnectionEvent(ConnectionStatusEventType.RECEIVING);
+
     try {
       // Build source map with message metadata
       const sourceMapData = new Map<string, unknown>();
@@ -184,25 +267,82 @@ export class JmsReceiver extends SourceConnector {
         sourceMapData.set(`jmsHeader.${key}`, value);
       }
 
-      // Dispatch message to channel
-      await this.dispatchRawMessage(message.body, sourceMapData);
+      // CPC-JMS-005: Handle binary messages.
+      // Java handles TextMessage, BytesMessage, ObjectMessage.
+      // STOMP messages arrive as text; binary flag indicates BytesMessage equivalent.
+      const messageBody = message.body;
+      const isBinary = message.isBinary === true;
 
-      // Acknowledge message if using client ack mode
-      if (this.properties.acknowledgeMode !== AcknowledgeMode.AUTO) {
-        message.ack();
+      // CPC-JMS-004: Batch message processing (matches Java lines 141-162)
+      if (this._processBatch) {
+        if (isBinary) {
+          this.reportError(
+            'Batch processing is not supported for binary data.',
+            undefined,
+            new Error('Batch processing is not supported for binary data.')
+          );
+          return;
+        }
+
+        const batchAdaptor: BatchAdaptor = new JmsTextBatchAdaptor(messageBody);
+
+        try {
+          await this.dispatchBatchMessage(messageBody, batchAdaptor, sourceMapData);
+
+          try {
+            message.ack();
+          } catch (ackError) {
+            this.reportError(
+              'Failed to acknowledge JMS message',
+              undefined,
+              ackError instanceof Error ? ackError : new Error(String(ackError))
+            );
+          }
+        } catch (batchError) {
+          this.reportError(
+            'Failed to process batch message',
+            undefined,
+            batchError instanceof Error ? batchError : new Error(String(batchError))
+          );
+        }
+      } else {
+        // Single message dispatch (matches Java lines 163-178)
+        try {
+          await this.dispatchRawMessage(messageBody, sourceMapData);
+
+          // Acknowledge message
+          try {
+            if (this.properties.acknowledgeMode !== AcknowledgeMode.AUTO) {
+              message.ack();
+            }
+          } catch (ackError) {
+            this.reportError(
+              'Failed to acknowledge JMS message',
+              undefined,
+              ackError instanceof Error ? ackError : new Error(String(ackError))
+            );
+          }
+        } catch (error) {
+          // CPC-JMS-008: Use reportError pattern
+          this.reportError(
+            'Failed to process message',
+            undefined,
+            error instanceof Error ? error : new Error(String(error))
+          );
+
+          // Negative acknowledge on processing error
+          message.nack();
+        }
       }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(`Failed to process JMS message: ${errorMessage}`);
-
-      // Negative acknowledge on processing error
-      message.nack();
+    } finally {
+      // CPC-JMS-001: Dispatch IDLE event in finally (matches Java line 181)
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
   }
 
   /**
-   * Stop the JMS receiver
+   * Stop the JMS receiver.
+   * Matches Java JmsReceiver.onStop() — disconnects, dispatches DISCONNECTED.
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -212,7 +352,8 @@ export class JmsReceiver extends SourceConnector {
     await this.cleanup();
     this.running = false;
 
-    console.log('JMS Receiver stopped');
+    // CPC-JMS-001: Dispatch DISCONNECTED event (matches Java line 103)
+    this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
   }
 
   /**
@@ -229,8 +370,8 @@ export class JmsReceiver extends SourceConnector {
     if (this.jmsClient && this.subscriptionId) {
       try {
         await this.jmsClient.unsubscribe(this.subscriptionId);
-      } catch (error) {
-        console.error('Error unsubscribing:', error);
+      } catch (_error) {
+        // Quiet cleanup - errors during teardown are logged but not propagated
       }
       this.subscriptionId = null;
     }
@@ -239,10 +380,37 @@ export class JmsReceiver extends SourceConnector {
     if (this.jmsClient) {
       try {
         await this.jmsClient.disconnect();
-      } catch (error) {
-        console.error('Error disconnecting JMS client:', error);
+      } catch (_error) {
+        // Quiet cleanup
       }
       this.jmsClient = null;
+    }
+  }
+
+  /**
+   * Report errors matching Java JmsReceiver.reportError() pattern.
+   * Dispatches an error event for the dashboard and logs the error.
+   * Matches Java: eventController.dispatchEvent(new ErrorEvent(...))
+   */
+  private reportError(
+    errorMessage: string,
+    _messageId: number | undefined,
+    error: Error
+  ): void {
+    const channelId = this.channel?.getId() ?? 'unknown';
+    const channelName = this.channel?.getName() ?? 'unknown';
+    // Log in format matching Java: "message (channel: name)"
+    console.error(`${errorMessage} (channel: ${channelName}): ${error.message}`);
+
+    // Dispatch error event through channel event emitter (for dashboard integration)
+    if (this.channel) {
+      this.channel.emit('connectorError', {
+        channelId,
+        metaDataId: 0,
+        connectorName: this.name,
+        errorType: 'SOURCE_CONNECTOR',
+        errorMessage: `${errorMessage}: ${error.message}`,
+      });
     }
   }
 

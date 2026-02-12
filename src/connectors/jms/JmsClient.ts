@@ -57,6 +57,12 @@ export interface JmsMessage {
   correlationId?: string;
   /** Reply-to destination */
   replyTo?: string;
+  /**
+   * Whether this message was received as binary (BytesMessage equivalent).
+   * STOMP content-type: application/octet-stream indicates binary.
+   * Matches Java's BytesMessage handling in JmsReceiver.
+   */
+  isBinary?: boolean;
   /** Acknowledge function (for client ack mode) */
   ack: () => void;
   /** Negative acknowledge function */
@@ -425,15 +431,18 @@ export class JmsClient extends EventEmitter {
         }
       }
 
+      const detectedContentType = headers['content-type'] || 'text/plain';
       const jmsMessage: JmsMessage = {
         body,
         headers,
         messageId: headers['message-id'] || '',
         destination: headers.destination || '',
-        contentType: headers['content-type'] || 'text/plain',
+        contentType: detectedContentType,
         timestamp: headers.timestamp ? parseInt(headers.timestamp, 10) : undefined,
         correlationId: headers['correlation-id'],
         replyTo: headers['reply-to'],
+        // CPC-JMS-005: Binary message detection (BytesMessage equivalent)
+        isBinary: detectedContentType === 'application/octet-stream',
         ack: () => {
           this.connection?.ack(message);
         },
