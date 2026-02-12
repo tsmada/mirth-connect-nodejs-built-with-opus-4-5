@@ -28,6 +28,10 @@ import {
   isTextMimeType,
   isValidMimeType,
 } from './SmtpDispatcherProperties.js';
+import {
+  getAlertEventController,
+  ErrorEventType,
+} from '../../javascript/userutil/AlertSender.js';
 
 export interface SmtpDispatcherConfig {
   name?: string;
@@ -60,6 +64,7 @@ interface SmtpTransportOptions {
   socketTimeout?: number;
   greetingTimeout?: number;
   localAddress?: string;
+  localPort?: number;
   auth?: {
     user: string;
     pass: string;
@@ -193,8 +198,13 @@ export class SmtpDispatcher extends DestinationConnector {
     }
 
     // Configure local binding
+    // CPC-W19-008: Java sets both mail.smtp.localaddress AND mail.smtp.localport
     if (props.overrideLocalBinding) {
       options.localAddress = props.localAddress;
+      const localPort = parseInt(props.localPort, 10);
+      if (!isNaN(localPort) && localPort > 0) {
+        options.localPort = localPort;
+      }
     }
 
     return nodemailer.createTransport(options) as unknown as Transporter<SmtpSentMessageInfo>;
@@ -549,11 +559,23 @@ export class SmtpDispatcher extends DestinationConnector {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      // CPC-SMTP-001: Dispatch error event (matches Java SmtpDispatcher.java:257)
-      this.dispatchConnectionEvent(
-        ConnectionStatusEventType.INFO,
-        `Error sending email message: ${errorMessage}`
-      );
+      // CPC-W19-005: Dispatch ErrorEvent matching Java SmtpDispatcher.java:257
+      // Java: eventController.dispatchEvent(new ErrorEvent(getChannelId(), getMetaDataId(),
+      //   connectorMessage.getMessageId(), ErrorEventType.DESTINATION_CONNECTOR,
+      //   getDestinationName(), connectorProperties.getName(), "Error sending email message", e))
+      const alertController = this.channel ? getAlertEventController() : null;
+      if (alertController && this.channel) {
+        alertController.dispatchEvent({
+          channelId: this.channel.getId(),
+          metaDataId: this.metaDataId,
+          messageId: connectorMessage.getMessageId(),
+          eventType: ErrorEventType.DESTINATION_CONNECTOR,
+          connectorName: this.name,
+          errorMessage: `Error sending email message: ${errorMessage}`,
+          throwable: error instanceof Error ? error : undefined,
+          timestamp: new Date(),
+        });
+      }
 
       // CPC-SMTP-002: Java initializes responseStatus = QUEUED and only changes to SENT on success.
       // On exception, status stays QUEUED so the queue processor will retry.
