@@ -230,81 +230,90 @@ export class SmtpDispatcher extends DestinationConnector {
   }
 
   /**
-   * Replace ${variable} placeholders in a string using all message maps.
-   * Uses MessageMaps.get() lookup order: responseMap → connectorMap → channelMap → sourceMap.
+   * Resolve ${variable} placeholders in a string using connector message maps.
+   * Handles built-in variables (${message.encodedData}, ${message.rawData})
+   * and map lookups via getFromMessageMaps() which uses Java's Velocity context
+   * load order: responseMap > connectorMap > channelMap > sourceMap (last-write-wins).
+   *
+   * CPC-RCP-004: Matches Java's replacer.replaceValues() used in replaceConnectorProperties().
    */
-  private replaceVariables(template: string, connectorMessage: ConnectorMessage): string {
-    if (!template) {
-      return template;
-    }
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
 
-    return template.replace(/\$\{([^}]+)\}/g, (match, varName) => {
-      const value = this.getFromMessageMaps(varName.trim(), connectorMessage);
-      return value !== undefined ? String(value) : match;
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer ImmutableConnectorMessage access)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
+      // Use getFromMessageMaps() for standard variables — matches Java's Velocity context order
+      const value = this.getFromMessageMaps(varName, connectorMessage);
+      if (value !== undefined && value !== null) return String(value);
+
+      return match; // Leave unresolved variables as-is
     });
   }
 
   /**
-   * Replace variables in a map's values
+   * CPC-RCP-004: Resolve ${variable} placeholders in all connector properties.
+   * Matches Java SmtpDispatcher.replaceConnectorProperties() (line 89):
+   * Resolves smtpHost, smtpPort, localAddress, localPort, timeout,
+   * username, password (if auth), to, cc, bcc, replyTo, headersMap,
+   * headersVariable, from, subject, body, attachments (name, content, mimeType),
+   * and attachmentsVariable.
+   *
+   * Returns a shallow clone with resolved values — does not modify the original.
    */
-  private replaceVariablesInMap(
-    map: Map<string, string>,
-    connectorMessage: ConnectorMessage
-  ): Map<string, string> {
-    const result = new Map<string, string>();
-    for (const [key, value] of map) {
-      result.set(key, this.replaceVariables(value, connectorMessage));
-    }
-    return result;
-  }
-
-  /**
-   * Get resolved properties with variables replaced
-   */
-  private getResolvedProperties(
+  replaceConnectorProperties(
+    props: SmtpDispatcherProperties,
     connectorMessage: ConnectorMessage
   ): SmtpDispatcherProperties {
-    const resolved = { ...this.properties };
+    const resolved = { ...props };
 
-    resolved.smtpHost = this.replaceVariables(resolved.smtpHost, connectorMessage);
-    resolved.smtpPort = this.replaceVariables(resolved.smtpPort, connectorMessage);
-    resolved.localAddress = this.replaceVariables(resolved.localAddress, connectorMessage);
-    resolved.localPort = this.replaceVariables(resolved.localPort, connectorMessage);
-    resolved.timeout = this.replaceVariables(resolved.timeout, connectorMessage);
+    // Server settings
+    resolved.smtpHost = this.resolveVariables(resolved.smtpHost, connectorMessage);
+    resolved.smtpPort = this.resolveVariables(resolved.smtpPort, connectorMessage);
+    resolved.localAddress = this.resolveVariables(resolved.localAddress, connectorMessage);
+    resolved.localPort = this.resolveVariables(resolved.localPort, connectorMessage);
+    resolved.timeout = this.resolveVariables(resolved.timeout, connectorMessage);
 
+    // Authentication (only if enabled, matching Java line 99-102)
     if (resolved.authentication) {
-      resolved.username = this.replaceVariables(resolved.username, connectorMessage);
-      resolved.password = this.replaceVariables(resolved.password, connectorMessage);
+      resolved.username = this.resolveVariables(resolved.username, connectorMessage);
+      resolved.password = this.resolveVariables(resolved.password, connectorMessage);
     }
 
-    resolved.to = this.replaceVariables(resolved.to, connectorMessage);
-    resolved.cc = this.replaceVariables(resolved.cc, connectorMessage);
-    resolved.bcc = this.replaceVariables(resolved.bcc, connectorMessage);
-    resolved.replyTo = this.replaceVariables(resolved.replyTo, connectorMessage);
-    resolved.from = this.replaceVariables(resolved.from, connectorMessage);
-    resolved.subject = this.replaceVariables(resolved.subject, connectorMessage);
-    resolved.body = this.replaceVariables(resolved.body, connectorMessage);
-    resolved.headersVariable = this.replaceVariables(
-      resolved.headersVariable,
-      connectorMessage
-    );
-    resolved.attachmentsVariable = this.replaceVariables(
-      resolved.attachmentsVariable,
-      connectorMessage
-    );
+    // Recipients
+    resolved.to = this.resolveVariables(resolved.to, connectorMessage);
+    resolved.cc = this.resolveVariables(resolved.cc, connectorMessage);
+    resolved.bcc = this.resolveVariables(resolved.bcc, connectorMessage);
+    resolved.replyTo = this.resolveVariables(resolved.replyTo, connectorMessage);
 
-    // Replace variables in headers
-    resolved.headers = this.replaceVariablesInMap(
-      this.properties.headers,
-      connectorMessage
-    );
+    // Headers (map values + variable name)
+    const resolvedHeaders = new Map<string, string>();
+    for (const [key, value] of props.headers) {
+      resolvedHeaders.set(key, this.resolveVariables(value, connectorMessage));
+    }
+    resolved.headers = resolvedHeaders;
+    resolved.headersVariable = this.resolveVariables(resolved.headersVariable, connectorMessage);
 
-    // Replace variables in attachments
-    resolved.attachments = this.properties.attachments.map((att) => ({
-      name: this.replaceVariables(att.name, connectorMessage),
-      content: this.replaceVariables(att.content, connectorMessage),
-      mimeType: this.replaceVariables(att.mimeType, connectorMessage),
+    // Sender, subject, body
+    resolved.from = this.resolveVariables(resolved.from, connectorMessage);
+    resolved.subject = this.resolveVariables(resolved.subject, connectorMessage);
+    resolved.body = this.resolveVariables(resolved.body, connectorMessage);
+
+    // Attachments (name, content, mimeType for each)
+    resolved.attachments = props.attachments.map((att) => ({
+      name: this.resolveVariables(att.name, connectorMessage),
+      content: this.resolveVariables(att.content, connectorMessage),
+      mimeType: this.resolveVariables(att.mimeType, connectorMessage),
     }));
+    resolved.attachmentsVariable = this.resolveVariables(resolved.attachmentsVariable, connectorMessage);
 
     return resolved;
   }
@@ -436,8 +445,8 @@ export class SmtpDispatcher extends DestinationConnector {
    * CPC-SMTP-005: Calls reAttachContent() on body before sending.
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
-    // Get resolved properties with variable substitution
-    const props = this.getResolvedProperties(connectorMessage);
+    // CPC-RCP-004: Resolve ${variable} placeholders in connector properties
+    const props = this.replaceConnectorProperties(this.properties, connectorMessage);
 
     const info = `From: ${props.from} To: ${props.to} SMTP Info: ${props.smtpHost}:${props.smtpPort}`;
 
