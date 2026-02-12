@@ -98,6 +98,10 @@ export interface AssociationParams {
   host: string;
   /** Remote port */
   port: number;
+  /** Local host for outbound connections (bind to specific network interface) */
+  localHost?: string;
+  /** Local port for outbound connections */
+  localPort?: number;
   /** Max PDU length for sending */
   maxPduLengthSend: number;
   /** Max PDU length for receiving */
@@ -237,10 +241,20 @@ export class DicomConnection extends EventEmitter {
       }, this.params.connectTimeout);
 
       if (this.params.tlsMode !== DicomTlsMode.NO_TLS && this.params.tlsOptions) {
+        const tlsOpts: tls.ConnectionOptions = {
+          ...this.params.tlsOptions,
+          host: this.params.host,
+          port: this.params.port,
+        };
+        // Java: dcmSnd.setLocalHost/setLocalPort — bind outbound to specific interface
+        if (this.params.localHost) {
+          tlsOpts.localAddress = this.params.localHost;
+        }
+        if (this.params.localPort) {
+          tlsOpts.localPort = this.params.localPort;
+        }
         this.socket = tls.connect(
-          this.params.port,
-          this.params.host,
-          this.params.tlsOptions,
+          tlsOpts,
           () => {
             clearTimeout(connectTimeout);
             this.setupSocketHandlers();
@@ -249,7 +263,18 @@ export class DicomConnection extends EventEmitter {
         );
       } else {
         this.socket = new net.Socket();
-        this.socket.connect(this.params.port, this.params.host, () => {
+        const connectOpts: net.TcpSocketConnectOpts = {
+          host: this.params.host,
+          port: this.params.port,
+        };
+        // Java: dcmSnd.setLocalHost/setLocalPort — bind outbound to specific interface
+        if (this.params.localHost) {
+          connectOpts.localAddress = this.params.localHost;
+        }
+        if (this.params.localPort) {
+          connectOpts.localPort = this.params.localPort;
+        }
+        this.socket.connect(connectOpts, () => {
           clearTimeout(connectTimeout);
           this.setupSocketHandlers();
           resolve();
