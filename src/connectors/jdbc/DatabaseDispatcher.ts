@@ -20,6 +20,7 @@ import {
   getDefaultDatabaseDispatcherProperties,
   parseJdbcUrl,
 } from './DatabaseConnectorProperties.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 
 export interface DatabaseDispatcherConfig {
   name?: string;
@@ -83,6 +84,10 @@ export class DatabaseDispatcher extends DestinationConnector {
 
     // Create connection pool
     await this.createConnectionPool();
+
+    // Dispatch IDLE on deploy — matches Java's onDeploy()
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+
     this.running = true;
   }
 
@@ -126,11 +131,24 @@ export class DatabaseDispatcher extends DestinationConnector {
 
   /**
    * Send message to database
+   *
+   * Matches Java DatabaseDispatcher.send() event lifecycle:
+   *   READING (with URL info) → execute → IDLE (in finally)
+   *
+   * Java uses READING (not WRITING) for JDBC dispatchers because the
+   * operation reads/writes the database — the event type reflects the
+   * connector protocol semantics, not the direction.
+   *
+   * On SQL error: if queue is enabled, returns QUEUED status for retry
+   * instead of throwing (matching Java's catch of DatabaseDispatcherException).
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
     if (!this.pool) {
       throw new Error('Connection pool not initialized');
     }
+
+    const info = `URL: ${this.properties.url}`;
+    this.dispatchConnectionEvent(ConnectionStatusEventType.READING, info);
 
     let conn: PoolConnection | null = null;
 
@@ -164,14 +182,52 @@ export class DatabaseDispatcher extends DestinationConnector {
       connectorMessage.getConnectorMap().set('insertId', result.insertId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      connectorMessage.setStatus(Status.ERROR);
-      connectorMessage.setProcessingError(errorMessage);
-      throw error;
+
+      // Java catches DatabaseDispatcherException and returns QUEUED when queue is enabled.
+      // This allows the message to be retried rather than permanently failing.
+      if (this.isQueueEnabled()) {
+        connectorMessage.setStatus(Status.QUEUED);
+        connectorMessage.setProcessingError(errorMessage);
+        connectorMessage.setContent({
+          contentType: ContentType.RESPONSE,
+          content: this.buildErrorResponse('Error writing to database.', errorMessage),
+          dataType: 'XML',
+          encrypted: false,
+        });
+        // Do not throw — message will be retried via queue
+      } else {
+        connectorMessage.setStatus(Status.ERROR);
+        connectorMessage.setProcessingError(errorMessage);
+        throw error;
+      }
     } finally {
       if (conn) {
         conn.release();
       }
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
+  }
+
+  /**
+   * Build an error response XML matching Java's ErrorMessageBuilder format
+   */
+  private buildErrorResponse(summary: string, detail: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <error>${this.escapeXml(summary)} ${this.escapeXml(detail)}</error>
+</response>`;
+  }
+
+  /**
+   * Escape XML special characters
+   */
+  private escapeXml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
   }
 
   /**
