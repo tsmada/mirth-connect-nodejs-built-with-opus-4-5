@@ -1661,16 +1661,16 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
          └──► [Worktree 8: feature/utils]             → Agent 8 ✅
 ```
 
-### Results (Combined Waves 1-18)
+### Results (Combined Waves 1-19)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 81 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16 + 6 Wave 17 + 6 Wave 18) |
-| Agents completed | 81 (100%) |
-| Total commits | 191+ |
-| Lines added | 79,600+ |
-| Tests added | 2,430+ |
-| Total tests passing | 5,066 |
+| Agents spawned | 86 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16 + 6 Wave 17 + 6 Wave 18 + 5 Wave 19) |
+| Agents completed | 86 (100%) |
+| Total commits | 194+ |
+| Lines added | 80,800+ |
+| Tests added | 2,473+ |
+| Total tests passing | 5,109 |
 
 ### Wave Summary
 
@@ -1694,7 +1694,8 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 | 16 | 9 | ~3,500 | 40 | ~4 hrs | **Connector Parity** (event dispatch, config defaults, error handling, connection lifecycle across all 9 connectors) |
 | 17 | 6 | ~3,500 | 112 | ~30 min | **Connector Parity Re-Scan** (replaceConnectorProperties for HTTP/TCP/WS/SMTP, HTTP variable properties, receiver events, File defaults) |
 | 18 | 6 | ~2,100 | 88 | ~20 min | **Connector Parity Wave 3** (replaceConnectorProperties for File/JDBC/VM/DICOM, WS attachment resolution, File size/error properties) |
-| **Total** | **81** | **~79,600** | **2,430** | **~26 hrs** | |
+| 19 | 3 | ~1,200 | 43 | ~20 min | **Connector Parity Wave 4** (DICOM response status QUEUED, DICOM config wiring, WS headers variable, SMTP ErrorEvent, SMTP localPort) |
+| **Total** | **86** | **~80,800** | **2,473** | **~26 hrs** | |
 
 ### Components Ported
 
@@ -2221,6 +2222,12 @@ Wave 16's first scan focused on property-level comparison and config defaults. W
 **46. Never Trust Scanner Coverage Claims Without Reading Every Java Source (Wave 18)**
 Wave 17's report stated "replaceConnectorProperties coverage: 5/5 (100%)" by listing File, JDBC, VM, and DICOM dispatchers as "N/A — Java doesn't have it." Wave 18's scanner read the actual Java source files (`FileDispatcher.java:97`, `DatabaseDispatcher.java:78`, `VmDispatcher.java:83`, `DICOMDispatcher.java:88`) and found ALL of them implement `replaceConnectorProperties()`. The real coverage was 5/9 (56%). The lesson: when a scanner says "not applicable," verify by reading the Java source — especially for lifecycle methods that may not appear in property-focused analysis. A third-pass scan that reads every Java method signature catches false-negative "N/A" classifications that earlier passes missed.
 
+**47. Scanner Findings Converge After 4 Waves — DICOM Is the Long Tail (Wave 19)**
+After 4 systematic connector-parity-checker scans (Waves 16-19), new findings dropped from 73 → 56 → 48 → 8. Wave 19 found zero new issues in HTTP, TCP, File, JDBC, VM, JMS — only DICOM (5 findings), WS (1), and SMTP (2). DICOM is the "long tail" because its protocol (association negotiation, transfer syntax, storage commitment, PDU configuration) has the most configuration surface area of any connector — 35 dispatcher properties vs HTTP's 22. The diminishing-returns pattern suggests that further scans would likely find only minor DICOM protocol edge cases. At this point, real-world PACS integration testing is more productive than additional automated scanning.
+
+**48. DICOM Error Handling Must Queue, Not Throw — Healthcare Data Loss Prevention (Wave 19)**
+Java Mirth's DICOM dispatcher returns `Status.QUEUED` for non-success DICOM responses, keeping the message in the queue for retry. The Node.js port threw an Error, which propagated to the catch block and permanently failed the message. In a healthcare imaging pipeline, this means a transient PACS failure (temporary resource unavailability, network hiccup) would cause permanent study loss. The fix is trivial (5 lines), but the impact is catastrophic if missed. Always prefer QUEUED over ERROR for transient failures in healthcare connectors — data loss is unacceptable.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -2594,11 +2601,37 @@ Key discovery: Wave 17's `replaceConnectorProperties` coverage table was **wrong
 - 88 new tests, 5,066 total tests passing
 - Scan report: `plans/connector-parity-checker-scan-wave18.md`
 
+### Wave 19: Connector Parity Wave 4 — Ground-Truth Scan & Remediation (2026-02-12)
+
+**Fourth systematic scan found 8 findings (2 critical, 4 major, 2 minor). Fixed 7 (2 critical + 3 major + 2 minor), deferred 1 major.**
+
+Fresh ground-truth scan across all 9 connectors. Key finding: DICOM connector had the most remaining gaps (5 of 8 findings) due to complex protocol negotiation. HTTP, TCP, File, JDBC, VM, JMS showed zero new findings — strong parity confirmed.
+
+5 agents (1 scanner + 1 prep-triage + 3 fixers) coordinated via team "connector-parity-w19", zero merge conflicts:
+
+| Agent | Branch | Findings Fixed | Key Changes |
+|-------|--------|---------------|-------------|
+| scanner | (read-only scan) | — | Full 10-category scan, 8 new findings |
+| dicom-fixer | fix/connector-parity-dicom-w19 | 2C + 1M + 1m | DICOM response status QUEUED (not throw), 16 dcmSnd config properties wired, receiver config wired, ErrorEvent dispatch |
+| ws-fixer | fix/connector-parity-ws-w19 | 1M | `getHeaders()` + `getTableMapFromVariable()` for useHeadersVariable runtime lookup |
+| smtp-fixer | fix/connector-parity-smtp-w19 | 1M + 1m | ErrorEvent dispatch on send failure, localPort in overrideLocalBinding |
+
+**Key achievements:**
+- **Critical findings: 0 remaining** — DICOM response status and config wiring both fixed
+- **DICOM config coverage: ~70% → 100%** — All 16 missing dcmSnd properties now wired to connection
+- **WS headers variable** — Runtime lookup from message maps when useHeadersVariable=true
+- **ErrorEvent dispatch** — SMTP and DICOM now dispatch ErrorEvents on send failure
+
+**Deferred (1 new major):** DICOM storage commitment (N-ACTION/N-EVENT-REPORT protocol — complex)
+
+- 43 new tests, 5,109 total tests passing
+- Scan report: `plans/connector-parity-checker-scan-wave19.md`
+
 ### Completion Status
 
-All Waves 1-18 are complete. The porting project has reached production-ready status:
+All Waves 1-19 are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-18):**
+**Completed (Waves 1-19):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -2607,7 +2640,7 @@ All Waves 1-18 are complete. The porting project has reached production-ready st
 - ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 - ✅ **Git-Backed Artifact Management** — Decompose/assemble, git sync, env promotion, delta deploy, structural diff (417 tests)
 - ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 8 waves of fixes (Waves 8-15, 315 parity tests, verified by 3 automated js-runtime-checker scans)
-- ✅ **Connector Parity** — All 9 connectors verified across 3 automated scans (Waves 16-18): replaceConnectorProperties 9/9 (100%), event dispatching 48/48 (100%), property coverage 97.5%, config defaults aligned. 177 total findings: 80 fixed, 36 deferred (7 major + 29 minor)
+- ✅ **Connector Parity** — All 9 connectors verified across 4 automated scans (Waves 16-19): replaceConnectorProperties 9/9 (100%), event dispatching 40/40 (100%), property coverage 96%, 0 critical findings remaining. 185 total findings: 87 fixed, 38 deferred (9 major + 29 minor)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)
