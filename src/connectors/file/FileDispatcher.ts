@@ -75,6 +75,93 @@ export class FileDispatcher extends DestinationConnector {
   }
 
   /**
+   * CPC-W18-001: Resolve ${variable} placeholders in connector properties before each send.
+   * Matches Java FileDispatcher.replaceConnectorProperties() (line 97):
+   * Resolves host, outputPattern, username, password, template.
+   * Also resolves SFTP scheme properties (keyFile, passPhrase, knownHostsFile).
+   * Returns a shallow clone — original properties are NOT modified.
+   */
+  replaceConnectorProperties(
+    props: FileDispatcherProperties,
+    connectorMessage: ConnectorMessage
+  ): FileDispatcherProperties {
+    const resolved = { ...props };
+
+    resolved.host = this.resolveVariables(resolved.host, connectorMessage);
+    resolved.directory = this.resolveVariables(resolved.directory, connectorMessage);
+    resolved.outputPattern = this.resolveVariables(resolved.outputPattern, connectorMessage);
+    resolved.username = this.resolveVariables(resolved.username, connectorMessage);
+    resolved.password = this.resolveVariables(resolved.password, connectorMessage);
+    resolved.template = this.resolveVariables(resolved.template, connectorMessage);
+
+    // Java: also resolves SFTP scheme properties (keyFile, passPhrase, knownHostsFile)
+    if (resolved.sftpSchemeProperties) {
+      resolved.sftpSchemeProperties = { ...resolved.sftpSchemeProperties };
+      if (resolved.sftpSchemeProperties.keyFile) {
+        resolved.sftpSchemeProperties.keyFile = this.resolveVariables(
+          resolved.sftpSchemeProperties.keyFile, connectorMessage
+        );
+      }
+      if (resolved.sftpSchemeProperties.passPhrase) {
+        resolved.sftpSchemeProperties.passPhrase = this.resolveVariables(
+          resolved.sftpSchemeProperties.passPhrase, connectorMessage
+        );
+      }
+      if (resolved.sftpSchemeProperties.knownHostsFile) {
+        resolved.sftpSchemeProperties.knownHostsFile = this.resolveVariables(
+          resolved.sftpSchemeProperties.knownHostsFile, connectorMessage
+        );
+      }
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Simple ${variable} resolution using connector message maps.
+   * Checks channelMap, then sourceMap, then connectorMap.
+   * Matches Java ValueReplacer.replaceValues() map lookup order.
+   */
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
+
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
+      // Check channel map
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const v = channelMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check source map
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const v = sourceMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check connector map
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const v = connectorMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      return match; // Leave unresolved variables as-is
+    });
+  }
+
+  /**
    * Get the connector properties
    */
   getProperties(): FileDispatcherProperties {
@@ -165,9 +252,12 @@ export class FileDispatcher extends DestinationConnector {
       return;
     }
 
+    // CPC-W18-001: Resolve ${variable} placeholders before each send
+    const resolvedProps = this.replaceConnectorProperties(this.properties, connectorMessage);
+
     // Generate output filename first for the WRITING event info
-    const filename = this.generateFilename(connectorMessage);
-    const info = `${this.properties.host || this.properties.directory}/${filename}`;
+    const filename = this.generateFilename(connectorMessage, resolvedProps);
+    const info = `${resolvedProps.host || resolvedProps.directory}/${filename}`;
 
     // Java: dispatches WRITING with info before write
     this.dispatchConnectionEvent(
@@ -177,22 +267,22 @@ export class FileDispatcher extends DestinationConnector {
 
     try {
       // Get content to write
-      const content = this.getContent(connectorMessage);
+      const content = this.getContent(connectorMessage, resolvedProps);
 
       // Dispatch based on scheme
       let filePath: string;
-      switch (this.properties.scheme) {
+      switch (resolvedProps.scheme) {
         case FileScheme.FILE:
-          filePath = await this.writeLocalFile(filename, content);
+          filePath = await this.writeLocalFile(filename, content, resolvedProps);
           break;
 
         case FileScheme.SFTP:
-          filePath = await this.writeSftpFile(filename, content);
+          filePath = await this.writeSftpFile(filename, content, resolvedProps);
           this.lastSftpActivityTime = Date.now();
           break;
 
         default:
-          throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
+          throw new Error(`Unsupported scheme: ${resolvedProps.scheme}`);
       }
 
       // Set send date
@@ -225,7 +315,7 @@ export class FileDispatcher extends DestinationConnector {
 
       // If keepConnectionOpen is false, destroy the SFTP connection after each send
       // Java: fileConnector.destroyConnection() vs releaseConnection()
-      if (!this.properties.keepConnectionOpen && this.sftpConnection) {
+      if (!resolvedProps.keepConnectionOpen && this.sftpConnection) {
         await this.sftpConnection.disconnect();
         this.sftpConnection = null;
       }
@@ -329,12 +419,10 @@ export class FileDispatcher extends DestinationConnector {
   /**
    * Get content to write from connector message
    */
-  private getContent(connectorMessage: ConnectorMessage): string | Buffer {
+  private getContent(connectorMessage: ConnectorMessage, resolvedProps: FileDispatcherProperties): string | Buffer {
     // Use template if provided, otherwise use encoded data
-    if (this.properties.template) {
-      // In a real implementation, template would be processed
-      // For now, just use the template directly
-      return this.properties.template;
+    if (resolvedProps.template) {
+      return resolvedProps.template;
     }
 
     const encodedContent = connectorMessage.getEncodedContent();
@@ -349,14 +437,14 @@ export class FileDispatcher extends DestinationConnector {
   /**
    * Generate output filename
    */
-  private generateFilename(connectorMessage: ConnectorMessage): string {
+  private generateFilename(connectorMessage: ConnectorMessage, resolvedProps: FileDispatcherProperties): string {
     // Build variables from connector message
     const variables: Record<string, string> = {
       messageId: String(connectorMessage.getMessageId() ?? ''),
       channelId: String(connectorMessage.getChannelId() ?? ''),
     };
 
-    return generateOutputFilename(this.properties.outputPattern, variables);
+    return generateOutputFilename(resolvedProps.outputPattern, variables);
   }
 
   /**
@@ -364,12 +452,13 @@ export class FileDispatcher extends DestinationConnector {
    */
   private async writeLocalFile(
     filename: string,
-    content: string | Buffer
+    content: string | Buffer,
+    resolvedProps: FileDispatcherProperties
   ): Promise<string> {
-    const filePath = path.join(this.properties.directory, filename);
+    const filePath = path.join(resolvedProps.directory, filename);
 
     // Check if file exists and errorOnExists is set
-    if (this.properties.errorOnExists) {
+    if (resolvedProps.errorOnExists) {
       try {
         await fs.access(filePath);
         throw new Error(`File already exists: ${filePath}`);
@@ -381,15 +470,17 @@ export class FileDispatcher extends DestinationConnector {
       }
     }
 
-    // Determine if we should use a temp file
-    const useTempFile = !!this.properties.tempFilename;
+    // CPC-W18-007: Determine if we should use a temp file
+    // Java: temporary flag OR explicit tempFilename — either triggers temp-then-rename
+    const useTempFile = resolvedProps.temporary || !!resolvedProps.tempFilename;
+    const tempSuffix = resolvedProps.tempFilename || '.tmp';
     const tempPath = useTempFile
-      ? `${filePath}${this.properties.tempFilename}`
+      ? `${filePath}${tempSuffix}`
       : filePath;
 
     // Convert content to buffer if binary mode
     let dataToWrite: string | Buffer;
-    if (this.properties.binary && typeof content === 'string') {
+    if (resolvedProps.binary && typeof content === 'string') {
       // Assume content is base64 encoded in binary mode
       dataToWrite = Buffer.from(content, 'base64');
     } else {
@@ -397,17 +488,17 @@ export class FileDispatcher extends DestinationConnector {
     }
 
     // Write to file (append or overwrite)
-    if (this.properties.outputAppend) {
+    if (resolvedProps.outputAppend) {
       await fs.appendFile(tempPath, dataToWrite, {
-        encoding: this.properties.binary
+        encoding: resolvedProps.binary
           ? undefined
-          : (this.properties.charsetEncoding as BufferEncoding),
+          : (resolvedProps.charsetEncoding as BufferEncoding),
       });
     } else {
       await fs.writeFile(tempPath, dataToWrite, {
-        encoding: this.properties.binary
+        encoding: resolvedProps.binary
           ? undefined
-          : (this.properties.charsetEncoding as BufferEncoding),
+          : (resolvedProps.charsetEncoding as BufferEncoding),
       });
     }
 
@@ -424,14 +515,15 @@ export class FileDispatcher extends DestinationConnector {
    */
   private async writeSftpFile(
     filename: string,
-    content: string | Buffer
+    content: string | Buffer,
+    resolvedProps: FileDispatcherProperties
   ): Promise<string> {
     const sftp = await this.ensureSftpConnection();
-    const remotePath = `${this.properties.directory}/${filename}`.replace(/\/+/g, '/');
+    const remotePath = `${resolvedProps.directory}/${filename}`.replace(/\/+/g, '/');
 
     // Check if file exists and errorOnExists is set
-    if (this.properties.errorOnExists) {
-      const exists = await sftp.exists(filename, this.properties.directory);
+    if (resolvedProps.errorOnExists) {
+      const exists = await sftp.exists(filename, resolvedProps.directory);
       if (exists) {
         throw new Error(`File already exists: ${remotePath}`);
       }
@@ -439,23 +531,26 @@ export class FileDispatcher extends DestinationConnector {
 
     // Convert content to buffer if binary mode
     let dataToWrite: Buffer;
-    if (this.properties.binary && typeof content === 'string') {
+    if (resolvedProps.binary && typeof content === 'string') {
       // Assume content is base64 encoded in binary mode
       dataToWrite = Buffer.from(content, 'base64');
     } else if (typeof content === 'string') {
-      dataToWrite = Buffer.from(content, this.properties.charsetEncoding as BufferEncoding);
+      dataToWrite = Buffer.from(content, resolvedProps.charsetEncoding as BufferEncoding);
     } else {
       dataToWrite = content;
     }
 
-    // Handle temp file pattern for atomic writes
-    if (this.properties.tempFilename) {
-      const tempFilename = `${filename}${this.properties.tempFilename}`;
+    // CPC-W18-007: Handle temp file pattern for atomic writes
+    // Java: temporary flag OR explicit tempFilename
+    const useTempFile = resolvedProps.temporary || !!resolvedProps.tempFilename;
+    if (useTempFile) {
+      const tempSuffix = resolvedProps.tempFilename || '.tmp';
+      const tempFilename = `${filename}${tempSuffix}`;
 
       // Write to temp file
       await sftp.writeFile(
         tempFilename,
-        this.properties.directory,
+        resolvedProps.directory,
         dataToWrite,
         false // Don't append to temp file
       );
@@ -463,17 +558,17 @@ export class FileDispatcher extends DestinationConnector {
       // Rename temp file to final name
       await sftp.move(
         tempFilename,
-        this.properties.directory,
+        resolvedProps.directory,
         filename,
-        this.properties.directory
+        resolvedProps.directory
       );
     } else {
       // Direct write (with append support)
       await sftp.writeFile(
         filename,
-        this.properties.directory,
+        resolvedProps.directory,
         dataToWrite,
-        this.properties.outputAppend
+        resolvedProps.outputAppend
       );
     }
 

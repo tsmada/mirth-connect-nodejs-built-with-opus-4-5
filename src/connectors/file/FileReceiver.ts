@@ -434,6 +434,19 @@ export class FileReceiver extends SourceConnector {
         }
       }
 
+      // CPC-W18-005: Check file size filters (matches Java FileReceiver.isFileValid())
+      const fileSizeMin = parseInt(this.properties.fileSizeMinimum, 10) || 0;
+      if (file.size < fileSizeMin) {
+        return false;
+      }
+
+      if (!this.properties.ignoreFileSizeMaximum) {
+        const fileSizeMax = parseInt(this.properties.fileSizeMaximum, 10) || 0;
+        if (fileSizeMax > 0 && file.size > fileSizeMax) {
+          return false;
+        }
+      }
+
       return true;
     });
   }

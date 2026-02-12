@@ -75,9 +75,19 @@ export interface FileReceiverProperties {
   afterProcessingAction: AfterProcessingAction;
   /** Directory to move files to after processing */
   moveToDirectory: string;
-  /** Error directory for failed processing */
+  /** Filename pattern for moved files (Java default: "") */
+  moveToFileName: string;
+  /** Action to take on error reading file (Java default: NONE) */
+  errorReadingAction: AfterProcessingAction;
+  /** Action to take on error response from channel (Java default: AFTER_PROCESSING) */
+  errorResponseAction: string;
+  /** Directory to move files to on error */
+  errorMoveToDirectory: string;
+  /** Filename pattern for error-moved files */
+  errorMoveToFileName: string;
+  /** Error directory for failed processing (legacy) */
   errorDirectory: string;
-  /** Action to take on error */
+  /** Action to take on error (legacy) */
   errorAction: AfterProcessingAction;
   /** Whether to check file age before processing (Java default: true) */
   checkFileAge: boolean;
@@ -85,6 +95,12 @@ export interface FileReceiverProperties {
   fileAge: number;
   /** Polling interval in milliseconds */
   pollInterval: number;
+  /** Minimum file size in bytes to process (Java default: "0") */
+  fileSizeMinimum: string;
+  /** Maximum file size in bytes to process (Java default: "" = no limit) */
+  fileSizeMaximum: string;
+  /** Whether to ignore the file size maximum (Java default: true) */
+  ignoreFileSizeMaximum: boolean;
   /** Sort files by */
   sortBy: FileSortBy;
   /** Sort in descending order */
@@ -137,6 +153,8 @@ export interface FileDispatcherProperties {
   charsetEncoding: string;
   /** Error if destination file already exists */
   errorOnExists: boolean;
+  /** Write to temp file first, then atomically rename on completion (Java default: false) */
+  temporary: boolean;
   /** Temporary file extension during write */
   tempFilename: string;
   /** FTP passive mode */
@@ -175,10 +193,18 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     charsetEncoding: 'UTF-8',
     afterProcessingAction: AfterProcessingAction.NONE,
     moveToDirectory: '',
+    moveToFileName: '',              // Java default: ""
+    errorReadingAction: AfterProcessingAction.NONE,    // Java default: NONE
+    errorResponseAction: 'AFTER_PROCESSING',           // Java default: AFTER_PROCESSING
+    errorMoveToDirectory: '',        // Java default: ""
+    errorMoveToFileName: '',         // Java default: ""
     errorDirectory: '',
     errorAction: AfterProcessingAction.NONE,
     checkFileAge: true,   // Java default: true
     fileAge: 1000,        // Java default: 1000ms
+    fileSizeMinimum: '0',        // Java default: "0"
+    fileSizeMaximum: '',         // Java default: "" (no limit)
+    ignoreFileSizeMaximum: true, // Java default: true
     pollInterval: 5000,
     sortBy: FileSortBy.DATE,
     sortDescending: false,
@@ -210,6 +236,7 @@ export function getDefaultFileDispatcherProperties(): FileDispatcherProperties {
     binary: false,
     charsetEncoding: 'UTF-8',
     errorOnExists: false,
+    temporary: false,       // Java default: false
     tempFilename: '',
     passive: true,
     secure: true,          // Java default: true (FTPS)
