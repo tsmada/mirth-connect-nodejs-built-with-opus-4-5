@@ -39,6 +39,7 @@ describe('JmsReceiver', () => {
       getId: jest.fn().mockReturnValue('channel-123'),
       getName: jest.fn().mockReturnValue('Test Channel'),
       dispatchRawMessage: jest.fn().mockResolvedValue(undefined),
+      emit: jest.fn(),
     };
   });
 

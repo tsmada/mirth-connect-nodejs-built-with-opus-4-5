@@ -188,17 +188,37 @@ export class JmsDispatcher extends DestinationConnector {
     if (!template || !template.includes('${')) return template;
 
     return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        // Fall back to raw data when encoded content not available
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
       // Check channel map
-      const channelValue = connectorMessage.getChannelMap().get(varName);
-      if (channelValue !== undefined && channelValue !== null) return String(channelValue);
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const channelValue = channelMap.get(varName);
+        if (channelValue !== undefined && channelValue !== null) return String(channelValue);
+      }
 
       // Check source map
-      const sourceValue = connectorMessage.getSourceMap().get(varName);
-      if (sourceValue !== undefined && sourceValue !== null) return String(sourceValue);
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const sourceValue = sourceMap.get(varName);
+        if (sourceValue !== undefined && sourceValue !== null) return String(sourceValue);
+      }
 
       // Check connector map
-      const connectorValue = connectorMessage.getConnectorMap().get(varName);
-      if (connectorValue !== undefined && connectorValue !== null) return String(connectorValue);
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const connectorValue = connectorMap.get(varName);
+        if (connectorValue !== undefined && connectorValue !== null) return String(connectorValue);
+      }
 
       return match; // Leave unresolved variables as-is
     });

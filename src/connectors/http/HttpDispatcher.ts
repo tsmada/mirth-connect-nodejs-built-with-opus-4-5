@@ -176,7 +176,6 @@ export class HttpDispatcher extends DestinationConnector {
 
     // CPC-RHG-001: Java initializes responseStatus = Status.QUEUED
     let responseStatus: Status = Status.QUEUED;
-    let responseData: string | null = null;
     let responseError: string | null = null;
     let responseStatusMessage: string | null = null;
 
@@ -198,8 +197,6 @@ export class HttpDispatcher extends DestinationConnector {
       const connectorMap = connectorMessage.getConnectorMap();
       connectorMap.set('responseStatusLine', `HTTP/1.1 ${response.statusCode} ${response.statusMessage}`);
       connectorMap.set('responseHeaders', response.headers);
-
-      responseData = response.body;
 
       // CPC-RHG-001 + CPC-MEH-001: Match Java's status code handling
       // Java: if (statusCode < HttpStatus.SC_BAD_REQUEST) { responseStatus = Status.SENT; }
@@ -241,6 +238,9 @@ export class HttpDispatcher extends DestinationConnector {
 
     // Apply final status to connector message (matches Java's return pattern)
     connectorMessage.setStatus(responseStatus);
+    if (responseStatusMessage) {
+      connectorMessage.getConnectorMap().set('responseStatusMessage', responseStatusMessage);
+    }
     if (responseError) {
       connectorMessage.setProcessingError(responseError);
     }
@@ -263,11 +263,11 @@ export class HttpDispatcher extends DestinationConnector {
     // Build request body
     const body = this.buildBody(connectorMessage);
 
-    // Determine which agent to use based on protocol
-    const isHttps = url.startsWith('https:');
-
     // Create fetch options
-    const options: RequestInit & { dispatcher?: unknown } = {
+    // Note: Node.js native fetch (undici) manages its own connection pooling internally.
+    // The httpAgent/httpsAgent fields are maintained for lifecycle management (onStop cleanup)
+    // and for getHttpAgent() inspection, but fetch() does not accept http.Agent directly.
+    const options: RequestInit = {
       method: this.properties.method,
       headers: Object.fromEntries(
         Array.from(headers.entries()).map(([k, v]) => [k, v.join(', ')])
@@ -294,8 +294,20 @@ export class HttpDispatcher extends DestinationConnector {
         if (authHeader) {
           (options.headers as Record<string, string>)['Authorization'] = authHeader;
         }
+      } else if (
+        this.properties.authenticationType === 'Digest' &&
+        this.properties.usePreemptiveAuthentication &&
+        this.digestCachedNonce
+      ) {
+        // CPC-MAM-002: Preemptive digest auth using cached challenge params
+        // Java's Apache HttpClient caches the auth scheme after the first challenge-response
+        // and reuses it for subsequent requests to avoid the extra 401 round-trip.
+        const preemptiveHeader = this.buildPreemptiveDigestHeader(url);
+        if (preemptiveHeader) {
+          (options.headers as Record<string, string>)['Authorization'] = preemptiveHeader;
+        }
       }
-      // CPC-MAM-002: Digest auth — handled via challenge-response below
+      // CPC-MAM-002: Non-preemptive Digest auth — handled via challenge-response below
     }
 
     // Add timeout via AbortController
@@ -545,6 +557,59 @@ export class HttpDispatcher extends DestinationConnector {
     }
     if (algorithm !== 'MD5') {
       header += `, algorithm=${algorithm}`;
+    }
+
+    return header;
+  }
+
+  /**
+   * CPC-MAM-002: Build preemptive Digest auth header from cached challenge params.
+   *
+   * After the first successful challenge-response, we cache the realm, nonce, opaque,
+   * and qop from the server. On subsequent requests (when usePreemptiveAuthentication
+   * is true), we reuse these to build a digest header without a 401 round-trip —
+   * matching Java Apache HttpClient's AuthCache behavior.
+   */
+  private buildPreemptiveDigestHeader(requestUrl: string): string | null {
+    if (!this.digestCachedNonce || !this.digestCachedRealm) return null;
+
+    const realm = this.digestCachedRealm;
+    const nonce = this.digestCachedNonce;
+    const qop = this.digestCachedQop || '';
+    const opaque = this.digestCachedOpaque || '';
+
+    this.digestNonceCount++;
+    const nc = this.digestNonceCount.toString(16).padStart(8, '0');
+    const cnonce = createHash('md5').update(Date.now().toString()).digest('hex').substring(0, 16);
+
+    const ha1 = createHash('md5')
+      .update(`${this.properties.username}:${realm}:${this.properties.password}`)
+      .digest('hex');
+
+    const uri = new URL(requestUrl).pathname;
+
+    const ha2 = createHash('md5')
+      .update(`${this.properties.method}:${uri}`)
+      .digest('hex');
+
+    let response: string;
+    if (qop === 'auth' || qop === 'auth-int') {
+      response = createHash('md5')
+        .update(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+        .digest('hex');
+    } else {
+      response = createHash('md5')
+        .update(`${ha1}:${nonce}:${ha2}`)
+        .digest('hex');
+    }
+
+    let header = `Digest username="${this.properties.username}", realm="${realm}", nonce="${nonce}", uri="${uri}", response="${response}"`;
+
+    if (qop) {
+      header += `, qop=${qop}, nc=${nc}, cnonce="${cnonce}"`;
+    }
+    if (opaque) {
+      header += `, opaque="${opaque}"`;
     }
 
     return header;

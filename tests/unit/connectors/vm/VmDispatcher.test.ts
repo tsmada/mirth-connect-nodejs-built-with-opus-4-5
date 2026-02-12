@@ -416,10 +416,7 @@ describe('VmDispatcher', () => {
         encodedData: 'test',
       });
 
-      await dispatcher.send(message);
-
-      expect(message.getStatus()).toBe(Status.QUEUED);
-      expect(message.getProcessingError()).toContain('Dispatch failed');
+      await expect(dispatcher.send(message)).rejects.toThrow('Dispatch failed');
     });
 
     it('should throw when no engine controller', async () => {
@@ -433,9 +430,7 @@ describe('VmDispatcher', () => {
         encodedData: 'test',
       });
 
-      await unConfiguredDispatcher.send(message);
-
-      expect(message.getProcessingError()).toContain('No engine controller');
+      await expect(unConfiguredDispatcher.send(message)).rejects.toThrow('No engine controller');
       await unConfiguredDispatcher.stop();
     });
   });

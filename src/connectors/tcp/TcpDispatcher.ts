@@ -21,7 +21,6 @@ import { ContentType } from '../../model/ContentType.js';
 import {
   TcpDispatcherProperties,
   getDefaultTcpDispatcherProperties,
-  TransmissionMode,
   frameMessage,
   unframeMessage,
   hasCompleteMessage,
@@ -468,7 +467,7 @@ export class TcpDispatcher extends DestinationConnector {
   /**
    * Close a socket quietly (no throw), dispatching DISCONNECTED event.
    */
-  private closeSocketQuietly(socketKey: string, socket: net.Socket): void {
+  private closeSocketQuietly(_socketKey: string, socket: net.Socket): void {
     try {
       if (!socket.destroyed) {
         const addr = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;

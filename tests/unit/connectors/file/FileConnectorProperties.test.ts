@@ -50,7 +50,7 @@ describe('FileConnectorProperties', () => {
       expect(props.directory).toBe('');
       expect(props.outputPattern).toContain('${date:');
       expect(props.outputPattern).toContain('${UUID}');
-      expect(props.outputAppend).toBe(false);
+      expect(props.outputAppend).toBe(true);
       expect(props.template).toBe('');
       expect(props.binary).toBe(false);
       expect(props.charsetEncoding).toBe('UTF-8');

@@ -248,10 +248,10 @@ export class DicomConnection extends EventEmitter {
         };
         // Java: dcmSnd.setLocalHost/setLocalPort — bind outbound to specific interface
         if (this.params.localHost) {
-          tlsOpts.localAddress = this.params.localHost;
+          (tlsOpts as Record<string, unknown>).localAddress = this.params.localHost;
         }
         if (this.params.localPort) {
-          tlsOpts.localPort = this.params.localPort;
+          (tlsOpts as Record<string, unknown>).localPort = this.params.localPort;
         }
         this.socket = tls.connect(
           tlsOpts,

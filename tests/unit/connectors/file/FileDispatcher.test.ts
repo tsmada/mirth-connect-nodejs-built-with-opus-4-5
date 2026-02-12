@@ -29,7 +29,7 @@ describe('FileDispatcher', () => {
       const props = dispatcher.getProperties();
       expect(props.scheme).toBe(FileScheme.FILE);
       expect(props.directory).toBe('');
-      expect(props.outputAppend).toBe(false);
+      expect(props.outputAppend).toBe(true);  // Java default: true
     });
 
     it('should create with custom values', () => {
@@ -64,7 +64,7 @@ describe('FileDispatcher', () => {
 
       expect(props.scheme).toBe(FileScheme.FILE);
       expect(props.directory).toBe('');
-      expect(props.outputAppend).toBe(false);
+      expect(props.outputAppend).toBe(true);  // Java default: true
       expect(props.binary).toBe(false);
       expect(props.charsetEncoding).toBe('UTF-8');
       expect(props.tempFilename).toBe('');

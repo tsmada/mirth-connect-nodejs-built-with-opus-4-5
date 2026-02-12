@@ -41,10 +41,13 @@ describe('JmsDispatcher', () => {
     mockChannel = {
       getId: jest.fn().mockReturnValue('channel-123'),
       getName: jest.fn().mockReturnValue('Test Channel'),
+      emit: jest.fn(),
     };
 
     // Create mock connector message
     const connectorMap = new Map<string, unknown>();
+    const channelMap = new Map<string, unknown>();
+    const sourceMap = new Map<string, unknown>();
     mockConnectorMessage = {
       getMessageId: jest.fn().mockReturnValue(12345),
       getEncodedContent: jest.fn().mockReturnValue({
@@ -59,7 +62,10 @@ describe('JmsDispatcher', () => {
       setProcessingError: jest.fn(),
       setContent: jest.fn(),
       getConnectorMap: jest.fn().mockReturnValue(connectorMap),
+      getChannelMap: jest.fn().mockReturnValue(channelMap),
+      getSourceMap: jest.fn().mockReturnValue(sourceMap),
       getResponseContent: jest.fn().mockReturnValue(null),
+      getChannelId: jest.fn().mockReturnValue('channel-123'),
     } as unknown as jest.Mocked<ConnectorMessage>;
   });
 
@@ -206,10 +212,6 @@ describe('JmsDispatcher', () => {
     });
 
     it('should include message options', async () => {
-      // Set correlation ID in connector map to override default
-      const connectorMap = mockConnectorMessage.getConnectorMap();
-      connectorMap.set('jmsCorrelationId', 'corr-123');
-
       const dispatcher = new JmsDispatcher({
         metaDataId: 1,
         properties: {
@@ -217,6 +219,7 @@ describe('JmsDispatcher', () => {
           priority: 9,
           timeToLive: 60000,
           deliveryMode: DeliveryMode.PERSISTENT,
+          correlationId: 'corr-123',
         },
       });
       dispatcher.setChannel(mockChannel as Channel);
@@ -254,7 +257,7 @@ describe('JmsDispatcher', () => {
         expect.any(Boolean),
         expect.any(String),
         expect.objectContaining({
-          correlationId: '12345',
+          correlationId: undefined,  // No correlationId configured → undefined (Java default)
         })
       );
     });
@@ -378,7 +381,8 @@ describe('JmsDispatcher', () => {
       expect(mockConnectorMessage.setStatus).toHaveBeenCalledWith(Status.QUEUED);
     });
 
-    it('should set ERROR status when queue disabled and send fails', async () => {
+    it('should set QUEUED status when queue disabled and send fails (Java behavior)', async () => {
+      // Java always sets QUEUED on error — Donkey engine decides final status
       mockJmsClient.send.mockRejectedValue(new Error('Send failed'));
 
       const dispatcher = new JmsDispatcher({
@@ -394,7 +398,7 @@ describe('JmsDispatcher', () => {
       await expect(dispatcher.send(mockConnectorMessage)).rejects.toThrow(
         'Send failed'
       );
-      expect(mockConnectorMessage.setStatus).toHaveBeenCalledWith(Status.ERROR);
+      expect(mockConnectorMessage.setStatus).toHaveBeenCalledWith(Status.QUEUED);
     });
 
     it('should store metadata in connector map', async () => {

@@ -27,8 +27,8 @@ describe('TcpDispatcher', () => {
       expect(dispatcher.isRunning()).toBe(false);
 
       const props = dispatcher.getProperties();
-      expect(props.host).toBe('localhost');
-      expect(props.port).toBe(6661);
+      expect(props.host).toBe('127.0.0.1');
+      expect(props.port).toBe(6660);
       expect(props.transmissionMode).toBe(TransmissionMode.MLLP);
     });
 
@@ -62,12 +62,12 @@ describe('TcpDispatcher', () => {
     it('should get default properties', () => {
       const props = dispatcher.getProperties();
 
-      expect(props.host).toBe('localhost');
-      expect(props.port).toBe(6661);
+      expect(props.host).toBe('127.0.0.1');
+      expect(props.port).toBe(6660);
       expect(props.charsetEncoding).toBe('UTF-8');
-      expect(props.keepConnectionOpen).toBe(true);
-      expect(props.sendTimeout).toBe(10000);
-      expect(props.responseTimeout).toBe(10000);
+      expect(props.keepConnectionOpen).toBe(false);
+      expect(props.sendTimeout).toBe(5000);
+      expect(props.responseTimeout).toBe(5000);
       expect(props.dataType).toBe('HL7V2');
     });
 

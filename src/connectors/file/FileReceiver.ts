@@ -172,6 +172,11 @@ export class FileReceiver extends SourceConnector {
    * Java uses FileConnector connection pool which retries on borrow failure.
    */
   private async initializeSftpConnectionWithRetry(): Promise<void> {
+    // Validate required config before entering retry loop — fail fast
+    if (!this.properties.host) {
+      throw new Error('Host is required for SFTP connections');
+    }
+
     const maxRetries = this.properties.maxRetryCount;
     const retryDelay = this.properties.retryDelay;
     let lastError: Error | null = null;

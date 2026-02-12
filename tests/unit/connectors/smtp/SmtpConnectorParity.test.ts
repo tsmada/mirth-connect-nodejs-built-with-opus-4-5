@@ -15,7 +15,7 @@ import { SmtpDispatcher } from '../../../../src/connectors/smtp/SmtpDispatcher';
 import { ConnectorMessage } from '../../../../src/model/ConnectorMessage';
 import { Status } from '../../../../src/model/Status';
 import { ConnectionStatusEventType } from '../../../../src/plugins/dashboardstatus/ConnectionLogItem';
-import { dashboardStatusController } from '../../../../src/plugins/dashboardstatus/DashboardStatusController';
+// dashboardStatusController is mocked below
 import {
   GlobalMap,
   ConfigurationMap,
@@ -52,6 +52,8 @@ function createMockConnectorMessage(maps?: {
     channelName: 'Test Channel',
     connectorName: 'SMTP Sender',
     serverId: 'server-1',
+    receivedDate: new Date(),
+    status: Status.RECEIVED,
   });
 
   if (maps?.channelMap) {

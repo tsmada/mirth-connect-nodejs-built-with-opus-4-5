@@ -50,13 +50,13 @@ describe('TcpConnectorProperties', () => {
     it('should return default dispatcher properties', () => {
       const props = getDefaultTcpDispatcherProperties();
 
-      expect(props.host).toBe('localhost');
-      expect(props.port).toBe(6661);
+      expect(props.host).toBe('127.0.0.1');
+      expect(props.port).toBe(6660);
       expect(props.transmissionMode).toBe(TransmissionMode.MLLP);
       expect(props.charsetEncoding).toBe('UTF-8');
-      expect(props.sendTimeout).toBe(10000);
-      expect(props.responseTimeout).toBe(10000);
-      expect(props.keepConnectionOpen).toBe(true);
+      expect(props.sendTimeout).toBe(5000);
+      expect(props.responseTimeout).toBe(5000);
+      expect(props.keepConnectionOpen).toBe(false);
     });
 
     it('should return independent instances', () => {
@@ -64,7 +64,7 @@ describe('TcpConnectorProperties', () => {
       const props2 = getDefaultTcpDispatcherProperties();
 
       props1.host = 'remotehost';
-      expect(props2.host).toBe('localhost');
+      expect(props2.host).toBe('127.0.0.1');
     });
   });
 
