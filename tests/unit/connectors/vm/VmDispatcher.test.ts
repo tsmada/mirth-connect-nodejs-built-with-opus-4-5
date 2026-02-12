@@ -653,6 +653,246 @@ describe('VmDispatcher', () => {
     });
   });
 
+  describe('replaceConnectorProperties (CPC-W18-003)', () => {
+    let dispatcher: VmDispatcher;
+
+    beforeEach(() => {
+      dispatcher = new VmDispatcher({ metaDataId: 1 });
+    });
+
+    it('should resolve ${variable} in channelId from channelMap', () => {
+      const props = {
+        channelId: '${targetChannelId}',
+        channelTemplate: '${message.encodedData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+      msg.getChannelMap().set('targetChannelId', 'resolved-channel-abc');
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelId).toBe('resolved-channel-abc');
+      // Original should NOT be modified
+      expect(props.channelId).toBe('${targetChannelId}');
+    });
+
+    it('should resolve ${variable} in channelTemplate from channelMap', () => {
+      const props = {
+        channelId: 'target',
+        channelTemplate: 'Patient: ${patientName}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+      msg.getChannelMap().set('patientName', 'John Doe');
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelTemplate).toBe('Patient: John Doe');
+    });
+
+    it('should resolve ${message.encodedData} in channelTemplate', () => {
+      const props = {
+        channelId: 'target',
+        channelTemplate: '${message.encodedData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: '<HL7>encoded</HL7>' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelTemplate).toBe('<HL7>encoded</HL7>');
+    });
+
+    it('should resolve ${message.rawData} in channelTemplate', () => {
+      const props = {
+        channelId: 'target',
+        channelTemplate: '${message.rawData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ rawData: 'MSH|^~\\&|SEND|...' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelTemplate).toBe('MSH|^~\\&|SEND|...');
+    });
+
+    it('should resolve ${message.transformedData} in channelTemplate', () => {
+      const props = {
+        channelId: 'target',
+        channelTemplate: '${message.transformedData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ transformedData: '<xml>transformed</xml>' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelTemplate).toBe('<xml>transformed</xml>');
+    });
+
+    it('should resolve variables from sourceMap when not in channelMap', () => {
+      const props = {
+        channelId: '${routeTarget}',
+        channelTemplate: '${message.encodedData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const sourceMap = new Map<string, unknown>();
+      sourceMap.set('routeTarget', 'source-map-channel');
+      const msg = createConnectorMessage({ sourceMap, encodedData: 'test' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelId).toBe('source-map-channel');
+    });
+
+    it('should resolve variables from connectorMap as fallback', () => {
+      const props = {
+        channelId: '${routeTarget}',
+        channelTemplate: '${message.encodedData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+      msg.getConnectorMap().set('routeTarget', 'connector-map-channel');
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelId).toBe('connector-map-channel');
+    });
+
+    it('should leave unresolved variables as-is', () => {
+      const props = {
+        channelId: '${unknownVar}',
+        channelTemplate: 'prefix-${alsoUnknown}-suffix',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelId).toBe('${unknownVar}');
+      expect(resolved.channelTemplate).toBe('prefix-${alsoUnknown}-suffix');
+    });
+
+    it('should resolve multiple variables in a single string', () => {
+      const props = {
+        channelId: 'target',
+        channelTemplate: '${prefix}-${middle}-${suffix}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+      msg.getChannelMap().set('prefix', 'A');
+      msg.getChannelMap().set('middle', 'B');
+      msg.getChannelMap().set('suffix', 'C');
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelTemplate).toBe('A-B-C');
+    });
+
+    it('should not modify non-string properties', () => {
+      const props = {
+        channelId: 'target',
+        channelTemplate: '${message.encodedData}',
+        mapVariables: ['var1'],
+        validateResponse: true,
+        reattachAttachments: false,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.mapVariables).toEqual(['var1']);
+      expect(resolved.validateResponse).toBe(true);
+      expect(resolved.reattachAttachments).toBe(false);
+    });
+
+    it('should handle template with no variables (passthrough)', () => {
+      const props = {
+        channelId: 'static-channel-id',
+        channelTemplate: 'static template content',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const msg = createConnectorMessage({ encodedData: 'test' });
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelId).toBe('static-channel-id');
+      expect(resolved.channelTemplate).toBe('static template content');
+    });
+
+    it('should prioritize channelMap over sourceMap', () => {
+      const props = {
+        channelId: '${routeTarget}',
+        channelTemplate: '${message.encodedData}',
+        mapVariables: [],
+        validateResponse: false,
+        reattachAttachments: true,
+      };
+
+      const sourceMap = new Map<string, unknown>();
+      sourceMap.set('routeTarget', 'source-channel');
+      const msg = createConnectorMessage({ sourceMap, encodedData: 'test' });
+      msg.getChannelMap().set('routeTarget', 'channel-map-channel');
+
+      const resolved = dispatcher.replaceConnectorProperties(props, msg);
+
+      expect(resolved.channelId).toBe('channel-map-channel');
+    });
+
+    it('should be used in send() for dynamic channel routing', async () => {
+      const engineController = new MockEngineController();
+      dispatcher = new VmDispatcher({
+        metaDataId: 1,
+        properties: {
+          channelId: '${dynamicTarget}',
+          channelTemplate: '${message.encodedData}',
+        },
+      });
+      dispatcher.setEngineController(engineController);
+      await dispatcher.start();
+
+      const msg = createConnectorMessage({ encodedData: 'test message' });
+      msg.getChannelMap().set('dynamicTarget', 'runtime-resolved-channel');
+
+      await dispatcher.send(msg);
+
+      expect(engineController.dispatchedMessages).toHaveLength(1);
+      expect(engineController.dispatchedMessages[0]!.channelId).toBe('runtime-resolved-channel');
+
+      await dispatcher.stop();
+    });
+  });
+
   describe('getResponse', () => {
     let dispatcher: VmDispatcher;
 

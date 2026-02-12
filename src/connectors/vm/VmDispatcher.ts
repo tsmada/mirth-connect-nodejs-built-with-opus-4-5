@@ -103,7 +103,6 @@ export class VmDispatcher extends DestinationConnector {
   private properties: VmDispatcherProperties;
   private statusListeners: DispatcherStatusListener[] = [];
   private engineController: EngineController | null = null;
-  private templateReplacer: TemplateReplacer | null = null;
 
   // Maps for variable lookup
   private globalMap = GlobalMap.getInstance();
@@ -164,10 +163,13 @@ export class VmDispatcher extends DestinationConnector {
   }
 
   /**
-   * Set the template value replacer
+   * Set the template value replacer (kept for backward compatibility)
+   * Note: replaceConnectorProperties() now handles ${variable} resolution directly.
+   * This method is retained for callers that set a templateReplacer.
    */
-  setTemplateReplacer(replacer: TemplateReplacer): void {
-    this.templateReplacer = replacer;
+  setTemplateReplacer(_replacer: TemplateReplacer): void {
+    // No-op: resolveVariables() handles ${variable} resolution directly.
+    // Kept for API compatibility with existing callers.
   }
 
   /**
@@ -232,25 +234,71 @@ export class VmDispatcher extends DestinationConnector {
   }
 
   /**
-   * Replace connector properties with values from the connector message
+   * CPC-W18-003: Resolve ${variable} placeholders in connector properties before each send.
+   * Matches Java VmDispatcher.replaceConnectorProperties() (line 83-88):
+   * Resolves channelId and channelTemplate.
+   * Returns a shallow clone — original properties are NOT modified.
    */
-  private replaceProperties(
+  replaceConnectorProperties(
+    props: VmDispatcherProperties,
     connectorMessage: ConnectorMessage
   ): VmDispatcherProperties {
-    const replaced = { ...this.properties };
+    const resolved = { ...props };
 
-    if (this.templateReplacer) {
-      replaced.channelId = this.templateReplacer.replaceValues(
-        replaced.channelId,
-        connectorMessage
-      );
-      replaced.channelTemplate = this.templateReplacer.replaceValues(
-        replaced.channelTemplate,
-        connectorMessage
-      );
-    }
+    resolved.channelId = this.resolveVariables(resolved.channelId, connectorMessage);
+    resolved.channelTemplate = this.resolveVariables(resolved.channelTemplate, connectorMessage);
 
-    return replaced;
+    return resolved;
+  }
+
+  /**
+   * Simple ${variable} resolution using connector message maps.
+   * Checks channelMap, then sourceMap, then connectorMap.
+   * Also handles built-in message variables (message.encodedData, message.rawData).
+   * Matches Java ValueReplacer.replaceValues() map lookup order.
+   */
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
+
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.transformedData') {
+        const transformed = connectorMessage.getTransformedContent?.();
+        if (transformed?.content) return transformed.content;
+        return match;
+      }
+
+      // Check channel map
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const v = channelMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check source map
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const v = sourceMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check connector map
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const v = connectorMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      return match; // Leave unresolved variables as-is
+    });
   }
 
   /**
@@ -312,8 +360,8 @@ export class VmDispatcher extends DestinationConnector {
    *   validator wiring (CPC-RHG-002)
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
-    // Replace properties with values from connector message
-    const props = this.replaceProperties(connectorMessage);
+    // CPC-W18-003: Resolve ${variable} placeholders before each send
+    const props = this.replaceConnectorProperties(this.properties, connectorMessage);
     const targetChannelId = props.channelId;
     const currentChannelId = connectorMessage.getChannelId();
 
@@ -454,14 +502,17 @@ export class VmDispatcher extends DestinationConnector {
   }
 
   /**
-   * Get the message content to send using the template
+   * Get the message content to send using the template.
+   * Note: replaceConnectorProperties() already resolves most ${variable} placeholders
+   * including ${message.encodedData}, ${message.rawData}, ${message.transformedData},
+   * and map variables. This method handles any remaining unresolved message tokens.
    */
   private getMessageContent(
     connectorMessage: ConnectorMessage,
     props: VmDispatcherProperties
   ): string {
-    // The template is already replaced by replaceProperties()
-    // But we need to handle special tokens like ${message.encodedData}
+    // Most variables are already resolved by replaceConnectorProperties()
+    // This handles any remaining ${message.*} tokens as a fallback
 
     let content = props.channelTemplate;
 
