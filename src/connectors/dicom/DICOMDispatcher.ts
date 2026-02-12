@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import { DestinationConnector } from '../../donkey/channel/DestinationConnector.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   DICOMDispatcherProperties,
   getDefaultDICOMDispatcherProperties,
@@ -76,6 +77,10 @@ export class DICOMDispatcher extends DestinationConnector {
    * Send a DICOM message
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
+    // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.WRITING, info))
+    const info = `Host: ${this.properties.host}`;
+    this.dispatchConnectionEvent(ConnectionStatusEventType.WRITING, info);
+
     let connection: DicomConnection | null = null;
     let tempFile: string | null = null;
 
@@ -130,6 +135,9 @@ export class DICOMDispatcher extends DestinationConnector {
           // Ignore cleanup errors
         }
       }
+
+      // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.IDLE))
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
   }
 
@@ -290,6 +298,14 @@ export class DICOMDispatcher extends DestinationConnector {
       connectTimeout: parseInt(this.properties.connectTo, 10) || 30000,
       associationTimeout: parseInt(this.properties.acceptTo, 10),
     };
+
+    // Java: dcmSnd.setLocalHost/setLocalPort — bind outbound to specific network interface
+    if (this.properties.localHost) {
+      params.localHost = this.properties.localHost;
+      if (this.properties.localPort) {
+        params.localPort = parseInt(this.properties.localPort, 10);
+      }
+    }
 
     // Configure TLS if enabled
     if (this.properties.tls !== DicomTlsMode.NO_TLS) {

@@ -16,6 +16,7 @@ import * as tls from 'tls';
 import * as fs from 'fs';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { ListenerInfo } from '../../api/models/DashboardStatus.js';
+import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   DICOMReceiverProperties,
   getDefaultDICOMReceiverProperties,
@@ -185,6 +186,9 @@ export class DICOMReceiver extends SourceConnector {
     }
 
     this.running = true;
+
+    // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.IDLE))
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
@@ -255,26 +259,31 @@ export class DICOMReceiver extends SourceConnector {
       return;
     }
 
-    // Close all associations
-    for (const [socket, _association] of this.associations) {
-      try {
-        await this.sendAbort(socket, 0, 0);
-      } catch (e) {
-        // Ignore errors during shutdown
+    try {
+      // Close all associations
+      for (const [socket, _association] of this.associations) {
+        try {
+          await this.sendAbort(socket, 0, 0);
+        } catch (e) {
+          // Ignore errors during shutdown
+        }
+        socket.destroy();
       }
-      socket.destroy();
-    }
-    this.associations.clear();
+      this.associations.clear();
 
-    // Close server
-    if (this.server) {
-      await new Promise<void>((resolve) => {
-        this.server!.close(() => resolve());
-      });
-      this.server = null;
-    }
+      // Close server
+      if (this.server) {
+        await new Promise<void>((resolve) => {
+          this.server!.close(() => resolve());
+        });
+        this.server = null;
+      }
 
-    this.running = false;
+      this.running = false;
+    } finally {
+      // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.DISCONNECTED))
+      this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
+    }
   }
 
   /**
