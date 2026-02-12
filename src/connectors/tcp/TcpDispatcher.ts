@@ -129,13 +129,85 @@ export class TcpDispatcher extends DestinationConnector {
   }
 
   /**
+   * CPC-RCP-002: Resolve ${variable} placeholders in connector properties before each send.
+   * Matches Java TcpDispatcher.replaceConnectorProperties() (line 88):
+   * Resolves remoteAddress, remotePort, localAddress, localPort, template.
+   * Returns a shallow clone — original properties are NOT modified.
+   */
+  replaceConnectorProperties(
+    props: TcpDispatcherProperties,
+    connectorMessage: ConnectorMessage
+  ): TcpDispatcherProperties {
+    const resolved = { ...props };
+
+    resolved.host = this.resolveVariables(resolved.host, connectorMessage);
+    const resolvedPort = this.resolveVariables(String(resolved.port), connectorMessage);
+    resolved.port = parseInt(resolvedPort, 10) || resolved.port;
+    resolved.localAddress = resolved.localAddress
+      ? this.resolveVariables(resolved.localAddress, connectorMessage)
+      : undefined;
+    if (resolved.localPort !== undefined) {
+      const resolvedLocalPort = this.resolveVariables(String(resolved.localPort), connectorMessage);
+      resolved.localPort = parseInt(resolvedLocalPort, 10) || resolved.localPort;
+    }
+    resolved.template = this.resolveVariables(resolved.template, connectorMessage);
+
+    return resolved;
+  }
+
+  /**
+   * Simple ${variable} resolution using connector message maps.
+   * Checks channelMap, then sourceMap, then connectorMap.
+   * Matches Java ValueReplacer.replaceValues() map lookup order.
+   */
+  private resolveVariables(template: string, connectorMessage: ConnectorMessage): string {
+    if (!template || !template.includes('${')) return template;
+
+    return template.replace(/\$\{([^}]+)\}/g, (match, varName: string) => {
+      // Built-in message variables (matches Java ValueReplacer)
+      if (varName === 'message.encodedData') {
+        const encoded = connectorMessage.getEncodedContent();
+        if (encoded?.content) return encoded.content;
+        return connectorMessage.getRawData() ?? match;
+      }
+      if (varName === 'message.rawData') {
+        return connectorMessage.getRawData() ?? match;
+      }
+
+      // Check channel map
+      const channelMap = connectorMessage.getChannelMap?.();
+      if (channelMap) {
+        const v = channelMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check source map
+      const sourceMap = connectorMessage.getSourceMap?.();
+      if (sourceMap) {
+        const v = sourceMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      // Check connector map
+      const connectorMap = connectorMessage.getConnectorMap?.();
+      if (connectorMap) {
+        const v = connectorMap.get(varName);
+        if (v !== undefined && v !== null) return String(v);
+      }
+
+      return match; // Leave unresolved variables as-is
+    });
+  }
+
+  /**
    * Build the socket key for the connection map.
    * Matches Java: dispatcherId + remoteAddress + remotePort [+ localAddress + localPort]
+   * Uses resolved properties so dynamic routing creates distinct socket keys.
    */
-  private getSocketKey(connectorMessage: ConnectorMessage): string {
-    let key = `${connectorMessage.getMetaDataId()}${this.properties.host}${this.properties.port}`;
-    if (this.properties.localAddress) {
-      key += `${this.properties.localAddress}${this.properties.localPort ?? 0}`;
+  private getSocketKey(connectorMessage: ConnectorMessage, resolvedProps: TcpDispatcherProperties): string {
+    let key = `${connectorMessage.getMetaDataId()}${resolvedProps.host}${resolvedProps.port}`;
+    if (resolvedProps.localAddress) {
+      key += `${resolvedProps.localAddress}${resolvedProps.localPort ?? 0}`;
     }
     return key;
   }
@@ -148,7 +220,9 @@ export class TcpDispatcher extends DestinationConnector {
    * CPC-STG-002: CONNECTING/SENDING/WAITING_FOR_RESPONSE states
    */
   async send(connectorMessage: ConnectorMessage): Promise<void> {
-    const socketKey = this.getSocketKey(connectorMessage);
+    // CPC-RCP-002: Resolve ${variable} placeholders before each send
+    const resolvedProps = this.replaceConnectorProperties(this.properties, connectorMessage);
+    const socketKey = this.getSocketKey(connectorMessage, resolvedProps);
     let socket: net.Socket | null = null;
 
     try {
@@ -163,7 +237,7 @@ export class TcpDispatcher extends DestinationConnector {
       socket = this.connectedSockets.get(socketKey) ?? null;
 
       // Check if we need a new socket
-      if (!this.properties.keepConnectionOpen || !socket || socket.destroyed) {
+      if (!resolvedProps.keepConnectionOpen || !socket || socket.destroyed) {
         // Close existing stale socket
         if (socket) {
           this.closeSocketQuietly(socketKey, socket);
@@ -171,10 +245,10 @@ export class TcpDispatcher extends DestinationConnector {
         }
 
         // CPC-STG-002: CONNECTING state
-        const connectInfo = `Trying to connect on ${this.properties.host}:${this.properties.port}...`;
+        const connectInfo = `Trying to connect on ${resolvedProps.host}:${resolvedProps.port}...`;
         this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTING, connectInfo);
 
-        socket = await this.connectSocket();
+        socket = await this.connectSocket(resolvedProps);
 
         // CPC-CLG-002: Store in connection map
         this.connectedSockets.set(socketKey, socket);
@@ -188,28 +262,28 @@ export class TcpDispatcher extends DestinationConnector {
       const sendInfo = `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`;
       this.dispatchConnectionEvent(ConnectionStatusEventType.SENDING, sendInfo);
 
-      // Get message content
-      const content = this.getContent(connectorMessage);
+      // Get message content using resolved template
+      const content = this.getContent(connectorMessage, resolvedProps);
 
       // Frame the message
       const framedMessage = frameMessage(
         content,
-        this.properties.transmissionMode,
-        this.properties.startOfMessageBytes,
-        this.properties.endOfMessageBytes
+        resolvedProps.transmissionMode,
+        resolvedProps.startOfMessageBytes,
+        resolvedProps.endOfMessageBytes
       );
 
       // Send the data
       await this.writeToSocket(socket, framedMessage);
 
       // Handle response
-      if (!this.properties.ignoreResponse) {
+      if (!resolvedProps.ignoreResponse) {
         // CPC-STG-002: WAITING_FOR_RESPONSE state
-        const waitInfo = `Waiting for response from ${socket.remoteAddress}:${socket.remotePort} (Timeout: ${this.properties.responseTimeout} ms)...`;
+        const waitInfo = `Waiting for response from ${socket.remoteAddress}:${socket.remotePort} (Timeout: ${resolvedProps.responseTimeout} ms)...`;
         this.dispatchConnectionEvent(ConnectionStatusEventType.WAITING_FOR_RESPONSE, waitInfo);
 
         try {
-          const response = await this.readResponse(socket);
+          const response = await this.readResponse(socket, resolvedProps);
 
           // Set send date
           connectorMessage.setSendDate(new Date());
@@ -218,7 +292,7 @@ export class TcpDispatcher extends DestinationConnector {
             connectorMessage.setContent({
               contentType: ContentType.RESPONSE,
               content: response,
-              dataType: this.properties.dataType,
+              dataType: resolvedProps.dataType,
               encrypted: false,
             });
           }
@@ -230,7 +304,7 @@ export class TcpDispatcher extends DestinationConnector {
             readError.message.includes('timeout');
 
           if (isTimeout) {
-            if (this.properties.queueOnResponseTimeout) {
+            if (resolvedProps.queueOnResponseTimeout) {
               // Leave status as QUEUED for retry (Java default behavior)
               connectorMessage.setStatus(Status.QUEUED);
               connectorMessage.setProcessingError('Timeout waiting for response');
@@ -263,13 +337,13 @@ export class TcpDispatcher extends DestinationConnector {
         connectorMessage.setStatus(Status.SENT);
       }
 
-      // Store connection info in connector map
-      connectorMessage.getConnectorMap().set('remoteHost', this.properties.host);
-      connectorMessage.getConnectorMap().set('remotePort', this.properties.port);
+      // Store resolved connection info in connector map
+      connectorMessage.getConnectorMap().set('remoteHost', resolvedProps.host);
+      connectorMessage.getConnectorMap().set('remotePort', resolvedProps.port);
 
       // Handle connection lifecycle after send
-      if (this.properties.keepConnectionOpen) {
-        if (this.properties.sendTimeout > 0) {
+      if (resolvedProps.keepConnectionOpen) {
+        if (resolvedProps.sendTimeout > 0) {
           // Start a timer to close the connection after sendTimeout idle period
           this.startTimeoutTimer(socketKey);
         }
@@ -322,16 +396,16 @@ export class TcpDispatcher extends DestinationConnector {
   }
 
   /**
-   * Create and connect a new socket.
+   * Create and connect a new socket using resolved properties.
    */
-  private async connectSocket(): Promise<net.Socket> {
+  private async connectSocket(resolvedProps: TcpDispatcherProperties): Promise<net.Socket> {
     return new Promise((resolve, reject) => {
       const socket = new net.Socket();
 
       const timeout = setTimeout(() => {
         socket.destroy();
         reject(new Error('Connection timeout'));
-      }, this.properties.socketTimeout);
+      }, resolvedProps.socketTimeout);
 
       socket.on('error', (error) => {
         clearTimeout(timeout);
@@ -339,15 +413,15 @@ export class TcpDispatcher extends DestinationConnector {
       });
 
       const connectOptions: net.SocketConnectOpts = {
-        host: this.properties.host,
-        port: this.properties.port,
+        host: resolvedProps.host,
+        port: resolvedProps.port,
       };
 
-      if (this.properties.localAddress) {
-        connectOptions.localAddress = this.properties.localAddress;
+      if (resolvedProps.localAddress) {
+        connectOptions.localAddress = resolvedProps.localAddress;
       }
-      if (this.properties.localPort) {
-        connectOptions.localPort = this.properties.localPort;
+      if (resolvedProps.localPort) {
+        connectOptions.localPort = resolvedProps.localPort;
       }
 
       socket.connect(connectOptions, () => {
@@ -355,7 +429,7 @@ export class TcpDispatcher extends DestinationConnector {
 
         // Configure socket options (matching Java initSocket)
         socket.setNoDelay(true);
-        socket.setKeepAlive(this.properties.keepConnectionOpen);
+        socket.setKeepAlive(resolvedProps.keepConnectionOpen);
 
         resolve(socket);
       });
@@ -378,7 +452,8 @@ export class TcpDispatcher extends DestinationConnector {
    * Read response from socket with timeout.
    * CPC-MEH-003: Throws on timeout to trigger queueOnResponseTimeout logic.
    */
-  private readResponse(socket: net.Socket): Promise<string | null> {
+  private readResponse(socket: net.Socket, resolvedProps?: TcpDispatcherProperties): Promise<string | null> {
+    const props = resolvedProps ?? this.properties;
     return new Promise((resolve, reject) => {
       let buffer = Buffer.alloc(0);
       let responseReceived = false;
@@ -389,7 +464,7 @@ export class TcpDispatcher extends DestinationConnector {
           // CPC-MEH-003: Throw timeout error instead of resolving null
           reject(new Error('Response timeout'));
         }
-      }, this.properties.responseTimeout);
+      }, props.responseTimeout);
 
       const onData = (chunk: Buffer) => {
         buffer = Buffer.concat([buffer, chunk]);
@@ -397,8 +472,8 @@ export class TcpDispatcher extends DestinationConnector {
         if (
           hasCompleteMessage(
             buffer,
-            this.properties.transmissionMode,
-            this.properties.endOfMessageBytes
+            props.transmissionMode,
+            props.endOfMessageBytes
           )
         ) {
           responseReceived = true;
@@ -406,9 +481,9 @@ export class TcpDispatcher extends DestinationConnector {
 
           const response = unframeMessage(
             buffer,
-            this.properties.transmissionMode,
-            this.properties.startOfMessageBytes,
-            this.properties.endOfMessageBytes
+            props.transmissionMode,
+            props.startOfMessageBytes,
+            props.endOfMessageBytes
           );
 
           resolve(response);
@@ -481,12 +556,13 @@ export class TcpDispatcher extends DestinationConnector {
   }
 
   /**
-   * Get content to send from connector message
+   * Get content to send from connector message using resolved properties.
    */
-  private getContent(connectorMessage: ConnectorMessage): string {
-    // Use template if provided
-    if (this.properties.template && this.properties.template !== '${message.encodedData}') {
-      return this.properties.template;
+  private getContent(connectorMessage: ConnectorMessage, resolvedProps: TcpDispatcherProperties): string {
+    // Use resolved template if provided and not the default placeholder
+    // Note: after replaceConnectorProperties, ${message.encodedData} is already resolved
+    if (resolvedProps.template && resolvedProps.template !== '${message.encodedData}') {
+      return resolvedProps.template;
     }
 
     const encodedContent = connectorMessage.getEncodedContent();
