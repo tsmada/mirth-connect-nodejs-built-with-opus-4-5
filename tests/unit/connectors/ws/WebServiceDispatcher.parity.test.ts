@@ -422,3 +422,209 @@ describe('WebServiceDispatcher.replaceConnectorProperties (CPC-RCP-003)', () => 
     expect(result.attachmentTypes).toEqual([]);
   });
 });
+
+/**
+ * CPC-W19-004: useHeadersVariable runtime lookup parity tests.
+ * Matches Java WebServiceDispatcher.getHeaders() → HttpUtil.getTableMap() behavior.
+ */
+describe('WebServiceDispatcher.getHeaders via useHeadersVariable (CPC-W19-004)', () => {
+  let dispatcher: WebServiceDispatcher;
+
+  beforeEach(() => {
+    dispatcher = new WebServiceDispatcher({ metaDataId: 1 });
+  });
+
+  /**
+   * Access the private buildHttpHeaders via the public send path.
+   * We test indirectly by inspecting the headers that would be built.
+   * For direct unit testing, we use a subclass trick to access getHeaders.
+   */
+  function getHeadersResult(
+    props: Partial<import('../../../../src/connectors/ws/WebServiceDispatcherProperties.js').WebServiceDispatcherProperties>,
+    connectorMessage: ConnectorMessage
+  ): Map<string, string[]> {
+    // Access private getHeaders via prototype
+    const fullProps = { ...dispatcher.getProperties(), ...props };
+    return (dispatcher as any).getHeaders(fullProps, connectorMessage);
+  }
+
+  it('should return static headers when useHeadersVariable is false', () => {
+    const staticHeaders = new Map<string, string[]>([
+      ['X-Custom', ['value1']],
+      ['Authorization', ['Bearer tok']],
+    ]);
+
+    const connectorMessage = createConnectorMessage();
+
+    const result = getHeadersResult(
+      { useHeadersVariable: false, headers: staticHeaders },
+      connectorMessage
+    );
+
+    expect(result).toBe(staticHeaders);
+    expect(result.get('X-Custom')).toEqual(['value1']);
+    expect(result.get('Authorization')).toEqual(['Bearer tok']);
+  });
+
+  it('should look up headers from connectorMap when useHeadersVariable is true', () => {
+    const dynamicHeaders = new Map<string, string>([
+      ['X-Dynamic', 'dynValue'],
+      ['X-Correlation-ID', 'abc-123'],
+    ]);
+
+    const connectorMessage = createConnectorMessage({
+      connectorMap: new Map([['myHeaders', dynamicHeaders]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'myHeaders' },
+      connectorMessage
+    );
+
+    expect(result.get('X-Dynamic')).toEqual(['dynValue']);
+    expect(result.get('X-Correlation-ID')).toEqual(['abc-123']);
+  });
+
+  it('should look up headers from channelMap when useHeadersVariable is true', () => {
+    const dynamicHeaders = new Map<string, string>([
+      ['Content-Type', 'application/xml'],
+    ]);
+
+    const connectorMessage = createConnectorMessage({
+      channelMap: new Map([['soapHeaders', dynamicHeaders]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'soapHeaders' },
+      connectorMessage
+    );
+
+    expect(result.get('Content-Type')).toEqual(['application/xml']);
+  });
+
+  it('should look up headers from sourceMap when useHeadersVariable is true', () => {
+    const dynamicHeaders = new Map<string, string>([
+      ['X-Source-Header', 'fromSource'],
+    ]);
+
+    const connectorMessage = createConnectorMessage({
+      sourceMap: new Map([['srcHeaders', dynamicHeaders]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'srcHeaders' },
+      connectorMessage
+    );
+
+    expect(result.get('X-Source-Header')).toEqual(['fromSource']);
+  });
+
+  it('should return empty map when variable not found in any map', () => {
+    const connectorMessage = createConnectorMessage();
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'nonExistentVar' },
+      connectorMessage
+    );
+
+    expect(result.size).toBe(0);
+  });
+
+  it('should handle plain object as variable value (not just Map)', () => {
+    const connectorMessage = createConnectorMessage({
+      connectorMap: new Map([
+        ['objHeaders', { 'X-Object-Header': 'objValue', 'Accept': 'text/xml' }],
+      ]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'objHeaders' },
+      connectorMessage
+    );
+
+    expect(result.get('X-Object-Header')).toEqual(['objValue']);
+    expect(result.get('Accept')).toEqual(['text/xml']);
+  });
+
+  it('should handle array values in the variable map (multi-value headers)', () => {
+    const dynamicHeaders = new Map<string, string[]>([
+      ['Set-Cookie', ['session=abc', 'lang=en']],
+      ['X-Single', ['onlyOne']],
+    ]);
+
+    const connectorMessage = createConnectorMessage({
+      connectorMap: new Map([['multiHeaders', dynamicHeaders]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'multiHeaders' },
+      connectorMessage
+    );
+
+    expect(result.get('Set-Cookie')).toEqual(['session=abc', 'lang=en']);
+    expect(result.get('X-Single')).toEqual(['onlyOne']);
+  });
+
+  it('should prioritize connectorMap over channelMap (Java MessageMaps.get order)', () => {
+    const connectorHeaders = new Map<string, string>([['X-Priority', 'fromConnector']]);
+    const channelHeaders = new Map<string, string>([['X-Priority', 'fromChannel']]);
+
+    const connectorMessage = createConnectorMessage({
+      connectorMap: new Map([['hdrs', connectorHeaders]]),
+      channelMap: new Map([['hdrs', channelHeaders]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'hdrs' },
+      connectorMessage
+    );
+
+    expect(result.get('X-Priority')).toEqual(['fromConnector']);
+  });
+
+  it('should fall back to channelMap when connectorMap has no match', () => {
+    const channelHeaders = new Map<string, string>([['X-Fallback', 'fromChannel']]);
+
+    const connectorMessage = createConnectorMessage({
+      connectorMap: new Map([['otherVar', 'notHeaders']]),
+      channelMap: new Map([['hdrs', channelHeaders]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'hdrs' },
+      connectorMessage
+    );
+
+    expect(result.get('X-Fallback')).toEqual(['fromChannel']);
+  });
+
+  it('should return static headers when useHeadersVariable is true but headersVariable is empty', () => {
+    const staticHeaders = new Map<string, string[]>([
+      ['X-Static', ['staticVal']],
+    ]);
+
+    const connectorMessage = createConnectorMessage();
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: '', headers: staticHeaders },
+      connectorMessage
+    );
+
+    // Empty headersVariable means the condition `props.headersVariable` is falsy,
+    // so it falls back to static headers
+    expect(result).toBe(staticHeaders);
+  });
+
+  it('should handle null/undefined variable value gracefully', () => {
+    const connectorMessage = createConnectorMessage({
+      connectorMap: new Map([['nullHeaders', null]]),
+    });
+
+    const result = getHeadersResult(
+      { useHeadersVariable: true, headersVariable: 'nullHeaders' },
+      connectorMessage
+    );
+
+    expect(result.size).toBe(0);
+  });
+});
