@@ -1,16 +1,20 @@
 /**
  * Ported from: ~/Projects/connect/server/src/com/mirth/connect/connectors/jdbc/DatabaseReceiver.java
+ *              ~/Projects/connect/server/src/com/mirth/connect/connectors/jdbc/DatabaseReceiverScript.java
  *
  * Purpose: Database source connector that polls for records
  *
  * Key behaviors to replicate:
  * - Poll-based query execution
- * - Support query mode and script mode
+ * - Support query mode and script mode (delegate pattern)
  * - MySQL connection pooling
- * - Post-process update queries
+ * - Post-process update queries with resultMap/results injection
  * - Result caching and aggregation
+ * - Script compilation at deploy time (not per-poll)
+ * - Update modes: NEVER, ONCE, EACH
  */
 
+import * as vm from 'vm';
 import { createPool, Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import {
@@ -20,8 +24,13 @@ import {
   resultsToXml,
   UpdateMode,
 } from './DatabaseConnectorProperties.js';
-import { getDefaultExecutor } from '../../javascript/runtime/JavaScriptExecutor.js';
+import {
+  buildMessageReceiverScope,
+  buildConnectorMessageScope,
+  Scope,
+} from '../../javascript/runtime/ScopeBuilder.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
+import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 
 export interface DatabaseReceiverConfig {
   name?: string;
@@ -38,6 +47,14 @@ export class DatabaseReceiver extends SourceConnector {
   private pool: Pool | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private connection: PoolConnection | null = null;
+
+  /**
+   * Compiled VM scripts cached at deploy time.
+   * Java: DatabaseReceiverScript.deploy() compiles via JavaScriptUtil.compileAndAddScript()
+   * Node.js: We use vm.Script for the same effect.
+   */
+  private compiledSelectScript: vm.Script | undefined;
+  private compiledUpdateScript: vm.Script | undefined;
 
   constructor(config: DatabaseReceiverConfig) {
     super({
@@ -68,15 +85,20 @@ export class DatabaseReceiver extends SourceConnector {
   }
 
   /**
-   * CPC-W20-005: Deploy the database receiver — create connection pool and dispatch IDLE.
+   * Deploy the database receiver — create connection pool, compile scripts, dispatch IDLE.
    *
-   * Java DatabaseReceiver.onDeploy() creates the delegate (poll connector) and
-   * dispatches IDLE. Separated from start() so deployment-time errors (bad URL,
-   * auth failure) are caught early.
+   * Java DatabaseReceiver.onDeploy() creates the delegate (DatabaseReceiverScript or
+   * DatabaseReceiverQuery) and dispatches IDLE. The script delegate compiles select and
+   * update scripts during deploy via JavaScriptUtil.compileAndAddScript().
    */
   async onDeploy(): Promise<void> {
     // Create connection pool during deploy (matches Java DatabaseReceiver.onDeploy())
     await this.createConnectionPool();
+
+    // Compile scripts at deploy time (matches Java DatabaseReceiverScript.deploy())
+    if (this.properties.useScript) {
+      this.compileScripts();
+    }
 
     // Dispatch IDLE event (matches Java onDeploy → delegate.onDeploy → IDLE)
     this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
@@ -85,7 +107,7 @@ export class DatabaseReceiver extends SourceConnector {
   /**
    * Start the database receiver — begin polling.
    *
-   * CPC-W20-005: Pool creation moved to onDeploy(). start() focuses on starting
+   * Pool creation moved to onDeploy(). start() focuses on starting
    * the poll timer. Falls back to creating the pool here if onDeploy() wasn't called.
    */
   async start(): Promise<void> {
@@ -93,9 +115,12 @@ export class DatabaseReceiver extends SourceConnector {
       throw new Error('Database Receiver is already running');
     }
 
-    // CPC-W20-005: Pool should already be created in onDeploy(); create as fallback
+    // Pool should already be created in onDeploy(); create as fallback
     if (!this.pool) {
       await this.createConnectionPool();
+      if (this.properties.useScript) {
+        this.compileScripts();
+      }
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
 
@@ -125,17 +150,146 @@ export class DatabaseReceiver extends SourceConnector {
   }
 
   /**
-   * CPC-W20-005: Undeploy the database receiver — close connection pool.
+   * Undeploy the database receiver — close connection pool, remove cached scripts.
    *
-   * Java DatabaseReceiver.onUndeploy() cleans up the delegate and connection resources.
-   * Separated from stop() so the pool lifecycle matches deploy/undeploy.
+   * Java DatabaseReceiverScript.undeploy() calls JavaScriptUtil.removeScriptFromCache()
+   * for both select and update scripts.
    */
   async onUndeploy(): Promise<void> {
+    // Remove cached scripts (matches Java DatabaseReceiverScript.undeploy())
+    this.compiledSelectScript = undefined;
+    this.compiledUpdateScript = undefined;
+
     // Close pool on undeploy
     if (this.pool) {
       await this.pool.end();
       this.pool = null;
     }
+  }
+
+  /**
+   * Compile select and update scripts at deploy time.
+   *
+   * Ported from: DatabaseReceiverScript.deploy()
+   * Java compiles scripts via JavaScriptUtil.compileAndAddScript() during the deploy
+   * phase, NOT per-poll. This avoids repeated compilation overhead.
+   *
+   * @throws Error if script compilation fails (matches Java ConnectorTaskException)
+   */
+  compileScripts(): void {
+    if (!this.properties.select) {
+      return;
+    }
+
+    // Wrap user script in a function body so 'return' works
+    // Java: ScriptBuilder wraps in doScript() function
+    const selectSource = `(function() {\n${this.properties.select}\n})()`;
+
+    try {
+      this.compiledSelectScript = new vm.Script(selectSource, {
+        filename: 'db-receiver-select.js',
+      });
+    } catch (e) {
+      throw new Error(
+        `Error compiling select script: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+
+    // Compile update script only if updateMode is not NEVER
+    // Java: if (connectorProperties.getUpdateMode() != DatabaseReceiverProperties.UPDATE_NEVER)
+    if (
+      this.properties.updateMode !== UpdateMode.NEVER &&
+      this.properties.update
+    ) {
+      const updateSource = `(function() {\n${this.properties.update}\n})()`;
+      try {
+        this.compiledUpdateScript = new vm.Script(updateSource, {
+          filename: 'db-receiver-update.js',
+        });
+      } catch (e) {
+        throw new Error(
+          `Error compiling update script: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Build scope for the receiver select script.
+   *
+   * Ported from: DatabaseReceiverScript.SelectTask.doCall()
+   * Java: scope = getMessageReceiverScope(contextFactory, scriptLogger, channelId, channelName)
+   *
+   * The select script scope does NOT include a connector message (there is no message yet
+   * during the poll). It includes: logger, globalMap, configurationMap, channelId, channelName,
+   * and all userutil classes (DatabaseConnectionFactory, etc.).
+   */
+  buildReceiverScope(): Scope {
+    const channelId = this.channel?.getId() ?? '';
+    const channelName = this.channel?.getName() ?? '';
+
+    return buildMessageReceiverScope({
+      channelId,
+      channelName,
+      connectorName: this.name,
+      metaDataId: 0,
+    });
+  }
+
+  /**
+   * Build scope for the receiver update script.
+   *
+   * Ported from: DatabaseReceiverScript.UpdateTask.doCall()
+   * Java has two overloads:
+   * 1. With mergedConnectorMessage → scope includes connector message maps
+   * 2. Without (afterPoll with UPDATE_ONCE) → basic receiver scope only
+   *
+   * Additionally, Java injects:
+   * - resultMap (Map<String, Object>) when processing individual rows
+   * - results (List<Map<String, Object>>) when processing aggregated results
+   */
+  buildUpdateScope(
+    resultMap: Record<string, unknown> | null,
+    resultsList: Record<string, unknown>[] | null,
+    mergedConnectorMessage: ConnectorMessage | null
+  ): Scope {
+    const channelId = this.channel?.getId() ?? '';
+    const channelName = this.channel?.getName() ?? '';
+
+    let scope: Scope;
+
+    if (mergedConnectorMessage) {
+      // Java: getMessageReceiverScope(contextFactory, scriptLogger, channelId, ImmutableConnectorMessage)
+      scope = buildConnectorMessageScope(
+        {
+          channelId,
+          channelName,
+          connectorName: this.name,
+          metaDataId: 0,
+        },
+        mergedConnectorMessage
+      );
+    } else {
+      // Java: getMessageReceiverScope(contextFactory, scriptLogger, channelId, channelName)
+      scope = buildMessageReceiverScope({
+        channelId,
+        channelName,
+        connectorName: this.name,
+        metaDataId: 0,
+      });
+    }
+
+    // Java: scope.put("resultMap", scope, Context.javaToJS(resultMap, scope))
+    if (resultMap != null) {
+      scope.resultMap = resultMap;
+    }
+
+    // Java: scope.put("results", scope, Context.javaToJS(resultsList, scope))
+    if (resultsList != null) {
+      scope.results = resultsList;
+    }
+
+    return scope;
   }
 
   /**
@@ -336,66 +490,120 @@ export class DatabaseReceiver extends SourceConnector {
   }
 
   /**
-   * Execute JavaScript script for script mode polling
+   * Execute JavaScript script for script mode polling.
    *
-   * The script has access to:
-   * - dbConn: Database connection wrapper with executeQuery/executeUpdate methods
-   * - globalMap, channelMap, etc.: Standard Mirth maps
+   * Ported from: DatabaseReceiverScript.poll() → SelectTask.doCall()
    *
-   * The script should return a string or array of strings to be dispatched as messages.
+   * Java behavior:
+   * 1. Build receiver scope (no connector message — this is a poll, not a message dispatch)
+   * 2. Execute compiled select script in scope
+   * 3. Unwrap result: expect List<Map<String,Object>> (Java) → Record<string,unknown>[] (Node.js)
+   * 4. Convert each result row to XML and dispatch as raw message
+   * 5. Run post-process update script per updateMode
+   *
+   * The user script has access to all standard Mirth scope variables (globalMap, $g, $cfg,
+   * DatabaseConnectionFactory, etc.) but NOT dbConn — users create their own connections
+   * via DatabaseConnectionFactory in their scripts.
    */
-  private async executeScript(conn: PoolConnection): Promise<void> {
+  private async executeScript(_conn: PoolConnection): Promise<void> {
     if (!this.properties.select) {
       return;
     }
 
-    // Create a database connection wrapper for the script
-    const dbConn = {
-      executeQuery: async (sql: string): Promise<Record<string, unknown>[]> => {
-        const [rows] = await conn.query<RowDataPacket[]>(sql);
-        return rows as Record<string, unknown>[];
-      },
-      executeUpdate: async (sql: string): Promise<number> => {
-        const [result] = await conn.query(sql);
-        return (result as { affectedRows?: number }).affectedRows ?? 0;
-      },
-    };
-
-    // Build scope with database connection
-    const scope = {
-      dbConn,
-      logger: {
-        info: (msg: string) => console.log(`[DB Script] ${msg}`),
-        error: (msg: string) => console.error(`[DB Script] ${msg}`),
-        warn: (msg: string) => console.warn(`[DB Script] ${msg}`),
-        debug: (msg: string) => console.debug(`[DB Script] ${msg}`),
-      },
-    };
-
-    const executor = getDefaultExecutor();
-    const result = executor.executeWithScope<string | string[] | undefined>(
-      this.properties.select,
-      scope,
-      { timeout: 60000 }
-    );
-
-    if (!result.success) {
-      throw result.error ?? new Error('Script execution failed');
+    // Use compiled script if available (deploy-time compilation)
+    // Fall back to dynamic compilation for backward compatibility
+    if (!this.compiledSelectScript) {
+      this.compileScripts();
     }
 
-    // Dispatch results as messages
-    if (result.result) {
-      const messages = Array.isArray(result.result) ? result.result : [result.result];
-      for (const message of messages) {
-        if (message && typeof message === 'string') {
-          await this.dispatchRawMessage(message);
+    if (!this.compiledSelectScript) {
+      return;
+    }
+
+    // Build scope matching Java's getMessageReceiverScope(channelId, channelName)
+    const scope = this.buildReceiverScope();
+
+    // Execute compiled script in scope
+    const context = vm.createContext(scope);
+    let result: unknown;
+    try {
+      result = this.compiledSelectScript.runInContext(context, { timeout: 60000 });
+    } catch (error) {
+      throw new Error(
+        `Error executing select script: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    // Process results — Java expects List<Map<String,Object>> or ResultSet
+    // Node.js: array of objects (records)
+    if (result == null) {
+      return;
+    }
+
+    const rows: Record<string, unknown>[] = Array.isArray(result) ? result : [result];
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    if (this.properties.aggregateResults) {
+      // Send all results as single message
+      const xml = resultsToXml(rows);
+      await this.dispatchRawMessage(xml);
+
+      // Run aggregate post-process update (Java: runAggregatePostProcess)
+      if (this.properties.updateMode !== UpdateMode.NEVER && this.compiledUpdateScript) {
+        await this.runUpdateScript(null, rows, null);
+      }
+    } else {
+      // Send each row as separate message
+      for (const row of rows) {
+        const xml = resultsToXml([row as Record<string, unknown>]);
+        await this.dispatchRawMessage(xml);
+
+        // Run per-row post-process update (Java: runPostProcess with UPDATE_EACH)
+        if (this.properties.updateMode === UpdateMode.EACH && this.compiledUpdateScript) {
+          await this.runUpdateScript(row as Record<string, unknown>, null, null);
         }
       }
     }
 
-    // Execute post-process update if configured
-    if (this.properties.update) {
-      await conn.query(this.properties.update);
+    // Run afterPoll update (Java: afterPoll with UPDATE_ONCE and !aggregateResults)
+    if (
+      this.properties.updateMode === UpdateMode.ONCE &&
+      !this.properties.aggregateResults &&
+      this.compiledUpdateScript
+    ) {
+      await this.runUpdateScript(null, null, null);
+    }
+  }
+
+  /**
+   * Execute the compiled update script with the appropriate scope.
+   *
+   * Ported from: DatabaseReceiverScript.UpdateTask.doCall()
+   *
+   * Java injects resultMap and/or results into the update scope depending
+   * on whether this is a per-row update, aggregate update, or afterPoll update.
+   */
+  private async runUpdateScript(
+    resultMap: Record<string, unknown> | null,
+    resultsList: Record<string, unknown>[] | null,
+    mergedConnectorMessage: ConnectorMessage | null
+  ): Promise<void> {
+    if (!this.compiledUpdateScript) {
+      return;
+    }
+
+    const scope = this.buildUpdateScope(resultMap, resultsList, mergedConnectorMessage);
+    const context = vm.createContext(scope);
+
+    try {
+      this.compiledUpdateScript.runInContext(context, { timeout: 60000 });
+    } catch (error) {
+      throw new Error(
+        `Error executing update script: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
