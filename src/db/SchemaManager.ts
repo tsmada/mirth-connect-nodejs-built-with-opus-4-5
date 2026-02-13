@@ -283,6 +283,25 @@ export async function ensureCoreTables(): Promise<void> {
       ) ENGINE=InnoDB
     `);
 
+  });
+
+  // Also create Node.js-only tables (safe to call separately or as part of ensureCoreTables)
+  await ensureNodeJsTables();
+
+  console.warn('[SchemaManager] Core tables ensured');
+}
+
+/**
+ * Create Node.js-only tables that Java Mirth ignores
+ *
+ * These tables are safe in a shared Java+Node.js database — Java Mirth ignores
+ * unknown tables. Called from both standalone mode (via ensureCoreTables) and
+ * takeover mode (directly after verifySchema).
+ *
+ * Uses CREATE TABLE IF NOT EXISTS for idempotency.
+ */
+export async function ensureNodeJsTables(): Promise<void> {
+  await transaction(async (connection) => {
     // D_CHANNELS - Channel ID to local channel ID mapping
     await connection.query(`
       CREATE TABLE IF NOT EXISTS D_CHANNELS (
@@ -354,8 +373,6 @@ export async function ensureCoreTables(): Promise<void> {
       ) ENGINE=InnoDB
     `);
   });
-
-  console.warn('[SchemaManager] Core tables ensured');
 }
 
 /**

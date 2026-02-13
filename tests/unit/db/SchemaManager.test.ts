@@ -17,10 +17,12 @@ jest.mock('../../../src/db/DonkeyDao.js', () => ({
 import {
   detectMode,
   verifySchema,
+  ensureCoreTables,
+  ensureNodeJsTables,
   ensureChannelTables,
   channelTablesExist,
 } from '../../../src/db/SchemaManager.js';
-import { getPool } from '../../../src/db/pool.js';
+import { getPool, transaction } from '../../../src/db/pool.js';
 import {
   createChannelTables,
   channelTablesExist as donkeyChannelTablesExist,
@@ -28,6 +30,7 @@ import {
 
 // Type helpers for mocks
 const mockGetPool = getPool as jest.MockedFunction<typeof getPool>;
+const mockTransaction = transaction as jest.MockedFunction<typeof transaction>;
 const mockCreateChannelTables = createChannelTables as jest.MockedFunction<typeof createChannelTables>;
 const mockDonkeyChannelTablesExist = donkeyChannelTablesExist as jest.MockedFunction<typeof donkeyChannelTablesExist>;
 
@@ -212,6 +215,90 @@ describe('SchemaManager', () => {
       expect(result.compatible).toBe(false);
       expect(result.version).toBeNull();
       expect(result.errors).toContainEqual(expect.stringContaining('Database error:'));
+    });
+  });
+
+  describe('ensureNodeJsTables', () => {
+    const NODE_JS_TABLES = [
+      'D_CHANNELS',
+      'D_SERVERS',
+      'D_CHANNEL_DEPLOYMENTS',
+      'D_CLUSTER_EVENTS',
+      'D_GLOBAL_MAP',
+      'D_ARTIFACT_SYNC',
+    ];
+
+    it('should create all 6 Node.js-only tables', async () => {
+      const queriedSql: string[] = [];
+      const mockConnection = {
+        query: jest.fn<(sql: string) => Promise<unknown>>().mockImplementation(async (sql: string) => {
+          queriedSql.push(sql);
+          return [[]];
+        }),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockTransaction.mockImplementation(async (cb: any) => {
+        return cb(mockConnection);
+      });
+
+      await ensureNodeJsTables();
+
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockConnection.query).toHaveBeenCalledTimes(6);
+
+      for (const tableName of NODE_JS_TABLES) {
+        const found = queriedSql.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${tableName}`));
+        expect(found).toBe(true);
+      }
+    });
+
+    it('should be idempotent (calling twice does not error)', async () => {
+      const mockConnection = {
+        query: jest.fn<() => Promise<unknown>>().mockResolvedValue([[]]),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockTransaction.mockImplementation(async (cb: any) => {
+        return cb(mockConnection);
+      });
+
+      await ensureNodeJsTables();
+      await ensureNodeJsTables();
+
+      expect(mockTransaction).toHaveBeenCalledTimes(2);
+      // Each call creates 6 tables
+      expect(mockConnection.query).toHaveBeenCalledTimes(12);
+    });
+  });
+
+  describe('ensureCoreTables', () => {
+    it('should call ensureNodeJsTables after creating Java-compatible tables', async () => {
+      const queriedSql: string[] = [];
+      const mockConnection = {
+        query: jest.fn<(sql: string) => Promise<unknown>>().mockImplementation(async (sql: string) => {
+          queriedSql.push(sql);
+          return [[]];
+        }),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockTransaction.mockImplementation(async (cb: any) => {
+        return cb(mockConnection);
+      });
+
+      await ensureCoreTables();
+
+      // Should be called twice: once for Java tables, once for Node.js tables
+      expect(mockTransaction).toHaveBeenCalledTimes(2);
+
+      // Node.js-only tables should be present in the SQL
+      const allSql = queriedSql.join('\n');
+      expect(allSql).toContain('D_SERVERS');
+      expect(allSql).toContain('D_CHANNELS');
+      expect(allSql).toContain('D_ARTIFACT_SYNC');
+
+      // Java-compatible tables should also be present
+      expect(allSql).toContain('SCHEMA_INFO');
+      expect(allSql).toContain('CHANNEL');
+      expect(allSql).toContain('PERSON');
     });
   });
 

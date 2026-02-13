@@ -20,8 +20,19 @@ import { FileReceiver } from '../../connectors/file/FileReceiver.js';
 import { FileDispatcher } from '../../connectors/file/FileDispatcher.js';
 import { FileReceiverProperties, FileDispatcherProperties, FileScheme, AfterProcessingAction, FileSortBy } from '../../connectors/file/FileConnectorProperties.js';
 import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js';
+import { DatabaseReceiver } from '../../connectors/jdbc/DatabaseReceiver.js';
+import { UpdateMode } from '../../connectors/jdbc/DatabaseConnectorProperties.js';
 import { VmDispatcher } from '../../connectors/vm/VmDispatcher.js';
 import { VmReceiver } from '../../connectors/vm/VmReceiver.js';
+import { JmsReceiver } from '../../connectors/jms/JmsReceiver.js';
+import { JmsDispatcher } from '../../connectors/jms/JmsDispatcher.js';
+import { SmtpDispatcher } from '../../connectors/smtp/SmtpDispatcher.js';
+import { WebServiceReceiver } from '../../connectors/ws/WebServiceReceiver.js';
+import { WebServiceDispatcher } from '../../connectors/ws/WebServiceDispatcher.js';
+import { DICOMReceiver } from '../../connectors/dicom/DICOMReceiver.js';
+import { DICOMDispatcher } from '../../connectors/dicom/DICOMDispatcher.js';
+import { JavaScriptReceiver } from '../../connectors/js/JavaScriptReceiver.js';
+import { JavaScriptDispatcher } from '../../connectors/js/JavaScriptDispatcher.js';
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 import { DefaultResponseValidator } from '../message/ResponseValidator.js';
 
@@ -72,10 +83,13 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
   if (sourceConnector) {
     channel.setSourceConnector(sourceConnector);
 
-    // Wire respondAfterProcessing from source connector properties
+    // Wire respondAfterProcessing from source connector properties.
+    // In channel XML, this lives inside <sourceConnectorProperties>, NOT at the top level:
+    //   <properties><sourceConnectorProperties><respondAfterProcessing>true</respondAfterProcessing>
     const sourceProps = channelConfig.sourceConnector?.properties as Record<string, unknown>;
-    if (sourceProps?.respondAfterProcessing === false ||
-        String(sourceProps?.respondAfterProcessing) === 'false') {
+    const sourceConnProps = (sourceProps?.sourceConnectorProperties as Record<string, unknown>) ?? sourceProps;
+    if (sourceConnProps?.respondAfterProcessing === false ||
+        String(sourceConnProps?.respondAfterProcessing) === 'false') {
       sourceConnector.setRespondAfterProcessing(false);
     }
 
@@ -119,9 +133,18 @@ function buildSourceConnector(channelConfig: ChannelModel): SourceConnector | nu
       return buildVmReceiver(sourceConfig.properties);
     case 'File Reader':
       return buildFileReceiver(sourceConfig.properties);
+    case 'Database Reader':
+      return buildDatabaseReceiver(sourceConfig.properties);
+    case 'JMS Listener':
+      return buildJmsReceiver(sourceConfig.properties);
+    case 'DICOM Listener':
+      return buildDicomReceiver(sourceConfig.properties);
+    case 'Web Service Listener':
+      return buildWebServiceReceiver(sourceConfig.properties);
+    case 'JavaScript Reader':
+      return buildJavaScriptReceiver(sourceConfig.properties);
     default:
-      console.warn(`Unsupported source connector transport: ${transportName}`);
-      return null;
+      throw new Error(`Unsupported source connector transport: ${transportName}`);
   }
 }
 
@@ -224,6 +247,21 @@ function hexToBytes(hex: string): number[] {
 }
 
 /**
+ * Parse update mode string into UpdateMode enum.
+ */
+function parseUpdateMode(mode: string): UpdateMode {
+  switch (mode.toUpperCase()) {
+    case 'EACH':
+      return UpdateMode.EACH;
+    case 'ONCE':
+      return UpdateMode.ONCE;
+    case 'NEVER':
+    default:
+      return UpdateMode.NEVER;
+  }
+}
+
+/**
  * Build destination connector from configuration
  */
 function buildDestinationConnector(destConfig: Connector): DestinationConnector | null {
@@ -245,9 +283,18 @@ function buildDestinationConnector(destConfig: Connector): DestinationConnector 
       return buildDatabaseDispatcher(destConfig);
     case 'Channel Writer':
       return buildVmDispatcher(destConfig);
+    case 'JMS Sender':
+      return buildJmsDispatcher(destConfig);
+    case 'SMTP Sender':
+      return buildSmtpDispatcher(destConfig);
+    case 'DICOM Sender':
+      return buildDicomDispatcher(destConfig);
+    case 'Web Service Sender':
+      return buildWebServiceDispatcher(destConfig);
+    case 'JavaScript Writer':
+      return buildJavaScriptDispatcher(destConfig);
     default:
-      console.warn(`Unsupported destination connector transport: ${transportName}`);
-      return null;
+      throw new Error(`Unsupported destination connector transport: ${transportName}`);
   }
 }
 
@@ -685,6 +732,371 @@ function buildVmReceiver(properties: unknown): VmReceiver {
     name: 'sourceConnector',
     properties: {
       canBatch: String(props?.canBatch) === 'true',
+    },
+  });
+}
+
+/**
+ * Build Database Receiver (Database Reader) from properties
+ */
+function buildDatabaseReceiver(properties: unknown): DatabaseReceiver {
+  const props = properties as Record<string, unknown>;
+  const pollConnProps = props?.pollConnectorProperties as Record<string, unknown> | undefined;
+  const pollInterval = parseInt(String(pollConnProps?.pollingFrequency || pollConnProps?.pollFrequency || props?.pollInterval || '5000'), 10);
+
+  let url = String(props?.url || 'jdbc:mysql://localhost:3306/test');
+  if (url.startsWith('${')) {
+    url = 'jdbc:mysql://localhost:3306/test';
+  }
+
+  return new DatabaseReceiver({
+    name: 'sourceConnector',
+    properties: {
+      url,
+      driver: String(props?.driver || 'com.mysql.cj.jdbc.Driver'),
+      username: String(props?.username || ''),
+      password: String(props?.password || ''),
+      select: String(props?.select || ''),
+      update: String(props?.update || ''),
+      useScript: String(props?.useScript) === 'true',
+      aggregateResults: String(props?.aggregateResults) === 'true',
+      cacheResults: String(props?.cacheResults) !== 'false',
+      keepConnectionOpen: String(props?.keepConnectionOpen) === 'true',
+      updateMode: parseUpdateMode(String(props?.updateMode || 'NEVER')),
+      retryCount: parseInt(String(props?.retryCount ?? '3'), 10),
+      retryInterval: parseInt(String(props?.retryInterval ?? '10000'), 10),
+      fetchSize: parseInt(String(props?.fetchSize ?? '1000'), 10),
+      encoding: String(props?.encoding || 'UTF-8'),
+      pollInterval: isNaN(pollInterval) ? 5000 : pollInterval,
+    },
+  });
+}
+
+/**
+ * Build JMS Receiver (JMS Listener) from properties
+ */
+function buildJmsReceiver(properties: unknown): JmsReceiver {
+  const props = properties as Record<string, unknown>;
+  // processBatch lives inside sourceConnectorProperties in channel XML
+  const srcConnProps = (props?.sourceConnectorProperties as Record<string, unknown>) ?? props;
+
+  let host = String(props?.host || 'localhost');
+  let port = parseInt(String(props?.port || '61613'), 10);
+  if (host.startsWith('${')) host = 'localhost';
+  if (isNaN(port)) port = 61613;
+
+  return new JmsReceiver({
+    name: 'sourceConnector',
+    processBatch: String(srcConnProps?.processBatch) === 'true',
+    properties: {
+      host,
+      port,
+      destinationName: String(props?.destinationName || ''),
+      topic: String(props?.topic) === 'true',
+      username: String(props?.username || ''),
+      password: String(props?.password || ''),
+      selector: String(props?.selector || ''),
+      durableTopic: String(props?.durableTopic) === 'true',
+      subscriptionName: String(props?.subscriptionName || ''),
+      clientId: String(props?.clientId || ''),
+      useJndi: String(props?.useJndi) === 'true',
+      jndiProviderUrl: String(props?.jndiProviderUrl || ''),
+      jndiInitialContextFactory: String(props?.jndiInitialContextFactory || ''),
+      jndiConnectionFactoryName: String(props?.jndiConnectionFactoryName || ''),
+      connectionProperties: (props?.connectionProperties as Record<string, string>) || {},
+      useSsl: String(props?.useSsl) === 'true',
+    },
+  });
+}
+
+/**
+ * Build JMS Dispatcher (JMS Sender) from configuration
+ */
+function buildJmsDispatcher(destConfig: Connector): JmsDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  let host = String(props?.host || 'localhost');
+  let port = parseInt(String(props?.port || '61613'), 10);
+  if (host.startsWith('${')) host = 'localhost';
+  if (isNaN(port)) port = 61613;
+
+  return new JmsDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    properties: {
+      host,
+      port,
+      destinationName: String(props?.destinationName || ''),
+      topic: String(props?.topic) === 'true',
+      username: String(props?.username || ''),
+      password: String(props?.password || ''),
+      template: String(props?.template || '${message.encodedData}'),
+      clientId: String(props?.clientId || ''),
+      useJndi: String(props?.useJndi) === 'true',
+      jndiProviderUrl: String(props?.jndiProviderUrl || ''),
+      jndiInitialContextFactory: String(props?.jndiInitialContextFactory || ''),
+      jndiConnectionFactoryName: String(props?.jndiConnectionFactoryName || ''),
+      connectionProperties: (props?.connectionProperties as Record<string, string>) || {},
+      useSsl: String(props?.useSsl) === 'true',
+    },
+  });
+}
+
+/**
+ * Build SMTP Dispatcher (SMTP Sender) from configuration
+ */
+function buildSmtpDispatcher(destConfig: Connector): SmtpDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  // Parse headers map from Mirth XML format
+  const headers = new Map<string, string>();
+  const headerProps = props?.headers as Record<string, unknown>;
+  if (headerProps && typeof headerProps === 'object') {
+    const entries = (headerProps.entry || []) as Array<{ string?: string[] }>;
+    for (const entry of Array.isArray(entries) ? entries : [entries]) {
+      if (entry?.string && Array.isArray(entry.string) && entry.string.length >= 2) {
+        const key = entry.string[0];
+        const value = entry.string[1];
+        if (key && value) {
+          headers.set(key, value);
+        }
+      }
+    }
+  }
+
+  // Parse attachments array from Mirth XML format
+  const attachments: Array<{ name: string; content: string; mimeType: string }> = [];
+  const attachmentList = props?.attachments as unknown[];
+  if (Array.isArray(attachmentList)) {
+    for (const att of attachmentList) {
+      if (att && typeof att === 'object') {
+        const a = att as Record<string, unknown>;
+        attachments.push({
+          name: String(a.name || ''),
+          content: String(a.content || ''),
+          mimeType: String(a.mimeType || 'text/plain'),
+        });
+      }
+    }
+  }
+
+  return new SmtpDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    properties: {
+      smtpHost: String(props?.smtpHost || 'localhost'),
+      smtpPort: String(props?.smtpPort || '25'),
+      overrideLocalBinding: String(props?.overrideLocalBinding) === 'true',
+      localAddress: String(props?.localAddress || ''),
+      localPort: String(props?.localPort || '0'),
+      timeout: String(props?.timeout || '5000'),
+      encryption: String(props?.encryption || 'none') as 'none' | 'tls' | 'ssl',
+      authentication: String(props?.authentication || props?.useAuthentication) === 'true',
+      username: String(props?.username || ''),
+      password: String(props?.password || ''),
+      to: String(props?.to || ''),
+      from: String(props?.from || ''),
+      cc: String(props?.cc || ''),
+      bcc: String(props?.bcc || ''),
+      replyTo: String(props?.replyTo || ''),
+      headers,
+      headersVariable: String(props?.headersVariable || ''),
+      useHeadersVariable: String(props?.useHeadersVariable) === 'true',
+      subject: String(props?.subject || ''),
+      charsetEncoding: String(props?.charsetEncoding || 'UTF-8'),
+      html: String(props?.html) === 'true',
+      body: String(props?.body || props?.template || ''),
+      attachments,
+      attachmentsVariable: String(props?.attachmentsVariable || ''),
+      useAttachmentsVariable: String(props?.useAttachmentsVariable) === 'true',
+      dataType: String(props?.dataType || 'RAW'),
+    },
+  });
+}
+
+/**
+ * Build Web Service Receiver (Web Service Listener) from properties
+ */
+function buildWebServiceReceiver(properties: unknown): WebServiceReceiver {
+  const props = properties as Record<string, unknown>;
+  const listenerProps = (props?.listenerConnectorProperties || props) as Record<string, unknown>;
+
+  let host = String(listenerProps?.host || '0.0.0.0');
+  let port = parseInt(String(listenerProps?.port || '8081'), 10);
+
+  if (host.startsWith('${')) host = '0.0.0.0';
+  if (isNaN(port) || String(listenerProps?.port || '').startsWith('${')) {
+    port = 8081;
+  }
+
+  return new WebServiceReceiver({
+    name: 'sourceConnector',
+    properties: {
+      host,
+      port,
+      serviceName: String(props?.serviceName || 'Mirth'),
+    },
+  });
+}
+
+/**
+ * Build Web Service Dispatcher (Web Service Sender) from configuration
+ */
+function buildWebServiceDispatcher(destConfig: Connector): WebServiceDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  // Parse headers from Mirth XML format
+  const headers = new Map<string, string[]>();
+  const headerProps = props?.headers as Record<string, unknown>;
+  if (headerProps && typeof headerProps === 'object') {
+    const entries = (headerProps.entry || []) as Array<{ string?: string[] }>;
+    for (const entry of Array.isArray(entries) ? entries : [entries]) {
+      if (entry?.string && Array.isArray(entry.string) && entry.string.length >= 2) {
+        const key = entry.string[0];
+        const value = entry.string[1];
+        if (key && value) {
+          headers.set(key, [value]);
+        }
+      }
+    }
+  }
+
+  return new WebServiceDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    properties: {
+      wsdlUrl: String(props?.wsdlUrl || ''),
+      service: String(props?.service || ''),
+      port: String(props?.port || ''),
+      operation: String(props?.operation || ''),
+      locationURI: String(props?.locationURI || ''),
+      socketTimeout: parseInt(String(props?.socketTimeout || '30000'), 10),
+      useAuthentication: String(props?.useAuthentication) === 'true',
+      username: String(props?.username || ''),
+      password: String(props?.password || ''),
+      envelope: String(props?.envelope || props?.template || ''),
+      oneWay: String(props?.oneWay) === 'true',
+      headers,
+      useHeadersVariable: String(props?.useHeadersVariable) === 'true',
+      headersVariable: String(props?.headersVariable || ''),
+      useMtom: String(props?.useMtom) === 'true',
+      attachmentNames: Array.isArray(props?.attachmentNames) ? (props.attachmentNames as string[]) : [],
+      attachmentContents: Array.isArray(props?.attachmentContents) ? (props.attachmentContents as string[]) : [],
+      attachmentTypes: Array.isArray(props?.attachmentTypes) ? (props.attachmentTypes as string[]) : [],
+      useAttachmentsVariable: String(props?.useAttachmentsVariable) === 'true',
+      attachmentsVariable: String(props?.attachmentsVariable || ''),
+      soapAction: String(props?.soapAction || ''),
+    },
+  });
+}
+
+/**
+ * Build DICOM Receiver (DICOM Listener) from properties
+ */
+function buildDicomReceiver(properties: unknown): DICOMReceiver {
+  const props = properties as Record<string, unknown>;
+  const listenerProps = (props?.listenerConnectorProperties || props) as Record<string, unknown>;
+
+  let host = String(listenerProps?.host || '0.0.0.0');
+  let port = String(listenerProps?.port || '104');
+
+  if (host.startsWith('${')) host = '0.0.0.0';
+  if (port.startsWith('${')) port = '104';
+
+  return new DICOMReceiver({
+    name: 'sourceConnector',
+    properties: {
+      listenerConnectorProperties: { host, port },
+      applicationEntity: String(props?.applicationEntity || ''),
+      localApplicationEntity: String(props?.localApplicationEntity || ''),
+      localHost: String(props?.localHost || ''),
+      localPort: String(props?.localPort || ''),
+    },
+  });
+}
+
+/**
+ * Build DICOM Dispatcher (DICOM Sender) from configuration
+ */
+function buildDicomDispatcher(destConfig: Connector): DICOMDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  let host = String(props?.host || 'localhost');
+  let port = String(props?.port || '104');
+  if (host.startsWith('${')) host = 'localhost';
+  if (port.startsWith('${')) port = '104';
+
+  return new DICOMDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    properties: {
+      host,
+      port,
+      applicationEntity: String(props?.applicationEntity || 'DCMRCV'),
+      localHost: String(props?.localHost || ''),
+      localPort: String(props?.localPort || ''),
+      localApplicationEntity: String(props?.localApplicationEntity || 'MIRTH'),
+      template: String(props?.template || ''),
+    },
+  });
+}
+
+/**
+ * Build JavaScript Receiver (JavaScript Reader) from properties
+ */
+function buildJavaScriptReceiver(properties: unknown): JavaScriptReceiver {
+  const props = properties as Record<string, unknown>;
+  // processBatch lives inside sourceConnectorProperties in channel XML
+  const srcConnProps = (props?.sourceConnectorProperties as Record<string, unknown>) ?? props;
+  const pollConnProps = (props?.pollConnectorProperties ?? srcConnProps?.pollConnectorProperties) as Record<string, unknown> | undefined;
+  const pollInterval = parseInt(String(pollConnProps?.pollingFrequency || pollConnProps?.pollFrequency || props?.pollInterval || '5000'), 10);
+
+  return new JavaScriptReceiver({
+    name: 'sourceConnector',
+    properties: {
+      script: String(props?.script || ''),
+      pollInterval: isNaN(pollInterval) ? 5000 : pollInterval,
+      processBatch: String(srcConnProps?.processBatch) === 'true',
+    },
+  });
+}
+
+/**
+ * Build JavaScript Dispatcher (JavaScript Writer) from configuration
+ */
+function buildJavaScriptDispatcher(destConfig: Connector): JavaScriptDispatcher {
+  const props = destConfig.properties as Record<string, unknown>;
+
+  return new JavaScriptDispatcher({
+    name: destConfig.name,
+    metaDataId: destConfig.metaDataId,
+    enabled: destConfig.enabled,
+    waitForPrevious: destConfig.waitForPrevious,
+    queueEnabled: destConfig.queueEnabled,
+    queueSendFirst: String(props?.queueSendFirst) === 'true',
+    retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
+    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    properties: {
+      script: String(props?.script || ''),
     },
   });
 }

@@ -100,7 +100,7 @@ export class Mirth {
     logger.info(`Connected to database at ${this.config.database.host}:${this.config.database.port}`);
 
     // Initialize schema based on operational mode
-    const { detectMode, verifySchema, ensureCoreTables, seedDefaults } = await import('../db/SchemaManager.js');
+    const { detectMode, verifySchema, ensureCoreTables, ensureNodeJsTables, seedDefaults } = await import('../db/SchemaManager.js');
 
     this.detectedMode = await detectMode();
     logger.info(`Operational mode: ${this.detectedMode}`);
@@ -125,6 +125,8 @@ export class Mirth {
         throw new Error(`Schema incompatible: ${result.errors.join(', ')}`);
       }
       logger.info(`Takeover mode: schema verified (version ${result.version})`);
+      // Create Node.js-only tables (safe in shared DB — Java Mirth ignores unknown tables)
+      await ensureNodeJsTables();
     }
 
     // Initialize dashboard status controller with server ID
