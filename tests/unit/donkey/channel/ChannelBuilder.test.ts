@@ -13,6 +13,9 @@ import { JavaScriptReceiver } from '../../../../src/connectors/js/JavaScriptRece
 import { JavaScriptDispatcher } from '../../../../src/connectors/js/JavaScriptDispatcher';
 import { Channel as ChannelModel } from '../../../../src/api/models/Channel';
 import { DeployedState } from '../../../../src/api/models/DashboardStatus';
+import { SourceConnector } from '../../../../src/donkey/channel/SourceConnector';
+import { DestinationConnector } from '../../../../src/donkey/channel/DestinationConnector';
+import { SerializationType } from '../../../../src/javascript/runtime/ScriptBuilder';
 
 function createChannelConfig(overrides: Partial<ChannelModel> = {}): ChannelModel {
   return {
@@ -692,6 +695,473 @@ describe('ChannelBuilder', () => {
       // The processBatch should come from the nested sourceConnectorProperties
       // (verified via constructor config)
       expect(src).toBeInstanceOf(JmsReceiver);
+    });
+  });
+
+  // ─── Filter/Transformer Wiring Tests (Wave 21: SBF-INIT-001 fix) ──────────
+
+  describe('filter/transformer wiring from channel config', () => {
+    let sourceSetFTSpy: jest.SpyInstance;
+    let destSetFTSpy: jest.SpyInstance;
+
+    // Helper: create a filter rule matching the Channel model FilterRule interface
+    function rule(name: string, script: string, opts: { operator?: 'AND' | 'OR'; enabled?: boolean; seq?: number } = {}) {
+      return { name, sequenceNumber: opts.seq ?? 0, type: 'JavaScriptRule', script, operator: opts.operator ?? 'AND' as const, enabled: opts.enabled ?? true };
+    }
+
+    // Helper: create a transformer step matching the Channel model TransformerStep interface
+    function step(name: string, script: string, opts: { enabled?: boolean; seq?: number } = {}) {
+      return { name, sequenceNumber: opts.seq ?? 0, type: 'JavaScriptStep', script, enabled: opts.enabled ?? true };
+    }
+
+    beforeEach(() => {
+      sourceSetFTSpy = jest.spyOn(SourceConnector.prototype, 'setFilterTransformer');
+      destSetFTSpy = jest.spyOn(DestinationConnector.prototype, 'setFilterTransformer');
+    });
+
+    afterEach(() => {
+      sourceSetFTSpy.mockRestore();
+      destSetFTSpy.mockRestore();
+    });
+
+    it('should wire source filter rules from TypeScript interface shape', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          filter: {
+            rules: [
+              rule('Accept ADT', 'return msg["MSH"]["MSH.9"]["MSH.9.1"].toString() === "ADT";'),
+            ],
+          },
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+      expect(scripts.filterRules[0].name).toBe('Accept ADT');
+      expect(scripts.filterRules[0].script).toContain('MSH.9.1');
+      expect(scripts.filterRules[0].operator).toBe('AND');
+    });
+
+    it('should wire source transformer steps from TypeScript interface shape', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          transformer: {
+            steps: [
+              step('Set Patient Name', 'channelMap.put("patientName", msg["PID"]["PID.5"].toString());'),
+            ],
+            inboundDataType: 'HL7V2',
+            outboundDataType: 'XML',
+          },
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.transformerSteps).toHaveLength(1);
+      expect(scripts.transformerSteps[0].name).toBe('Set Patient Name');
+      expect(scripts.inboundDataType).toBe(SerializationType.XML); // HL7V2 maps to XML
+      expect(scripts.outboundDataType).toBe(SerializationType.XML);
+    });
+
+    it('should wire source filter AND transformer together', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          filter: {
+            rules: [
+              rule('Rule 1', 'return true;'),
+              rule('Rule 2', 'return false;', { operator: 'OR' }),
+            ],
+          },
+          transformer: {
+            steps: [
+              step('Step 1', 'msg = "transformed";'),
+            ],
+            inboundDataType: 'RAW',
+            outboundDataType: 'RAW',
+          },
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(2);
+      expect(scripts.filterRules[1].operator).toBe('OR');
+      expect(scripts.transformerSteps).toHaveLength(1);
+      expect(scripts.inboundDataType).toBe(SerializationType.RAW);
+    });
+
+    it('should NOT call setFilterTransformer when no filter or transformer defined', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).not.toHaveBeenCalled();
+    });
+
+    it('should skip disabled filter rules', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          filter: {
+            rules: [
+              rule('Active Rule', 'return true;'),
+              rule('Disabled Rule', 'return false;', { enabled: false }),
+            ],
+          },
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+      expect(scripts.filterRules[0].name).toBe('Active Rule');
+    });
+
+    it('should skip filter rules without script', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          filter: {
+            rules: [
+              rule('Has Script', 'return true;'),
+              { name: 'No Script', sequenceNumber: 1, type: 'JavaScriptRule', operator: 'AND' as const, enabled: true } as any,
+            ],
+          },
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+    });
+
+    it('should wire destination filter/transformer scripts', () => {
+      const config = createChannelConfig({
+        destinationConnectors: [
+          {
+            metaDataId: 1,
+            name: 'HTTP Dest',
+            enabled: true,
+            transportName: 'HTTP Sender',
+            properties: { host: 'http://localhost' },
+            filter: {
+              rules: [rule('Dest Filter', 'return true;')],
+            },
+            transformer: {
+              steps: [step('Dest Transform', 'msg = JSON.stringify({data: msg});')],
+              inboundDataType: 'XML',
+              outboundDataType: 'JSON',
+            },
+          },
+        ],
+      });
+
+      buildChannel(config);
+
+      expect(destSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = destSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+      expect(scripts.filterRules[0].name).toBe('Dest Filter');
+      expect(scripts.transformerSteps).toHaveLength(1);
+      expect(scripts.transformerSteps[0].name).toBe('Dest Transform');
+      expect(scripts.inboundDataType).toBe(SerializationType.XML);
+      expect(scripts.outboundDataType).toBe(SerializationType.JSON);
+    });
+
+    it('should wire destination response transformer scripts', () => {
+      const config = createChannelConfig({
+        destinationConnectors: [
+          {
+            metaDataId: 1,
+            name: 'HTTP Dest',
+            enabled: true,
+            transportName: 'HTTP Sender',
+            properties: { host: 'http://localhost' },
+            responseTransformer: {
+              steps: [step('Parse Response', 'msg = JSON.parse(msg);')],
+              inboundDataType: 'RAW',
+              outboundDataType: 'JSON',
+            },
+          },
+        ],
+      });
+
+      buildChannel(config);
+
+      expect(destSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = destSetFTSpy.mock.calls[0][0];
+      // Main filter/transformer may be empty
+      expect(scripts.responseTransformerScripts).toBeDefined();
+      expect(scripts.responseTransformerScripts!.transformerSteps).toHaveLength(1);
+      expect(scripts.responseTransformerScripts!.transformerSteps![0].name).toBe('Parse Response');
+      expect(scripts.responseTransformerScripts!.inboundDataType).toBe(SerializationType.RAW);
+      expect(scripts.responseTransformerScripts!.outboundDataType).toBe(SerializationType.JSON);
+    });
+
+    it('should wire destination filter + transformer + responseTransformer together', () => {
+      const config = createChannelConfig({
+        destinationConnectors: [
+          {
+            metaDataId: 1,
+            name: 'Full Dest',
+            enabled: true,
+            transportName: 'HTTP Sender',
+            properties: { host: 'http://localhost' },
+            filter: {
+              rules: [rule('Dest Filter', 'return true;')],
+            },
+            transformer: {
+              steps: [step('Dest Step', 'msg = "transformed";')],
+              inboundDataType: 'HL7V2',
+              outboundDataType: 'XML',
+            },
+            responseTransformer: {
+              steps: [step('Resp Step', 'responseStatus = SENT;')],
+            },
+          },
+        ],
+      });
+
+      buildChannel(config);
+
+      expect(destSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = destSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+      expect(scripts.transformerSteps).toHaveLength(1);
+      expect(scripts.responseTransformerScripts).toBeDefined();
+      expect(scripts.responseTransformerScripts!.transformerSteps).toHaveLength(1);
+    });
+
+    it('should NOT call setFilterTransformer on destination with no filter/transformer/responseTransformer', () => {
+      const config = createChannelConfig({
+        destinationConnectors: [
+          {
+            metaDataId: 1,
+            name: 'Plain Dest',
+            enabled: true,
+            transportName: 'HTTP Sender',
+            properties: { host: 'http://localhost' },
+          },
+        ],
+      });
+
+      buildChannel(config);
+
+      expect(destSetFTSpy).not.toHaveBeenCalled();
+    });
+
+    it('should wire filter rules from XML-parsed shape (elements with Java class names)', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          filter: {
+            elements: {
+              'com.mirth.connect.plugins.javascriptrule.JavaScriptRule': {
+                name: 'JS Filter',
+                script: 'return msg["MSH"]["MSH.9"]["MSH.9.1"].toString() === "ADT";',
+                operator: 'AND',
+                enabled: 'true',
+              },
+            },
+          } as any,
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+      expect(scripts.filterRules[0].name).toBe('JS Filter');
+      expect(scripts.filterRules[0].script).toContain('MSH.9.1');
+    });
+
+    it('should wire transformer steps from XML-parsed shape (elements with Java class names)', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          transformer: {
+            elements: {
+              'com.mirth.connect.plugins.javascriptstep.JavaScriptStep': [
+                { name: 'Step 1', script: 'msg["PID"]["PID.5"] = "TEST";', enabled: 'true' },
+                { name: 'Step 2', script: 'channelMap.put("done", true);', enabled: 'true' },
+              ],
+            },
+            inboundDataType: 'HL7V2',
+            outboundDataType: 'HL7V2',
+          } as any,
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.transformerSteps).toHaveLength(2);
+      expect(scripts.transformerSteps[0].name).toBe('Step 1');
+      expect(scripts.transformerSteps[1].name).toBe('Step 2');
+    });
+
+    it('should skip disabled rules/steps in XML-parsed shape', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          filter: {
+            elements: {
+              'com.mirth.connect.plugins.javascriptrule.JavaScriptRule': [
+                { name: 'Active', script: 'return true;', operator: 'AND', enabled: 'true' },
+                { name: 'Disabled', script: 'return false;', operator: 'AND', enabled: 'false' },
+              ],
+            },
+          } as any,
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.filterRules).toHaveLength(1);
+      expect(scripts.filterRules[0].name).toBe('Active');
+    });
+
+    it('should map JSON data type to SerializationType.JSON', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          transformer: {
+            steps: [step('JSON Step', 'msg.key = "value";')],
+            inboundDataType: 'JSON',
+            outboundDataType: 'JSON',
+          },
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.inboundDataType).toBe(SerializationType.JSON);
+      expect(scripts.outboundDataType).toBe(SerializationType.JSON);
+    });
+
+    it('should wire outboundTemplate from transformer config', () => {
+      const config = createChannelConfig({
+        sourceConnector: {
+          metaDataId: 0,
+          name: 'Source',
+          enabled: true,
+          transportName: 'HTTP Listener',
+          properties: {},
+          transformer: {
+            steps: [step('Template Step', 'tmp["field"] = "value";')],
+            inboundDataType: 'HL7V2',
+            outboundDataType: 'XML',
+            outboundTemplate: '<patient><name>${patientName}</name></patient>',
+          } as any,
+        },
+      });
+
+      buildChannel(config);
+
+      expect(sourceSetFTSpy).toHaveBeenCalledTimes(1);
+      const scripts = sourceSetFTSpy.mock.calls[0][0];
+      expect(scripts.template).toBe('<patient><name>${patientName}</name></patient>');
+    });
+
+    it('should handle multiple destination connectors each with their own filter/transformer', () => {
+      const config = createChannelConfig({
+        destinationConnectors: [
+          {
+            metaDataId: 1,
+            name: 'Dest 1',
+            enabled: true,
+            transportName: 'HTTP Sender',
+            properties: { host: 'http://localhost' },
+            filter: {
+              rules: [rule('Dest 1 Filter', 'return true;')],
+            },
+          },
+          {
+            metaDataId: 2,
+            name: 'Dest 2',
+            enabled: true,
+            transportName: 'HTTP Sender',
+            properties: { host: 'http://localhost' },
+            transformer: {
+              steps: [step('Dest 2 Transform', 'msg = "modified";')],
+            },
+          },
+        ],
+      });
+
+      buildChannel(config);
+
+      expect(destSetFTSpy).toHaveBeenCalledTimes(2);
+      // First dest has filter rules
+      expect(destSetFTSpy.mock.calls[0][0].filterRules).toHaveLength(1);
+      expect(destSetFTSpy.mock.calls[0][0].transformerSteps).toHaveLength(0);
+      // Second dest has transformer steps
+      expect(destSetFTSpy.mock.calls[1][0].filterRules).toHaveLength(0);
+      expect(destSetFTSpy.mock.calls[1][0].transformerSteps).toHaveLength(1);
     });
   });
 });
