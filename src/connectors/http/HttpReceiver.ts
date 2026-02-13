@@ -17,6 +17,8 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import { Server } from 'http';
 import { gunzipSync, gzipSync } from 'zlib';
+import * as fs from 'fs';
+import * as path from 'path';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { Message } from '../../model/Message.js';
 import { Status } from '../../model/Status.js';
@@ -24,6 +26,7 @@ import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
   HttpReceiverProperties,
+  HttpStaticResource,
   getDefaultHttpReceiverProperties,
   isBinaryMimeType,
 } from './HttpConnectorProperties.js';
@@ -222,26 +225,181 @@ export class HttpReceiver extends SourceConnector {
   }
 
   /**
-   * Configure Express routes
+   * Normalize a context path: ensure leading slash, strip trailing slash.
+   *
+   * Java: HttpReceiver.onStart() lines 204-216
+   */
+  private normalizeContextPath(raw: string): string {
+    let cp = raw.trim();
+    if (!cp.startsWith('/')) {
+      cp = '/' + cp;
+    }
+    if (cp.endsWith('/') && cp.length > 1) {
+      cp = cp.slice(0, -1);
+    }
+    return cp;
+  }
+
+  /**
+   * Configure Express routes.
+   *
+   * Java: HttpReceiver.onStart() registers static resource handlers in a
+   * HandlerCollection BEFORE the main RequestHandler. We replicate this by
+   * registering Express routes for static resources first, then the catch-all
+   * message handler. Static resources only respond to GET; other methods
+   * fall through to the message handler.
    */
   private configureRoutes(): void {
     if (!this.app) return;
 
-    // Normalize context path
-    let contextPath = this.properties.contextPath.trim();
-    if (!contextPath.startsWith('/')) {
-      contextPath = '/' + contextPath;
-    }
-    if (contextPath.endsWith('/') && contextPath.length > 1) {
-      contextPath = contextPath.slice(0, -1);
-    }
+    const contextPath = this.normalizeContextPath(this.properties.contextPath);
 
-    // Handle all HTTP methods at the context path
+    // Register static resource routes BEFORE the catch-all message handler
+    // Java: iterates staticResourcesMap.descendingMap() (most specific paths first)
+    this.registerStaticResources(contextPath);
+
+    // Handle all HTTP methods at the context path (message handler)
     const routePath = contextPath === '/' ? '*' : `${contextPath}*`;
 
     this.app.all(routePath, async (req: Request, res: Response) => {
       await this.handleRequest(req, res);
     });
+  }
+
+  /**
+   * Register static resource routes.
+   *
+   * Java: HttpReceiver.onStart() lines 226-281 — builds a TreeMap of
+   * static resources keyed by resolved context path, iterates in reverse
+   * order (most specific first), and adds a ContextHandler + StaticResourceHandler
+   * for each.
+   *
+   * Java: StaticResourceHandler.handle() (lines 646-779) — only handles GET,
+   * serves FILE (stream file), DIRECTORY (one level deep), or CUSTOM (inline string).
+   */
+  private registerStaticResources(baseContextPath: string): void {
+    if (!this.app) return;
+    const staticResources = this.properties.staticResources;
+    if (!staticResources || staticResources.length === 0) return;
+
+    // Build a sorted map of context path -> resources (Java uses TreeMap)
+    const resourceMap = new Map<string, HttpStaticResource[]>();
+
+    for (const resource of staticResources) {
+      let resourcePath = this.normalizeContextPath(resource.contextPath);
+
+      // Strip query parameters from the resource path (Java lines 236-250)
+      const queryIndex = resourcePath.indexOf('?');
+      if (queryIndex >= 0) {
+        resourcePath = resourcePath.substring(0, queryIndex);
+      }
+
+      // Prepend base context path (Java line 259)
+      const fullPath = baseContextPath === '/' ? resourcePath : baseContextPath + resourcePath;
+
+      const existing = resourceMap.get(fullPath) || [];
+      existing.push({ ...resource, contextPath: fullPath });
+      resourceMap.set(fullPath, existing);
+    }
+
+    // Sort keys in reverse order so more specific paths are registered first
+    // Java: staticResourcesMap.descendingMap()
+    const sortedPaths = [...resourceMap.keys()].sort().reverse();
+
+    for (const resourcePath of sortedPaths) {
+      const resources = resourceMap.get(resourcePath)!;
+      for (const resource of resources) {
+        this.registerSingleStaticResource(resource);
+      }
+    }
+  }
+
+  /**
+   * Register a single static resource route.
+   *
+   * Java: StaticResourceHandler inner class — only handles GET requests.
+   * Non-GET requests "return" without calling baseRequest.setHandled(true),
+   * which causes Jetty to pass the request to the next handler (our message handler).
+   */
+  private registerSingleStaticResource(resource: HttpStaticResource): void {
+    if (!this.app) return;
+
+    const resourceContextPath = resource.contextPath;
+
+    if (resource.resourceType === 'DIRECTORY') {
+      // DIRECTORY: serve files one level deep from the directory
+      // Java lines 721-755: resolves childPath from request, rejects subdirectories
+      const dirRoutePath = `${resourceContextPath}/:fileName`;
+
+      this.app.get(dirRoutePath, (req: Request, res: Response, next: NextFunction) => {
+        const fileName = req.params.fileName;
+        if (!fileName || fileName.includes('/')) {
+          // Java: if childPath contains "/", pass to next handler
+          return next();
+        }
+
+        const dirPath = resource.value;
+        try {
+          const stat = fs.statSync(dirPath);
+          if (!stat.isDirectory()) {
+            return next();
+          }
+        } catch {
+          return next();
+        }
+
+        const filePath = path.join(dirPath, fileName);
+        try {
+          const fileStat = fs.statSync(filePath);
+          if (fileStat.isDirectory()) {
+            // Java: directory itself was requested, pass to next handler
+            return next();
+          }
+          // Stream file to client
+          res.setHeader('Content-Type', resource.contentType || 'application/octet-stream');
+          res.status(200);
+          const stream = fs.createReadStream(filePath);
+          stream.pipe(res);
+          stream.on('error', () => {
+            if (!res.headersSent) {
+              res.status(500).send('Error reading file');
+            }
+          });
+        } catch {
+          // File does not exist, pass to next handler
+          return next();
+        }
+      });
+    } else if (resource.resourceType === 'FILE') {
+      // FILE: serve a single file at the exact context path
+      // Java lines 718-720: IOUtils.copy(new FileInputStream(value), responseOutputStream)
+      this.app.get(resourceContextPath, (_req: Request, res: Response) => {
+        const filePath = resource.value;
+        try {
+          fs.accessSync(filePath, fs.constants.R_OK);
+        } catch {
+          res.status(404).send('File not found');
+          return;
+        }
+
+        res.setHeader('Content-Type', resource.contentType || 'application/octet-stream');
+        res.status(200);
+        const stream = fs.createReadStream(filePath);
+        stream.pipe(res);
+        stream.on('error', () => {
+          if (!res.headersSent) {
+            res.status(500).send('Error reading file');
+          }
+        });
+      });
+    } else {
+      // CUSTOM: return inline string content
+      // Java lines 757-758: IOUtils.write(value, responseOutputStream, charset)
+      this.app.get(resourceContextPath, (_req: Request, res: Response) => {
+        res.setHeader('Content-Type', resource.contentType || 'text/plain');
+        res.status(200).send(resource.value);
+      });
+    }
   }
 
   /**
