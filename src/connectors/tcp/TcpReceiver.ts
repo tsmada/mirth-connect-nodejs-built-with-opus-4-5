@@ -23,6 +23,7 @@ import {
   ServerMode,
   TransmissionMode,
   ResponseMode,
+  NEW_CONNECTION,
   hasCompleteMessage,
   unframeMessage,
   frameMessage,
@@ -468,6 +469,12 @@ export class TcpReceiver extends SourceConnector {
    * Send response to client.
    * Uses the full ACKGenerator which properly swaps sender/receiver from the
    * incoming message MSH fields, matching Java Mirth behavior.
+   *
+   * Supports respondOnNewConnection modes (matching Java TcpReceiver):
+   * - SAME_CONNECTION (0): Write response on the same socket (default)
+   * - NEW_CONNECTION (1): Open new TCP connection to responseAddress:responsePort
+   * - NEW_CONNECTION_ON_RECOVERY (2): Same as SAME_CONNECTION for normal flow,
+   *   but allows recovered responses to be sent on a new connection
    */
   private async sendResponse(
     socket: net.Socket,
@@ -478,40 +485,90 @@ export class TcpReceiver extends SourceConnector {
       return;
     }
 
-    // CPC-MCE-001: INFO event when sending response
-    this.dispatchConnectionEvent(
-      ConnectionStatusEventType.INFO,
-      `Sending response to ${socket.localAddress}:${socket.localPort}...`
-    );
+    // Determine the response data
+    let responseData: string | null = null;
 
     if (this.properties.responseMode === ResponseMode.AUTO) {
-      // Determine ACK code based on processing result
       const ackCode = this.determineAckCode(dispatchResult);
+      responseData = ACKGenerator.generateAckResponse(message, ackCode);
+    } else if (this.properties.responseMode === ResponseMode.DESTINATION) {
+      responseData = this.getDestinationResponse(dispatchResult);
+    }
 
-      // Use full ACKGenerator which swaps sender/receiver from MSH
-      const ack = ACKGenerator.generateAckResponse(message, ackCode);
-      const framedAck = frameMessage(
-        ack,
-        this.properties.transmissionMode,
-        this.properties.startOfMessageBytes,
-        this.properties.endOfMessageBytes
+    if (!responseData) {
+      return;
+    }
+
+    const framedResponse = frameMessage(
+      responseData,
+      this.properties.transmissionMode,
+      this.properties.startOfMessageBytes,
+      this.properties.endOfMessageBytes
+    );
+
+    // Determine which socket to write the response to
+    if (this.properties.respondOnNewConnection === NEW_CONNECTION) {
+      // Open a new TCP connection to responseAddress:responsePort
+      await this.sendResponseOnNewConnection(framedResponse);
+    } else {
+      // Write response on the same socket that received the message
+      // (covers both SAME_CONNECTION=0 and NEW_CONNECTION_ON_RECOVERY=2 during normal flow)
+      this.dispatchConnectionEvent(
+        ConnectionStatusEventType.INFO,
+        `Sending response to ${socket.localAddress}:${socket.localPort}...`
       );
-      socket.write(framedAck);
+      socket.write(framedResponse);
+    }
+  }
+
+  /**
+   * Send response on a new outbound TCP connection.
+   * Matches Java's createResponseSocket() + connectResponseSocket() + sendResponse() pattern.
+   * Opens a connection to responseAddress:responsePort, writes the framed response, then closes.
+   */
+  private async sendResponseOnNewConnection(framedResponse: Buffer): Promise<void> {
+    const responseAddress = this.properties.responseAddress;
+    const responsePort = parseInt(this.properties.responsePort, 10);
+
+    if (!responseAddress || !responsePort || isNaN(responsePort)) {
+      throw new Error(
+        'respondOnNewConnection is enabled but responseAddress or responsePort is not configured'
+      );
     }
 
-    if (this.properties.responseMode === ResponseMode.DESTINATION) {
-      // Use the selected destination's response from the channel pipeline
-      const responseData = this.getDestinationResponse(dispatchResult);
-      if (responseData) {
-        const framedResponse = frameMessage(
-          responseData,
-          this.properties.transmissionMode,
-          this.properties.startOfMessageBytes,
-          this.properties.endOfMessageBytes
+    this.dispatchConnectionEvent(
+      ConnectionStatusEventType.INFO,
+      `Sending response to ${responseAddress}:${responsePort} (new connection)...`
+    );
+
+    return new Promise<void>((resolve, reject) => {
+      const responseSocket = new net.Socket();
+
+      responseSocket.on('error', (error) => {
+        this.dispatchConnectionEvent(
+          ConnectionStatusEventType.FAILURE,
+          `Error sending response to ${responseAddress}:${responsePort}: ${error.message}`
         );
-        socket.write(framedResponse);
-      }
-    }
+        reject(error);
+      });
+
+      responseSocket.connect(responsePort, responseAddress, () => {
+        responseSocket.write(framedResponse, (writeError) => {
+          // Always close the response socket after writing (matching Java's finally block)
+          responseSocket.destroy();
+
+          if (writeError) {
+            this.dispatchConnectionEvent(
+              ConnectionStatusEventType.FAILURE,
+              `Error sending response to ${responseAddress}:${responsePort}: ${writeError.message}`
+            );
+            reject(writeError);
+          } else {
+            resolve();
+          }
+        });
+      });
+    });
   }
 
   /**

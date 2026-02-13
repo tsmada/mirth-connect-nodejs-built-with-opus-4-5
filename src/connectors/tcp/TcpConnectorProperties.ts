@@ -89,6 +89,10 @@ export interface TcpReceiverProperties {
   responseMode: ResponseMode;
   /** Respond on new connection mode (0=disabled, 1=new connection, 2=new connection on recovery) */
   respondOnNewConnection: number;
+  /** Response address for new-connection response mode */
+  responseAddress: string;
+  /** Response port for new-connection response mode */
+  responsePort: string;
   /** Start of message byte (for FRAME mode) */
   startOfMessageBytes: number[];
   /** End of message byte (for FRAME mode) */
@@ -162,6 +166,8 @@ export function getDefaultTcpReceiverProperties(): TcpReceiverProperties {
     maxConnections: 10,
     responseMode: ResponseMode.AUTO,
     respondOnNewConnection: NEW_CONNECTION_DISABLED,
+    responseAddress: '',
+    responsePort: '',
     startOfMessageBytes: [MLLP_FRAME.START_BLOCK],
     endOfMessageBytes: [MLLP_FRAME.END_BLOCK, MLLP_FRAME.CARRIAGE_RETURN],
     dataType: 'HL7V2',

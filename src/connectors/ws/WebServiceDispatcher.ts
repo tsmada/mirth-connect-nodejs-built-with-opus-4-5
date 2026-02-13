@@ -42,6 +42,11 @@ import {
   getSoapContentType,
   detectSoapVersion,
 } from './SoapBuilder.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+// Register ws-connector component for debug-level logging
+registerComponent('ws-connector', 'WebService (SOAP) connector');
+const logger = getLogger('ws-connector');
 
 /** Maximum redirect attempts — matches Java's http.maxRedirects (default 20) */
 const MAX_REDIRECTS = 20;
@@ -154,7 +159,7 @@ export class WebServiceDispatcher extends DestinationConnector {
     const numTasks = this.pendingTasks.size;
     if (numTasks > 0) {
       const plural = numTasks === 1 ? '' : 's';
-      console.error(
+      logger.error(
         `Error halting Web Service Sender: ${numTasks} request${plural} aborted.`
       );
     }
@@ -478,20 +483,49 @@ export class WebServiceDispatcher extends DestinationConnector {
 
     // If using MTOM, we need special handling
     if (this.properties.useMtom && attachments.length > 0) {
-      return await this.sendMtomRequest(
+      if (logger.isDebugEnabled()) {
+        logger.debug('Creating SOAP envelope with MTOM attachments.', {
+          endpoint: endpointLocation,
+          attachmentCount: attachments.length,
+        });
+        logger.debug(`SOAP Request envelope: ${envelope}`);
+      }
+
+      const mtomResult = await this.sendMtomRequest(
         endpointLocation,
         envelope,
         headers,
         attachments
       );
+
+      if (logger.isDebugEnabled()) {
+        logger.debug('Finished invoking web service (MTOM), got result.', { endpoint: endpointLocation });
+        logger.debug(`SOAP Response envelope: ${mtomResult}`);
+      }
+
+      return mtomResult;
+    }
+
+    // Log outbound SOAP envelope (matching Java: logger.debug("Creating SOAP envelope."))
+    if (logger.isDebugEnabled()) {
+      logger.debug('Creating SOAP envelope.', { endpoint: endpointLocation });
+      logger.debug(`SOAP Request envelope: ${envelope}`);
     }
 
     // Send raw SOAP request
-    return await this.sendSoapRequest(
+    const result = await this.sendSoapRequest(
       endpointLocation,
       envelope,
       headers
     );
+
+    // Log response (matching Java: logger.debug("Finished invoking web service, got result."))
+    if (logger.isDebugEnabled()) {
+      logger.debug('Finished invoking web service, got result.', { endpoint: endpointLocation });
+      logger.debug(`SOAP Response envelope: ${result}`);
+    }
+
+    return result;
   }
 
   /**
