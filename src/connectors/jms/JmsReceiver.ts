@@ -119,30 +119,50 @@ export class JmsReceiver extends SourceConnector {
   }
 
   /**
-   * Called on deploy. Matches Java JmsReceiver.onDeploy() — dispatches IDLE.
+   * Called on deploy. Matches Java JmsReceiver.onDeploy():
+   * - Creates JmsClient (validates broker config early)
+   * - Dispatches IDLE event
+   *
+   * CPC-W20-004: Moved JmsClient creation from start() to onDeploy() so that
+   * deployment-time configuration errors (bad broker URL, auth failure) are caught
+   * during deploy rather than deferred to start().
    */
-  onDeploy(): void {
+  async onDeploy(): Promise<void> {
+    const channelId = this.channel?.getId() ?? 'unknown';
+
+    // Create JMS client during deploy (matches Java JmsReceiver.onDeploy())
+    this.jmsClient = JmsClient.getClient(
+      this.properties,
+      channelId,
+      this.name
+    );
+
     this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
 
   /**
    * Start the JMS receiver.
    * Matches Java JmsReceiver.onStart() — connects, subscribes, dispatches CONNECTED.
+   *
+   * CPC-W20-004: JmsClient is already created in onDeploy(). start() now focuses
+   * on connecting and subscribing.
    */
   async start(): Promise<void> {
     if (this.running) {
       throw new Error('JMS Receiver is already running');
     }
 
-    const channelId = this.channel?.getId() ?? 'unknown';
-
     try {
-      // Get or create JMS client
-      this.jmsClient = JmsClient.getClient(
-        this.properties,
-        channelId,
-        this.name
-      );
+      // CPC-W20-004: Client created in onDeploy(); create here as fallback
+      // if start() is called without prior onDeploy()
+      if (!this.jmsClient) {
+        const channelId = this.channel?.getId() ?? 'unknown';
+        this.jmsClient = JmsClient.getClient(
+          this.properties,
+          channelId,
+          this.name
+        );
+      }
 
       // Set up event handlers
       this.setupEventHandlers();

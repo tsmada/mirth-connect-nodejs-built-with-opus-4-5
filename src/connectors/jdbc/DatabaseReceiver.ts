@@ -68,18 +68,36 @@ export class DatabaseReceiver extends SourceConnector {
   }
 
   /**
-   * Start the database receiver
+   * CPC-W20-005: Deploy the database receiver — create connection pool and dispatch IDLE.
+   *
+   * Java DatabaseReceiver.onDeploy() creates the delegate (poll connector) and
+   * dispatches IDLE. Separated from start() so deployment-time errors (bad URL,
+   * auth failure) are caught early.
+   */
+  async onDeploy(): Promise<void> {
+    // Create connection pool during deploy (matches Java DatabaseReceiver.onDeploy())
+    await this.createConnectionPool();
+
+    // Dispatch IDLE event (matches Java onDeploy → delegate.onDeploy → IDLE)
+    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+  }
+
+  /**
+   * Start the database receiver — begin polling.
+   *
+   * CPC-W20-005: Pool creation moved to onDeploy(). start() focuses on starting
+   * the poll timer. Falls back to creating the pool here if onDeploy() wasn't called.
    */
   async start(): Promise<void> {
     if (this.running) {
       throw new Error('Database Receiver is already running');
     }
 
-    // Create connection pool
-    await this.createConnectionPool();
-
-    // Dispatch IDLE on deploy — matches Java's onDeploy()
-    this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+    // CPC-W20-005: Pool should already be created in onDeploy(); create as fallback
+    if (!this.pool) {
+      await this.createConnectionPool();
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+    }
 
     // Start polling
     this.startPolling();
@@ -87,7 +105,7 @@ export class DatabaseReceiver extends SourceConnector {
   }
 
   /**
-   * Stop the database receiver
+   * Stop the database receiver — stop polling.
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -97,19 +115,27 @@ export class DatabaseReceiver extends SourceConnector {
     // Stop polling
     this.stopPolling();
 
-    // Close connection
+    // Release persistent connection
     if (this.connection) {
       this.connection.release();
       this.connection = null;
     }
 
-    // Close pool
+    this.running = false;
+  }
+
+  /**
+   * CPC-W20-005: Undeploy the database receiver — close connection pool.
+   *
+   * Java DatabaseReceiver.onUndeploy() cleans up the delegate and connection resources.
+   * Separated from stop() so the pool lifecycle matches deploy/undeploy.
+   */
+  async onUndeploy(): Promise<void> {
+    // Close pool on undeploy
     if (this.pool) {
       await this.pool.end();
       this.pool = null;
     }
-
-    this.running = false;
   }
 
   /**

@@ -8,6 +8,8 @@ import { SerializationType } from '../../../../src/javascript/runtime/ScriptBuil
 import { DeployedState } from '../../../../src/api/models/DashboardStatus';
 import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
+import { dashboardStatusController } from '../../../../src/plugins/dashboardstatus/DashboardStatusController';
+import { ConnectionStatusEventType } from '../../../../src/plugins/dashboardstatus/ConnectionLogItem';
 
 // Concrete implementation for testing
 class TestSourceConnector extends SourceConnector {
@@ -272,6 +274,83 @@ describe('SourceConnector', () => {
       }).not.toThrow();
 
       expect(connector.getCurrentState()).toBe(DeployedState.STARTING);
+    });
+  });
+
+  describe('halt()', () => {
+    it('should transition through STOPPING → STOPPED states', async () => {
+      const channel = new Channel({
+        id: 'test-channel',
+        name: 'Test Channel',
+        enabled: true,
+      });
+      connector.setChannel(channel);
+
+      interface ConnectorStateChangeEvent {
+        state: DeployedState;
+      }
+
+      const states: DeployedState[] = [];
+      channel.on('connectorStateChange', (event: ConnectorStateChangeEvent) => {
+        states.push(event.state);
+      });
+
+      await connector.halt();
+
+      expect(states).toContain(DeployedState.STOPPING);
+      expect(states).toContain(DeployedState.STOPPED);
+      expect(connector.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+
+    it('should dispatch IDLE connection event', async () => {
+      const channel = new Channel({
+        id: 'halt-test',
+        name: 'Halt Test',
+        enabled: true,
+      });
+      connector.setChannel(channel);
+
+      const processEventSpy = jest.spyOn(dashboardStatusController, 'processEvent');
+
+      await connector.halt();
+
+      const idleEvent = processEventSpy.mock.calls.find(
+        (call) => call[0] && (call[0] as { state: ConnectionStatusEventType }).state === ConnectionStatusEventType.IDLE
+      );
+      expect(idleEvent).toBeDefined();
+
+      processEventSpy.mockRestore();
+    });
+
+    it('should call onHalt() which delegates to onStop()', async () => {
+      await connector.halt();
+
+      // TestSourceConnector.stop() sets stopped=true, but halt() calls onStop() not stop()
+      // The base class onHalt() calls onStop(), which for TestSourceConnector is empty
+      // (it overrides start/stop not onStart/onStop). So we just verify the state machine.
+      expect(connector.getCurrentState()).toBe(DeployedState.STOPPED);
+    });
+
+    it('should still set STOPPED state even if onHalt throws', async () => {
+      // Create a connector whose onHalt throws
+      class FailingHaltConnector extends SourceConnector {
+        constructor() {
+          super({ name: 'Fail', transportName: 'TEST' });
+        }
+        async start(): Promise<void> { this.running = true; }
+        async stop(): Promise<void> { this.running = false; }
+        protected async onHalt(): Promise<void> {
+          throw new Error('halt failed');
+        }
+      }
+
+      const failConnector = new FailingHaltConnector();
+      const channel = new Channel({ id: 'fail-test', name: 'Fail', enabled: true });
+      failConnector.setChannel(channel);
+
+      // halt() should propagate the error but still set STOPPED state
+      await expect(failConnector.halt()).rejects.toThrow('halt failed');
+      expect(failConnector.getCurrentState()).toBe(DeployedState.STOPPED);
     });
   });
 });

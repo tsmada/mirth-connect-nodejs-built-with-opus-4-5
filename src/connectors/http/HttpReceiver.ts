@@ -18,6 +18,8 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import { Server } from 'http';
 import { gunzipSync, gzipSync } from 'zlib';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
+import { Message } from '../../model/Message.js';
+import { Status } from '../../model/Status.js';
 import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import {
@@ -249,6 +251,9 @@ export class HttpReceiver extends SourceConnector {
    * 1. CONNECTED when request arrives
    * 2. RECEIVING after parsing request body (in getMessage())
    * 3. IDLE in finally block after dispatch completes
+   *
+   * CPC-W20-001: Captures dispatchRawMessage() result and passes to sendResponse()
+   * so that the channel's processed response is returned as the HTTP response body.
    */
   private async handleRequest(req: Request, res: Response): Promise<void> {
     // CPC-MCE-001: Dispatch CONNECTED when request arrives
@@ -266,11 +271,11 @@ export class HttpReceiver extends SourceConnector {
       // Java: in getMessage(), after parsing body
       this.dispatchConnectionEvent(ConnectionStatusEventType.RECEIVING);
 
-      // Dispatch the message through the channel
-      await this.dispatchRawMessage(messageContent, sourceMap);
+      // CPC-W20-001: Dispatch the message and capture result for response generation
+      const dispatchResult = await this.dispatchRawMessageWithResult(messageContent, sourceMap);
 
-      // Send response
-      await this.sendResponse(req, res);
+      // Send response using channel pipeline result
+      await this.sendResponse(req, res, dispatchResult);
     } catch (error) {
       await this.sendErrorResponse(res, error);
     } finally {
@@ -278,6 +283,22 @@ export class HttpReceiver extends SourceConnector {
       // Java: in finally block of RequestHandler.handle()
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }
+  }
+
+  /**
+   * Dispatch raw message and return the Message result.
+   * Wraps SourceConnector.dispatchRawMessage() to capture the channel pipeline result.
+   *
+   * CPC-W20-001: Same pattern as TcpReceiver.dispatchRawMessageWithResult()
+   */
+  private async dispatchRawMessageWithResult(
+    rawData: string,
+    sourceMap?: Map<string, unknown>
+  ): Promise<Message | null> {
+    if (!this.channel) {
+      throw new Error('Source connector is not attached to a channel');
+    }
+    return this.channel.dispatchRawMessage(rawData, sourceMap);
   }
 
   /**
@@ -349,29 +370,72 @@ export class HttpReceiver extends SourceConnector {
   }
 
   /**
-   * CPC-MCP-002: Apply response headers from a map variable.
-   * Java looks up the responseHeadersVariable from the response/channel map
-   * and applies those headers to the HTTP response.
+   * CPC-W20-002: Apply response headers from a map variable.
+   *
+   * Java HttpReceiver looks up responseHeadersVariable from the connector message's
+   * maps (channelMap, responseMap, connectorMap, sourceMap) and applies key-value
+   * pairs as HTTP response headers.
+   *
+   * Java: HttpReceiver.java applyResponseHeaders() — when useResponseHeadersVariable=true,
+   * retrieves the variable from the source connector message's merged map.
    */
-  private applyVariableResponseHeaders(_res: Response): void {
+  private applyVariableResponseHeaders(res: Response, dispatchResult: Message | null): void {
     if (!this.properties.useResponseHeadersVariable || !this.properties.responseHeadersVariable) {
       return;
     }
 
-    // In Java, the variable is looked up from the response map or channel map
-    // at the connector level. Since we don't have direct access to the connector
-    // message here, we store variable headers during dispatch and retrieve them.
-    // For now, this is a placeholder that will be wired when the sourceMap
-    // or responseMap is available in the response context.
-    // The variable name is available via this.properties.responseHeadersVariable
+    if (!dispatchResult) return;
+
+    // Look up the variable from the source connector message's maps
+    const sourceMsg = dispatchResult.getConnectorMessage(0);
+    if (!sourceMsg) return;
+
+    const varName = this.properties.responseHeadersVariable;
+
+    // Search maps in order: channelMap → responseMap → connectorMap → sourceMap
+    // (matching Java's map lookup priority)
+    let headerValue: unknown =
+      sourceMsg.getChannelMap().get(varName) ??
+      sourceMsg.getResponseMap().get(varName) ??
+      sourceMsg.getConnectorMap().get(varName) ??
+      sourceMsg.getSourceMap().get(varName);
+
+    if (!headerValue) return;
+
+    // Apply headers — supports Map, plain object, or JSON string
+    if (typeof headerValue === 'string') {
+      try {
+        headerValue = JSON.parse(headerValue);
+      } catch {
+        return; // Not valid JSON, skip
+      }
+    }
+
+    if (headerValue instanceof Map) {
+      for (const [key, value] of headerValue) {
+        if (typeof key === 'string' && value != null) {
+          res.setHeader(key, String(value));
+        }
+      }
+    } else if (typeof headerValue === 'object' && headerValue !== null) {
+      for (const [key, value] of Object.entries(headerValue)) {
+        if (value != null) {
+          res.setHeader(key, String(value));
+        }
+      }
+    }
   }
 
   /**
    * Send successful response
    *
+   * CPC-W20-001: Now receives the Message result from channel dispatch and extracts
+   * the selected response body. Java HttpReceiver.sendResponse() reads the response
+   * content from the source connector's selected response.
+   *
    * CPC-MCE-001: Dispatches SENDING event during response write.
    */
-  private async sendResponse(req: Request, res: Response): Promise<void> {
+  private async sendResponse(req: Request, res: Response, dispatchResult: Message | null): Promise<void> {
     // CPC-MCE-001: Dispatch SENDING event when writing response
     this.dispatchConnectionEvent(ConnectionStatusEventType.SENDING);
 
@@ -385,27 +449,30 @@ export class HttpReceiver extends SourceConnector {
       }
     }
 
-    // CPC-MCP-002: Apply headers from variable if configured
-    this.applyVariableResponseHeaders(res);
+    // CPC-W20-002: Apply headers from variable if configured
+    this.applyVariableResponseHeaders(res, dispatchResult);
 
-    // Determine status code
+    // Determine status code — use configured code, or derive from processing result
     let statusCode = 200;
     if (this.properties.responseStatusCode) {
       const parsed = parseInt(this.properties.responseStatusCode, 10);
       if (!isNaN(parsed)) {
         statusCode = parsed;
       }
+    } else if (dispatchResult) {
+      // If no explicit status code configured, derive from message processing result
+      statusCode = this.deriveStatusCode(dispatchResult);
     }
 
     res.status(statusCode);
+
+    // CPC-W20-001: Extract response body from channel pipeline result
+    const responseBody = this.getResponseBody(dispatchResult);
 
     // Check if client accepts GZIP
     const acceptEncoding = req.headers['accept-encoding'] || '';
     const acceptsGzip =
       acceptEncoding.includes('gzip') || acceptEncoding.includes('x-gzip');
-
-    // Get response body from channel if available
-    let responseBody = '';
 
     // Compress if accepted
     if (acceptsGzip && responseBody.length > 0) {
@@ -415,6 +482,69 @@ export class HttpReceiver extends SourceConnector {
     } else {
       res.send(responseBody);
     }
+  }
+
+  /**
+   * CPC-W20-001: Extract the response body from the channel's dispatch result.
+   *
+   * Java HttpReceiver.sendResponse() reads the selected response from the source
+   * connector message. The response comes from:
+   * 1. The response transformer output (if configured)
+   * 2. The selected destination's response
+   * 3. An auto-generated response based on message status
+   *
+   * The source connector message (metaDataId=0) holds the "selected" response
+   * after the response selector and response transformer have run.
+   */
+  private getResponseBody(dispatchResult: Message | null): string {
+    if (!dispatchResult) return '';
+
+    // Check source connector message for the selected response
+    const sourceMsg = dispatchResult.getConnectorMessage(0);
+    if (!sourceMsg) return '';
+
+    // Try response-transformed content first (output of response transformer)
+    const responseTransformed = sourceMsg.getResponseTransformedData();
+    if (responseTransformed) return responseTransformed;
+
+    // Try the response content (selected response from destination)
+    const responseContent = sourceMsg.getResponseContent();
+    if (responseContent) return responseContent.content;
+
+    // Fall back to first destination's response
+    const connectorMessages = dispatchResult.getConnectorMessages();
+    for (const [metaDataId, connMsg] of connectorMessages) {
+      if (metaDataId === 0) continue; // Skip source
+      const destResponse = connMsg.getResponseContent();
+      if (destResponse) return destResponse.content;
+    }
+
+    return '';
+  }
+
+  /**
+   * Derive HTTP status code from message processing result when no explicit
+   * responseStatusCode is configured.
+   *
+   * Java maps message status to HTTP status codes:
+   * - FILTERED → 200 (message was intentionally filtered)
+   * - ERROR → 500
+   * - SENT/TRANSFORMED → 200
+   */
+  private deriveStatusCode(dispatchResult: Message): number {
+    const sourceMsg = dispatchResult.getConnectorMessage(0);
+    if (!sourceMsg) return 200;
+
+    if (sourceMsg.getStatus() === Status.ERROR) return 500;
+
+    // Check destination statuses for errors
+    const connectorMessages = dispatchResult.getConnectorMessages();
+    for (const [metaDataId, connMsg] of connectorMessages) {
+      if (metaDataId === 0) continue;
+      if (connMsg.getStatus() === Status.ERROR) return 500;
+    }
+
+    return 200;
   }
 
   /**

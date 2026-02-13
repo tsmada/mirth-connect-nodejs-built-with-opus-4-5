@@ -221,11 +221,39 @@ export abstract class SourceConnector {
    */
   abstract stop(): Promise<void>;
 
+  /**
+   * Emergency halt the connector.
+   * Matches Java SourceConnector.halt() — sets STOPPING, calls onHalt(),
+   * dispatches IDLE event, then sets STOPPED.
+   *
+   * Java: SourceConnector.java:96-107
+   */
+  async halt(): Promise<void> {
+    this.updateCurrentState(DeployedState.STOPPING);
+    try {
+      await this.onHalt();
+    } finally {
+      this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
+      this.updateCurrentState(DeployedState.STOPPED);
+    }
+  }
+
   /** Override in subclasses for custom start logic */
   protected async onStart(): Promise<void> {}
 
   /** Override in subclasses for custom stop logic */
   protected async onStop(): Promise<void> {}
+
+  /**
+   * Override in subclasses for custom halt logic.
+   * Default delegates to stop() — subclasses can override for
+   * faster/more aggressive shutdown behavior.
+   * Matches Java SourceConnector.onHalt() which is abstract but
+   * most implementations delegate to onStop().
+   */
+  protected async onHalt(): Promise<void> {
+    await this.onStop();
+  }
 
   /**
    * Dispatch a raw message to the channel

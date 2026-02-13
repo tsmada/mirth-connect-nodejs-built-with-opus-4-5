@@ -263,3 +263,100 @@ describe('JmsReceiver Event Dispatch Parity', () => {
     expect(events).toEqual([ConnectionStatusEventType.RECEIVING, ConnectionStatusEventType.IDLE]);
   });
 });
+
+/**
+ * Wave 20: CPC-W20-004 — JMS Receiver lifecycle separation
+ * JmsClient should be created in onDeploy(), not start()
+ */
+describe('JmsReceiver Lifecycle Parity (Wave 20)', () => {
+  let receiver: JmsReceiver;
+  const { JmsClient } = jest.requireMock('../../../../src/connectors/jms/JmsClient');
+
+  beforeEach(() => {
+    mockProcessEvent.mockClear();
+    mockConnect.mockClear();
+    mockDisconnect.mockClear();
+    mockSubscribe.mockClear();
+    mockUnsubscribe.mockClear();
+    mockOn.mockClear();
+    JmsClient.getClient.mockClear();
+  });
+
+  afterEach(async () => {
+    if (receiver?.isRunning()) {
+      await receiver.stop();
+    }
+  });
+
+  it('CPC-W20-004: should create JmsClient in onDeploy, not start', async () => {
+    receiver = new JmsReceiver({
+      name: 'Lifecycle Test',
+      properties: {
+        destinationName: 'test.queue',
+        topic: false,
+      },
+    });
+
+    (receiver as any).channel = {
+      getId: () => 'test-channel-id',
+      getName: () => 'Test Channel',
+    };
+
+    // Before onDeploy — no client yet
+    expect(receiver.getJmsClient()).toBeNull();
+
+    // After onDeploy — client created
+    await receiver.onDeploy();
+    expect(JmsClient.getClient).toHaveBeenCalledTimes(1);
+    expect(receiver.getJmsClient()).not.toBeNull();
+
+    // start() should reuse the client from onDeploy, not create a new one
+    JmsClient.getClient.mockClear();
+    await receiver.start();
+    expect(JmsClient.getClient).not.toHaveBeenCalled();
+  });
+
+  it('CPC-W20-004: start() falls back to creating client if onDeploy not called', async () => {
+    receiver = new JmsReceiver({
+      name: 'Fallback Test',
+      properties: {
+        destinationName: 'test.queue',
+        topic: false,
+      },
+    });
+
+    (receiver as any).channel = {
+      getId: () => 'test-channel-id',
+      getName: () => 'Test Channel',
+    };
+
+    // Skip onDeploy — start() should still work
+    await receiver.start();
+    expect(JmsClient.getClient).toHaveBeenCalledTimes(1);
+    expect(receiver.isRunning()).toBe(true);
+  });
+
+  it('CPC-W20-004: onDeploy dispatches IDLE event', async () => {
+    receiver = new JmsReceiver({
+      name: 'Deploy Event Test',
+      properties: {
+        destinationName: 'test.queue',
+        topic: false,
+      },
+    });
+
+    (receiver as any).channel = {
+      getId: () => 'test-channel-id',
+      getName: () => 'Test Channel',
+    };
+
+    await receiver.onDeploy();
+
+    expect(mockProcessEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: ConnectionStatusEventType.IDLE,
+        channelId: 'test-channel-id',
+      })
+    );
+  });
+});
