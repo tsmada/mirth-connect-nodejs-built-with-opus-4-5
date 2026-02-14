@@ -26,3 +26,10 @@ export {
   DestinationConnectorProperties,
   ConnectorProperties,
 } from './ChannelProperties.js';
+
+// Metadata constants
+export {
+  SOURCE_VARIABLE_MAPPING,
+  TYPE_VARIABLE_MAPPING,
+  VERSION_VARIABLE_MAPPING,
+} from './DefaultMetaData.js';

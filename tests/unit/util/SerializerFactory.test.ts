@@ -110,7 +110,7 @@ describe('SerializerFactory', () => {
         const xml = serializer.toXML(hl7);
 
         // Should have multiple PID.3 elements
-        expect(xml.match(/<PID\.3>/g)?.length).toBeGreaterThan(1);
+        expect(xml!.match(/<PID\.3>/g)?.length).toBeGreaterThan(1);
       });
 
       it('should handle components', () => {
@@ -166,9 +166,10 @@ describe('SerializerFactory', () => {
 
         const hl7 = serializer.fromXML(xml);
 
+        expect(hl7).not.toBeNull();
         expect(hl7).toContain('MSH|');
         expect(hl7).toContain('SendApp');
-        expect(hl7.endsWith('\r')).toBe(true);
+        expect(hl7!.endsWith('\r')).toBe(true);
       });
 
       it('should handle multiple segments', () => {
@@ -190,7 +191,8 @@ describe('SerializerFactory', () => {
       it('should preserve simple message through round-trip', () => {
         const original = 'MSH|^~\\&|App|Fac|||20240115||ADT^A01|MSG001|P|2.5';
         const xml = serializer.toXML(original);
-        const result = serializer.fromXML(xml);
+        expect(xml).not.toBeNull();
+        const result = serializer.fromXML(xml!);
 
         expect(result).toContain('MSH|');
         expect(result).toContain('App');
@@ -236,7 +238,8 @@ describe('SerializerFactory', () => {
     it('should convert XML to JSON', () => {
       const xml = '<root><name>John</name><age>30</age></root>';
       const json = serializer.fromXML(xml);
-      const parsed = JSON.parse(json);
+      expect(json).not.toBeNull();
+      const parsed = JSON.parse(json!);
 
       expect(parsed.name).toBe('John');
       expect(parsed.age).toBe(30);
