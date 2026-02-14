@@ -481,6 +481,7 @@ export class FileReceiver extends SourceConnector {
   /**
    * Process a single file
    * Matches Java FileReceiver.processFile() sourceMap entries (CPC-MCP-027)
+   * and three-path post-processing action selection (CPC-W21-007)
    */
   private async processFile(
     file: FileInfo,
@@ -488,6 +489,8 @@ export class FileReceiver extends SourceConnector {
     pollSequenceId: number,
     pollComplete: boolean
   ): Promise<void> {
+    let readError = false;
+
     try {
       // Read file content
       const content = await this.readFile(file);
@@ -509,15 +512,16 @@ export class FileReceiver extends SourceConnector {
 
       // Dispatch message
       await this.dispatchRawMessage(content, sourceMapData);
-
-      // Execute after-processing action
-      await this.executeAfterProcessingAction(file);
     } catch (error) {
+      readError = true;
       console.error(`Error processing file ${file.path}:`, error);
-
-      // Execute error action
-      await this.executeErrorAction(file);
     }
+
+    // Three-path action selection matching Java FileReceiver.java:440-450
+    // TODO: errorResponse detection requires SourceConnector.dispatchRawMessage to return
+    // the channel's response status. Currently it returns void, so errorResponseAction
+    // cannot be triggered. For now, only readError path is implemented.
+    await this.executePostAction(file, readError, false);
   }
 
   /**
@@ -569,39 +573,48 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
-   * Execute after-processing action
+   * Execute post-processing action based on outcome.
+   * Matches Java FileReceiver.java:440-450 three-path logic:
+   * 1. readError → errorReadingAction (default: NONE) with error move fields
+   * 2. errorResponse && errorResponseAction != AFTER_PROCESSING → errorResponseAction with error move fields
+   * 3. success → afterProcessingAction with normal move fields
+   *
+   * When shouldUseErrorFields is true, Java uses errorMoveToDirectory/errorMoveToFileName
+   * instead of moveToDirectory/moveToFileName.
    */
-  private async executeAfterProcessingAction(file: FileInfo): Promise<void> {
-    switch (this.properties.afterProcessingAction) {
-      case AfterProcessingAction.DELETE:
-        await this.deleteFile(file);
-        break;
+  private async executePostAction(
+    file: FileInfo,
+    readError: boolean,
+    errorResponse: boolean
+  ): Promise<void> {
+    let action: AfterProcessingAction;
+    let useErrorFields = false;
 
-      case AfterProcessingAction.MOVE:
-        if (this.properties.moveToDirectory) {
-          await this.moveFile(file, this.properties.moveToDirectory);
-        }
-        break;
-
-      case AfterProcessingAction.NONE:
-      default:
-        // No action needed
-        break;
+    if (readError) {
+      action = this.properties.errorReadingAction;
+      useErrorFields = true;
+    } else if (errorResponse && this.properties.errorResponseAction !== 'AFTER_PROCESSING') {
+      action = this.properties.errorResponseAction as AfterProcessingAction;
+      useErrorFields = true;
+    } else {
+      action = this.properties.afterProcessingAction;
     }
-  }
 
-  /**
-   * Execute error action
-   */
-  private async executeErrorAction(file: FileInfo): Promise<void> {
-    switch (this.properties.errorAction) {
+    const moveDir = useErrorFields
+      ? this.properties.errorMoveToDirectory
+      : this.properties.moveToDirectory;
+    const moveFileName = useErrorFields
+      ? this.properties.errorMoveToFileName
+      : this.properties.moveToFileName;
+
+    switch (action) {
       case AfterProcessingAction.DELETE:
         await this.deleteFile(file);
         break;
 
       case AfterProcessingAction.MOVE:
-        if (this.properties.errorDirectory) {
-          await this.moveFile(file, this.properties.errorDirectory);
+        if (moveDir) {
+          await this.moveFile(file, moveDir, moveFileName);
         }
         break;
 
@@ -633,12 +646,16 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
-   * Move a file to a new directory
+   * Move a file to a new directory, optionally renaming it.
+   * When moveToFileName is provided and non-empty, it is used as the destination filename.
+   * Otherwise, the original filename is preserved.
    */
-  private async moveFile(file: FileInfo, toDirectory: string): Promise<void> {
+  private async moveFile(file: FileInfo, toDirectory: string, moveToFileName?: string): Promise<void> {
+    const destName = moveToFileName || file.name;
+
     switch (this.properties.scheme) {
       case FileScheme.FILE: {
-        const destPath = path.join(toDirectory, file.name);
+        const destPath = path.join(toDirectory, destName);
         // Ensure destination directory exists
         await fs.mkdir(toDirectory, { recursive: true });
         // Move file
@@ -648,7 +665,7 @@ export class FileReceiver extends SourceConnector {
 
       case FileScheme.SFTP: {
         const sftp = await this.ensureSftpConnection();
-        await sftp.move(file.name, file.directory, file.name, toDirectory);
+        await sftp.move(file.name, file.directory, destName, toDirectory);
         break;
       }
 
