@@ -1454,11 +1454,15 @@ After completing an implementation that used a plan file:
    ```
 4. Plans serve as documentation of design decisions and implementation history
 
-### 3. Subagent Strategy
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One task per subagent for focused execution
+### 3. Agent Team Strategy
+- Use **agent teams** (TeamCreate) for multi-step scan→triage→fix→verify workflows
+- Use standalone subagents (Task tool) for single-purpose research or focused fixes
+- Teams provide: task lists with dependencies, inter-agent messaging, adaptive parallelism
+- Each fixer agent gets an isolated git worktree — no merge conflicts during parallel work
+- Scanner agents (connector-parity-checker, js-runtime-checker) are read-only — safe to run freely
+- Spawn fixers with `mode: "bypassPermissions"` to avoid interactive permission prompts
+- Adaptive parallelism: 0 findings → skip fixers, 1-3 → 1 fixer, 4-6 → 2, 7+ → 3
+- Shut down teammates via `SendMessage { type: "shutdown_request" }` then `TeamDelete`
 
 ### 4. Self-Improvement Loop
 - After ANY correction from the user: update tasks/lessons-md*
@@ -1636,41 +1640,55 @@ See `.claude/agents/connector-parity-checker.md` for full specification.
 
 ---
 
-## Parallel Agent Porting (Waves 1-5 Complete - 2026-02-03)
+## Parallel Agent Porting (Waves 1-21 Complete)
 
-### Architecture Used
+### Architecture
 
-Successfully used **parallel Claude agents** with git worktrees to port 95+ components across five waves:
+Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git worktrees for parallel development:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    PARENT SHELL (Coordinator)                       │
-│  - Creates worktrees and branches                                   │
-│  - Spawns child Claude agents                                       │
-│  - Tracks progress across all agents                                │
-│  - Merges completed branches                                        │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    TEAM LEAD (coordinator)                    │
+│  - TeamCreate to set up team + task list                     │
+│  - TaskCreate/TaskUpdate for task tracking + dependencies    │
+│  - Spawns teammates via Task tool with team_name + name      │
+│  - SendMessage for inter-agent communication                 │
+│  - Merges branches, runs verification                        │
+└──────────────────────────────────────────────────────────────┘
          │
-         ├──► [Worktree 1: feature/userutil-core]     → Agent 1 ✅
-         ├──► [Worktree 2: feature/userutil-db]       → Agent 2 ⚠️ (permission issues, retried in Wave 2 ✅)
-         ├──► [Worktree 3: feature/userutil-io]       → Agent 3 ✅
-         ├──► [Worktree 4: feature/donkey-engine]     → Agent 4 ✅
-         ├──► [Worktree 5: feature/connectors-vm]     → Agent 5 ✅
-         ├──► [Worktree 6: feature/datatypes]         → Agent 6 ✅
-         ├──► [Worktree 7: feature/plugins-core]      → Agent 7 ✅
-         └──► [Worktree 8: feature/utils]             → Agent 8 ✅
+         ├──► [scanner]    connector-parity-checker / js-runtime-checker
+         │                 Read-only scan, sends findings to lead
+         │
+         ├──► [fixer-1]   general-purpose (git worktree)
+         │                 Fixes findings for connector group A
+         │
+         ├──► [fixer-2]   general-purpose (git worktree)
+         │                 Fixes findings for connector group B
+         │
+         └──► [verifier]  general-purpose
+                           Runs test suite, writes report
 ```
 
-### Results (Combined Waves 1-19)
+**Team workflow:**
+1. `TeamCreate { team_name: "wave-name" }` — creates team + task list
+2. `TaskCreate` with dependencies (`addBlockedBy`) — scanner → triage → fixers → verifier
+3. `Task { subagent_type, team_name, name, mode: "bypassPermissions" }` — spawn teammates
+4. Teammates send results via `SendMessage` — automatic delivery to lead
+5. Lead triages, assigns work, merges branches
+6. `SendMessage { type: "shutdown_request" }` → `TeamDelete` — cleanup
+
+**Adaptive parallelism:** Scanner findings determine fixer count (0 = skip to verify, 1-3 = proportional, 7+ = max parallel). Each fixer works in an isolated git worktree — no merge conflicts during parallel work.
+
+### Results (Combined Waves 1-21)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 86 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16 + 6 Wave 17 + 6 Wave 18 + 5 Wave 19) |
-| Agents completed | 86 (100%) |
-| Total commits | 194+ |
-| Lines added | 80,800+ |
-| Tests added | 2,473+ |
-| Total tests passing | 5,109 |
+| Agents spawned | 89 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16 + 6 Wave 17 + 6 Wave 18 + 5 Wave 19 + 3 Wave 21) |
+| Agents completed | 89 (100%) |
+| Total commits | 195+ |
+| Lines added | 81,300+ |
+| Tests added | 2,488+ |
+| Total tests passing | 5,289 |
 
 ### Wave Summary
 
@@ -1695,7 +1713,8 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 | 17 | 6 | ~3,500 | 112 | ~30 min | **Connector Parity Re-Scan** (replaceConnectorProperties for HTTP/TCP/WS/SMTP, HTTP variable properties, receiver events, File defaults) |
 | 18 | 6 | ~2,100 | 88 | ~20 min | **Connector Parity Wave 3** (replaceConnectorProperties for File/JDBC/VM/DICOM, WS attachment resolution, File size/error properties) |
 | 19 | 3 | ~1,200 | 43 | ~20 min | **Connector Parity Wave 4** (DICOM response status QUEUED, DICOM config wiring, WS headers variable, SMTP ErrorEvent, SMTP localPort) |
-| **Total** | **86** | **~80,800** | **2,473** | **~26 hrs** | |
+| 21 | 1 | ~500 | 15 | ~15 min | **Connector Parity Wave 5** (File errorReadingAction/errorResponseAction wiring, 3 deferral verifications) |
+| **Total** | **89** | **~81,300** | **2,488** | **~26 hrs** | |
 
 ### Components Ported
 
@@ -1824,15 +1843,15 @@ Successfully used **parallel Claude agents** with git worktrees to port 95+ comp
 
 ### Lessons Learned
 
-**1. Git Worktrees Enable True Parallelism**
+**1. Agent Teams + Git Worktrees Enable True Parallelism**
 ```bash
-# Create isolated worktree for each agent
-git worktree add ../mirth-worktrees/feature-name -b feature/feature-name
+# Team lead creates worktree for each fixer agent
+git worktree add ../mirth-worktrees/fix-cpc-{group}-w21 -b fix/connector-parity-{group}-w21
 ```
-Each agent works in complete isolation - no merge conflicts until final integration.
+Each fixer teammate works in an isolated worktree — no merge conflicts until lead merges. Use `TeamCreate` for task tracking and `SendMessage` for inter-agent communication. Teammates report findings/completion via messages that auto-deliver to the team lead.
 
-**2. Permission Issues in Background Agents**
-One agent (userutil-db) had "Permission to use Read has been auto-denied" errors in Wave 1. This can happen when agents run in background mode with limited prompts. **Resolved in Wave 2** — all 3 DatabaseConnection classes were successfully ported (122 tests passing). Solution: retry with explicit permissions or port manually.
+**2. Use `bypassPermissions` Mode for Fixer Agents**
+Early waves (Wave 1) had "Permission to use Read has been auto-denied" errors with background agents. Solution: spawn teammates with `mode: "bypassPermissions"` — this eliminates interactive permission prompts. Scanner agents (read-only) don't need this since they only use Read/Grep/Glob.
 
 **3. Merge Conflicts in Index Files**
 When multiple agents modify the same `index.ts` export file, expect merge conflicts. These are easy to resolve by combining export statements.
@@ -2627,11 +2646,40 @@ Fresh ground-truth scan across all 9 connectors. Key finding: DICOM connector ha
 - 43 new tests, 5,109 total tests passing
 - Scan report: `plans/connector-parity-checker-scan-wave19.md`
 
+### Wave 21: Connector Parity Wave 5 — Ground-Truth Verification (2026-02-14)
+
+**Fresh ground-truth scan to verify 3 recently-fixed major deferrals and establish updated baseline.**
+
+Team-based execution: 1 scanner (connector-parity-checker) + 1 fixer (general-purpose) + 1 verifier (general-purpose). Zero merge conflicts.
+
+| Agent | Branch | Findings Fixed | Key Changes |
+|-------|--------|---------------|-------------|
+| scanner | (read-only scan) | — | Full 9-connector, 10-category scan; 7 findings (0 new critical/major) |
+| fixer-1 | fix/connector-parity-file-w21 | 1 minor | File `executePostAction()` three-path logic matching Java FileReceiver.java:440-450 |
+| verifier | (read-only) | — | 5,289/5,289 tests passing, report written |
+
+**Verified-resolved deferrals (3):**
+1. HTTP static resource serving (commit c7b9fdb) — VERIFIED: `HttpReceiver.ts:258-403` with FILE/DIRECTORY/CUSTOM types
+2. JDBC script mode (commit c2339bb) — VERIFIED: `DatabaseReceiver.ts:179` + `DatabaseDispatcher.ts:146` with vm.Script compilation
+3. TCP respondOnNewConnection (commit 0ca0717) — VERIFIED: `TcpReceiver.ts:473-572` with SAME/NEW/NEW_ON_RECOVERY modes
+
+**New finding fixed:**
+- CPC-W21-007 (minor): File `errorReadingAction`/`errorResponseAction` wiring — unified `executePostAction()` matching Java three-path logic (readError → errorReadingAction, responseError → errorResponseAction, success → afterProcessingAction)
+
+**Open deferrals (6 total, down from 38):**
+- 2 Major: HTTP receiver plugin auth (AuthenticatorProvider), WS receiver auth
+- 4 Minor: File FTP/S3/SMB backends, DICOM storage commitment, HTTP Digest edge cases (downgraded), JDBC receiver parameterized queries (downgraded)
+
+**Diminishing-returns trend:** 73 → 56 → 48 → 8 → 6 → 0 new actionable findings across Waves 16-21.
+
+- 15 new tests, 5,289 total tests passing
+- Scan report: `plans/connector-parity-checker-scan-wave21.md`
+
 ### Completion Status
 
-All Waves 1-19 are complete. The porting project has reached production-ready status:
+All Waves 1-21 are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-19):**
+**Completed (Waves 1-21):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -2640,7 +2688,7 @@ All Waves 1-19 are complete. The porting project has reached production-ready st
 - ✅ **Dual Operational Modes** — The only difference between Java and Node.js Mirth
 - ✅ **Git-Backed Artifact Management** — Decompose/assemble, git sync, env promotion, delta deploy, structural diff (417 tests)
 - ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 8 waves of fixes (Waves 8-15, 315 parity tests, verified by 3 automated js-runtime-checker scans)
-- ✅ **Connector Parity** — All 9 connectors verified across 4 automated scans (Waves 16-19): replaceConnectorProperties 9/9 (100%), event dispatching 40/40 (100%), property coverage 96%, 0 critical findings remaining. 185 total findings: 87 fixed, 38 deferred (9 major + 29 minor)
+- ✅ **Connector Parity** — All 9 connectors verified across 5 automated scans (Waves 16-21): replaceConnectorProperties 9/9 (100%), event dispatching 48/48 (100%), property coverage 98%, 0 critical findings remaining. 192 total findings: 98 fixed, 6 deferred (2 major + 4 minor)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)
