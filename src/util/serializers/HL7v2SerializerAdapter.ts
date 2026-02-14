@@ -12,7 +12,7 @@ import {
   BaseSerializer,
   HL7v2SerializationProperties,
   HL7v2DeserializationProperties,
-} from '../SerializerFactory.js';
+} from '../SerializerBase.js';
 import { extractMetaData } from '../../datatypes/hl7v2/HL7v2MetaData.js';
 import {
   SOURCE_VARIABLE_MAPPING,

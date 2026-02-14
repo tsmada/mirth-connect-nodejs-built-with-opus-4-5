@@ -7,7 +7,7 @@
  * Ported from: ~/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/xml/XMLSerializer.java
  */
 
-import { BaseSerializer, SerializationProperties, DeserializationProperties } from '../SerializerFactory.js';
+import { BaseSerializer, SerializationProperties, DeserializationProperties } from '../SerializerBase.js';
 import { XMLDataType } from '../../datatypes/xml/XMLDataType.js';
 import {
   TYPE_VARIABLE_MAPPING,

@@ -10,7 +10,7 @@ import {
   BaseSerializer,
   SerializationProperties,
   DeserializationProperties,
-} from '../SerializerFactory.js';
+} from '../SerializerBase.js';
 import { EDIDataType } from '../../datatypes/edi/EDIDataType.js';
 import {
   SOURCE_VARIABLE_MAPPING,

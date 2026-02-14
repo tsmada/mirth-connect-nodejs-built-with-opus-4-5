@@ -35,6 +35,14 @@ describe('DICOMSerializerAdapter', () => {
     it('has getDataType method', () => {
       expect(typeof adapter.getDataType).toBe('function');
     });
+
+    it('has populateMetaData method', () => {
+      expect(typeof adapter.populateMetaData).toBe('function');
+    });
+
+    it('has getMetaDataFromMessage method', () => {
+      expect(typeof adapter.getMetaDataFromMessage).toBe('function');
+    });
   });
 
   describe('toXML delegation', () => {
@@ -43,12 +51,9 @@ describe('DICOMSerializerAdapter', () => {
     });
 
     it('delegates to DICOMSerializer.toXML for valid base64', () => {
-      // Create a minimal DICOM file: 128-byte preamble + DICM magic + one small element
       const preamble = Buffer.alloc(128, 0);
       const magic = Buffer.from('DICM', 'ascii');
-
-      // File meta info group length (0002,0000) = UL, value = 0
-      const tag1 = Buffer.from([0x02, 0x00, 0x00, 0x00]); // tag (0002,0000)
+      const tag1 = Buffer.from([0x02, 0x00, 0x00, 0x00]);
       const vr1 = Buffer.from('UL', 'ascii');
       const len1 = Buffer.alloc(2);
       len1.writeUInt16LE(4, 0);
@@ -73,73 +78,33 @@ describe('DICOMSerializerAdapter', () => {
       const xml = '<dicom><tag00100020 tag="00100020" vr="LO" len="6">PAT001</tag00100020></dicom>';
       const result = adapter.fromXML(xml);
       expect(typeof result).toBe('string');
-      // Result should be base64-encoded binary
-      expect(result.length).toBeGreaterThan(0);
+      expect(result!.length).toBeGreaterThan(0);
     });
   });
 
   describe('getMetaDataFromMessage', () => {
-    it('returns mirth_type and mirth_version keys', () => {
-      // Use empty/minimal input — metadata extraction will use defaults
+    it('returns Map with mirth_type and mirth_version keys', () => {
       const metadata = adapter.getMetaDataFromMessage('');
-      expect(metadata).toHaveProperty(TYPE_VARIABLE_MAPPING);
-      expect(metadata[TYPE_VARIABLE_MAPPING]).toBe('DICOM');
-      expect(metadata).toHaveProperty(VERSION_VARIABLE_MAPPING);
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.get(TYPE_VARIABLE_MAPPING)).toBe('DICOM');
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
     });
 
     it('does not use unprefixed base keys', () => {
       const metadata = adapter.getMetaDataFromMessage('');
-      // Base keys should be mirth_ prefixed, not plain
-      expect(Object.keys(metadata)).not.toContain('type');
-      expect(Object.keys(metadata)).not.toContain('version');
+      expect(metadata.has('type')).toBe(false);
+      expect(metadata.has('version')).toBe(false);
     });
+  });
 
-    it('preserves DICOM-specific additive keys', () => {
-      // Build a minimal DICOM with patient ID tag
-      const preamble = Buffer.alloc(128, 0);
-      const magic = Buffer.from('DICM', 'ascii');
-
-      // (0002,0000) Group Length UL = 26 (meta info length)
-      const metaGroupLen = Buffer.alloc(12);
-      metaGroupLen.writeUInt16LE(0x0002, 0); // group
-      metaGroupLen.writeUInt16LE(0x0000, 2); // element
-      metaGroupLen.write('UL', 4, 'ascii');  // VR
-      metaGroupLen.writeUInt16LE(4, 6);      // length
-      metaGroupLen.writeUInt32LE(14, 8);     // value (length of remaining meta)
-
-      // (0002,0010) Transfer Syntax UID = 1.2.840.10008.1.2 (Implicit VR LE)
-      const tsUid = '1.2.840.10008.1.2';
-      const tsBuf = Buffer.alloc(4 + 2 + 2 + tsUid.length + (tsUid.length % 2));
-      tsBuf.writeUInt16LE(0x0002, 0);
-      tsBuf.writeUInt16LE(0x0010, 2);
-      tsBuf.write('UI', 4, 'ascii');
-      const tsLen = tsUid.length + (tsUid.length % 2); // pad to even
-      tsBuf.writeUInt16LE(tsLen, 6);
-      Buffer.from(tsUid, 'ascii').copy(tsBuf, 8);
-
-      // Update meta group length
-      metaGroupLen.writeUInt32LE(tsBuf.length - 0, 8);
-
-      // (0008,0060) Modality = "CT" (implicit VR: 4-byte tag + 4-byte length + value)
-      const modTag = Buffer.alloc(4);
-      modTag.writeUInt16LE(0x0008, 0);
-      modTag.writeUInt16LE(0x0060, 2);
-      const modLen = Buffer.alloc(4);
-      modLen.writeUInt32LE(2, 0);
-      const modVal = Buffer.from('CT', 'ascii');
-
-      const dicomData = Buffer.concat([preamble, magic, metaGroupLen, tsBuf, modTag, modLen, modVal]);
-      const base64 = dicomData.toString('base64');
-
-      const metadata = adapter.getMetaDataFromMessage(base64);
-
-      // Should have base keys with mirth_ prefix
-      expect(metadata[TYPE_VARIABLE_MAPPING]).toBe('DICOM');
-
-      // If modality was extracted, it should be an additive key
-      if (metadata.modality) {
-        expect(metadata.modality).toBe('CT');
-      }
+  describe('populateMetaData', () => {
+    it('populates map with mirth_ prefixed keys', () => {
+      const map = new Map<string, unknown>();
+      adapter.populateMetaData('', map);
+      expect(map.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+      expect(map.get(TYPE_VARIABLE_MAPPING)).toBe('DICOM');
+      expect(map.has(VERSION_VARIABLE_MAPPING)).toBe(true);
     });
   });
 

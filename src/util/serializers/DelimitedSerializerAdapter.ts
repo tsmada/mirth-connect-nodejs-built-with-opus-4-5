@@ -12,7 +12,7 @@ import {
   BaseSerializer,
   SerializationProperties,
   DeserializationProperties,
-} from '../SerializerFactory.js';
+} from '../SerializerBase.js';
 import { DelimitedDataType } from '../../datatypes/delimited/DelimitedDataType.js';
 import { TYPE_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 

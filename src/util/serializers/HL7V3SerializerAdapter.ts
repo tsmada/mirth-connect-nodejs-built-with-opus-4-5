@@ -10,7 +10,7 @@ import {
   BaseSerializer,
   SerializationProperties,
   DeserializationProperties,
-} from '../SerializerFactory.js';
+} from '../SerializerBase.js';
 import { HL7V3Serializer } from '../../datatypes/hl7v3/HL7V3Serializer.js';
 import {
   TYPE_VARIABLE_MAPPING,

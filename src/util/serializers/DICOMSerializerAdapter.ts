@@ -11,7 +11,7 @@ import {
   BaseSerializer,
   SerializationProperties,
   DeserializationProperties,
-} from '../SerializerFactory.js';
+} from '../SerializerBase.js';
 import { DICOMSerializer } from '../../datatypes/dicom/DICOMSerializer.js';
 import { DICOMDataTypeProperties } from '../../datatypes/dicom/DICOMDataTypeProperties.js';
 import {
@@ -52,29 +52,26 @@ export class DICOMSerializerAdapter extends BaseSerializer {
   }
 
   /**
-   * Extract metadata from a DICOM message (base64-encoded binary).
+   * Populate metadata map from a DICOM message (base64-encoded binary).
    *
    * Base keys (type, version) are translated to mirth_ prefix.
    * DICOM-specific keys (sopClassUid, patientName, modality, etc.) are
    * kept as additive metadata that doesn't exist in Java's DefaultMetaData.
    */
-  getMetaDataFromMessage(message: string): Record<string, string> {
+  populateMetaData(message: string, map: Map<string, unknown>): void {
     const raw = this.delegate.getMetaDataFromMessage(message);
-    const result: Record<string, string> = {};
 
     // Base keys with mirth_ prefix
-    result[TYPE_VARIABLE_MAPPING] = raw.type || 'DICOM';
-    result[VERSION_VARIABLE_MAPPING] = raw.version || '';
+    map.set(TYPE_VARIABLE_MAPPING, raw.type || 'DICOM');
+    map.set(VERSION_VARIABLE_MAPPING, raw.version || '');
 
     // DICOM-specific additive keys
-    if (raw.sopClassUid) result.sopClassUid = raw.sopClassUid;
-    if (raw.sopInstanceUid) result.sopInstanceUid = raw.sopInstanceUid;
-    if (raw.patientName) result.patientName = raw.patientName;
-    if (raw.patientId) result.patientId = raw.patientId;
-    if (raw.studyInstanceUid) result.studyInstanceUid = raw.studyInstanceUid;
-    if (raw.seriesInstanceUid) result.seriesInstanceUid = raw.seriesInstanceUid;
-    if (raw.modality) result.modality = raw.modality;
-
-    return result;
+    if (raw.sopClassUid) map.set('sopClassUid', raw.sopClassUid);
+    if (raw.sopInstanceUid) map.set('sopInstanceUid', raw.sopInstanceUid);
+    if (raw.patientName) map.set('patientName', raw.patientName);
+    if (raw.patientId) map.set('patientId', raw.patientId);
+    if (raw.studyInstanceUid) map.set('studyInstanceUid', raw.studyInstanceUid);
+    if (raw.seriesInstanceUid) map.set('seriesInstanceUid', raw.seriesInstanceUid);
+    if (raw.modality) map.set('modality', raw.modality);
   }
 }

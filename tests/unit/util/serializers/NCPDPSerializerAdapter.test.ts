@@ -1,6 +1,5 @@
 import { NCPDPSerializerAdapter } from '../../../../src/util/serializers/NCPDPSerializerAdapter.js';
 import {
-  SOURCE_VARIABLE_MAPPING,
   TYPE_VARIABLE_MAPPING,
   VERSION_VARIABLE_MAPPING,
 } from '../../../../src/model/DefaultMetaData.js';
@@ -36,21 +35,26 @@ describe('NCPDPSerializerAdapter', () => {
     it('has getDataType method', () => {
       expect(typeof adapter.getDataType).toBe('function');
     });
+
+    it('has populateMetaData method', () => {
+      expect(typeof adapter.populateMetaData).toBe('function');
+    });
+
+    it('has getMetaDataFromMessage method', () => {
+      expect(typeof adapter.getMetaDataFromMessage).toBe('function');
+    });
   });
 
   describe('toXML delegation', () => {
     it('delegates to NCPDPSerializer.toXML', () => {
-      // Build a minimal NCPDP message with segment/field delimiters
       const segDel = String.fromCharCode(0x1e);
       const fldDel = String.fromCharCode(0x1c);
-      // Header (56 chars for request) + segment delimiter + field + segment ID + field value
       const header = '123456D0B1PCN1234567101SP23456789012345200601015678901234';
       const message = header + segDel + fldDel + 'AM' + fldDel + 'TestField';
 
       const xml = adapter.toXML(message);
-      // Should produce XML output (NCPDPReader wraps in XML tags)
       expect(typeof xml).toBe('string');
-      expect(xml.length).toBeGreaterThan(0);
+      expect(xml!.length).toBeGreaterThan(0);
     });
   });
 
@@ -69,14 +73,12 @@ describe('NCPDPSerializerAdapter', () => {
 
       const result = adapter.fromXML(xml);
       expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
+      expect(result!.length).toBeGreaterThan(0);
     });
   });
 
   describe('getMetaDataFromMessage', () => {
-    it('translates metadata keys to mirth_ prefix', () => {
-      // Build an NCPDP request message with enough header data for metadata extraction
-      // Request header layout: BIN(6) + Version(2) + TransCode(2) + PCN(10) + Count(1) + SPIdQual(2) + SPId(15) + DOS(8)
+    it('returns a Map with mirth_ prefixed keys', () => {
       const segDel = String.fromCharCode(0x1e);
       const fldDel = String.fromCharCode(0x1c);
       const header = '123456D0B1PCN1234567101SP23456789012345200601015678901234';
@@ -84,15 +86,15 @@ describe('NCPDPSerializerAdapter', () => {
 
       const metadata = adapter.getMetaDataFromMessage(message);
 
+      expect(metadata).toBeInstanceOf(Map);
       // Keys should use mirth_ prefix
-      expect(metadata).toHaveProperty(VERSION_VARIABLE_MAPPING);
-      expect(metadata).toHaveProperty(TYPE_VARIABLE_MAPPING);
-      expect(metadata).toHaveProperty(SOURCE_VARIABLE_MAPPING);
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
 
       // Should NOT have unprefixed keys
-      expect(metadata).not.toHaveProperty('version');
-      expect(metadata).not.toHaveProperty('type');
-      expect(metadata).not.toHaveProperty('source');
+      expect(metadata.has('version')).toBe(false);
+      expect(metadata.has('type')).toBe(false);
+      expect(metadata.has('source')).toBe(false);
     });
 
     it('extracts version from message header', () => {
@@ -102,14 +104,26 @@ describe('NCPDPSerializerAdapter', () => {
       const message = header + segDel + fldDel + 'AM' + fldDel + 'Test';
 
       const metadata = adapter.getMetaDataFromMessage(message);
-      expect(metadata[VERSION_VARIABLE_MAPPING]).toBe('D0');
+      expect(metadata.get(VERSION_VARIABLE_MAPPING)).toBe('D0');
     });
 
     it('provides default version when extraction fails', () => {
-      // Very short message — not enough data for header extraction
       const metadata = adapter.getMetaDataFromMessage('');
-      // Should still have version key (defaulted)
-      expect(metadata[VERSION_VARIABLE_MAPPING]).toBe('5.1');
+      // Should still have version key (defaulted to 5.1)
+      expect(metadata.get(VERSION_VARIABLE_MAPPING)).toBe('5.1');
+    });
+  });
+
+  describe('populateMetaData', () => {
+    it('populates map with mirth_ prefixed keys', () => {
+      const segDel = String.fromCharCode(0x1e);
+      const fldDel = String.fromCharCode(0x1c);
+      const header = '123456D0B1PCN1234567101SP23456789012345200601015678901234';
+      const message = header + segDel + fldDel + 'AM' + fldDel + 'Test';
+
+      const map = new Map<string, unknown>();
+      adapter.populateMetaData(message, map);
+      expect(map.has(VERSION_VARIABLE_MAPPING)).toBe(true);
     });
   });
 

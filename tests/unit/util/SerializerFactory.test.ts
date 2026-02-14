@@ -5,40 +5,25 @@ import {
   getDefaultSerializationProperties,
   getDefaultDeserializationProperties,
 } from '../../../src/util/SerializerFactory';
+import {
+  SOURCE_VARIABLE_MAPPING,
+  TYPE_VARIABLE_MAPPING,
+  VERSION_VARIABLE_MAPPING,
+} from '../../../src/model/DefaultMetaData';
 
 describe('SerializerFactory', () => {
   describe('getSerializer', () => {
-    it('should return HL7V2 serializer', () => {
-      const serializer = SerializerFactory.getSerializer('HL7V2');
-
-      expect(serializer).not.toBeNull();
-      expect(serializer!.getDataType()).toBe('HL7V2');
-    });
-
-    it('should return XML serializer', () => {
-      const serializer = SerializerFactory.getSerializer('XML');
-
-      expect(serializer).not.toBeNull();
-      expect(serializer!.getDataType()).toBe('XML');
-    });
-
-    it('should return JSON serializer', () => {
-      const serializer = SerializerFactory.getSerializer('JSON');
-
-      expect(serializer).not.toBeNull();
-      expect(serializer!.getDataType()).toBe('JSON');
-    });
-
-    it('should return RAW serializer', () => {
-      const serializer = SerializerFactory.getSerializer('RAW');
-
-      expect(serializer).not.toBeNull();
-      expect(serializer!.getDataType()).toBe('RAW');
+    it('should return serializers for all 9 data types', () => {
+      const types = ['HL7V2', 'XML', 'JSON', 'RAW', 'DELIMITED', 'EDI/X12', 'HL7V3', 'NCPDP', 'DICOM'];
+      for (const type of types) {
+        const serializer = SerializerFactory.getSerializer(type);
+        expect(serializer).not.toBeNull();
+        expect(serializer!.getDataType()).toBe(type);
+      }
     });
 
     it('should return null for unknown data type', () => {
       const serializer = SerializerFactory.getSerializer('UNKNOWN');
-
       expect(serializer).toBeNull();
     });
 
@@ -199,6 +184,24 @@ describe('SerializerFactory', () => {
         expect(result).toContain('Fac');
       });
     });
+
+    describe('metadata', () => {
+      it('should return mirth_ prefixed metadata keys', () => {
+        const hl7 = 'MSH|^~\\&|App|Fac|||20240115||ADT^A01|MSG001|P|2.5';
+        const metadata = serializer.getMetaDataFromMessage(hl7);
+
+        expect(metadata).toBeInstanceOf(Map);
+        expect(metadata.has(SOURCE_VARIABLE_MAPPING)).toBe(true);
+        expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+        expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      });
+    });
+
+    describe('isSerializationRequired', () => {
+      it('returns true (HL7v2 requires XML serialization)', () => {
+        expect(serializer.isSerializationRequired()).toBe(true);
+      });
+    });
   });
 
   describe('XML Serializer', () => {
@@ -217,6 +220,12 @@ describe('SerializerFactory', () => {
       const xml = '<root><child>value</child></root>';
       expect(serializer.fromXML(xml)).toBe(xml);
     });
+
+    it('should return mirth_ prefixed metadata', () => {
+      const metadata = serializer.getMetaDataFromMessage('<root/>');
+      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+    });
   });
 
   describe('JSON Serializer', () => {
@@ -226,23 +235,33 @@ describe('SerializerFactory', () => {
       serializer = SerializerFactory.getSerializer('JSON')!;
     });
 
-    it('should convert JSON to XML', () => {
+    it('should return null from toXML (matches Java)', () => {
       const json = '{"name":"John","age":30}';
-      const xml = serializer.toXML(json);
-
-      expect(xml).toContain('<root>');
-      expect(xml).toContain('<name>John</name>');
-      expect(xml).toContain('<age>30</age>');
+      expect(serializer.toXML(json)).toBeNull();
     });
 
-    it('should convert XML to JSON', () => {
-      const xml = '<root><name>John</name><age>30</age></root>';
-      const json = serializer.fromXML(xml);
-      expect(json).not.toBeNull();
-      const parsed = JSON.parse(json!);
+    it('should return null from fromXML (matches Java)', () => {
+      const xml = '<root><name>John</name></root>';
+      expect(serializer.fromXML(xml)).toBeNull();
+    });
 
-      expect(parsed.name).toBe('John');
-      expect(parsed.age).toBe(30);
+    it('should pass through toJSON', () => {
+      const json = '{"name":"John"}';
+      expect(serializer.toJSON(json)).toBe(json);
+    });
+
+    it('should pass through fromJSON', () => {
+      const json = '{"name":"John"}';
+      expect(serializer.fromJSON(json)).toBe(json);
+    });
+
+    it('should not require serialization', () => {
+      expect(serializer.isSerializationRequired()).toBe(false);
+    });
+
+    it('should return mirth_type metadata', () => {
+      const metadata = serializer.getMetaDataFromMessage('{}');
+      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
     });
   });
 
@@ -253,20 +272,120 @@ describe('SerializerFactory', () => {
       serializer = SerializerFactory.getSerializer('RAW')!;
     });
 
-    it('should wrap raw text in CDATA for toXML', () => {
-      const raw = 'Plain text with <special> chars';
-      const xml = serializer.toXML(raw);
-
-      expect(xml).toContain('<raw>');
-      expect(xml).toContain('<![CDATA[');
-      expect(xml).toContain('Plain text with <special> chars');
+    it('should return null from toXML (matches Java)', () => {
+      expect(serializer.toXML('Plain text')).toBeNull();
     });
 
-    it('should extract content from XML for fromXML', () => {
-      const xml = '<raw><![CDATA[Plain text content]]></raw>';
-      const raw = serializer.fromXML(xml);
+    it('should return null from fromXML (matches Java)', () => {
+      expect(serializer.fromXML('<raw>text</raw>')).toBeNull();
+    });
 
-      expect(raw).toBe('Plain text content');
+    it('should not require serialization', () => {
+      expect(serializer.isSerializationRequired()).toBe(false);
+    });
+  });
+
+  describe('DELIMITED Serializer', () => {
+    let serializer: IMessageSerializer;
+
+    beforeEach(() => {
+      serializer = SerializerFactory.getSerializer('DELIMITED')!;
+    });
+
+    it('should return non-null from toXML', () => {
+      const csv = 'name,age\nJohn,30';
+      const xml = serializer.toXML(csv);
+      expect(xml).not.toBeNull();
+      expect(typeof xml).toBe('string');
+    });
+  });
+
+  describe('EDI/X12 Serializer', () => {
+    let serializer: IMessageSerializer;
+    const sampleEdi =
+      'ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *210101*1200*^*00501*000000001*0*P*:~' +
+      'GS*HP*SENDER*RECEIVER*20210101*1200*1*X*005010X279A1~' +
+      'ST*270*0001~' +
+      'SE*2*0001~' +
+      'GE*1*1~' +
+      'IEA*1*000000001~';
+
+    beforeEach(() => {
+      serializer = SerializerFactory.getSerializer('EDI/X12')!;
+    });
+
+    it('should return non-null from toXML', () => {
+      const xml = serializer.toXML(sampleEdi);
+      expect(xml).not.toBeNull();
+    });
+
+    it('should return mirth_ prefixed metadata', () => {
+      const metadata = serializer.getMetaDataFromMessage(sampleEdi);
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.get(VERSION_VARIABLE_MAPPING)).toBe('005010X279A1');
+    });
+  });
+
+  describe('HL7V3 Serializer', () => {
+    let serializer: IMessageSerializer;
+
+    beforeEach(() => {
+      serializer = SerializerFactory.getSerializer('HL7V3')!;
+    });
+
+    it('should return non-null from toXML', () => {
+      const xml = serializer.toXML('<ClinicalDocument/>');
+      expect(xml).not.toBeNull();
+    });
+
+    it('should return mirth_ prefixed metadata', () => {
+      const metadata = serializer.getMetaDataFromMessage('<ClinicalDocument/>');
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+    });
+  });
+
+  describe('NCPDP Serializer', () => {
+    let serializer: IMessageSerializer;
+
+    beforeEach(() => {
+      serializer = SerializerFactory.getSerializer('NCPDP')!;
+    });
+
+    it('should not require serialization (matches Java)', () => {
+      expect(serializer.isSerializationRequired()).toBe(false);
+    });
+
+    it('should return mirth_ prefixed metadata', () => {
+      const segDel = String.fromCharCode(0x1e);
+      const fldDel = String.fromCharCode(0x1c);
+      const header = '123456D0B1PCN1234567101SP23456789012345200601015678901234';
+      const message = header + segDel + fldDel + 'AM' + fldDel + 'Test';
+
+      const metadata = serializer.getMetaDataFromMessage(message);
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+    });
+  });
+
+  describe('DICOM Serializer', () => {
+    let serializer: IMessageSerializer;
+
+    beforeEach(() => {
+      serializer = SerializerFactory.getSerializer('DICOM')!;
+    });
+
+    it('should require serialization (DICOM needs binary-to-XML)', () => {
+      expect(serializer.isSerializationRequired()).toBe(true);
+    });
+
+    it('should return mirth_ prefixed metadata', () => {
+      const metadata = serializer.getMetaDataFromMessage('');
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
     });
   });
 
@@ -285,6 +404,23 @@ describe('SerializerFactory', () => {
 
       expect(props).not.toBeNull();
       expect(props!.stripNamespaces).toBe(false);
+    });
+
+    it('should return EDI/X12 default properties', () => {
+      const props = SerializerFactory.getDefaultSerializationProperties('EDI/X12');
+
+      expect(props).not.toBeNull();
+      expect(props!.segmentDelimiter).toBe('~');
+      expect(props!.elementDelimiter).toBe('*');
+      expect(props!.inferX12Delimiters).toBe(true);
+    });
+
+    it('should return NCPDP default properties', () => {
+      const props = SerializerFactory.getDefaultSerializationProperties('NCPDP');
+
+      expect(props).not.toBeNull();
+      expect(props!.segmentDelimiter).toBe('0x1E');
+      expect(props!.fieldDelimiter).toBe('0x1C');
     });
 
     it('should return null for unknown data type', () => {
@@ -309,6 +445,13 @@ describe('SerializerFactory', () => {
       expect(props!.useStrictValidation).toBe(false);
     });
 
+    it('should return NCPDP default properties', () => {
+      const props = SerializerFactory.getDefaultDeserializationProperties('NCPDP');
+
+      expect(props).not.toBeNull();
+      expect(props!.useStrictValidation).toBe(false);
+    });
+
     it('should return null for unknown data type', () => {
       const props = SerializerFactory.getDefaultDeserializationProperties('UNKNOWN');
       expect(props).toBeNull();
@@ -316,21 +459,28 @@ describe('SerializerFactory', () => {
   });
 
   describe('getSupportedDataTypes', () => {
-    it('should return list of supported types', () => {
+    it('should return all 9 supported types', () => {
       const types = SerializerFactory.getSupportedDataTypes();
 
+      expect(types).toHaveLength(9);
       expect(types).toContain('HL7V2');
       expect(types).toContain('XML');
       expect(types).toContain('JSON');
       expect(types).toContain('RAW');
+      expect(types).toContain('DELIMITED');
+      expect(types).toContain('EDI/X12');
+      expect(types).toContain('HL7V3');
+      expect(types).toContain('NCPDP');
+      expect(types).toContain('DICOM');
     });
   });
 
   describe('isDataTypeSupported', () => {
-    it('should return true for supported types', () => {
-      expect(SerializerFactory.isDataTypeSupported('HL7V2')).toBe(true);
-      expect(SerializerFactory.isDataTypeSupported('XML')).toBe(true);
-      expect(SerializerFactory.isDataTypeSupported('JSON')).toBe(true);
+    it('should return true for all 9 supported types', () => {
+      const types = ['HL7V2', 'XML', 'JSON', 'RAW', 'DELIMITED', 'EDI/X12', 'HL7V3', 'NCPDP', 'DICOM'];
+      for (const type of types) {
+        expect(SerializerFactory.isDataTypeSupported(type)).toBe(true);
+      }
     });
 
     it('should return false for unsupported types', () => {

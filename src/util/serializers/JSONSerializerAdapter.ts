@@ -13,7 +13,7 @@
  * fast-xml-parser. Java's JSONSerializer does NOT do XML conversion — it returns null.
  */
 
-import { BaseSerializer } from '../SerializerFactory.js';
+import { BaseSerializer } from '../SerializerBase.js';
 import { TYPE_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class JSONSerializerAdapter extends BaseSerializer {

@@ -10,7 +10,7 @@ import {
   BaseSerializer,
   SerializationProperties,
   DeserializationProperties,
-} from '../SerializerFactory.js';
+} from '../SerializerBase.js';
 import { NCPDPSerializer } from '../../datatypes/ncpdp/NCPDPSerializer.js';
 import {
   NCPDPSerializationProperties,
@@ -57,25 +57,22 @@ export class NCPDPSerializerAdapter extends BaseSerializer {
   }
 
   /**
-   * Extract metadata from an NCPDP message, translating keys to mirth_ prefix.
+   * Populate metadata map from an NCPDP message, translating keys to mirth_ prefix.
    *
    * The standalone NCPDPSerializer uses plain keys (source, type, version).
    * Java's DefaultMetaData expects mirth_source, mirth_type, mirth_version.
    */
-  getMetaDataFromMessage(message: string): Record<string, string> {
+  populateMetaData(message: string, map: Map<string, unknown>): void {
     const raw = this.delegate.getMetaDataFromMessage(message);
-    const translated: Record<string, string> = {};
 
     if (raw.source) {
-      translated[SOURCE_VARIABLE_MAPPING] = raw.source;
+      map.set(SOURCE_VARIABLE_MAPPING, raw.source);
     }
     if (raw.type) {
-      translated[TYPE_VARIABLE_MAPPING] = raw.type;
+      map.set(TYPE_VARIABLE_MAPPING, raw.type);
     }
     if (raw.version) {
-      translated[VERSION_VARIABLE_MAPPING] = raw.version;
+      map.set(VERSION_VARIABLE_MAPPING, raw.version);
     }
-
-    return translated;
   }
 }

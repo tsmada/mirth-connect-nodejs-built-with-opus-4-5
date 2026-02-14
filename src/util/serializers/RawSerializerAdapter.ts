@@ -14,7 +14,7 @@
  * Java's RawSerializer.toXML() literally returns null.
  */
 
-import { BaseSerializer } from '../SerializerFactory.js';
+import { BaseSerializer } from '../SerializerBase.js';
 
 export class RawSerializerAdapter extends BaseSerializer {
   getDataType(): string {
