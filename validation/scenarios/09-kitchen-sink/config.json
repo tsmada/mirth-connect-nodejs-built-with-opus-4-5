@@ -1,0 +1,36 @@
+{
+  "id": "9.0",
+  "name": "Kitchen Sink Integration Test",
+  "description": "End-to-end test exercising all 11 connector types, 4 data types, 10 script types, and 6 map types across 12 interconnected channels in 4 tiers",
+  "priority": 9,
+  "type": "integration",
+  "channels": [
+    { "id": "ks000001-0001-0001-0001-000000000001", "name": "CH1 ADT Receiver", "file": "ch01-adt-receiver.xml" },
+    { "id": "ks000002-0002-0002-0002-000000000002", "name": "CH2 HTTP Gateway", "file": "ch02-http-gateway.xml" },
+    { "id": "ks000003-0003-0003-0003-000000000003", "name": "CH3 File Processor", "file": "ch03-file-processor.xml" },
+    { "id": "ks000004-0004-0004-0004-000000000004", "name": "CH4 Hub Router", "file": "ch04-hub-router.xml" },
+    { "id": "ks000005-0005-0005-0005-000000000005", "name": "CH5 DB Persistence", "file": "ch05-db-persistence.xml" },
+    { "id": "ks000006-0006-0006-0006-000000000006", "name": "CH6 Response Builder", "file": "ch06-response-builder.xml" },
+    { "id": "ks000007-0007-0007-0007-000000000007", "name": "CH7 Audit Logger", "file": "ch07-audit-logger.xml" },
+    { "id": "ks000008-0008-0008-0008-000000000008", "name": "CH8 Completion Handler", "file": "ch08-completion-handler.xml" },
+    { "id": "ks000009-0009-0009-0009-000000000009", "name": "CH9 SOAP Endpoint", "file": "ch09-soap-endpoint.xml" },
+    { "id": "ks000010-0010-0010-0010-000000000010", "name": "CH10 DICOM SCP", "file": "ch10-dicom-scp.xml" },
+    { "id": "ks000011-0011-0011-0011-000000000011", "name": "CH11 JMS Consumer", "file": "ch11-jms-consumer.xml" },
+    { "id": "ks000012-0012-0012-0012-000000000012", "name": "CH12 JS Generator", "file": "ch12-js-generator.xml" }
+  ],
+  "codeTemplateLibrary": "code-templates/ks-utility-library.xml",
+  "ports": {
+    "mllp": 6670,
+    "httpGateway": 8090,
+    "httpCompletion": 8091,
+    "soap": 8092,
+    "dicom": 11112,
+    "smtp": 2525,
+    "stomp": 61613
+  },
+  "filePaths": {
+    "input": "/tmp/mirth-ks/input",
+    "output": "/tmp/mirth-ks/output",
+    "audit": "/tmp/mirth-ks/audit"
+  }
+}

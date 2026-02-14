@@ -31,6 +31,8 @@ import { ConnectionStatusEventType } from '../plugins/dashboardstatus/Connection
 import type { StateChangeEvent } from '../donkey/channel/Channel.js';
 import { isShadowMode, isChannelActive, isChannelPromoted } from '../cluster/ShadowMode.js';
 import { getLogger, registerComponent } from '../logging/index.js';
+import { getAllCodeTemplateScriptsForChannel } from '../plugins/codetemplates/CodeTemplateController.js';
+import { createJavaScriptExecutor } from '../javascript/runtime/JavaScriptExecutor.js';
 
 registerComponent('engine', 'Channel deploy/start/stop');
 const logger = getLogger('engine');
@@ -262,6 +264,30 @@ export class EngineController {
     try {
       // Build runtime channel with connectors
       const runtimeChannel = buildChannel(channelConfig);
+
+      // Fetch code templates for this channel and create a per-channel executor
+      try {
+        const codeTemplateScripts = await getAllCodeTemplateScriptsForChannel(channelId);
+        if (codeTemplateScripts.length > 0) {
+          const channelExecutor = createJavaScriptExecutor({ codeTemplates: codeTemplateScripts });
+          runtimeChannel.setExecutor(channelExecutor);
+
+          // Wire the same executor to all filter/transformer executors
+          const sourceConnector = runtimeChannel.getSourceConnector();
+          if (sourceConnector?.getFilterTransformerExecutor()) {
+            sourceConnector.getFilterTransformerExecutor()!.setExecutor(channelExecutor);
+          }
+          for (const dest of runtimeChannel.getDestinationConnectors()) {
+            if (dest.getFilterTransformerExecutor()) {
+              dest.getFilterTransformerExecutor()!.setExecutor(channelExecutor);
+            }
+          }
+          logger.debug(`Injected ${codeTemplateScripts.length} code template(s) for ${channelConfig.name}`);
+        }
+      } catch (ctError) {
+        // Code template loading is non-fatal — log and continue
+        logger.warn(`Failed to load code templates for ${channelConfig.name}: ${String(ctError)}`);
+      }
 
       // Wire channel events to dashboard status controller
       wireChannelToDashboard(runtimeChannel, channelConfig.name);

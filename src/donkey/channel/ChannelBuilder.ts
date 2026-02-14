@@ -753,7 +753,7 @@ function buildVmDispatcher(destConfig: Connector): VmDispatcher {
     properties: {
       channelId: String(props?.channelId || ''),
       channelTemplate: String(props?.channelTemplate || props?.template || '${message.encodedData}'),
-      mapVariables: Array.isArray(props?.mapVariables) ? props.mapVariables as string[] : [],
+      mapVariables: parseMapVariables(props?.mapVariables),
     },
   });
 }
@@ -1134,6 +1134,25 @@ function buildJavaScriptDispatcher(destConfig: Connector): JavaScriptDispatcher 
       script: String(props?.script || ''),
     },
   });
+}
+
+/**
+ * Parse mapVariables from either API format (string[]) or XML-parsed format
+ * ({string: string | string[]}).
+ *
+ * fast-xml-parser parses <mapVariables><string>a</string><string>b</string></mapVariables>
+ * as { string: ['a', 'b'] }, and <mapVariables/> as "" or undefined.
+ */
+function parseMapVariables(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw as string[];
+  if (typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    if (obj.string) {
+      return Array.isArray(obj.string) ? obj.string as string[] : [String(obj.string)];
+    }
+  }
+  return [];
 }
 
 // ─── Filter/Transformer Wiring Helpers ──────────────────────────────────────

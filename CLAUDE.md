@@ -1638,6 +1638,23 @@ Parameters:
 
 See `.claude/agents/connector-parity-checker.md` for full specification.
 
+### serializer-parity-checker
+Detect Java↔Node.js data type serializer parity gaps including missing serializer methods, property default mismatches, metadata extraction divergences, batch adaptor gaps, and SerializerFactory registration holes.
+
+**Use for**: Serializer method gap analysis, property default audits, batch adaptor coverage, SerializerFactory registration audits, metadata extraction comparison, round-trip fidelity checks, pre-takeover data type validation.
+
+**Quick start**:
+```
+Use the serializer-parity-checker agent to scan all data type serializers.
+Parameters:
+- scope: full|datatype|factory|batch|metadata
+- dataTypeName: HL7V2 (required when scope: datatype)
+- severity: critical|major|minor
+- bugCategories: ["missing-serializer-method", "property-default-mismatch", "missing-serialization-property", "factory-registration-gap", "metadata-extraction-divergence", "batch-adaptor-gap", "round-trip-fidelity-gap", "response-generation-gap", "encoding-handling-gap", "serializer-interface-gap"]
+```
+
+See `.claude/agents/serializer-parity-checker.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-21 Complete)

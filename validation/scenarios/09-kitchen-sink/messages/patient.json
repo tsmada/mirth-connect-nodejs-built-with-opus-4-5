@@ -1,0 +1,19 @@
+{
+  "resourceType": "Patient",
+  "id": "HTTP001",
+  "name": {
+    "family": "JOHNSON",
+    "given": "ALICE",
+    "middle": "B"
+  },
+  "gender": "female",
+  "birthDate": "1990-03-15",
+  "address": {
+    "street": "456 Oak Ave",
+    "city": "Springfield",
+    "state": "IL",
+    "zip": "62701"
+  },
+  "phone": "5559998888",
+  "sourceType": "HTTP"
+}

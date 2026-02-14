@@ -423,6 +423,37 @@ export async function getCodeTemplateScripts(
 }
 
 /**
+ * Get ALL code template scripts for a channel (all contexts).
+ * Used during channel deployment to inject templates into the JavaScriptExecutor.
+ * Context filtering is skipped because ScriptBuilder includes templates uniformly
+ * across all generated script types.
+ */
+export async function getAllCodeTemplateScriptsForChannel(
+  channelId: string
+): Promise<string[]> {
+  await initializeCache();
+
+  const scripts: string[] = [];
+  const seen = new Set<string>();
+
+  for (const library of libraryCache.values()) {
+    const templates = getTemplatesForChannel(library, channelId);
+
+    for (const templateRef of templates) {
+      if (seen.has(templateRef.id)) continue;
+      seen.add(templateRef.id);
+
+      const template = codeTemplateCache.get(templateRef.id);
+      if (template && shouldAddToScripts(template)) {
+        scripts.push(getCode(template));
+      }
+    }
+  }
+
+  return scripts;
+}
+
+/**
  * Serialize a code template to XML
  */
 function serializeCodeTemplate(template: CodeTemplate): string {
