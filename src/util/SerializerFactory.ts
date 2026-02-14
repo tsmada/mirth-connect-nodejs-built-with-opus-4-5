@@ -84,7 +84,7 @@ export interface EDISerializationProperties extends SerializationProperties {
 /**
  * Abstract base class for message serializers.
  */
-abstract class BaseSerializer implements IMessageSerializer {
+export abstract class BaseSerializer implements IMessageSerializer {
   protected serializationProps: SerializationProperties;
   protected deserializationProps: DeserializationProperties;
 
