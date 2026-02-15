@@ -28,6 +28,7 @@ import {
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState, ChannelStatistics } from '../../api/models/DashboardStatus.js';
 import { MetaDataColumn } from '../../api/models/ServerSettings.js';
+import { DESTINATION_SET_KEY } from '../../javascript/userutil/DestinationSet.js';
 import { StorageSettings } from './StorageSettings.js';
 import { setMetaDataMap } from './MetaDataReplacer.js';
 import { runRecoveryTask } from './RecoveryTask.js';
@@ -369,6 +370,17 @@ export class Channel extends EventEmitter {
         } catch (err) {
           console.error(`[${this.name}] Recovery task failed: ${err}`);
         }
+      }
+
+      // Deploy connectors (matches Java Channel.deploy() → connector.onDeploy())
+      // Destinations first, then source — same order as Java
+      for (const dest of this.destinationConnectors) {
+        if (typeof (dest as any).onDeploy === 'function') {
+          await (dest as any).onDeploy();
+        }
+      }
+      if (this.sourceConnector && typeof (this.sourceConnector as any).onDeploy === 'function') {
+        await (this.sourceConnector as any).onDeploy();
       }
 
       // Start destination connectors first (they need to be ready to receive)
@@ -751,6 +763,22 @@ export class Channel extends EventEmitter {
         }
       }
 
+      // Initialize DestinationSet in sourceMap before filter/transformer runs
+      // Java Mirth: Channel.java — populates destination metaDataIds so user scripts
+      // can call destinationSet.remove() to selectively skip destinations
+      const destMetaDataIds = new Set<number>(
+        this.destinationConnectors.map((_, i) => i + 1)
+      );
+      sourceMessage.getSourceMap().set(DESTINATION_SET_KEY, destMetaDataIds);
+
+      // Also build destinationIdMap (connector name → metaDataId) for name-based removal
+      const destIdMap = new Map<string, number>();
+      for (let i = 0; i < this.destinationConnectors.length; i++) {
+        const dc = this.destinationConnectors[i];
+        if (dc) destIdMap.set(dc.getName(), i + 1);
+      }
+      sourceMessage.setDestinationIdMap(destIdMap);
+
       // Execute source filter/transformer
       if (this.sourceConnector) {
         const filtered = await this.sourceConnector.executeFilter(sourceMessage);
@@ -810,9 +838,30 @@ export class Channel extends EventEmitter {
         ?? sourceMessage.getTransformedContent()
         ?? sourceMessage.getRawContent();
 
+      // Read back DestinationSet after filter/transformer — user may have removed destinations
+      const activeDestIds = sourceMessage.getSourceMap().get(DESTINATION_SET_KEY) as Set<number> | undefined;
+
       for (let i = 0; i < this.destinationConnectors.length; i++) {
         const dest = this.destinationConnectors[i];
         if (!dest) continue;
+
+        // Check DestinationSet — skip destinations removed by user scripts
+        const destMetaId = i + 1;
+        if (activeDestIds && !activeDestIds.has(destMetaId)) {
+          // Destination was removed by DestinationSet — mark as FILTERED
+          const filteredMsg = sourceMessage.clone(destMetaId, dest.getName());
+          filteredMsg.setStatus(Status.FILTERED);
+          message.setConnectorMessage(destMetaId, filteredMsg);
+          this.stats.filtered++;
+          this.statsAccumulator.increment(destMetaId, Status.FILTERED);
+          await this.persistInTransaction([
+            (conn) => insertConnectorMessage(this.id, messageId, destMetaId, dest.getName(), filteredMsg.getReceivedDate(), Status.RECEIVED, 0, {}, conn),
+            (conn) => updateConnectorMessageStatus(this.id, messageId, destMetaId, Status.FILTERED, conn),
+            ...this.statsAccumulator.getFlushOps(this.id, serverId),
+          ]);
+          this.statsAccumulator.reset();
+          continue;
+        }
 
         const destMessage = sourceMessage.clone(i + 1, dest.getName());
 
@@ -1130,12 +1179,12 @@ export class Channel extends EventEmitter {
       this.statsAccumulator.reset();
     }
 
-    // Final SOURCE_MAP write — single INSERT (no early write to upsert over)
+    // Final SOURCE_MAP write — upsert because storeMaps may have already INSERTed it during source intake
     // Always persisted regardless of storeMaps flag — needed for trace feature
     const srcMap = sourceMessage.getSourceMap();
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
 
     this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });
@@ -1323,6 +1372,19 @@ export class Channel extends EventEmitter {
         }
       }
 
+      // Initialize DestinationSet in sourceMap before filter/transformer runs (same as dispatchRawMessage)
+      const destMetaDataIds2 = new Set<number>(
+        this.destinationConnectors.map((_, i) => i + 1)
+      );
+      sourceMessage.getSourceMap().set(DESTINATION_SET_KEY, destMetaDataIds2);
+
+      const destIdMap2 = new Map<string, number>();
+      for (let i = 0; i < this.destinationConnectors.length; i++) {
+        const dc = this.destinationConnectors[i];
+        if (dc) destIdMap2.set(dc.getName(), i + 1);
+      }
+      sourceMessage.setDestinationIdMap(destIdMap2);
+
       // Execute source filter/transformer
       if (this.sourceConnector) {
         const filtered = await this.sourceConnector.executeFilter(sourceMessage);
@@ -1381,9 +1443,29 @@ export class Channel extends EventEmitter {
         ?? sourceMessage.getTransformedContent()
         ?? sourceMessage.getRawContent();
 
+      // Read back DestinationSet after filter/transformer (same as dispatchRawMessage)
+      const activeDestIds2 = sourceMessage.getSourceMap().get(DESTINATION_SET_KEY) as Set<number> | undefined;
+
       for (let i = 0; i < this.destinationConnectors.length; i++) {
         const dest = this.destinationConnectors[i];
         if (!dest) continue;
+
+        // Check DestinationSet — skip destinations removed by user scripts
+        const destMetaId2 = i + 1;
+        if (activeDestIds2 && !activeDestIds2.has(destMetaId2)) {
+          const filteredMsg = sourceMessage.clone(destMetaId2, dest.getName());
+          filteredMsg.setStatus(Status.FILTERED);
+          message.setConnectorMessage(destMetaId2, filteredMsg);
+          this.stats.filtered++;
+          this.statsAccumulator.increment(destMetaId2, Status.FILTERED);
+          await this.persistInTransaction([
+            (conn) => insertConnectorMessage(this.id, messageId, destMetaId2, dest.getName(), filteredMsg.getReceivedDate(), Status.RECEIVED, 0, {}, conn),
+            (conn) => updateConnectorMessageStatus(this.id, messageId, destMetaId2, Status.FILTERED, conn),
+            ...this.statsAccumulator.getFlushOps(this.id, serverId),
+          ]);
+          this.statsAccumulator.reset();
+          continue;
+        }
 
         const destMessage = sourceMessage.clone(i + 1, dest.getName());
 
@@ -1652,11 +1734,11 @@ export class Channel extends EventEmitter {
       this.statsAccumulator.reset();
     }
 
-    // Final SOURCE_MAP write — single INSERT (no early write to upsert over)
+    // Final SOURCE_MAP write — upsert because storeMaps may have already INSERTed it during source intake
     const srcMap = sourceMessage.getSourceMap();
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
     }
 
     this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });

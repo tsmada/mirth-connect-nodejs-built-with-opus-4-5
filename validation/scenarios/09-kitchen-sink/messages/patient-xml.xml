@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<patient>
+  <id>XML001</id>
+  <name>
+    <given>ALICE</given>
+    <family>XMLTEST</family>
+  </name>
+  <dob>19901215</dob>
+  <gender>F</gender>
+  <address>
+    <street>456 OAK AVE</street>
+    <city>TESTVILLE</city>
+    <state>TX</state>
+    <zip>75001</zip>
+  </address>
+</patient>

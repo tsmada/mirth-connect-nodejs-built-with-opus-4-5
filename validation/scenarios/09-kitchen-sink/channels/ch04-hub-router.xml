@@ -284,7 +284,7 @@ $gc('hubRouteCount', count);</script>
         <wsdlUrl></wsdlUrl>
         <service></service>
         <port></port>
-        <locationURI>http://localhost:8092/ws/patient</locationURI>
+        <locationURI>http://localhost:8092/services/PatientService</locationURI>
         <socketTimeout>30000</socketTimeout>
         <soapAction>processPatient</soapAction>
         <envelope>&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"&gt;&lt;soapenv:Body&gt;${message.encodedData}&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;</envelope>
@@ -351,7 +351,7 @@ $gc('hubRouteCount', count);</script>
         </destinationConnectorProperties>
         <host>localhost</host>
         <port>11112</port>
-        <applicationEntity>MIRTH_SCU</applicationEntity>
+        <applicationEntity>MIRTH_SCP</applicationEntity>
         <localHost></localHost>
         <localPort></localPort>
         <localApplicationEntity>MIRTH_SCU</localApplicationEntity>

@@ -1,9 +1,10 @@
 /**
  * KitchenSinkRunner — End-to-end integration test exercising all connector types,
- * data types, script types, and map types across 12 interconnected channels.
+ * data types, script types, and map types across 18 interconnected channels.
  *
- * Runs 9 sequential phases: setup, MLLP, HTTP, File, SOAP loopback, DICOM loopback,
- * JMS loopback, JS Rx + Trace, and Maps/Filters/Stats/Cleanup.
+ * Runs 14 sequential phases: setup, MLLP, HTTP, File, SOAP loopback, DICOM loopback,
+ * JMS loopback, JS Rx + Trace, Maps/Filters/Stats, XML Pipeline, HL7 Transform,
+ * JSON + Error Flow, Multi-Dest $r, and API Verify + Cleanup.
  *
  * Prerequisites:
  *   1. Node.js Mirth running on localhost:8081 (or NODE_MIRTH_URL)
@@ -40,6 +41,12 @@ const CHANNEL_IDS = {
   CH10_DICOM_SCP:       'ks000010-0010-0010-0010-000000000010',
   CH11_JMS_CONSUMER:    'ks000011-0011-0011-0011-000000000011',
   CH12_JS_GENERATOR:    'ks000012-0012-0012-0012-000000000012',
+  CH13_XML_PIPELINE:    'ks000013-0013-0013-0013-000000000013',
+  CH14_HL7_TRANSFORM:   'ks000014-0014-0014-0014-000000000014',
+  CH15_JSON_INBOUND:    'ks000015-0015-0015-0015-000000000015',
+  CH16_ERROR_GENERATOR: 'ks000016-0016-0016-0016-000000000016',
+  CH17_MULTI_DEST:      'ks000017-0017-0017-0017-000000000017',
+  CH18_API_VERIFY:      'ks000018-0018-0018-0018-000000000018',
 };
 
 const CODE_TEMPLATE_LIBRARY_ID = 'ks-lib-0001-0001-0001-000000000001';
@@ -52,12 +59,18 @@ const PORTS = {
   DICOM: 11112,
   SMTP: 2525,
   STOMP: 61613,
+  XML_PIPELINE: 8093,
+  HL7_TRANSFORM: 8094,
+  JSON_INBOUND: 8095,
+  MULTI_DEST: 8096,
+  API_VERIFY: 8097,
 };
 
 const FILE_PATHS = {
-  INPUT:  '/tmp/mirth-ks/input',
-  OUTPUT: '/tmp/mirth-ks/output',
-  AUDIT:  '/tmp/mirth-ks/audit',
+  INPUT:       '/tmp/mirth-ks/input',
+  OUTPUT:      '/tmp/mirth-ks/output',
+  AUDIT:       '/tmp/mirth-ks/audit',
+  JSON_OUTPUT: '/tmp/mirth-ks/json-output',
 };
 
 // ---------------------------------------------------------------------------
@@ -237,15 +250,20 @@ export class KitchenSinkRunner {
     this.smtp = new MockSmtpServer();
 
     this.phases = [
-      { name: 'Phase 0: Setup',                fn: () => this.phase0Setup() },
-      { name: 'Phase 1: MLLP Test',            fn: () => this.phase1Mllp() },
-      { name: 'Phase 2: HTTP Test',             fn: () => this.phase2Http() },
-      { name: 'Phase 3: File Test',             fn: () => this.phase3File() },
-      { name: 'Phase 4: SOAP Loopback',         fn: () => this.phase4Soap() },
-      { name: 'Phase 5: DICOM Loopback',        fn: () => this.phase5Dicom() },
-      { name: 'Phase 6: JMS Loopback',          fn: () => this.phase6Jms() },
-      { name: 'Phase 7: JS Rx + Trace',         fn: () => this.phase7JsTrace() },
-      { name: 'Phase 8: Maps + Filters + Stats', fn: () => this.phase8Cleanup() },
+      { name: 'Phase 0: Setup',                    fn: () => this.phase0Setup() },
+      { name: 'Phase 1: MLLP Test',                fn: () => this.phase1Mllp() },
+      { name: 'Phase 2: HTTP Test',                 fn: () => this.phase2Http() },
+      { name: 'Phase 3: File Test',                 fn: () => this.phase3File() },
+      { name: 'Phase 4: SOAP Loopback',             fn: () => this.phase4Soap() },
+      { name: 'Phase 5: DICOM Loopback',            fn: () => this.phase5Dicom() },
+      { name: 'Phase 6: JMS Loopback',              fn: () => this.phase6Jms() },
+      { name: 'Phase 7: JS Rx + Trace',             fn: () => this.phase7JsTrace() },
+      { name: 'Phase 8: Maps + Filters + Stats',    fn: () => this.phase8MapsFilters() },
+      { name: 'Phase 9: XML Pipeline',              fn: () => this.phase9XmlPipeline() },
+      { name: 'Phase 10: HL7 Transform',            fn: () => this.phase10Hl7Transform() },
+      { name: 'Phase 11: JSON + Error Flow',        fn: () => this.phase11JsonError() },
+      { name: 'Phase 12: Multi-Dest $r',            fn: () => this.phase12MultiDest() },
+      { name: 'Phase 13: API Verify + Cleanup',     fn: () => this.phase13ApiCleanup() },
     ];
   }
 
@@ -327,6 +345,27 @@ export class KitchenSinkRunner {
   // =========================================================================
 
   private async phase0Setup(): Promise<void> {
+    // 0. Undeploy all existing channels to free ports
+    if (this.verbose) log('INFO', 'Undeploying all existing channels to free ports...');
+    try {
+      const existingStatuses = await this.client.getChannelStatuses();
+      for (const status of existingStatuses) {
+        if (status.channelId && status.state !== 'UNDEPLOYED') {
+          try {
+            await this.client.undeployChannel(status.channelId);
+            if (this.verbose) log('INFO', `Undeployed existing channel: ${status.name || status.channelId}`);
+          } catch {
+            // Best effort
+          }
+        }
+      }
+      if (existingStatuses.length > 0) {
+        await this.delay(1000);
+      }
+    } catch (e: any) {
+      if (this.verbose) log('WARN', `Could not undeploy existing channels: ${e.message}`);
+    }
+
     // 1. Start mock SMTP server
     if (this.verbose) log('INFO', 'Starting mock SMTP server on port ' + PORTS.SMTP);
     await this.smtp.start(PORTS.SMTP);
@@ -345,6 +384,28 @@ export class KitchenSinkRunner {
         password: 'mirth',
         database: 'mirthdb',
       });
+
+      // Drop per-channel tables from previous test runs to avoid duplicate key errors.
+      // These tables persist across channel delete/recreate because deleteChannel()
+      // only removes the CHANNEL row, not the per-channel message tables.
+      for (const channelId of Object.values(CHANNEL_IDS)) {
+        const suffix = channelId.replace(/-/g, '_');
+        for (const prefix of ['D_M', 'D_MM', 'D_MC', 'D_MA', 'D_MS', 'D_MSQ', 'D_MCM']) {
+          try {
+            await conn.execute(`DROP TABLE IF EXISTS ${prefix}${suffix}`);
+          } catch {
+            // Ignore errors (table may not exist)
+          }
+        }
+        // Also remove from D_CHANNELS registry
+        try {
+          await conn.execute(`DELETE FROM D_CHANNELS WHERE CHANNEL_ID = ?`, [channelId]);
+        } catch {
+          // Ignore
+        }
+      }
+      if (this.verbose) log('INFO', 'Cleaned up per-channel tables from previous runs');
+
       const setupSql = fs.readFileSync(
         path.join(this.scenarioDir, 'sql/setup.sql'),
         'utf8'
@@ -377,6 +438,12 @@ export class KitchenSinkRunner {
     if (this.verbose) log('INFO', 'Code template library imported');
 
     // 6. Import and deploy channels in dependency order
+    // Tier 5 (new leaf channels - no dependencies)
+    const tier5 = [
+      'ch16-error-generator.xml',
+      'ch17-multi-dest.xml',
+      'ch18-api-verify.xml',
+    ];
     // Tier 4 (leaf channels - no downstream dependencies)
     const tier4 = ['ch07-audit-logger.xml', 'ch08-completion-handler.xml'];
     // Tier 3 (depend on tier 4)
@@ -389,6 +456,12 @@ export class KitchenSinkRunner {
     if (this.jmsAvailable) {
       tier3.push('ch11-jms-consumer.xml');
     }
+    // Tier 3b (new channels that depend on CH7 audit or CH16 error)
+    const tier3b = [
+      'ch13-xml-pipeline.xml',
+      'ch14-hl7-transform.xml',
+      'ch15-json-inbound.xml',
+    ];
     // Tier 2 (hub - depends on tier 3 + 4)
     const tier2 = ['ch04-hub-router.xml'];
     // Tier 1 (entry points - depend on tier 2)
@@ -399,7 +472,7 @@ export class KitchenSinkRunner {
       'ch12-js-generator.xml',
     ];
 
-    const allTiers = [tier4, tier3, tier2, tier1];
+    const allTiers = [tier5, tier4, tier3, tier3b, tier2, tier1];
     for (const tier of allTiers) {
       for (const filename of tier) {
         await this.deployChannelFromFile(filename);
@@ -733,10 +806,10 @@ export class KitchenSinkRunner {
   }
 
   // =========================================================================
-  // Phase 8: Maps + Filters + Statistics + Cleanup
+  // Phase 8: Maps + Filters + Statistics (no cleanup — moved to Phase 13)
   // =========================================================================
 
-  private async phase8Cleanup(): Promise<void> {
+  private async phase8MapsFilters(): Promise<void> {
     // 1. Send ORU^R01 to CH1 — should be filtered (CH1 only accepts ADT^A01)
     const oru = fs.readFileSync(
       path.join(this.scenarioDir, 'messages/oru-r01.hl7'),
@@ -787,9 +860,334 @@ export class KitchenSinkRunner {
       // but may be filtered at the source filter
       this.assert(ch1Stats.received >= 2, `CH1 received >= 2 after ORU (got ${ch1Stats.received})`);
     }
+  }
+
+  // =========================================================================
+  // Phase 9: XML Pipeline + Multi-Step + $co + $cfg
+  // =========================================================================
+
+  private async phase9XmlPipeline(): Promise<void> {
+    // 1. POST valid XML patient to CH13
+    const xmlMsg = fs.readFileSync(
+      path.join(this.scenarioDir, 'messages/patient-xml.xml'),
+      'utf8'
+    );
+    const resp = await axios.post(
+      `http://localhost:${PORTS.XML_PIPELINE}/xml`,
+      xmlMsg,
+      {
+        headers: { 'Content-Type': 'application/xml' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    this.assert(
+      resp.status === 200,
+      `CH13 XML POST accepted (status ${resp.status})`
+    );
+
+    // 2. Wait for VM propagation
+    await this.delay(2000);
+
+    // 3. Check CH13 stats
+    const ch13Stats = await getChannelStats(this.client, CHANNEL_IDS.CH13_XML_PIPELINE);
+    this.assert(ch13Stats !== null, 'CH13 statistics available');
+    this.assert(ch13Stats!.received >= 1, `CH13 received >= 1 (got ${ch13Stats!.received})`);
+
+    // 4. Check audit log for XML patient ID
+    const auditLog = this.readAuditLog();
+    this.assert(
+      auditLog.includes('XML001') || auditLog.includes('XML_PIPELINE'),
+      'Audit log contains XML pipeline entry'
+    );
+
+    // 5. POST invalid XML — should be filtered by multi-rule AND filter
+    const invalidXml = '<empty/>';
+    const filtResp = await axios.post(
+      `http://localhost:${PORTS.XML_PIPELINE}/xml`,
+      invalidXml,
+      {
+        headers: { 'Content-Type': 'application/xml' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    if (this.verbose) log('INFO', `Invalid XML POST status: ${filtResp.status}`);
+
+    await this.delay(1000);
+
+    // 6. Check CH13 filtered count increased
+    const ch13StatsAfter = await getChannelStats(this.client, CHANNEL_IDS.CH13_XML_PIPELINE);
+    this.assert(ch13StatsAfter !== null, 'CH13 stats available after filter test');
+    this.assert(
+      ch13StatsAfter!.filtered >= 1,
+      `CH13 filtered >= 1 (got ${ch13StatsAfter!.filtered})`
+    );
+  }
+
+  // =========================================================================
+  // Phase 10: HL7v2 Transform + validate + createSegment + DestinationSet
+  // =========================================================================
+
+  private async phase10Hl7Transform(): Promise<void> {
+    // 1. POST normal HL7v2 to CH14 (both D1 Audit + D2 DB should receive)
+    const hl7Normal = fs.readFileSync(
+      path.join(this.scenarioDir, 'messages/hl7v2-via-http.hl7'),
+      'utf8'
+    );
+    const resp1 = await axios.post(
+      `http://localhost:${PORTS.HL7_TRANSFORM}/hl7`,
+      hl7Normal,
+      {
+        headers: { 'Content-Type': 'text/plain' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    this.assert(
+      resp1.status === 200,
+      `CH14 normal HL7 POST accepted (status ${resp1.status})`
+    );
+
+    await this.delay(1000);
+
+    // 2. POST filtered HL7v2 (DestinationSet removes D2 DB Writer)
+    const hl7Filtered = fs.readFileSync(
+      path.join(this.scenarioDir, 'messages/hl7v2-filtered.hl7'),
+      'utf8'
+    );
+    const resp2 = await axios.post(
+      `http://localhost:${PORTS.HL7_TRANSFORM}/hl7`,
+      hl7Filtered,
+      {
+        headers: { 'Content-Type': 'text/plain' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    this.assert(
+      resp2.status === 200,
+      `CH14 filtered HL7 POST accepted (status ${resp2.status})`
+    );
+
+    await this.delay(2000);
+
+    // 3. Check CH14 received both messages
+    const ch14Stats = await getChannelStats(this.client, CHANNEL_IDS.CH14_HL7_TRANSFORM);
+    this.assert(ch14Stats !== null, 'CH14 statistics available');
+    this.assert(ch14Stats!.received >= 2, `CH14 received >= 2 (got ${ch14Stats!.received})`);
+
+    // 4. Check database: normal patient should have DB row, filtered should NOT
+    if (this.dbAvailable && this.dbConnection) {
+      const [normalRows] = await this.dbConnection.execute(
+        'SELECT * FROM ks_batch_results WHERE patient_id = ?',
+        ['HL7HTTP001']
+      );
+      this.assert(
+        (normalRows as any[]).length >= 1,
+        `DB ks_batch_results has row for HL7HTTP001 (found ${(normalRows as any[]).length})`
+      );
+
+      const [filteredRows] = await this.dbConnection.execute(
+        'SELECT * FROM ks_batch_results WHERE patient_id = ?',
+        ['FILTERED_PATIENT']
+      );
+      this.assert(
+        (filteredRows as any[]).length === 0,
+        `DB ks_batch_results has NO row for FILTERED_PATIENT (found ${(filteredRows as any[]).length})`
+      );
+    } else if (this.verbose) {
+      log('SKIP', 'DB assertions skipped (database not available)');
+    }
+
+    // 5. Check audit log for both patient IDs
+    const auditLog = this.readAuditLog();
+    this.assert(
+      auditLog.includes('HL7HTTP001') || auditLog.includes('HL7_HTTP'),
+      'Audit log contains HL7 HTTP normal entry'
+    );
+  }
+
+  // =========================================================================
+  // Phase 11: JSON Inbound + Error Flow
+  // =========================================================================
+
+  private async phase11JsonError(): Promise<void> {
+    // 1. POST JSON patient to CH15
+    const jsonMsg = fs.readFileSync(
+      path.join(this.scenarioDir, 'messages/patient-json-inbound.json'),
+      'utf8'
+    );
+    const resp = await axios.post(
+      `http://localhost:${PORTS.JSON_INBOUND}/json`,
+      jsonMsg,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    this.assert(
+      resp.status === 200,
+      `CH15 JSON POST accepted (status ${resp.status})`
+    );
+
+    // 2. Wait for VM routing to CH16 (error generator)
+    await this.delay(3000);
+
+    // 3. Check CH15 received
+    const ch15Stats = await getChannelStats(this.client, CHANNEL_IDS.CH15_JSON_INBOUND);
+    this.assert(ch15Stats !== null, 'CH15 statistics available');
+    this.assert(ch15Stats!.received >= 1, `CH15 received >= 1 (got ${ch15Stats!.received})`);
+
+    // 4. Check CH16 received (VM routing worked)
+    const ch16Stats = await getChannelStats(this.client, CHANNEL_IDS.CH16_ERROR_GENERATOR);
+    this.assert(ch16Stats !== null, 'CH16 statistics available');
+    this.assert(ch16Stats!.received >= 1, `CH16 received >= 1 (got ${ch16Stats!.received})`);
+
+    // 5. Check CH16 has errors (intentional throw)
+    this.assert(
+      ch16Stats!.error >= 1,
+      `CH16 error >= 1 (got ${ch16Stats!.error})`
+    );
+
+    // 6. Check file output from CH15 D2
+    const outputFile = path.join(FILE_PATHS.JSON_OUTPUT, 'result.xml');
+    this.assert(
+      fs.existsSync(outputFile),
+      'JSON output file result.xml exists'
+    );
+
+    // 7. Verify output contains patient ID
+    const outputContent = fs.readFileSync(outputFile, 'utf8');
+    this.assert(
+      outputContent.includes('JSON001'),
+      'JSON output contains patient ID JSON001'
+    );
+  }
+
+  // =========================================================================
+  // Phase 12: Multi-Destination $r + Postprocessor
+  // =========================================================================
+
+  private async phase12MultiDest(): Promise<void> {
+    // 1. POST to CH17
+    const jsonMsg = fs.readFileSync(
+      path.join(this.scenarioDir, 'messages/response-test.json'),
+      'utf8'
+    );
+    const resp = await axios.post(
+      `http://localhost:${PORTS.MULTI_DEST}/multi`,
+      jsonMsg,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    this.assert(
+      resp.status === 200,
+      `CH17 multi-dest POST accepted (status ${resp.status})`
+    );
+
+    // 2. Wait for all 3 destinations to process
+    await this.delay(2000);
+
+    // 3. Check CH17 received
+    const ch17Stats = await getChannelStats(this.client, CHANNEL_IDS.CH17_MULTI_DEST);
+    this.assert(ch17Stats !== null, 'CH17 statistics available');
+    this.assert(ch17Stats!.received >= 1, `CH17 received >= 1 (got ${ch17Stats!.received})`);
+
+    // 4. Check all 3 destinations sent
+    this.assert(
+      ch17Stats!.sent >= 3,
+      `CH17 sent >= 3 (got ${ch17Stats!.sent})`
+    );
+
+    // 5. No errors expected
+    this.assert(
+      ch17Stats!.error === 0,
+      `CH17 error === 0 (got ${ch17Stats!.error})`
+    );
+  }
+
+  // =========================================================================
+  // Phase 13: API Verification + Full Cleanup
+  // =========================================================================
+
+  private async phase13ApiCleanup(): Promise<void> {
+    // 1. POST to CH18 (API verify channel)
+    const resp = await axios.post(
+      `http://localhost:${PORTS.API_VERIFY}/api-test`,
+      'API_VERIFICATION_PAYLOAD',
+      {
+        headers: { 'Content-Type': 'text/plain' },
+        validateStatus: () => true,
+        timeout: 10000,
+      }
+    );
+    this.assert(
+      resp.status === 200,
+      `CH18 API test POST accepted (status ${resp.status})`
+    );
+
+    await this.delay(2000);
+
+    // 2. Message count via channel stats
+    const ch18Stats = await getChannelStats(this.client, CHANNEL_IDS.CH18_API_VERIFY);
+    this.assert(ch18Stats !== null, 'CH18 statistics available');
+    this.assert(ch18Stats!.received >= 1, `CH18 received >= 1 (got ${ch18Stats!.received})`);
+    this.assert(ch18Stats!.sent >= 1, `CH18 sent >= 1 (got ${ch18Stats!.sent})`);
+    this.assert(ch18Stats!.error === 0, `CH18 error === 0 (got ${ch18Stats!.error})`);
+
+    // 3. Message search API — verify messages exist for CH18
+    try {
+      const msgResp = await this.client.rawGet(
+        `/api/channels/${CHANNEL_IDS.CH18_API_VERIFY}/messages?limit=10`
+      );
+      if (msgResp.status === 200) {
+        const msgData = typeof msgResp.data === 'string' ? msgResp.data : JSON.stringify(msgResp.data);
+        this.assert(
+          msgData.length > 10,
+          `CH18 message API returned data (${msgData.length} chars)`
+        );
+      } else if (this.verbose) {
+        log('WARN', `Message API returned status ${msgResp.status}`);
+      }
+    } catch (e: any) {
+      if (this.verbose) log('WARN', `Message API error: ${e.message}`);
+    }
+
+    // 4. Channel export API
+    try {
+      const exportResp = await this.client.getChannelXml(CHANNEL_IDS.CH18_API_VERIFY);
+      this.assert(
+        exportResp !== null && exportResp.includes('KS CH18'),
+        'Channel export API returns valid XML'
+      );
+    } catch (e: any) {
+      if (this.verbose) log('WARN', `Channel export error: ${e.message}`);
+    }
+
+    // ===== FULL CLEANUP (moved from old phase8) =====
 
     // 5. Undeploy all channels (reverse of deployment order)
-    const allChannelIds = [
+    // New channels first (entry points → leaves)
+    const newChannelIds = [
+      CHANNEL_IDS.CH13_XML_PIPELINE,
+      CHANNEL_IDS.CH14_HL7_TRANSFORM,
+      CHANNEL_IDS.CH15_JSON_INBOUND,
+      CHANNEL_IDS.CH16_ERROR_GENERATOR,
+      CHANNEL_IDS.CH17_MULTI_DEST,
+      CHANNEL_IDS.CH18_API_VERIFY,
+    ];
+    for (const channelId of newChannelIds) {
+      await this.undeployAndDelete(channelId);
+    }
+    if (this.verbose) log('INFO', 'New channels (CH13-CH18) undeployed and deleted');
+
+    // Original channels
+    const origChannelIds = [
       CHANNEL_IDS.CH1_ADT_RECEIVER,
       CHANNEL_IDS.CH2_HTTP_GATEWAY,
       CHANNEL_IDS.CH3_FILE_PROCESSOR,
@@ -803,10 +1201,10 @@ export class KitchenSinkRunner {
       CHANNEL_IDS.CH8_COMPLETION,
     ];
     if (this.jmsAvailable) {
-      allChannelIds.splice(4, 0, CHANNEL_IDS.CH11_JMS_CONSUMER);
+      origChannelIds.splice(4, 0, CHANNEL_IDS.CH11_JMS_CONSUMER);
     }
 
-    for (const channelId of allChannelIds) {
+    for (const channelId of origChannelIds) {
       await this.undeployAndDelete(channelId);
     }
     if (this.verbose) log('INFO', 'All channels undeployed and deleted');

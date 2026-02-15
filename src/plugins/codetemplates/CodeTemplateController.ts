@@ -308,6 +308,22 @@ export async function updateCodeTemplateLibraries(
     library.revision = (existing?.revision ?? 0) + 1;
     library.lastModified = new Date();
 
+    // If the library contains embedded templates with code, persist them
+    // individually to CODE_TEMPLATE table and codeTemplateCache.
+    // This handles the case where libraries are imported with full template
+    // content (e.g., PUT /codeTemplateLibraries with embedded <codeTemplate> elements).
+    for (const template of library.codeTemplates) {
+      if (template.id && template.properties?.code) {
+        const existingTemplate = codeTemplateCache.get(template.id);
+        template.revision = (existingTemplate?.revision ?? 0) + 1;
+        template.lastModified = new Date();
+
+        const templateXml = serializeCodeTemplate(template);
+        await MirthDao.upsertCodeTemplate(template.id, template.name, templateXml, template.revision);
+        codeTemplateCache.set(template.id, template);
+      }
+    }
+
     const libraryXml = serializeLibrary(library);
     await MirthDao.upsertCodeTemplateLibrary(library.id, library.name, libraryXml, library.revision);
     libraryCache.set(library.id, library);
@@ -443,7 +459,9 @@ export async function getAllCodeTemplateScriptsForChannel(
       if (seen.has(templateRef.id)) continue;
       seen.add(templateRef.id);
 
-      const template = codeTemplateCache.get(templateRef.id);
+      // Try the code template cache first (for individually stored templates),
+      // fall back to the embedded template from the library (for library-imported templates)
+      const template = codeTemplateCache.get(templateRef.id) ?? templateRef;
       if (template && shouldAddToScripts(template)) {
         scripts.push(getCode(template));
       }

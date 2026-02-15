@@ -213,7 +213,10 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
       return xml;
     }
 
-    return `    <${segmentName}.${fieldNum}>${this.escapeXml(value)}</${segmentName}.${fieldNum}>\n`;
+    // Simple field with no component separators — still wrap in .1 component element
+    // to match Java Mirth's ER7Serializer behavior and enable E4X navigation
+    // (e.g., msg['PID']['PID.3']['PID.3.1'] must resolve)
+    return `    <${segmentName}.${fieldNum}>\n      <${segmentName}.${fieldNum}.1>${this.escapeXml(value)}</${segmentName}.${fieldNum}.1>\n    </${segmentName}.${fieldNum}>\n`;
   }
 
   // --- Private XML -> ER7 conversion methods ---

@@ -58,7 +58,13 @@ export class DestinationSet {
    * @return A boolean indicating whether at least one destination connector was actually removed
    *         from processing for this message.
    */
-  remove(metaDataIdOrConnectorName: number | string): boolean {
+  remove(metaDataIdOrConnectorName: number | string | Iterable<number | string>): boolean {
+    // Java has overloaded remove(String), remove(Integer), remove(Collection<?>)
+    // JavaScript must dispatch based on argument type at runtime
+    if (Array.isArray(metaDataIdOrConnectorName) || (metaDataIdOrConnectorName != null && typeof metaDataIdOrConnectorName === 'object' && Symbol.iterator in metaDataIdOrConnectorName)) {
+      return this.removeMany(metaDataIdOrConnectorName as Iterable<number | string>);
+    }
+
     if (this.metaDataIds !== null) {
       const metaDataId = this.convertToMetaDataId(metaDataIdOrConnectorName);
 
@@ -98,7 +104,12 @@ export class DestinationSet {
    * @return A boolean indicating whether at least one destination connector was actually removed
    *         from processing for this message.
    */
-  removeAllExcept(metaDataIdOrConnectorName: number | string): boolean {
+  removeAllExcept(metaDataIdOrConnectorName: number | string | Iterable<number | string>): boolean {
+    // Java has overloaded removeAllExcept(String), removeAllExcept(Integer), removeAllExcept(Collection<?>)
+    if (Array.isArray(metaDataIdOrConnectorName) || (metaDataIdOrConnectorName != null && typeof metaDataIdOrConnectorName === 'object' && Symbol.iterator in metaDataIdOrConnectorName)) {
+      return this.removeAllExceptMany(metaDataIdOrConnectorName as Iterable<number | string>);
+    }
+
     if (this.metaDataIds !== null) {
       const metaDataId = this.convertToMetaDataId(metaDataIdOrConnectorName);
 

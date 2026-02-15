@@ -21,6 +21,7 @@ import {
   SerializationType,
 } from '../../javascript/runtime/ScriptBuilder.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
+import { SerializerFactory } from '../../util/SerializerFactory.js';
 
 export interface FilterTransformerResult {
   filtered: boolean;
@@ -34,6 +35,8 @@ export interface FilterTransformerScripts {
   transformerSteps?: TransformerStep[];
   inboundDataType?: SerializationType;
   outboundDataType?: SerializationType;
+  inboundDataTypeName?: string;
+  outboundDataTypeName?: string;
   template?: string;
 }
 
@@ -42,6 +45,7 @@ export class FilterTransformerExecutor {
   private transformerSteps: TransformerStep[] = [];
   private inboundDataType: SerializationType = SerializationType.RAW;
   private outboundDataType: SerializationType = SerializationType.RAW;
+  private inboundDataTypeName: string = 'RAW';
   private template: string = '';
   private executor: JavaScriptExecutor;
   private context: ScriptContext;
@@ -57,6 +61,7 @@ export class FilterTransformerExecutor {
     this.transformerSteps = scripts.transformerSteps ?? [];
     this.inboundDataType = scripts.inboundDataType ?? SerializationType.RAW;
     this.outboundDataType = scripts.outboundDataType ?? SerializationType.RAW;
+    this.inboundDataTypeName = scripts.inboundDataTypeName ?? 'RAW';
     this.template = scripts.template ?? '';
   }
 
@@ -207,16 +212,28 @@ export class FilterTransformerExecutor {
   }
 
   /**
-   * Get raw content from connector message
+   * Get content from connector message, serialized for the inbound data type.
+   *
+   * Java Mirth: FilterTransformerExecutor.doFilterTransformerForEntry() serializes
+   * the raw content using inbound.getSerializer().toXML() BEFORE the filter/transformer
+   * script runs. This is critical for data types like HL7V2 where the raw format (ER7)
+   * must be converted to XML for E4X-style navigation (msg['MSH']['MSH.9']).
    */
   private getRawContent(connectorMessage: ConnectorMessage): string {
     // Prefer processed raw, fall back to raw
     const processedRaw = connectorMessage.getProcessedRawData();
-    if (processedRaw) {
-      return processedRaw;
+    const rawContent = processedRaw || connectorMessage.getRawData() || '';
+
+    // Serialize to XML if the inbound data type requires it
+    // (e.g., HL7V2 ER7 → XML, NCPDP → XML, EDI → XML, Delimited → XML)
+    if (this.inboundDataType === SerializationType.XML && this.inboundDataTypeName) {
+      const serializer = SerializerFactory.getSerializer(this.inboundDataTypeName);
+      if (serializer) {
+        const xml = serializer.toXML(rawContent);
+        if (xml) return xml;
+      }
     }
 
-    const raw = connectorMessage.getRawData();
-    return raw ?? '';
+    return rawContent;
   }
 }

@@ -409,7 +409,8 @@ export class MirthApiClient {
     if (response.status !== 200) return [];
 
     const parsed = this.xmlParser.parse(response.data);
-    const statuses = parsed.list?.dashboardStatus || [];
+    // The statuses servlet wraps items as <list><item>...</item></list>
+    const statuses = parsed.list?.dashboardStatus || parsed.list?.item || [];
     return Array.isArray(statuses) ? statuses : [statuses];
   }
 
@@ -530,8 +531,9 @@ export class MirthApiClient {
 
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const status = await this.getServerStatus();
-        if (status) {
+        // Use /api/health which does NOT require authentication
+        const response = await this.client.get('/api/health');
+        if (response.status === 200) {
           return true;
         }
       } catch {

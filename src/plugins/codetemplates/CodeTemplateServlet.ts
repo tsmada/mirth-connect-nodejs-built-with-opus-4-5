@@ -23,6 +23,103 @@ import { CodeTemplateLibrary } from './models/CodeTemplateLibrary.js';
 
 export const codeTemplateRouter = Router();
 
+/**
+ * Normalize a code template library from XML-parsed body.
+ * fast-xml-parser produces structures like:
+ *   { codeTemplates: { codeTemplate: [...] }, enabledChannelIds: "" }
+ * We need to normalize these to:
+ *   { codeTemplates: [...], enabledChannelIds: [] }
+ */
+/**
+ * Normalize a code template from XML-parsed body.
+ * Handles contextSet: { delegate: { contextType: [...] } } → [...]
+ */
+function normalizeTemplate(raw: any): any {
+  const t = { ...raw };
+
+  // Normalize contextSet: { delegate: { contextType: [...] } } → [...]
+  if (t.contextSet && !Array.isArray(t.contextSet)) {
+    const delegate = t.contextSet.delegate;
+    if (delegate?.contextType) {
+      t.contextSet = Array.isArray(delegate.contextType)
+        ? delegate.contextType
+        : [delegate.contextType];
+    } else {
+      t.contextSet = [];
+    }
+  }
+  if (!Array.isArray(t.contextSet)) {
+    t.contextSet = [];
+  }
+
+  // Normalize includeNewChannels from string to boolean
+  if (typeof t.includeNewChannels === 'string') {
+    t.includeNewChannels = t.includeNewChannels === 'true';
+  }
+
+  return t;
+}
+
+function normalizeLibrary(raw: any): CodeTemplateLibrary {
+  const lib = { ...raw };
+
+  // Normalize codeTemplates: { codeTemplate: [...] } → [...]
+  if (lib.codeTemplates && !Array.isArray(lib.codeTemplates)) {
+    const ct = lib.codeTemplates.codeTemplate;
+    if (ct == null) {
+      lib.codeTemplates = [];
+    } else {
+      lib.codeTemplates = Array.isArray(ct) ? ct : [ct];
+    }
+  }
+  if (!Array.isArray(lib.codeTemplates)) {
+    lib.codeTemplates = [];
+  }
+
+  // Normalize each embedded template
+  lib.codeTemplates = lib.codeTemplates.map(normalizeTemplate);
+
+  // Normalize enabledChannelIds/disabledChannelIds: empty string → []
+  if (!lib.enabledChannelIds || typeof lib.enabledChannelIds === 'string') {
+    lib.enabledChannelIds = lib.enabledChannelIds ? [lib.enabledChannelIds] : [];
+  }
+  if (!lib.disabledChannelIds || typeof lib.disabledChannelIds === 'string') {
+    lib.disabledChannelIds = lib.disabledChannelIds ? [lib.disabledChannelIds] : [];
+  }
+
+  // Normalize includeNewChannels from string to boolean
+  if (typeof lib.includeNewChannels === 'string') {
+    lib.includeNewChannels = lib.includeNewChannels === 'true';
+  }
+
+  return lib as CodeTemplateLibrary;
+}
+
+/**
+ * Extract an array of libraries from the XML-parsed body.
+ * Handles: raw array, { list: { codeTemplateLibrary: ... } }, or single object.
+ */
+function extractLibraries(body: any): CodeTemplateLibrary[] {
+  let raw: any;
+
+  if (Array.isArray(body)) {
+    raw = body;
+  } else if (body?.list?.codeTemplateLibrary != null) {
+    raw = body.list.codeTemplateLibrary;
+    if (!Array.isArray(raw)) raw = [raw];
+  } else if (body?.codeTemplateLibrary != null) {
+    raw = body.codeTemplateLibrary;
+    if (!Array.isArray(raw)) raw = [raw];
+  } else if (body?.id) {
+    // Single library object
+    raw = [body];
+  } else {
+    return [];
+  }
+
+  return raw.map(normalizeLibrary);
+}
+
 // All routes require authentication
 codeTemplateRouter.use(authMiddleware({ required: true }));
 
@@ -114,7 +211,7 @@ codeTemplateRouter.get('/codeTemplateLibraries/:libraryId', authorize({ operatio
  */
 codeTemplateRouter.put('/codeTemplateLibraries', authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }), async (req: Request, res: Response) => {
   try {
-    const libraries: CodeTemplateLibrary[] = req.body;
+    const libraries = extractLibraries(req.body);
     const override = req.query.override === 'true';
 
     const success = await CodeTemplateController.updateCodeTemplateLibraries(libraries, override);

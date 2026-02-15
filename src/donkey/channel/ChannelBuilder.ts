@@ -1297,6 +1297,8 @@ function buildFilterTransformerScripts(
     transformerSteps: extractTransformerSteps(transformer),
     inboundDataType: mapDataTypeToSerialization(transformerObj?.inboundDataType as string),
     outboundDataType: mapDataTypeToSerialization(transformerObj?.outboundDataType as string),
+    inboundDataTypeName: (transformerObj?.inboundDataType as string) || 'RAW',
+    outboundDataTypeName: (transformerObj?.outboundDataType as string) || 'RAW',
     template: (transformerObj?.outboundTemplate as string) || '',
   };
 }

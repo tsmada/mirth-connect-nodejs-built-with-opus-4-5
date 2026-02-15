@@ -1,0 +1,5 @@
+{
+  "id": "RESP001",
+  "action": "multi-dest-test",
+  "payload": "Kitchen sink response map verification"
+}

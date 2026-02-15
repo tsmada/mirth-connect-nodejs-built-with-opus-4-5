@@ -1,0 +1,10 @@
+{
+  "id": "JSON001",
+  "name": {
+    "given": "CAROL",
+    "family": "JSONTEST"
+  },
+  "dob": "19850315",
+  "gender": "F",
+  "sourceType": "JSON_API"
+}
