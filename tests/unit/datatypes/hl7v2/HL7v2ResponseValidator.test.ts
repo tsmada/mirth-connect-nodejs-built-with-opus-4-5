@@ -32,7 +32,7 @@ describe('HL7v2ResponseValidator', () => {
       expect(defaults.successfulACKCode).toBe('AA,CA');
       expect(defaults.errorACKCode).toBe('AE,CE');
       expect(defaults.rejectedACKCode).toBe('AR,CR');
-      expect(defaults.validateMessageControlId).toBe(false);
+      expect(defaults.validateMessageControlId).toBe(true);
       expect(defaults.originalMessageControlId).toBe('');
       expect(defaults.originalIdMapVariable).toBe('');
     });
