@@ -50,9 +50,13 @@ export class NCPDPSerializerAdapter extends BaseSerializer {
 
   /**
    * NCPDP does not require serialization for the toXML direction.
-   * Matches Java: NCPDPSerializer.isSerializationRequired() returns false.
+   * For fromXML (toXml=false), requires serialization when useStrictValidation is enabled.
+   * Matches Java: NCPDPSerializer.isSerializationRequired(boolean).
    */
-  isSerializationRequired(): boolean {
+  isSerializationRequired(toXml?: boolean): boolean {
+    if (toXml === false) {
+      return !!(this.deserializationProps as Record<string, unknown>).useStrictValidation;
+    }
     return false;
   }
 

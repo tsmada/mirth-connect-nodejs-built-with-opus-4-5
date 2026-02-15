@@ -11,10 +11,10 @@ describe('DelimitedSerializerAdapter', () => {
     expect(adapter.getDataType()).toBe('DELIMITED');
   });
 
-  test('isSerializationRequired returns true', () => {
-    expect(adapter.isSerializationRequired()).toBe(true);
-    expect(adapter.isSerializationRequired(true)).toBe(true);
-    expect(adapter.isSerializationRequired(false)).toBe(true);
+  test('isSerializationRequired returns false with defaults', () => {
+    expect(adapter.isSerializationRequired()).toBe(false);
+    expect(adapter.isSerializationRequired(true)).toBe(false);
+    expect(adapter.isSerializationRequired(false)).toBe(false);
   });
 
   test('toXML converts comma-delimited data to XML', () => {
@@ -38,9 +38,10 @@ describe('DelimitedSerializerAdapter', () => {
     expect(result).toContain('Boston');
   });
 
-  test('getMetaDataFromMessage returns mirth_type: Delimited', () => {
+  test('getMetaDataFromMessage returns mirth_type: delimited', () => {
     const metadata = adapter.getMetaDataFromMessage('a,b,c');
-    expect(metadata.get('mirth_type')).toBe('Delimited');
+    expect(metadata.get('mirth_type')).toBe('delimited');
+    expect(metadata.get('mirth_version')).toBe('');
     // Must use mirth_ prefix, NOT bare 'type'
     expect(metadata.has('type')).toBe(false);
   });
@@ -48,7 +49,8 @@ describe('DelimitedSerializerAdapter', () => {
   test('populateMetaData writes mirth_type to map', () => {
     const map = new Map<string, unknown>();
     adapter.populateMetaData('a,b,c', map);
-    expect(map.get('mirth_type')).toBe('Delimited');
+    expect(map.get('mirth_type')).toBe('delimited');
+    expect(map.get('mirth_version')).toBe('');
   });
 
   test('toJSON returns null (not supported)', () => {
