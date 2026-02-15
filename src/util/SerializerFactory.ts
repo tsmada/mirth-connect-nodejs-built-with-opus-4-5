@@ -136,8 +136,20 @@ export class SerializerFactory {
         return {};
 
       case 'RAW':
-      case 'DELIMITED':
         return {};
+
+      case 'DELIMITED':
+        return {
+          columnDelimiter: ',',
+          recordDelimiter: '\\n',
+          columnWidths: null,
+          quoteToken: '"',
+          escapeWithDoubleQuote: true,
+          quoteEscapeToken: '\\',
+          columnNames: null,
+          numberedRows: false,
+          ignoreCR: true,
+        };
 
       case 'EDI/X12':
         return {
@@ -149,7 +161,7 @@ export class SerializerFactory {
 
       case 'HL7V3':
         return {
-          stripNamespaces: true,
+          stripNamespaces: false,
         };
 
       case 'NCPDP':
@@ -186,11 +198,20 @@ export class SerializerFactory {
       case 'XML':
       case 'JSON':
       case 'RAW':
-      case 'DELIMITED':
       case 'EDI/X12':
       case 'HL7V3':
       case 'DICOM':
         return {};
+
+      case 'DELIMITED':
+        return {
+          columnDelimiter: ',',
+          recordDelimiter: '\\n',
+          columnWidths: null,
+          quoteToken: '"',
+          escapeWithDoubleQuote: true,
+          quoteEscapeToken: '\\',
+        };
 
       case 'NCPDP':
         return {
