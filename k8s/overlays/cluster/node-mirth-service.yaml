@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-mirth
+  namespace: mirth-cluster
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+    mirth-mode: cluster
+spec:
+  type: LoadBalancer
+  selector:
+    app: node-mirth
+  ports:
+    - name: http-api
+      port: 8080
+      targetPort: 8080
+    - name: mllp-adt
+      port: 6670
+      targetPort: 6670
+    - name: mllp-e4x
+      port: 6671
+      targetPort: 6671
+    - name: mllp-batch
+      port: 6672
+      targetPort: 6672
+    - name: http-gateway
+      port: 8090
+      targetPort: 8090
+    - name: http-completion
+      port: 8091
+      targetPort: 8091
+    - name: http-soap
+      port: 8092
+      targetPort: 8092
+    - name: http-xml
+      port: 8093
+      targetPort: 8093
+    - name: http-hl7
+      port: 8094
+      targetPort: 8094
+    - name: http-json
+      port: 8095
+      targetPort: 8095
+    - name: http-multi
+      port: 8096
+      targetPort: 8096
+    - name: http-api-verify
+      port: 8097
+      targetPort: 8097
+    - name: http-converter
+      port: 8098
+      targetPort: 8098
+    - name: http-global
+      port: 8099
+      targetPort: 8099
+    - name: http-metadata
+      port: 8100
+      targetPort: 8100
+    - name: http-response
+      port: 8101
+      targetPort: 8101
+    - name: http-e4x-stress
+      port: 8102
+      targetPort: 8102
+    - name: dicom-scp
+      port: 11112
+      targetPort: 11112

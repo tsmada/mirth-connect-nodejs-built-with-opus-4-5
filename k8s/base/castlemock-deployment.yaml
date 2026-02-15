@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: castlemock
+  namespace: mirth-infra
+  labels:
+    app: castlemock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: castlemock
+  template:
+    metadata:
+      labels:
+        app: castlemock
+    spec:
+      containers:
+        - name: castlemock
+          image: castlemock/castlemock:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m

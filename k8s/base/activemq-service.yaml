@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: activemq
+  namespace: mirth-infra
+  labels:
+    app: activemq
+spec:
+  type: ClusterIP
+  ports:
+    - port: 61613
+      targetPort: 61613
+      protocol: TCP
+      name: stomp
+    - port: 61616
+      targetPort: 61616
+      protocol: TCP
+      name: openwire
+    - port: 8161
+      targetPort: 8161
+      protocol: TCP
+      name: web
+  selector:
+    app: activemq

@@ -1,0 +1,185 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-scripts
+  namespace: mirth-k6
+data:
+  api-load.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Rate, Trend } from 'k6/metrics';
+
+    const errorRate = new Rate('errors');
+    const healthLatency = new Trend('health_latency');
+
+    // Target the Node.js Mirth service in the cluster namespace
+    const BASE_URL = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local:8080';
+
+    export const options = {
+      stages: [
+        { duration: '30s', target: 10 },   // Ramp to 10 VUs
+        { duration: '60s', target: 10 },   // Hold at 10
+        { duration: '30s', target: 50 },   // Ramp to 50 VUs
+        { duration: '60s', target: 50 },   // Hold at 50
+        { duration: '30s', target: 0 },    // Ramp down
+      ],
+      thresholds: {
+        'http_req_duration': ['p(95)<500'],
+        'errors': ['rate<0.01'],
+      },
+    };
+
+    export default function () {
+      // Health check (most lightweight)
+      const healthRes = http.get(`${BASE_URL}/api/health`);
+      check(healthRes, {
+        'health status 200': (r) => r.status === 200,
+        'health has serverId': (r) => JSON.parse(r.body).serverId !== undefined,
+      });
+      healthLatency.add(healthRes.timings.duration);
+      errorRate.add(healthRes.status !== 200);
+
+      sleep(0.1);
+
+      // Login and get session
+      const loginRes = http.post(
+        `${BASE_URL}/api/users/_login?username=admin`,
+        'admin',
+        {
+          headers: {
+            'Content-Type': 'text/plain',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        }
+      );
+
+      if (loginRes.status === 200) {
+        const sessionId = loginRes.headers['X-Session-Id'] || loginRes.headers['x-session-id'];
+
+        if (sessionId) {
+          // Get channels
+          const channelsRes = http.get(`${BASE_URL}/api/channels`, {
+            headers: { 'X-Session-ID': sessionId },
+          });
+          check(channelsRes, {
+            'channels status 200': (r) => r.status === 200,
+          });
+          errorRate.add(channelsRes.status !== 200);
+        }
+      }
+
+      sleep(0.5);
+    }
+  mllp-load.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Rate, Counter } from 'k6/metrics';
+
+    const errorRate = new Rate('errors');
+    const messagesProcessed = new Counter('messages_processed');
+
+    const BASE_URL = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+
+    // Sample HL7 ADT A01 message
+    const HL7_MESSAGE = [
+      'MSH|^~\\&|SENDING|FACILITY|RECEIVING|FACILITY|20260215120000||ADT^A01|MSG00001|P|2.3|',
+      'EVN|A01|20260215120000||',
+      'PID|||12345^^^MRN||DOE^JOHN^||19800101|M|||123 MAIN ST^^ANYTOWN^ST^12345||555-1234|||S|||999-99-9999',
+      'PV1||I|ICU^0001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0|',
+    ].join('\r');
+
+    export const options = {
+      stages: [
+        { duration: '30s', target: 5 },
+        { duration: '60s', target: 10 },
+        { duration: '30s', target: 20 },
+        { duration: '60s', target: 20 },
+        { duration: '30s', target: 0 },
+      ],
+      thresholds: {
+        'http_req_duration': ['p(95)<1000'],
+        'errors': ['rate<0.05'],
+      },
+    };
+
+    export default function () {
+      // Send HL7 message to HTTP Gateway (port 8090)
+      const res = http.post(`${BASE_URL}:8090`, HL7_MESSAGE, {
+        headers: { 'Content-Type': 'text/plain' },
+      });
+
+      const success = check(res, {
+        'message accepted': (r) => r.status === 200 || r.status === 201,
+      });
+
+      if (success) {
+        messagesProcessed.add(1);
+      }
+      errorRate.add(!success);
+
+      sleep(0.2);
+    }
+  shadow-cutover.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Rate } from 'k6/metrics';
+
+    const BASE_URL = __ENV.MIRTH_URL || 'http://node-mirth.mirth-shadow.svc.cluster.local:8080';
+
+    const shadowBlocked = new Rate('shadow_blocked');
+    const afterCutover = new Rate('after_cutover');
+
+    export const options = {
+      duration: '3m',
+      vus: 5,
+    };
+
+    export default function () {
+      // Check health — should always succeed even in shadow mode
+      const healthRes = http.get(`${BASE_URL}/api/health`);
+      check(healthRes, {
+        'health returns 200': (r) => r.status === 200,
+      });
+
+      // Try to get shadow status
+      const loginRes = http.post(
+        `${BASE_URL}/api/users/_login?username=admin`,
+        'admin',
+        {
+          headers: {
+            'Content-Type': 'text/plain',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        }
+      );
+
+      if (loginRes.status === 200) {
+        const sessionId = loginRes.headers['X-Session-Id'] || loginRes.headers['x-session-id'];
+
+        if (sessionId) {
+          const shadowRes = http.get(`${BASE_URL}/api/system/shadow`, {
+            headers: { 'X-Session-ID': sessionId },
+          });
+
+          check(shadowRes, {
+            'shadow status accessible': (r) => r.status === 200,
+          });
+
+          // Try a write operation — should be blocked (409) in shadow mode
+          const writeRes = http.post(`${BASE_URL}/api/channels`, '<channel/>', {
+            headers: {
+              'Content-Type': 'application/xml',
+              'X-Session-ID': sessionId,
+            },
+          });
+
+          if (writeRes.status === 409) {
+            shadowBlocked.add(1);
+          } else {
+            afterCutover.add(1);
+          }
+        }
+      }
+
+      sleep(1);
+    }

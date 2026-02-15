@@ -1,7 +1,7 @@
 {
   "id": "9.0",
   "name": "Kitchen Sink Integration Test",
-  "description": "End-to-end test exercising all 11 connector types, 4 data types, 10 script types, and 6 map types across 12 interconnected channels in 4 tiers",
+  "description": "End-to-end test exercising all 11 connector types, 9 data types, 10 script types, 6 map types, E4X deep coverage, cross-data-type conversions, batch processing, and global scripts across 34 interconnected channels",
   "priority": 9,
   "type": "integration",
   "channels": [
@@ -16,7 +16,30 @@
     { "id": "ks000009-0009-0009-0009-000000000009", "name": "CH9 SOAP Endpoint", "file": "ch09-soap-endpoint.xml" },
     { "id": "ks000010-0010-0010-0010-000000000010", "name": "CH10 DICOM SCP", "file": "ch10-dicom-scp.xml" },
     { "id": "ks000011-0011-0011-0011-000000000011", "name": "CH11 JMS Consumer", "file": "ch11-jms-consumer.xml" },
-    { "id": "ks000012-0012-0012-0012-000000000012", "name": "CH12 JS Generator", "file": "ch12-js-generator.xml" }
+    { "id": "ks000012-0012-0012-0012-000000000012", "name": "CH12 JS Generator", "file": "ch12-js-generator.xml" },
+    { "id": "ks000019-0019-0019-0019-000000000019", "name": "CH19 E4X Core", "file": "ch19-e4x-core.xml" },
+    { "id": "ks000020-0020-0020-0020-000000000020", "name": "CH20 E4X Advanced", "file": "ch20-e4x-advanced.xml" },
+    { "id": "ks000021-0021-0021-0021-000000000021", "name": "CH21 DB Lookup", "file": "ch21-db-lookup.xml" },
+    { "id": "ks000022-0022-0022-0022-000000000022", "name": "CH22 HTTPUtil Caller", "file": "ch22-httputil-caller.xml" },
+    { "id": "ks000023-0023-0023-0023-000000000023", "name": "CH23 FileUtil Writer", "file": "ch23-fileutil-writer.xml" },
+    { "id": "ks000024-0024-0024-0024-000000000024", "name": "CH24 Chain Terminal", "file": "ch24-chain-terminal.xml" },
+    { "id": "ks000025-0025-0025-0025-000000000025", "name": "CH25 Data Converter", "file": "ch25-data-converter.xml" },
+    { "id": "ks000026-0026-0026-0026-000000000026", "name": "CH26 XSLT Mapper", "file": "ch26-xslt-mapper.xml" },
+    { "id": "ks000027-0027-0027-0027-000000000027", "name": "CH27 DB Ref Lookup", "file": "ch27-db-ref-lookup.xml" },
+    { "id": "ks000028-0028-0028-0028-000000000028", "name": "CH28 Batch HL7", "file": "ch28-batch-hl7.xml" },
+    { "id": "ks000029-0029-0029-0029-000000000029", "name": "CH29 Global Script Verifier", "file": "ch29-global-script-verifier.xml" },
+    { "id": "ks000030-0030-0030-0030-000000000030", "name": "CH30 Queue Retry", "file": "ch30-queue-retry.xml" },
+    { "id": "ks000031-0031-0031-0031-000000000031", "name": "CH31 Custom Metadata", "file": "ch31-custom-metadata.xml" },
+    { "id": "ks000032-0032-0032-0032-000000000032", "name": "CH32 Response Mode", "file": "ch32-response-mode.xml" },
+    { "id": "ks000033-0033-0033-0033-000000000033", "name": "CH33 E4X Filters", "file": "ch33-e4x-filters.xml" },
+    { "id": "ks000034-0034-0034-0034-000000000034", "name": "CH34 E4X Stress", "file": "ch34-e4x-stress.xml" }
+  ],
+  "codeTemplateLibraries": [
+    "code-templates/ks-utility-library.xml",
+    "code-templates/ks-e4x-helpers.xml",
+    "code-templates/ks-data-utils.xml",
+    "code-templates/ks-error-handlers.xml",
+    "code-templates/ks-e4x-advanced.xml"
   ],
   "codeTemplateLibrary": "code-templates/ks-utility-library.xml",
   "ports": {
@@ -26,11 +49,20 @@
     "soap": 8092,
     "dicom": 11112,
     "smtp": 2525,
-    "stomp": 61613
+    "stomp": 61613,
+    "mllpE4x": 6671,
+    "mllpBatch": 6672,
+    "httpConverter": 8098,
+    "httpGlobal": 8099,
+    "httpMetadata": 8100,
+    "httpResponse": 8101,
+    "httpE4xStress": 8102
   },
   "filePaths": {
     "input": "/tmp/mirth-ks/input",
     "output": "/tmp/mirth-ks/output",
-    "audit": "/tmp/mirth-ks/audit"
+    "audit": "/tmp/mirth-ks/audit",
+    "chainTrace": "/tmp/mirth-ks/chain-trace",
+    "responseOutput": "/tmp/mirth-ks/response-output"
   }
 }

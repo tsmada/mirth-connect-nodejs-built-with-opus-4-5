@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: node-mirth-pdb
+  namespace: mirth-cluster
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: node-mirth

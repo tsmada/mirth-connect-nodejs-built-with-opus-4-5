@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>ks-lib-0005-0005-0005-000000000005</id>
+  <name>KS E4X Advanced</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>Advanced E4X functions for Kitchen Sink stress testing</description>
+  <includeNewChannels>true</includeNewChannels>
+  <enabledChannelIds/>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>ks-tmpl-e4xa-0001-0001-000000000001</id>
+      <name>buildRoutingSummary</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Build routing summary XML using E4X attributes and iteration.
+ * @param {XML} msgXml - The HL7 XML message
+ * @return {string} XML summary string
+ */
+function buildRoutingSummary(msgXml) {
+    var msgType = msgXml['MSH']['MSH.9']['MSH.9.1'].toString();
+    var summary = '&lt;RoutingSummary timestamp="' + new Date().toISOString() + '" messageType="' + msgType + '"&gt;';
+    for each (var obx in msgXml..OBX) {
+        var code = obx['OBX.3']['OBX.3.1'].toString();
+        var flag = obx['OBX.8'].toString();
+        var value = obx['OBX.5']['OBX.5.1'].toString();
+        summary += '&lt;Result code="' + code + '" flag="' + flag + '" value="' + value + '"/&gt;';
+    }
+    summary += '&lt;/RoutingSummary&gt;';
+    return summary;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>ks-tmpl-e4xa-0002-0002-000000000002</id>
+      <name>scrubPHI</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Remove PHI (Protected Health Information) from message.
+ * Deletes NK1, IN1 segments and clears SSN.
+ * @param {XML} msgXml - The HL7 XML message
+ * @return {XML} Scrubbed message
+ */
+function scrubPHI(msgXml) {
+    delete msgXml['NK1'];
+    delete msgXml['IN1'];
+    msgXml['PID']['PID.19'] = '';
+    delete msgXml['PID']['PID.6'];
+    return msgXml;
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>

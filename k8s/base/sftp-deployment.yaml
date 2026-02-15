@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sftp
+  namespace: mirth-infra
+  labels:
+    app: sftp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sftp
+  template:
+    metadata:
+      labels:
+        app: sftp
+    spec:
+      containers:
+        - name: sftp
+          image: atmoz/sftp:latest
+          args:
+            - "javauser:javapass:1001::input,output"
+            - "nodeuser:nodepass:1002::input,output"
+          ports:
+            - containerPort: 22
+              name: sftp
+          readinessProbe:
+            tcpSocket:
+              port: 22
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 200m

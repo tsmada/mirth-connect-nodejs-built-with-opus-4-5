@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+tests
+validation
+k8s
+plans
+tasks
+tools
+*.md
+.eslintrc*
+.prettierrc*
+jest.config.*
+tsconfig.json.bak
+.env*

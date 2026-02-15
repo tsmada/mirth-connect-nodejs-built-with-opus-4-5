@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orthanc
+  namespace: mirth-infra
+  labels:
+    app: orthanc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orthanc
+  template:
+    metadata:
+      labels:
+        app: orthanc
+    spec:
+      containers:
+        - name: orthanc
+          image: jodogne/orthanc:latest
+          ports:
+            - containerPort: 8042
+              name: web
+            - containerPort: 4242
+              name: dicom
+          env:
+            - name: ORTHANC__NAME
+              value: MirthTestPacs
+            - name: ORTHANC__DICOM_AET
+              value: ORTHANC
+          readinessProbe:
+            httpGet:
+              path: /system
+              port: 8042
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m

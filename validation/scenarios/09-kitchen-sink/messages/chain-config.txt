@@ -1,0 +1,4 @@
+CHAIN_CONFIG_V1
+max_hops=6
+trace_enabled=true
+audit_channel=CH7

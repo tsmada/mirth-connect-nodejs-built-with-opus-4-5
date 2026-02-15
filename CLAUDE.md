@@ -785,7 +785,7 @@ Discovered gaps are tracked in `manifest.json` under `validationGaps`:
 
 Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 
-### Validation Status (as of 2026-02-04)
+### Validation Status (as of 2026-02-15)
 
 | Priority | Category | Status | Notes |
 |----------|----------|--------|-------|
@@ -797,7 +797,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 4,826 passing** (2,559 core + 417 artifact management + 1,850 parity/unit)
+**Total Tests: 5,289 passing** (2,559 core + 417 artifact management + 2,313 parity/unit)
 
 ### Quick Validation Scripts
 
@@ -2706,15 +2706,97 @@ All Waves 1-21 are complete. The porting project has reached production-ready st
 - ✅ **Git-Backed Artifact Management** — Decompose/assemble, git sync, env promotion, delta deploy, structural diff (417 tests)
 - ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 8 waves of fixes (Waves 8-15, 315 parity tests, verified by 3 automated js-runtime-checker scans)
 - ✅ **Connector Parity** — All 9 connectors verified across 5 automated scans (Waves 16-21): replaceConnectorProperties 9/9 (100%), event dispatching 48/48 (100%), property coverage 98%, 0 critical findings remaining. 192 total findings: 98 fixed, 6 deferred (2 major + 4 minor)
+- ✅ **Kubernetes Deployment** — Full k8s validation platform with Kustomize overlays for all 4 operational modes, validated on Rancher Desktop k3s (see `k8s/README.md`)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)
 - Remote I/O Utils (S3Util, FtpUtil, SftpUtil) - File connector already supports these
 - Additional servlet test coverage
 - Performance optimization for high-volume channels
-- Kubernetes deployment manifests
 - Redis-backed EventBus and MapBackend (requires ioredis dependency)
 - Java Mirth clustering plugin interop (JGroups state reading, not joining)
+
+### Kubernetes Deployment (Validated 2026-02-15)
+
+**Full container-native testing platform** in `k8s/` with Kustomize overlays for all 4 operational modes. Runs on Rancher Desktop k3s (Apple Silicon native). See `k8s/README.md` for full documentation.
+
+#### Directory Structure
+
+```
+k8s/
+  Dockerfile                         # Multi-stage Node.js Mirth image (node:20-alpine)
+  .dockerignore
+  base/                              # Shared infra (mirth-infra namespace)
+    mysql-statefulset.yaml           # MySQL 8.0 + 2Gi PVC
+    java-mirth-deployment.yaml       # nextgenhealthcare/connect:3.9
+    mailhog-deployment.yaml          # Mock SMTP (port 1025)
+    activemq-deployment.yaml         # JMS broker (STOMP 61613)
+    kustomization.yaml
+  overlays/
+    standalone/                      # MIRTH_MODE=standalone, separate MySQL
+    takeover/                        # MIRTH_MODE=takeover, shared DB with Java
+    shadow/                          # MIRTH_SHADOW_MODE=true
+    cluster/                         # 3 replicas, MIRTH_CLUSTER_ENABLED=true
+  k6/                                # k6 load testing (Jobs + scripts)
+  scripts/
+    setup.sh, teardown.sh, build-image.sh, deploy-kitchen-sink.sh,
+    wait-for-ready.sh, port-forward.sh, run-k6.sh
+```
+
+#### Namespace Strategy
+
+| Namespace | Contents | Purpose |
+|-----------|----------|---------|
+| `mirth-infra` | MySQL 8.0, Java Mirth 3.9, MailHog, ActiveMQ | Shared infrastructure |
+| `mirth-standalone` | Node.js Mirth + separate MySQL | Fresh DB testing |
+| `mirth-takeover` | Node.js Mirth (ExternalName → infra MySQL) | Shared DB testing |
+| `mirth-shadow` | Node.js Mirth in shadow mode | Progressive cutover testing |
+| `mirth-cluster` | 3x Node.js Mirth replicas + PDB | Horizontal scaling testing |
+| `mirth-k6` | k6 load test Jobs | Performance testing |
+
+#### Validated Scenarios (2026-02-15)
+
+| Scenario | Status | Key Verification |
+|----------|--------|------------------|
+| Standalone | PASS | Fresh schema creation, admin seeding, own MySQL instance |
+| Takeover (real Java Mirth DB) | PASS | Connected to Java 3.9.1's live database, schema 3.9.1 verified, Java admin user auth works |
+| Shadow Mode | PASS | `shadowMode: true` in health, 409 on writes, VMRouter/DataPruner deferred, SHADOW status in D_SERVERS |
+| Cluster (3 replicas) | PASS | Pod-name-based SERVER_IDs via Downward API, D_SERVERS registration, cluster API endpoints |
+| Scale-Down (3 to 2) | PASS | Graceful OFFLINE deregistration via SIGTERM + terminationGracePeriodSeconds |
+| Scale-Up (2 to 4 to 3) | PASS | Instant ONLINE registration for new pods, heartbeat active |
+| Java Mirth Coexistence | PASS | Both engines sharing MySQL (18 tables), separate SERVER_IDs, no interference |
+
+#### Key Kubernetes Specifications
+
+| Resource | Setting | Value |
+|----------|---------|-------|
+| Node.js Mirth Startup Probe | `/api/health/startup` | failureThreshold 30 x 5s = 150s |
+| Node.js Mirth Readiness Probe | `/api/health` | periodSeconds 10 |
+| Node.js Mirth Liveness Probe | `/api/health/live` | periodSeconds 15 |
+| Java Mirth Startup Probe | `/api/server/version` (HTTPS) | failureThreshold 30 x 10s = 300s (QEMU) |
+| Cluster MIRTH_SERVER_ID | Downward API | `metadata.name` (pod name) |
+| Cluster PDB | minAvailable | 1 |
+| termination​GracePeriodSeconds | All pods | 30s |
+| Image pull policy | All pods | `Never` (local containerd images) |
+
+#### Quick Start
+
+```bash
+# 0. Rancher Desktop running with k3s
+# 1. Build image + deploy base infra
+./k8s/scripts/setup.sh
+
+# 2. Deploy an overlay
+kubectl apply -k k8s/overlays/cluster/
+
+# 3. Verify
+kubectl wait -n mirth-cluster --for=condition=ready pod -l app=node-mirth --timeout=180s
+kubectl port-forward -n mirth-cluster pod/<pod-name> 8081:8080
+curl http://localhost:8081/api/health
+
+# 4. Cleanup
+./k8s/scripts/teardown.sh
+```
 
 ---
 

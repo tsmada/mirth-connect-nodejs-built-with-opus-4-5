@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mirth-standalone
+  labels:
+    app.kubernetes.io/part-of: mirth-connect
+    mirth-mode: standalone

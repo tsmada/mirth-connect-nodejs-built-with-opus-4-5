@@ -321,11 +321,23 @@ export class MirthApiClient {
   /**
    * Import a code template library.
    * The library XML should contain the full codeTemplateLibrary structure.
+   * NOTE: PUT /api/codeTemplateLibraries is a full replacement.
+   * Use importCodeTemplateLibraries() to import multiple libraries at once.
    */
   async importCodeTemplateLibrary(libraryXml: string): Promise<boolean> {
+    return this.importCodeTemplateLibraries([libraryXml]);
+  }
+
+  /**
+   * Import multiple code template libraries in a single PUT call.
+   * This avoids the overwrite problem where each individual import
+   * replaces all previously imported libraries.
+   */
+  async importCodeTemplateLibraries(libraryXmls: string[]): Promise<boolean> {
+    const combined = libraryXmls.join('\n');
     const response = await this.client.put(
       '/api/codeTemplateLibraries',
-      `<list>${libraryXml}</list>`,
+      `<list>${combined}</list>`,
       {
         headers: {
           'Content-Type': 'application/xml',

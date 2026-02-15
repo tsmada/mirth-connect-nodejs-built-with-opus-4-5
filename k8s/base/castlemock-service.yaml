@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: castlemock
+  namespace: mirth-infra
+  labels:
+    app: castlemock
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8087
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: castlemock

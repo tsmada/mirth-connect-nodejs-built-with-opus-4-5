@@ -51,6 +51,25 @@ Manage Mirth configurations as code: decompose channel XML into reviewable file 
 
 Container-native clustering with health probes, block-allocated sequences, and database-backed global maps. No commercial clustering plugin required. See the full [Horizontal Scaling Guide](docs/horizontal-scaling.md).
 
+## Kubernetes Deployment
+
+Full container-native testing platform with Kustomize overlays for all 4 operational modes. Validated on Rancher Desktop k3s (Apple Silicon). See the full [Kubernetes Guide](k8s/README.md).
+
+```bash
+# Build image + deploy base infra (MySQL, Java Mirth, mock services)
+./k8s/scripts/setup.sh
+
+# Deploy an overlay
+kubectl apply -k k8s/overlays/standalone/   # Fresh DB
+kubectl apply -k k8s/overlays/takeover/     # Shared DB with Java Mirth
+kubectl apply -k k8s/overlays/shadow/       # Shadow mode (read-only observer)
+kubectl apply -k k8s/overlays/cluster/      # 3 replicas, horizontal scaling
+
+# Deploy Kitchen Sink (34 channels) + run k6 load tests
+./k8s/scripts/deploy-kitchen-sink.sh
+./k8s/scripts/run-k6.sh api-load
+```
+
 ## Features
 
 | Category | Features |
@@ -65,6 +84,7 @@ Container-native clustering with health probes, block-allocated sequences, and d
 | **Userutil** | DatabaseConnection, AttachmentUtil, ChannelUtil, AlertSender, Future, UUIDGenerator, NCPDPUtil, ContextFactory, XmlUtil, JsonUtil, Lists, Maps |
 | **Shadow Mode** | Safe read-only takeover with progressive per-channel cutover from Java Mirth |
 | **Cluster** | Container-native horizontal scaling, health probes, block-allocated sequences, database-backed global maps, graceful shutdown |
+| **Kubernetes** | Kustomize overlays for standalone/takeover/shadow/cluster modes, Dockerfile, k6 load tests, Kitchen Sink deployment scripts |
 | **Artifact Management** | Git-backed config management: decompose/assemble, export/import, structural diff, env promotion, delta deploy |
 | **Utilities** | ValueReplacer, ACKGenerator, JsonXmlUtil, SerializerFactory, ErrorMessageBuilder |
 
@@ -75,6 +95,7 @@ Container-native clustering with health probes, block-allocated sequences, and d
 - Node.js 18+
 - MySQL 5.7+ or 8.0 (uses existing Mirth schema)
 - Docker (optional, for validation suite)
+- Rancher Desktop (optional, for Kubernetes deployment)
 
 ### Installation
 
@@ -240,7 +261,7 @@ Full E4X transpilation (including attribute write, XML append, named property de
 | `npm run build` | Compile TypeScript |
 | `npm run dev` | Development server with hot reload |
 | `npm start` | Production server |
-| `npm test` | Run test suite (4,505 tests) |
+| `npm test` | Run test suite (5,289 tests) |
 | `npm run test:coverage` | Generate coverage report |
 | `npm run lint` | Check code style |
 | `npm run typecheck` | Type check without compiling |
@@ -249,7 +270,7 @@ See the full [Development Guide](docs/development-guide.md) for project structur
 
 ## Testing & Validation
 
-**4,505 tests passing** (2,559 core + 417 artifact + 1,529 parity/unit). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). See the full [Development Guide](docs/development-guide.md#validation-suite).
+**5,289 tests passing** (2,559 core + 417 artifact + 2,313 parity/unit). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
 
 ## Version Management
 

@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-mirth
+  namespace: mirth-standalone
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+    mirth-mode: standalone
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-mirth
+  template:
+    metadata:
+      labels:
+        app: node-mirth
+        mirth-mode: standalone
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: create-dirs
+          image: node-mirth:latest
+          imagePullPolicy: Never
+          command: ["sh", "-c", "mkdir -p /tmp/mirth-ks/input /tmp/mirth-ks/output /tmp/mirth-ks/audit /tmp/mirth-ks/chain-trace /tmp/mirth-ks/response-output"]
+          volumeMounts:
+            - name: mirth-tmp
+              mountPath: /tmp/mirth-ks
+      containers:
+        - name: node-mirth
+          image: node-mirth:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http-api
+            - containerPort: 6670
+              name: mllp-adt
+            - containerPort: 6671
+              name: mllp-e4x
+            - containerPort: 6672
+              name: mllp-batch
+            - containerPort: 8090
+              name: http-gateway
+            - containerPort: 8091
+              name: http-completion
+            - containerPort: 8092
+              name: http-soap
+            - containerPort: 8093
+              name: http-xml
+            - containerPort: 8094
+              name: http-hl7
+            - containerPort: 8095
+              name: http-json
+            - containerPort: 8096
+              name: http-multi
+            - containerPort: 8097
+              name: http-api-verify
+            - containerPort: 8098
+              name: http-converter
+            - containerPort: 8099
+              name: http-global
+            - containerPort: 8100
+              name: http-metadata
+            - containerPort: 8101
+              name: http-response
+            - containerPort: 8102
+              name: http-e4x-stress
+            - containerPort: 11112
+              name: dicom-scp
+          env:
+            - name: MIRTH_MODE
+              value: "standalone"
+            - name: PORT
+              value: "8080"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DB_HOST
+              value: "mysql"
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_USER
+              value: "mirth"
+            - name: DB_PASSWORD
+              value: "mirth"
+          envFrom:
+            - configMapRef:
+                name: node-mirth-config
+          volumeMounts:
+            - name: mirth-tmp
+              mountPath: /tmp/mirth-ks
+          startupProbe:
+            httpGet:
+              path: /api/health/startup
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8080
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+      volumes:
+        - name: mirth-tmp
+          emptyDir: {}

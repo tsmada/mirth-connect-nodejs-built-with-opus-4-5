@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel version="3.9.1">
+  <id>ks000020-0020-0020-0020-000000000020</id>
+  <nextMetaDataId>2</nextMetaDataId>
+  <name>KS CH20 E4X Advanced</name>
+  <description>Kitchen Sink CH20: E4X advanced — attributes, XML literals, append, namespaces</description>
+  <revision>1</revision>
+  <sourceConnector version="3.9.1">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.vm.VmReceiverProperties" version="3.9.1">
+      <pluginProperties/>
+      <sourceConnectorProperties version="3.9.1">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+    </properties>
+    <transformer version="3.9.1">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>Attribute Read + Write</name>
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[try {
+  // TRANSPILER PASS 5 (write): .@attr = value
+  msg['MSH'].@customSource = 'E4X_ADVANCED';
+  msg['MSH'].@processedBy = 'NodeJS_Mirth';
+
+  // TRANSPILER PASS 5 (read): .@attr
+  var customSrc = msg['MSH'].@customSource;
+  $c('attrWrite', customSrc.toString());
+
+  // TRANSPILER PASS 3.5 (wildcard): .@*
+  var allAttrs = msg['MSH'].@*;
+  var attrKeys = allAttrs ? (typeof allAttrs === 'object' ? Object.keys(allAttrs) : []) : [];
+  $c('attrCount', String(attrKeys.length));
+
+  // Attribute on deeper element
+  msg['PID']['PID.5'][0].@encoding = 'UTF-8';
+  var enc = msg['PID']['PID.5'][0].@encoding;
+  $c('deepAttrRead', enc.toString());
+
+  // Attribute equality check
+  var isCustom = (msg['MSH'].@customSource == 'E4X_ADVANCED');
+  $c('attrEquality', String(isCustom));
+} catch(e) {
+  $c('attrWrite', 'step0_error: ' + e.message);
+  $c('attrCount', '0');
+  $c('deepAttrRead', 'error');
+  $c('attrEquality', 'false');
+}]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>XML Literals + new XML() + XMLList</name>
+          <sequenceNumber>1</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[try {
+  // TRANSPILER PASS 4: XML literal
+  var emptyNode = <ZAD/>;
+
+  // TRANSPILER PASS 4: XML literal with content
+  var richNode = <ZAD><ZAD.1>ADVANCED_TEST</ZAD.1><ZAD.2>literal_value</ZAD.2></ZAD>;
+
+  // TRANSPILER PASS 6: new XML() constructor
+  var constructed = new XML('<ZAD><ZAD.3>constructed_value</ZAD.3></ZAD>');
+
+  // TRANSPILER PASS 6: XMLList constructor
+  var xmlListStr = msg['OBX'].toXMLString();
+  var obxList = new XMLList(xmlListStr);
+  $c('xmlListLength', String(obxList.length()));
+
+  // XMLPROXY: toXMLString()
+  var pidXml = msg['PID'].toXMLString();
+  $c('pidXmlLength', String(pidXml.length));
+  $c('hasXmlLiteral', 'true');
+} catch(e) {
+  $c('xmlListLength', '0');
+  $c('pidXmlLength', '0');
+  $c('hasXmlLiteral', 'step1_error: ' + e.message);
+}]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>XML Append Operator (+= variants)</name>
+          <sequenceNumber>2</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[// TRANSPILER PASS 5.5 Rule 1: += XMLProxy.create()
+msg += XMLProxy.create('<ZAP><ZAP.1>appended_via_create</ZAP.1></ZAP>');
+
+// TRANSPILER PASS 5.5 Rule 2: += variable
+var newSeg = new XML('<ZAV><ZAV.1>appended_via_var</ZAV.1></ZAV>');
+msg += newSeg;
+
+// Verify both appended segments exist
+var msgStr = msg.toString();
+$c('hasZAP', String(msgStr.indexOf('ZAP') >= 0));
+$c('hasZAV', String(msgStr.indexOf('ZAV') >= 0));
+
+// Bracket assignment for child append (ZKS may or may not be in VM-forwarded message)
+try {
+  if (msg['ZKS'] && msg['ZKS'].length() > 0) {
+    msg['ZKS']['ZKS.5'] = 'appended_to_existing';
+    $c('zks5Value', msg['ZKS']['ZKS.5'].toString());
+  } else {
+    // Create ZKS fresh if not present from CH19
+    createSegment('ZKS', msg);
+    msg['ZKS']['ZKS.1'] = 'CreatedInCH20';
+    msg['ZKS']['ZKS.5'] = 'appended_to_existing';
+    $c('zks5Value', 'appended_to_existing');
+  }
+} catch(e) {
+  $c('zks5Value', 'zks_access_error');
+}]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>Default XML Namespace + namespace()</name>
+          <sequenceNumber>3</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[try {
+  // TRANSPILER PASS 1: default xml namespace
+  default xml namespace = 'urn:hl7-org:v3';
+} catch(e) {
+  // default xml namespace may not be supported — that's OK
+}
+
+// XMLPROXY: namespace() extraction
+try {
+  var cdaNode = new XML('<ClinicalDocument xmlns="urn:hl7-org:v3"><id root="2.16.840"/></ClinicalDocument>');
+  var ns = cdaNode.namespace();
+  $c('defaultNs', ns ? ns.toString() : 'none');
+} catch(e) {
+  $c('defaultNs', 'ns_error: ' + e.message);
+}
+
+// XMLPROXY: namespace with prefix
+try {
+  var nsNode = new XML('<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body/></soap:Envelope>');
+  var soapNs = nsNode.namespace('soap');
+  $c('prefixedNs', soapNs ? soapNs.toString() : 'none');
+} catch(e) {
+  $c('prefixedNs', 'soap_ns_error: ' + e.message);
+}
+
+// Reset namespace
+try { default xml namespace = ''; } catch(e) { /* OK */ }
+
+$c('e4xAdvancedProcessed', 'true');
+$s('sourceType', 'E4X_ADVANCED');]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+      </elements>
+      <inboundDataType>HL7V2</inboundDataType>
+      <outboundDataType>HL7V2</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="3.9.1">
+        <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="3.9.1">
+          <handleRepetitions>true</handleRepetitions>
+          <handleSubcomponents>true</handleSubcomponents>
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <stripNamespaces>true</stripNamespaces>
+          <segmentDelimiter>\r</segmentDelimiter>
+          <convertLineBreaks>true</convertLineBreaks>
+        </serializationProperties>
+        <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="3.9.1">
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <segmentDelimiter>\r</segmentDelimiter>
+        </deserializationProperties>
+        <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="3.9.1">
+          <splitType>MSH_Segment</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+        <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="3.9.1">
+          <segmentDelimiter>\r</segmentDelimiter>
+          <successfulACKCode>AA</successfulACKCode>
+          <successfulACKMessage></successfulACKMessage>
+          <errorACKCode>AE</errorACKCode>
+          <errorACKMessage></errorACKMessage>
+          <rejectedACKCode>AR</rejectedACKCode>
+          <rejectedACKMessage></rejectedACKMessage>
+          <msh15ACKAccept>false</msh15ACKAccept>
+          <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+        </responseGenerationProperties>
+        <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="3.9.1">
+          <successfulACKCode>AA,CA</successfulACKCode>
+          <errorACKCode>AE,CE</errorACKCode>
+          <rejectedACKCode>AR,CR</rejectedACKCode>
+          <validateMessageControlId>true</validateMessageControlId>
+          <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+          <originalIdMapVariable></originalIdMapVariable>
+        </responseValidationProperties>
+      </inboundProperties>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="3.9.1">
+        <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="3.9.1">
+          <handleRepetitions>true</handleRepetitions>
+          <handleSubcomponents>true</handleSubcomponents>
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <stripNamespaces>true</stripNamespaces>
+          <segmentDelimiter>\r</segmentDelimiter>
+          <convertLineBreaks>true</convertLineBreaks>
+        </serializationProperties>
+        <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="3.9.1">
+          <useStrictParser>false</useStrictParser>
+          <useStrictValidation>false</useStrictValidation>
+          <segmentDelimiter>\r</segmentDelimiter>
+        </deserializationProperties>
+        <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="3.9.1">
+          <splitType>MSH_Segment</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+        <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="3.9.1">
+          <segmentDelimiter>\r</segmentDelimiter>
+          <successfulACKCode>AA</successfulACKCode>
+          <successfulACKMessage></successfulACKMessage>
+          <errorACKCode>AE</errorACKCode>
+          <errorACKMessage></errorACKMessage>
+          <rejectedACKCode>AR</rejectedACKCode>
+          <rejectedACKMessage></rejectedACKMessage>
+          <msh15ACKAccept>false</msh15ACKAccept>
+          <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+        </responseGenerationProperties>
+        <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="3.9.1">
+          <successfulACKCode>AA,CA</successfulACKCode>
+          <errorACKCode>AE,CE</errorACKCode>
+          <rejectedACKCode>AR,CR</rejectedACKCode>
+          <validateMessageControlId>true</validateMessageControlId>
+          <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+          <originalIdMapVariable></originalIdMapVariable>
+        </responseValidationProperties>
+      </outboundProperties>
+    </transformer>
+    <filter version="3.9.1">
+      <elements/>
+    </filter>
+    <transportName>Channel Reader</transportName>
+    <mode>SOURCE</mode>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="3.9.1">
+      <metaDataId>1</metaDataId>
+      <name>D1 VM to CH21</name>
+      <properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <channelId>ks000021-0021-0021-0021-000000000021</channelId>
+        <channelTemplate>${message.encodedData}</channelTemplate>
+        <mapVariables>
+          <string>patientId</string>
+          <string>sourceType</string>
+          <string>e4xAdvancedProcessed</string>
+        </mapVariables>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </transformer>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </responseTransformer>
+      <filter version="3.9.1">
+        <elements/>
+      </filter>
+      <transportName>Channel Writer</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>return message;</preprocessingScript>
+  <postprocessingScript>return;</postprocessingScript>
+  <deployScript>return;</deployScript>
+  <undeployScript>return;</undeployScript>
+  <properties version="3.9.1">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>true</storeAttachments>
+    <metaDataColumns/>
+    <archiveEnabled>true</archiveEnabled>
+    <attachmentProperties version="3.9.1">
+      <type>None</type>
+      <properties/>
+    </attachmentProperties>
+    <resourceIds class="linked-hash-map">
+      <entry>
+        <string>Default Resource</string>
+        <string>[Default Resource]</string>
+      </entry>
+    </resourceIds>
+  </properties>
+  <exportData>
+    <metadata>
+      <enabled>true</enabled>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <pruningSettings>
+        <pruneMetaDataDays>-1</pruneMetaDataDays>
+        <pruneContentDays>-1</pruneContentDays>
+        <archiveEnabled>true</archiveEnabled>
+      </pruningSettings>
+    </metadata>
+    <dependentIds/>
+    <dependencyIds/>
+    <channelTags/>
+  </exportData>
+</channel>

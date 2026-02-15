@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activemq
+  namespace: mirth-infra
+  labels:
+    app: activemq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activemq
+  template:
+    metadata:
+      labels:
+        app: activemq
+    spec:
+      containers:
+        - name: activemq
+          image: rmohr/activemq:5.15.9
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 61613
+              name: stomp
+            - containerPort: 61616
+              name: openwire
+            - containerPort: 8161
+              name: web
+          env:
+            - name: ACTIVEMQ_REMOVE_DEFAULT_ACCOUNT
+              value: "true"
+            - name: ACTIVEMQ_ADMIN_LOGIN
+              value: admin
+            - name: ACTIVEMQ_ADMIN_PASSWORD
+              value: admin
+          readinessProbe:
+            tcpSocket:
+              port: 61616
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
