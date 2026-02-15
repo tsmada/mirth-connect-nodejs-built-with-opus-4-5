@@ -20,10 +20,20 @@ describe('HL7v2SerializerAdapter', () => {
   });
 
   describe('isSerializationRequired', () => {
-    it('returns true', () => {
-      expect(serializer.isSerializationRequired()).toBe(true);
-      expect(serializer.isSerializationRequired(true)).toBe(true);
-      expect(serializer.isSerializationRequired(false)).toBe(true);
+    it('returns false with default props (non-strict parser)', () => {
+      expect(serializer.isSerializationRequired()).toBe(false);
+      expect(serializer.isSerializationRequired(true)).toBe(false);
+      expect(serializer.isSerializationRequired(false)).toBe(false);
+    });
+
+    it('returns true when useStrictParser is enabled', () => {
+      const strictSerializer = new HL7v2SerializerAdapter(
+        { useStrictParser: true },
+        { useStrictParser: true }
+      );
+      expect(strictSerializer.isSerializationRequired()).toBe(true);
+      expect(strictSerializer.isSerializationRequired(true)).toBe(true);
+      expect(strictSerializer.isSerializationRequired(false)).toBe(true);
     });
   });
 

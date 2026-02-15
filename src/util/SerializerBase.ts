@@ -50,9 +50,10 @@ export interface IMessageSerializer {
    * Transform message without full serialization/deserialization cycle.
    * Used for data types that can apply transformations directly.
    * @param message - The message to transform
+   * @param outboundSerializer - Optional outbound serializer for cross-format transformation
    * @returns The transformed message, or null if not supported
    */
-  transformWithoutSerializing(message: string): string | null;
+  transformWithoutSerializing(message: string, outboundSerializer?: IMessageSerializer): string | null;
 
   /**
    * Populate metadata map from a message.
@@ -109,6 +110,7 @@ export interface HL7v2SerializationProperties extends SerializationProperties {
 export interface HL7v2DeserializationProperties extends DeserializationProperties {
   useStrictParser?: boolean;
   useStrictValidation?: boolean;
+  segmentDelimiter?: string;
 }
 
 /**
@@ -153,7 +155,7 @@ export abstract class BaseSerializer implements IMessageSerializer {
     return true;
   }
 
-  transformWithoutSerializing(_message: string): string | null {
+  transformWithoutSerializing(_message: string, _outboundSerializer?: IMessageSerializer): string | null {
     return null;
   }
 

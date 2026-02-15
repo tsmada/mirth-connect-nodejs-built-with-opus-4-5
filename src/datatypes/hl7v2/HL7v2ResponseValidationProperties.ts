@@ -14,7 +14,7 @@ export interface HL7v2ResponseValidationProperties {
   errorACKCode: string;
   /** Comma-separated ACK codes that indicate rejection/retry (default: 'AR,CR') */
   rejectedACKCode: string;
-  /** Whether to validate MSA-2 message control ID (default: false) */
+  /** Whether to validate MSA-2 message control ID (default: true) */
   validateMessageControlId: boolean;
   /** Expected message control ID for validation */
   originalMessageControlId: string;
@@ -27,7 +27,7 @@ export function getDefaultHL7v2ResponseValidationProperties(): HL7v2ResponseVali
     successfulACKCode: 'AA,CA',
     errorACKCode: 'AE,CE',
     rejectedACKCode: 'AR,CR',
-    validateMessageControlId: false,
+    validateMessageControlId: true,
     originalMessageControlId: '',
     originalIdMapVariable: '',
   };

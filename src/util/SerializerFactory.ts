@@ -181,6 +181,7 @@ export class SerializerFactory {
         return {
           useStrictParser: false,
           useStrictValidation: false,
+          segmentDelimiter: '\\r',
         };
 
       case 'XML':

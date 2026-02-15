@@ -45,8 +45,12 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
     return 'HL7V2';
   }
 
-  isSerializationRequired(_toXml?: boolean): boolean {
-    return true;
+  isSerializationRequired(toXml?: boolean): boolean {
+    if (toXml === undefined || toXml === true) {
+      return !!(this.serializationProps as HL7v2SerializationProperties).useStrictParser;
+    } else {
+      return !!(this.deserializationProps as HL7v2DeserializationProperties).useStrictParser;
+    }
   }
 
   toXML(message: string): string {

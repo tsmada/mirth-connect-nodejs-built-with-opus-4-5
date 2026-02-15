@@ -198,8 +198,8 @@ describe('SerializerFactory', () => {
     });
 
     describe('isSerializationRequired', () => {
-      it('returns true (HL7v2 requires XML serialization)', () => {
-        expect(serializer.isSerializationRequired()).toBe(true);
+      it('returns false with default props (non-strict parser)', () => {
+        expect(serializer.isSerializationRequired()).toBe(false);
       });
     });
   });
