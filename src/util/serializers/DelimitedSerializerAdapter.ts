@@ -14,7 +14,7 @@ import {
   DeserializationProperties,
 } from '../SerializerBase.js';
 import { DelimitedDataType } from '../../datatypes/delimited/DelimitedDataType.js';
-import { TYPE_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
+import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class DelimitedSerializerAdapter extends BaseSerializer {
   private readonly dataType: DelimitedDataType;
@@ -42,11 +42,35 @@ export class DelimitedSerializerAdapter extends BaseSerializer {
     return this.dataType.fromXML(xml);
   }
 
-  override isSerializationRequired(_toXml?: boolean): boolean {
-    return true;
+  override isSerializationRequired(toXml?: boolean): boolean {
+    if (toXml === undefined || toXml === true) {
+      const p = this.serializationProps as Record<string, unknown>;
+      return (
+        (p.columnDelimiter !== undefined && p.columnDelimiter !== ',') ||
+        (p.recordDelimiter !== undefined && p.recordDelimiter !== '\\n') ||
+        (p.columnWidths != null) ||
+        (p.quoteToken !== undefined && p.quoteToken !== '"') ||
+        (p.escapeWithDoubleQuote !== undefined && p.escapeWithDoubleQuote !== true) ||
+        (p.quoteEscapeToken !== undefined && p.quoteEscapeToken !== '\\\\') ||
+        (p.columnNames != null) ||
+        (p.numberedRows === true) ||
+        (p.ignoreCR !== undefined && p.ignoreCR !== true)
+      );
+    } else {
+      const p = this.deserializationProps as Record<string, unknown>;
+      return (
+        (p.columnDelimiter !== undefined && p.columnDelimiter !== ',') ||
+        (p.recordDelimiter !== undefined && p.recordDelimiter !== '\\n') ||
+        (p.columnWidths != null) ||
+        (p.quoteToken !== undefined && p.quoteToken !== '"') ||
+        (p.escapeWithDoubleQuote !== undefined && p.escapeWithDoubleQuote !== true) ||
+        (p.quoteEscapeToken !== undefined && p.quoteEscapeToken !== '\\\\')
+      );
+    }
   }
 
   override populateMetaData(_message: string, map: Map<string, unknown>): void {
-    map.set(TYPE_VARIABLE_MAPPING, 'Delimited');
+    map.set(VERSION_VARIABLE_MAPPING, '');
+    map.set(TYPE_VARIABLE_MAPPING, 'delimited');
   }
 }
