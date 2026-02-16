@@ -6,7 +6,7 @@ set -euo pipefail
 
 FORCE="${1:-}"
 
-NAMESPACES=("mirth-k6" "mirth-cluster" "mirth-shadow" "mirth-takeover" "mirth-standalone" "mirth-infra")
+NAMESPACES=("mirth-k6" "mirth-benchmark" "mirth-cluster" "mirth-shadow" "mirth-takeover" "mirth-standalone" "mirth-infra")
 
 echo "=== Tearing Down Mirth K8s Platform ==="
 

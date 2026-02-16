@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-mirth
+  namespace: mirth-infra
+spec:
+  template:
+    spec:
+      containers:
+        - name: java-mirth
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 6661
+              name: mllp
+            - containerPort: 7090
+              name: bench-echo
+            - containerPort: 7091
+              name: bench-json
+            - containerPort: 7092
+              name: bench-hl7

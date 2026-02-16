@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-benchmark
+  namespace: mirth-k6
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: k6
+        image: grafana/k6:latest
+        command:
+          - sh
+          - -c
+          - |
+            echo "=== Starting Benchmark Suite ==="
+            echo ""
+            echo "Phase 1: REST API Comparison"
+            k6 run /scripts/benchmark-api.js
+            echo ""
+            echo "Phase 2: HL7 Message Processing"
+            k6 run /scripts/benchmark-hl7.js
+            echo ""
+            echo "Phase 3: JSON Transform Throughput"
+            k6 run /scripts/benchmark-json.js
+            echo ""
+            echo "=== Benchmark Suite Complete ==="
+        env:
+        - name: JAVA_API_URL
+          value: "https://java-mirth.mirth-infra.svc.cluster.local:8443"
+        - name: NODEJS_API_URL
+          value: "http://node-mirth.mirth-benchmark.svc.cluster.local:8080"
+        - name: JAVA_MSG_URL
+          value: "http://java-mirth.mirth-infra.svc.cluster.local"
+        - name: NODEJS_MSG_URL
+          value: "http://node-mirth.mirth-benchmark.svc.cluster.local"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: k6-scripts

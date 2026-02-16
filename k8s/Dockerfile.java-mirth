@@ -1,0 +1,36 @@
+# ARM64-native Java Mirth Connect image
+# Extracts the platform-independent Mirth installation from the official x86 image
+# and runs it on a multi-arch JDK that works natively on Apple Silicon.
+#
+# Usage: nerdctl build -t java-mirth:latest -f k8s/Dockerfile.java-mirth .
+
+# ── Stage 1: Extract Mirth Connect files from official x86 image ──
+FROM --platform=linux/amd64 nextgenhealthcare/connect:3.9 AS source
+
+# ── Stage 2: Run on native ARM64 JDK ─────────────────────────────
+FROM eclipse-temurin:11-jdk
+
+# Install mysql client for entrypoint DB readiness check
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends default-mysql-client && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/connect
+
+# Copy Mirth Connect installation (platform-independent Java bytecode)
+COPY --from=source /opt/connect /opt/connect
+
+# Copy the entrypoint script that merges env vars into mirth.properties
+COPY --from=source /entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    chmod -R u+w /opt/connect/conf /opt/connect/appdata
+
+EXPOSE 8443 8080 6661
+
+ENV DATABASE=mysql \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["./mcserver"]

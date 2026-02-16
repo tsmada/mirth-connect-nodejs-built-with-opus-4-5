@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-mirth
+  namespace: mirth-benchmark
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+    mirth-mode: benchmark
+spec:
+  type: LoadBalancer
+  selector:
+    app: node-mirth
+  ports:
+    - name: http-api
+      port: 8080
+      targetPort: 8080
+    - name: bench-echo
+      port: 7080
+      targetPort: 7080
+    - name: bench-json
+      port: 7081
+      targetPort: 7081
+    - name: bench-hl7
+      port: 7082
+      targetPort: 7082

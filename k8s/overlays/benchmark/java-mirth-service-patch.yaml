@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-mirth
+  namespace: mirth-infra
+spec:
+  ports:
+    - port: 8443
+      targetPort: 8443
+      protocol: TCP
+      name: https
+    - port: 6661
+      targetPort: 6661
+      protocol: TCP
+      name: mllp
+    - port: 7090
+      targetPort: 7090
+      protocol: TCP
+      name: bench-echo
+    - port: 7091
+      targetPort: 7091
+      protocol: TCP
+      name: bench-json
+    - port: 7092
+      targetPort: 7092
+      protocol: TCP
+      name: bench-hl7-http

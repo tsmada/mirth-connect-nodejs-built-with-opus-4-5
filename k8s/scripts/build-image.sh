@@ -1,27 +1,44 @@
 #!/usr/bin/env bash
-# Build the Node.js Mirth Connect container image.
+# Build Mirth Connect container images.
 # Uses nerdctl (Rancher Desktop) with docker fallback.
-# Usage: build-image.sh [--no-cache]
+# Usage: build-image.sh [--no-cache] [--node-only] [--java-only]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 CACHE_FLAG=""
-if [[ "${1:-}" == "--no-cache" ]]; then
-  CACHE_FLAG="--no-cache"
-fi
+BUILD_NODE=true
+BUILD_JAVA=true
 
-echo "Building node-mirth:latest..."
+for arg in "$@"; do
+  case "$arg" in
+    --no-cache)   CACHE_FLAG="--no-cache" ;;
+    --node-only)  BUILD_JAVA=false ;;
+    --java-only)  BUILD_NODE=false ;;
+  esac
+done
 
-# Try nerdctl first (Rancher Desktop native), fall back to docker
+# Detect container runtime (nerdctl for Rancher Desktop, docker fallback)
+# Use k8s.io namespace so images are visible to k3s pods (imagePullPolicy: Never)
 if command -v nerdctl &>/dev/null; then
-  nerdctl build $CACHE_FLAG -t node-mirth:latest -f "$SCRIPT_DIR/../Dockerfile" "$PROJECT_ROOT"
+  BUILD_CMD="nerdctl --namespace k8s.io build"
 elif command -v docker &>/dev/null; then
-  docker build $CACHE_FLAG -t node-mirth:latest -f "$SCRIPT_DIR/../Dockerfile" "$PROJECT_ROOT"
+  BUILD_CMD="docker build"
 else
   echo "ERROR: Neither nerdctl nor docker found" >&2
   exit 1
 fi
 
-echo "Image built: node-mirth:latest"
+if [ "$BUILD_NODE" = true ]; then
+  echo "Building node-mirth:latest..."
+  $BUILD_CMD $CACHE_FLAG -t node-mirth:latest -f "$SCRIPT_DIR/../Dockerfile" "$PROJECT_ROOT"
+  echo "Image built: node-mirth:latest"
+fi
+
+if [ "$BUILD_JAVA" = true ]; then
+  echo ""
+  echo "Building java-mirth:latest (ARM64-native)..."
+  $BUILD_CMD $CACHE_FLAG -t java-mirth:latest -f "$SCRIPT_DIR/../Dockerfile.java-mirth" "$PROJECT_ROOT"
+  echo "Image built: java-mirth:latest"
+fi

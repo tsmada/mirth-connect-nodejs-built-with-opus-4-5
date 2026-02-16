@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: java-mirth
-          image: nextgenhealthcare/connect:3.9
+          image: java-mirth:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 8443
@@ -45,7 +45,7 @@ spec:
               port: 8443
               scheme: HTTPS
             failureThreshold: 30
-            periodSeconds: 10
+            periodSeconds: 5
           readinessProbe:
             httpGet:
               path: /api/server/version

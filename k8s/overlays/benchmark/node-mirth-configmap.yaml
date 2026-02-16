@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-mirth-config
+  namespace: mirth-benchmark
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+data:
+  NODE_ENV: "production"

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-mirth
+  namespace: mirth-benchmark
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+    mirth-mode: benchmark
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-mirth
+  template:
+    metadata:
+      labels:
+        app: node-mirth
+        mirth-mode: benchmark
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: node-mirth
+          image: node-mirth:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http-api
+            - containerPort: 7080
+              name: bench-echo
+            - containerPort: 7081
+              name: bench-json
+            - containerPort: 7082
+              name: bench-hl7
+          env:
+            - name: MIRTH_MODE
+              value: "standalone"
+            - name: PORT
+              value: "8080"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "WARN"
+            - name: DB_HOST
+              value: "mysql"
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_USER
+              value: "mirth"
+            - name: DB_PASSWORD
+              value: "mirth"
+          envFrom:
+            - configMapRef:
+                name: node-mirth-config
+          startupProbe:
+            httpGet:
+              path: /api/health/startup
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8080
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"

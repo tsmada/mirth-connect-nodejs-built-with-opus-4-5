@@ -34,10 +34,10 @@ echo ""
 echo "[3/4] Waiting for MySQL..."
 "$SCRIPT_DIR/wait-for-ready.sh" mirth-infra app=mysql 120
 
-# Step 4: Wait for Java Mirth (long timeout for QEMU on Apple Silicon)
+# Step 4: Wait for Java Mirth
 echo ""
-echo "[4/4] Waiting for Java Mirth (may take 2-5 min under QEMU)..."
-"$SCRIPT_DIR/wait-for-ready.sh" mirth-infra app=java-mirth 600
+echo "[4/4] Waiting for Java Mirth..."
+"$SCRIPT_DIR/wait-for-ready.sh" mirth-infra app=java-mirth 180
 
 echo ""
 echo "=== Setup Complete ==="
