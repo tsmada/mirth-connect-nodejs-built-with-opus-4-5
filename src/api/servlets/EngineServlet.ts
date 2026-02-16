@@ -115,17 +115,30 @@ engineRouter.post('/_deploy', authorize({ operation: ENGINE_DEPLOY }), async (re
   try {
     const channelIds = extractChannelIds(req.body);
 
+    const errors: Array<{ channelId: string; error: string }> = [];
+
     if (channelIds.length > 0) {
       console.log(`[EngineServlet] Deploying channels: ${channelIds.join(', ')}`);
       for (const id of channelIds) {
-        await EngineController.deployChannel(id);
+        try {
+          await EngineController.deployChannel(id);
+        } catch (err) {
+          const msg = (err as Error).message;
+          console.error(`[EngineServlet] Failed to deploy channel ${id}: ${msg}`);
+          errors.push({ channelId: id, error: msg });
+        }
       }
     } else {
       console.log('[EngineServlet] No specific channels requested, deploying all');
       await EngineController.deployAllChannels();
     }
 
-    res.status(204).end();
+    const returnErrors = req.query.returnErrors === 'true';
+    if (errors.length > 0 && returnErrors) {
+      res.status(500).json({ errors });
+    } else {
+      res.status(204).end();
+    }
   } catch (error) {
     console.error('Deploy channels error:', error);
     const returnErrors = req.query.returnErrors === 'true';

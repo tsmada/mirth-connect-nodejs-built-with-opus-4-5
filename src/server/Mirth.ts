@@ -45,6 +45,17 @@ export function getDonkeyInstance(): Donkey | null {
   return donkeyInstance;
 }
 
+// Global Mirth instance for cross-cutting concerns (e.g., shadow cutover)
+let mirthInstance: Mirth | null = null;
+
+/**
+ * Get the global Mirth server instance.
+ * Used by ShadowServlet to call completeShadowCutover() after full promote.
+ */
+export function getMirthInstance(): Mirth | null {
+  return mirthInstance;
+}
+
 export type OperationalMode = 'takeover' | 'standalone' | 'auto';
 
 export interface MirthConfig {
@@ -182,6 +193,7 @@ export class Mirth {
       setSecretsFunction(createSecretsFunction());
     }
 
+    mirthInstance = this;
     this.running = true;
     logger.info(`Mirth Connect started on port ${this.config.httpPort} (HTTP)`);
   }
@@ -247,6 +259,7 @@ export class Mirth {
     // Close database connection pool
     await closePool();
 
+    mirthInstance = null;
     this.running = false;
     setStartupComplete(false);
     await shutdownLogging();
@@ -294,9 +307,9 @@ export class Mirth {
 
   /**
    * Initialize VMRouter singletons for user scripts.
-   * Extracted to allow deferred initialization after shadow mode cutover.
+   * Public to allow deferred initialization after shadow mode cutover.
    */
-  private initializeVMRouter(): void {
+  initializeVMRouter(): void {
     setVmRouterEngineController({
       dispatchRawMessage: async (channelId, rawMessageObj, _force, _storeRawResponse) => {
         const channel = EngineController.getDeployedChannel(channelId);

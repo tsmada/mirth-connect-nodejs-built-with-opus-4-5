@@ -23,6 +23,7 @@ import {
 import { EngineController } from '../../controllers/EngineController.js';
 import { execute } from '../../db/pool.js';
 import { getServerId } from '../../cluster/ClusterIdentity.js';
+import { getMirthInstance } from '../../server/Mirth.js';
 
 export const shadowRouter = Router();
 
@@ -80,6 +81,12 @@ shadowRouter.post('/promote', async (req: Request, res: Response) => {
             });
           }
         }
+      }
+
+      // Complete shadow cutover: initialize VMRouter + DataPruner
+      const mirth = getMirthInstance();
+      if (mirth) {
+        await mirth.completeShadowCutover();
       }
 
       const deployedCount = EngineController.getDeployedCount();

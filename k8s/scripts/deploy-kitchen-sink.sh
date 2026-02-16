@@ -20,33 +20,72 @@ API_URL="${1:-http://localhost:8080}"
 # Remove trailing slash
 API_URL="${API_URL%/}"
 
+# Enable --insecure for HTTPS endpoints (e.g., Java Mirth on port 8443)
+CURL_INSECURE=""
+if [[ "$API_URL" == https://* ]]; then
+  CURL_INSECURE="--insecure"
+fi
+
 echo "=== Deploying Kitchen Sink to $API_URL ==="
 
 # ── Step 1: Login ────────────────────────────────────────────────────
 echo ""
 echo "[1/5] Logging in as admin..."
 
-LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+# Try Node.js login first (JSON + X-Session-ID header)
+LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" $CURL_INSECURE -X POST \
   "$API_URL/api/users/_login" \
   -H "Content-Type: application/json" \
   -H "X-Requested-With: XMLHttpRequest" \
   -d '{"username":"admin","password":"admin"}' \
   -D /dev/stderr 2>&1)
 
-# Extract session ID from response headers
-SESSION_ID=$(echo "$LOGIN_RESPONSE" | grep -i "^x-session-id:" | head -1 | awk '{print $2}' | tr -d '\r\n')
+# Extract session ID — try X-Session-ID header (Node.js Mirth)
+# Note: grep || true prevents pipefail exit when header not found (Java returns 415 for JSON login)
+SESSION_ID=$(echo "$LOGIN_RESPONSE" | { grep -i "^x-session-id:" || true; } | head -1 | awk '{print $2}' | tr -d '\r\n')
+AUTH_MODE="node"
 
 if [[ -z "$SESSION_ID" ]]; then
-  echo "ERROR: Login failed. Could not extract X-Session-ID." >&2
+  # Try JSESSIONID from Set-Cookie (Java Mirth)
+  JSESSIONID=$(echo "$LOGIN_RESPONSE" | { grep -i "^set-cookie:" || true; } | { grep -o "JSESSIONID=[^;]*" || true; } | head -1)
+  if [[ -n "$JSESSIONID" ]]; then
+    SESSION_ID="$JSESSIONID"
+    AUTH_MODE="java"
+    echo "  Using Java Mirth session (JSESSIONID)"
+  else
+    # Fallback: form-encoded login (Java Mirth alternate path)
+    LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" $CURL_INSECURE -X POST \
+      "$API_URL/api/users/_login" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "username=admin&password=admin" \
+      -D /dev/stderr 2>&1)
+    JSESSIONID=$(echo "$LOGIN_RESPONSE" | { grep -i "^set-cookie:" || true; } | { grep -o "JSESSIONID=[^;]*" || true; } | head -1)
+    if [[ -n "$JSESSIONID" ]]; then
+      SESSION_ID="$JSESSIONID"
+      AUTH_MODE="java"
+      echo "  Using Java Mirth session (form-encoded fallback)"
+    fi
+  fi
+fi
+
+if [[ -z "$SESSION_ID" ]]; then
+  echo "ERROR: Login failed. Could not extract session from either Node.js or Java Mirth." >&2
   echo "Response: $LOGIN_RESPONSE" >&2
   exit 1
 fi
-echo "  Session: ${SESSION_ID:0:20}..."
+echo "  Session: ${SESSION_ID:0:20}... (mode: $AUTH_MODE)"
+
+# Auth header variable — usable in all curl calls
+if [[ "$AUTH_MODE" == "java" ]]; then
+  AUTH_HEADER="Cookie: $SESSION_ID"
+else
+  AUTH_HEADER="X-Session-ID: $SESSION_ID"
+fi
 
 # Helper: authenticated curl
 auth_curl() {
-  curl -s -f "$@" \
-    -H "X-Session-ID: $SESSION_ID" \
+  curl -s -f $CURL_INSECURE "$@" \
+    -H "$AUTH_HEADER" \
     -H "X-Requested-With: XMLHttpRequest"
 }
 
@@ -64,10 +103,10 @@ for tpl in "$KS_DIR/code-templates/"*.xml; do
   CONTENT=$(cat "$tpl")
   WRAPPED="<list>${CONTENT}</list>"
 
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $CURL_INSECURE -X PUT \
     "$API_URL/api/codeTemplateLibraries" \
     -H "Content-Type: application/xml" \
-    -H "X-Session-ID: $SESSION_ID" \
+    -H "$AUTH_HEADER" \
     -H "X-Requested-With: XMLHttpRequest" \
     -d "$WRAPPED")
 
@@ -97,10 +136,10 @@ for ch in "$KS_DIR/channels/"*.xml; do
 
   echo "  -> $name ($CH_ID)"
 
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $CURL_INSECURE -X POST \
     "$API_URL/api/channels" \
     -H "Content-Type: application/xml" \
-    -H "X-Session-ID: $SESSION_ID" \
+    -H "$AUTH_HEADER" \
     -H "X-Requested-With: XMLHttpRequest" \
     -d @"$ch")
 
@@ -130,17 +169,17 @@ for id in "${CHANNEL_IDS[@]}"; do
 done
 DEPLOY_XML+="</set>"
 
-DEPLOY_RESULT=$(curl -s -w "\n%{http_code}" -X POST \
+DEPLOY_RESULT=$(curl -s -w "\n%{http_code}" $CURL_INSECURE -X POST \
   "$API_URL/api/channels/_deploy?returnErrors=true" \
   -H "Content-Type: application/xml" \
-  -H "X-Session-ID: $SESSION_ID" \
+  -H "$AUTH_HEADER" \
   -H "X-Requested-With: XMLHttpRequest" \
   -d "$DEPLOY_XML")
 
 DEPLOY_HTTP=$(echo "$DEPLOY_RESULT" | tail -1)
 if [[ "$DEPLOY_HTTP" -ge 400 ]]; then
   echo "  WARNING: Deploy returned HTTP $DEPLOY_HTTP"
-  echo "  Response: $(echo "$DEPLOY_RESULT" | head -n -1)"
+  echo "  Response: $(echo "$DEPLOY_RESULT" | sed '$d')"
 fi
 
 # ── Step 5: Wait for STARTED state ───────────────────────────────────
@@ -153,8 +192,8 @@ TARGET=${#CHANNEL_IDS[@]}
 
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
   # Fetch channel statuses as JSON
-  STATUSES=$(curl -s "$API_URL/api/channels/statuses" \
-    -H "X-Session-ID: $SESSION_ID" \
+  STATUSES=$(curl -s $CURL_INSECURE "$API_URL/api/channels/statuses" \
+    -H "$AUTH_HEADER" \
     -H "X-Requested-With: XMLHttpRequest" \
     -H "Accept: application/json" 2>/dev/null || echo "{}")
 
