@@ -18,6 +18,7 @@ const HL7_MESSAGE = [
 ].join('\r');
 
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     java_hl7: {
       executor: 'ramping-vus',
@@ -47,6 +48,10 @@ export const options = {
   thresholds: {
     'hl7_latency{engine:nodejs}':  ['p(95)<500'],
     'hl7_latency{engine:java}':    ['p(95)<1000'],
+    'hl7_processed{engine:nodejs}': ['count>=0'],
+    'hl7_processed{engine:java}':   ['count>=0'],
+    'hl7_error_rate{engine:nodejs}': ['rate<0.1'],
+    'hl7_error_rate{engine:java}':   ['rate<0.1'],
     'hl7_error_rate':              ['rate<0.1'],
   },
 };
@@ -60,7 +65,7 @@ export default function () {
   const msgId = `MSG${__VU}-${__ITER}-${Date.now()}`;
   const message = HL7_MESSAGE.replace('MSG${__VU}${__ITER}', msgId);
 
-  const res = http.post(`${targetUrl}/bench-hl7`, message, {
+  const res = http.post(`${targetUrl}/bench-hl7/`, message, {
     headers: { 'Content-Type': 'text/plain' },
     tags,
   });
@@ -101,19 +106,18 @@ export function handleSummary(data) {
     const vals = data.metrics[key];
     if (vals && vals.values) {
       const v = vals.values;
-      lines.push(`    engine=${eng}:   p50=${fmt(v['p(50)'])}ms  p95=${fmt(v['p(95)'])}ms  p99=${fmt(v['p(99)'])}ms  avg=${fmt(v.avg)}ms`);
+      lines.push(`    engine=${eng}:   p50=${fmt(v.med)}ms  p95=${fmt(v['p(95)'])}ms  p99=${fmt(v['p(99)'])}ms  avg=${fmt(v.avg)}ms`);
     } else {
       lines.push(`    engine=${eng}:   (no data)`);
     }
   }
 
   lines.push('');
-  lines.push('  hl7_processed:');
   for (const eng of ['java', 'nodejs']) {
     const key = `hl7_processed{engine:${eng}}`;
     const vals = data.metrics[key];
     if (vals && vals.values) {
-      lines.push(`    engine=${eng}:   total=${vals.values.count}`);
+      lines.push(`  total_messages (${eng}): ${vals.values.count}`);
     }
   }
 

@@ -26,7 +26,10 @@ kubectl apply -k k8s/overlays/cluster/      # 3 replicas, horizontal scaling
 ./k8s/scripts/run-k6.sh api-load
 ./k8s/scripts/run-k6.sh mllp-load
 
-# 5. Cleanup
+# 5. Run side-by-side benchmark (Java Mirth vs Node.js Mirth)
+./k8s/scripts/run-benchmark.sh
+
+# 6. Cleanup
 ./k8s/scripts/teardown.sh
 ```
 
@@ -49,11 +52,20 @@ k8s/
     takeover/                        # MIRTH_MODE=takeover, shared DB
     shadow/                          # MIRTH_SHADOW_MODE=true
     cluster/                         # 3 replicas, MIRTH_CLUSTER_ENABLED=true
+    benchmark/                       # Side-by-side Java vs Node.js benchmark
+  benchmark-channels/                # Channel XML templates (PORT_PLACEHOLDER)
+    http-echo.xml                    # HTTP Echo channel
+    json-transform.xml               # JSON Transform channel
+    hl7-http.xml                     # HL7 via HTTP channel
   k6/
     configmap.yaml                   # k6 test scripts
     job-api-load.yaml                # REST API throughput test
     job-mllp-load.yaml               # HL7 message load test
+    job-benchmark.yaml               # Side-by-side benchmark Job
     scripts/                         # k6 JavaScript test files
+      benchmark-api.js               # REST API comparison
+      benchmark-hl7.js               # HL7 message comparison
+      benchmark-json.js              # JSON transform comparison
   scripts/
     setup.sh                         # Build image + deploy base
     teardown.sh                      # Delete all namespaces
@@ -62,6 +74,7 @@ k8s/
     wait-for-ready.sh                # Wait for pods in a namespace
     port-forward.sh                  # Expose infra services locally
     run-k6.sh                        # Launch k6 Job + tail logs
+    run-benchmark.sh                 # Side-by-side benchmark orchestrator
 ```
 
 ## Namespace Strategy
@@ -73,6 +86,7 @@ k8s/
 | `mirth-takeover` | Node.js Mirth (ExternalName → infra MySQL) | Shared DB testing |
 | `mirth-shadow` | Node.js Mirth in shadow mode | Progressive cutover testing |
 | `mirth-cluster` | 3x Node.js Mirth replicas | Horizontal scaling testing |
+| `mirth-benchmark` | Node.js Mirth + separate MySQL | Side-by-side benchmark |
 | `mirth-k6` | k6 load test Jobs | Performance testing |
 
 ## Kitchen Sink Channel Ports
@@ -177,6 +191,127 @@ When Node.js Mirth runs in takeover mode alongside Java Mirth:
 | startupProbe | `/api/health/startup` | 200 after channels deployed |
 | readinessProbe | `/api/health` | 200 when ready, 503 during shutdown |
 | livenessProbe | `/api/health/live` | Always 200 |
+
+## Side-by-Side Benchmark: Java Mirth vs Node.js Mirth
+
+Compares Java Mirth 3.9.1 and Node.js Mirth side-by-side on identical hardware with identical resource allocations. Uses [k6](https://k6.io/) for load generation with tagged metrics for per-engine breakdowns.
+
+### Running the Benchmark
+
+```bash
+# Full run: deploy infrastructure + channels + run k6 (~15 minutes)
+./k8s/scripts/run-benchmark.sh
+
+# Re-run k6 only (infrastructure already deployed)
+./k8s/scripts/run-benchmark.sh --skip-deploy
+```
+
+The benchmark deploys a `mirth-benchmark` namespace with a dedicated Node.js Mirth + MySQL instance, patches the existing Java Mirth in `mirth-infra` with benchmark ports, deploys 3 channel pairs (HTTP echo, JSON transform, HL7 via HTTP), then runs k6 sequentially — Java first, then Node.js — to avoid CPU contention.
+
+### Benchmark Architecture
+
+```
+mirth-infra                         mirth-benchmark
+┌─────────────────────────┐        ┌─────────────────────────┐
+│ MySQL (infra)           │        │ MySQL (benchmark)       │
+│ Java Mirth 3.9.1        │        │ Node.js Mirth           │
+│   :8443 API (HTTPS)     │        │   :8080 API (HTTP)      │
+│   :7090 HTTP Echo       │        │   :7080 HTTP Echo       │
+│   :7091 JSON Transform  │        │   :7081 JSON Transform  │
+│   :7092 HL7 via HTTP    │        │   :7082 HL7 via HTTP    │
+└─────────────────────────┘        └─────────────────────────┘
+         ▲                                   ▲
+         └───────── k6 benchmark Job ────────┘
+                   (mirth-k6 namespace)
+```
+
+### Resource Allocation (Equal)
+
+Both engines run with identical resource limits:
+
+| Resource | Java Mirth | Node.js Mirth |
+|----------|-----------|---------------|
+| CPU limit | 1 core | 1 core |
+| Memory limit | 1 Gi | 1 Gi |
+| CPU request | 500m | 500m |
+| Memory request | 512 Mi | 512 Mi |
+
+### Performance Results (2026-02-16)
+
+Tested on Rancher Desktop k3s, Apple Silicon (ARM64). Both engines running natively — no QEMU emulation.
+
+#### Phase 1: REST API (health, login, channel list, channel statuses)
+
+| Endpoint | Java p50 | Java p95 | Java p99 | Node.js p50 | Node.js p95 | Node.js p99 |
+|----------|----------|----------|----------|-------------|-------------|-------------|
+| health | 1ms | 2ms | 6ms | **0ms** | **1ms** | **3ms** |
+| login | 6ms | 11ms | 31ms | **3ms** | **7ms** | **13ms** |
+| channel list | 5ms | 9ms | 18ms | **3ms** | **7ms** | **12ms** |
+| statuses | 4ms | 8ms | 25ms | **3ms** | **5ms** | **9ms** |
+
+| Metric | Java | Node.js |
+|--------|------|---------|
+| Total requests | 10,472 | **10,656** |
+| Error rate | 0.00% | 0.00% |
+
+**Node.js wins every REST API metric.** Login latency is 2x lower (3ms vs 6ms p50). The p99 gap is especially notable — Java spikes to 25-31ms while Node.js stays under 13ms.
+
+#### Phase 2: HL7 Message Processing
+
+| Metric | Java | Node.js |
+|--------|------|---------|
+| p50 latency | **30ms** | 53ms |
+| p95 latency | 93ms | **92ms** |
+| p99 latency | **136ms** | 143ms |
+| Total messages | **3,067** | 2,744 |
+| Error rate | 0.00% | 0.00% |
+
+**Java wins at median (1.77x faster p50), but p95 converges** — both engines hit ~93ms under sustained load.
+
+#### Phase 3: JSON Transform
+
+| Metric | Java | Node.js |
+|--------|------|---------|
+| p50 latency | **21ms** | 43ms |
+| p95 latency | 64ms | **62ms** |
+| p99 latency | **91ms** | 119ms |
+| Total messages | **3,360** | 2,979 |
+| Error rate | 0.00% | 0.00% |
+
+**Java wins at median (2.05x faster p50), Node.js wins at p95** — under peak load both engines are bound by MySQL write latency rather than CPU.
+
+#### Memory Footprint
+
+| Metric | Java Mirth | Node.js Mirth | Ratio |
+|--------|-----------|---------------|-------|
+| Idle memory | 504 Mi | 56 Mi | **Java uses 9x more** |
+
+#### Summary
+
+| Workload | Latency Winner | Throughput Winner | Notes |
+|----------|---------------|-------------------|-------|
+| REST API | **Node.js** (2x) | **Node.js** | Lower latency at all percentiles |
+| HL7 processing | **Java** (p50), **tie** (p95) | **Java** (12%) | Converges under load |
+| JSON transform | **Java** (p50), **Node.js** (p95) | **Java** (13%) | Converges under load |
+| Memory efficiency | **Node.js** (9x less) | — | 56 Mi vs 504 Mi at idle |
+
+**Key takeaway:** Node.js is faster for REST APIs, comparable for message processing under sustained load (p95 convergence), and dramatically more memory-efficient. In a cloud environment, you can run ~9 Node.js instances for the memory cost of 1 Java instance.
+
+### k6 Test Scripts
+
+| Script | Phase | VU Profile | Duration |
+|--------|-------|------------|----------|
+| `benchmark-api.js` | REST API | warmup 5→steady 10→peak 25 VU | ~5.5 min |
+| `benchmark-hl7.js` | HL7 messages | warmup 3→load 10 VU | ~3 min |
+| `benchmark-json.js` | JSON transforms | warmup 3→load 10 VU | ~3 min |
+
+### Benchmark Channels
+
+| Channel | Node.js Port | Java Port | Tests |
+|---------|-------------|-----------|-------|
+| HTTP Echo | 7080 | 7090 | HTTP ingestion + JS transformer + DB persistence |
+| JSON Transform | 7081 | 7091 | JSON parsing + field mapping + XML output |
+| HL7 via HTTP | 7082 | 7092 | HL7v2 parsing + ACK generation + serialization |
 
 ## Rebuilding the Image
 

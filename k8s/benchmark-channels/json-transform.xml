@@ -31,7 +31,7 @@
       <xmlBody>false</xmlBody>
       <parseMultipart>true</parseMultipart>
       <includeMetadata>false</includeMetadata>
-      <binaryMimeTypes>application/.*(?!json|xml)</binaryMimeTypes>
+      <binaryMimeTypes>application/.*(?&lt;!json|xml)$|image/.*|video/.*|audio/.*</binaryMimeTypes>
       <binaryMimeTypesRegex>true</binaryMimeTypesRegex>
       <responseContentType>application/xml</responseContentType>
       <responseDataTypeBinary>false</responseDataTypeBinary>
@@ -77,22 +77,34 @@ for (var j = 0; j &lt; telecoms.length; j++) {
   teleXml += '&lt;/telecom&gt;';
 }
 
-var xml = '&lt;Patient xmlns="urn:hl7-org:fhir"&gt;';
-xml += '&lt;id value="' + patientId + '"/&gt;';
-xml += '&lt;name&gt;&lt;given value="' + givenName + '"/&gt;&lt;family value="' + familyName + '"/&gt;&lt;/name&gt;';
-xml += '&lt;gender value="' + gender + '"/&gt;';
-xml += '&lt;birthDate value="' + dob + '"/&gt;';
-xml += addrXml;
-xml += teleXml;
-xml += '&lt;meta&gt;&lt;lastUpdated value="' + new Date().toISOString() + '"/&gt;&lt;/meta&gt;';
-xml += '&lt;/Patient&gt;';
+var result = '&lt;Patient xmlns="urn:hl7-org:fhir"&gt;';
+result += '&lt;id value="' + patientId + '"/&gt;';
+result += '&lt;name&gt;&lt;given value="' + givenName + '"/&gt;&lt;family value="' + familyName + '"/&gt;&lt;/name&gt;';
+result += '&lt;gender value="' + gender + '"/&gt;';
+result += '&lt;birthDate value="' + dob + '"/&gt;';
+result += addrXml;
+result += teleXml;
+result += '&lt;meta&gt;&lt;lastUpdated value="' + new Date().toISOString() + '"/&gt;&lt;/meta&gt;';
+result += '&lt;/Patient&gt;';
 
-$c('transformedXml', xml);
+$c('transformedXml', result);
 $c('patientId', patientId);</script>
         </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
       </elements>
       <inboundDataType>RAW</inboundDataType>
       <outboundDataType>RAW</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+        <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+          <splitType>JavaScript</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+      </inboundProperties>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+        <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+          <splitType>JavaScript</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+      </outboundProperties>
     </transformer>
     <filter version="3.9.1">
       <elements/>
@@ -136,11 +148,35 @@ $c('patientId', patientId);</script>
         <elements/>
         <inboundDataType>RAW</inboundDataType>
         <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </inboundProperties>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </outboundProperties>
       </transformer>
       <responseTransformer version="3.9.1">
         <elements/>
         <inboundDataType>RAW</inboundDataType>
         <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </inboundProperties>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </outboundProperties>
       </responseTransformer>
       <filter version="3.9.1">
         <elements/>
@@ -165,7 +201,6 @@ $c('patientId', patientId);</script>
     <initialState>STARTED</initialState>
     <storeAttachments>true</storeAttachments>
     <metaDataColumns/>
-    <archiveEnabled>true</archiveEnabled>
     <attachmentProperties version="3.9.1">
       <type>None</type>
       <properties/>
@@ -177,21 +212,4 @@ $c('patientId', patientId);</script>
       </entry>
     </resourceIds>
   </properties>
-  <exportData>
-    <metadata>
-      <enabled>true</enabled>
-      <lastModified>
-        <time>1707141600000</time>
-        <timezone>America/New_York</timezone>
-      </lastModified>
-      <pruningSettings>
-        <pruneMetaDataDays>-1</pruneMetaDataDays>
-        <pruneContentDays>-1</pruneContentDays>
-        <archiveEnabled>true</archiveEnabled>
-      </pruningSettings>
-    </metadata>
-    <dependentIds/>
-    <dependencyIds/>
-    <channelTags/>
-  </exportData>
 </channel>

@@ -31,7 +31,7 @@
       <xmlBody>false</xmlBody>
       <parseMultipart>true</parseMultipart>
       <includeMetadata>false</includeMetadata>
-      <binaryMimeTypes>application/.*(?!json|xml)</binaryMimeTypes>
+      <binaryMimeTypes>application/.*(?&lt;!json|xml)$|image/.*|video/.*|audio/.*</binaryMimeTypes>
       <binaryMimeTypesRegex>true</binaryMimeTypesRegex>
       <responseContentType>application/json</responseContentType>
       <responseDataTypeBinary>false</responseDataTypeBinary>
@@ -57,6 +57,18 @@ $c('echoPayload', JSON.stringify(body));</script>
       </elements>
       <inboundDataType>RAW</inboundDataType>
       <outboundDataType>RAW</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+        <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+          <splitType>JavaScript</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+      </inboundProperties>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+        <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+          <splitType>JavaScript</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+      </outboundProperties>
     </transformer>
     <filter version="3.9.1">
       <elements/>
@@ -100,11 +112,35 @@ $c('echoPayload', JSON.stringify(body));</script>
         <elements/>
         <inboundDataType>RAW</inboundDataType>
         <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </inboundProperties>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </outboundProperties>
       </transformer>
       <responseTransformer version="3.9.1">
         <elements/>
         <inboundDataType>RAW</inboundDataType>
         <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </inboundProperties>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+          <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+            <splitType>JavaScript</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+        </outboundProperties>
       </responseTransformer>
       <filter version="3.9.1">
         <elements/>
@@ -129,7 +165,6 @@ $c('echoPayload', JSON.stringify(body));</script>
     <initialState>STARTED</initialState>
     <storeAttachments>true</storeAttachments>
     <metaDataColumns/>
-    <archiveEnabled>true</archiveEnabled>
     <attachmentProperties version="3.9.1">
       <type>None</type>
       <properties/>
@@ -141,21 +176,4 @@ $c('echoPayload', JSON.stringify(body));</script>
       </entry>
     </resourceIds>
   </properties>
-  <exportData>
-    <metadata>
-      <enabled>true</enabled>
-      <lastModified>
-        <time>1707141600000</time>
-        <timezone>America/New_York</timezone>
-      </lastModified>
-      <pruningSettings>
-        <pruneMetaDataDays>-1</pruneMetaDataDays>
-        <pruneContentDays>-1</pruneContentDays>
-        <archiveEnabled>true</archiveEnabled>
-      </pruningSettings>
-    </metadata>
-    <dependentIds/>
-    <dependencyIds/>
-    <channelTags/>
-  </exportData>
 </channel>

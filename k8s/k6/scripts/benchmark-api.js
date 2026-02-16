@@ -16,6 +16,7 @@ const NODEJS_API = __ENV.NODEJS_API_URL || 'http://node-mirth.mirth-benchmark.sv
 
 export const options = {
   insecureSkipTLSVerify: true,
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     java_api: {
       executor: 'ramping-vus',
@@ -51,6 +52,12 @@ export const options = {
     'login_latency{engine:java}':     ['p(95)<800'],
     'channel_latency{engine:nodejs}': ['p(95)<300'],
     'channel_latency{engine:java}':   ['p(95)<800'],
+    'status_latency{engine:nodejs}':  ['p(95)<500'],
+    'status_latency{engine:java}':    ['p(95)<1000'],
+    'total_requests{engine:nodejs}':  ['count>=0'],
+    'total_requests{engine:java}':    ['count>=0'],
+    'error_rate{engine:nodejs}':      ['rate<0.05'],
+    'error_rate{engine:java}':        ['rate<0.05'],
     'error_rate':                     ['rate<0.05'],
   },
 };
@@ -179,7 +186,7 @@ export function handleSummary(data) {
       const vals = data.metrics[key];
       if (vals && vals.values) {
         const v = vals.values;
-        lines.push(`    engine=${eng}:   p50=${fmt(v['p(50)'])}ms  p95=${fmt(v['p(95)'])}ms  p99=${fmt(v['p(99)'])}ms`);
+        lines.push(`    engine=${eng}:   p50=${fmt(v.med)}ms  p95=${fmt(v['p(95)'])}ms  p99=${fmt(v['p(99)'])}ms  avg=${fmt(v.avg)}ms`);
       } else {
         lines.push(`    engine=${eng}:   (no data)`);
       }

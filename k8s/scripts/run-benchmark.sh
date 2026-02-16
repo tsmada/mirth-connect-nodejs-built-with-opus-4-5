@@ -109,17 +109,31 @@ step2_deploy() {
   kubectl apply -k "$K8S_DIR/overlays/benchmark/"
   ok "Benchmark overlay applied"
 
-  # Wait for pods to be scheduled
-  log "  Waiting for pods to be scheduled..."
-  sleep 10
-
-  # Wait for MySQL
-  log "  Waiting for benchmark MySQL..."
+  # Wait for pods to exist before using kubectl wait (StatefulSet pods take time to schedule)
+  log "  Waiting for benchmark MySQL pod to be created..."
+  local retries=0
+  while ! kubectl get pod -l app=mysql -n mirth-benchmark -o name 2>/dev/null | grep -q pod; do
+    retries=$((retries + 1))
+    if [[ $retries -gt 30 ]]; then
+      err "MySQL pod not created after 60s"
+      exit 1
+    fi
+    sleep 2
+  done
   kubectl wait --for=condition=ready pod -l app=mysql -n mirth-benchmark --timeout=120s
   ok "Benchmark MySQL ready"
 
-  # Wait for Node.js Mirth
-  log "  Waiting for Node.js Mirth (startup probe: up to 150s)..."
+  # Wait for Node.js Mirth pod to exist
+  log "  Waiting for Node.js Mirth pod to be created..."
+  retries=0
+  while ! kubectl get pod -l app=node-mirth -n mirth-benchmark -o name 2>/dev/null | grep -q pod; do
+    retries=$((retries + 1))
+    if [[ $retries -gt 30 ]]; then
+      err "Node.js Mirth pod not created after 60s"
+      exit 1
+    fi
+    sleep 2
+  done
   kubectl wait --for=condition=ready pod -l app=node-mirth -n mirth-benchmark --timeout=180s
   ok "Node.js Mirth ready in mirth-benchmark"
 }
@@ -157,8 +171,9 @@ step3_port_forward() {
 }
 
 # ── Step 4: Deploy Benchmark Channels ─────────────────
-# AUTH_HEADER is set per-engine by deploy_channels_to_engine
-AUTH_HEADER=""
+# AUTH_ARGS is a bash array set per-engine by deploy_channels_to_engine
+# Using arrays avoids word-splitting issues (zsh doesn't split unquoted vars)
+AUTH_ARGS=()
 
 deploy_channel() {
   local api_url="$1"
@@ -176,7 +191,7 @@ deploy_channel() {
   local import_result
   import_result=$(curl -s $extra_curl_opts -X POST "$api_url/api/channels" \
     -H "Content-Type: application/xml" \
-    $AUTH_HEADER \
+    "${AUTH_ARGS[@]}" \
     -d "$channel_xml" 2>&1) || true
 
   if [[ -n "$import_result" ]] && [[ "$import_result" != *"error"* ]] && [[ "$import_result" != *"Error"* ]] && [[ "$import_result" != *"Unauthorized"* ]]; then
@@ -200,11 +215,13 @@ login_nodejs() {
 
   if [[ -z "$session_id" ]]; then
     err "    Node.js session extraction failed"
+    err "    Response headers:"
+    echo "$login_result" | head -15 >&2
     return 1
   fi
 
-  # Set globals (NOT in subshell — called directly)
-  AUTH_HEADER="-H X-Session-ID:$session_id"
+  # Set globals using array (safe across bash/zsh)
+  AUTH_ARGS=(-H "X-Session-ID: $session_id")
   SESSION_PREVIEW="${session_id:0:8}"
 }
 
@@ -220,6 +237,8 @@ login_java() {
   # Check for success
   if ! echo "$login_result" | grep -q "SUCCESS"; then
     err "    Java login failed"
+    err "    Response:"
+    echo "$login_result" | head -15 >&2
     return 1
   fi
 
@@ -232,9 +251,27 @@ login_java() {
     return 1
   fi
 
-  # Set globals (NOT in subshell — called directly)
-  AUTH_HEADER="-b $jsession"
+  # Set globals using array (safe across bash/zsh)
+  AUTH_ARGS=(-b "$jsession")
   SESSION_PREVIEW="${jsession:12:8}"
+}
+
+verify_auth() {
+  local api_url="$1"
+  local engine_name="$2"
+  local extra_curl_opts="${3:-}"
+
+  # Make a test API call to verify auth works
+  local status_code
+  status_code=$(curl -s -o /dev/null -w "%{http_code}" $extra_curl_opts \
+    "$api_url/api/channels" "${AUTH_ARGS[@]}" 2>/dev/null) || true
+
+  if [[ "$status_code" == "200" ]]; then
+    return 0
+  else
+    err "    Auth verification failed for $engine_name (HTTP $status_code)"
+    return 1
+  fi
 }
 
 deploy_channels_to_engine() {
@@ -249,8 +286,8 @@ deploy_channels_to_engine() {
   log "  Deploying channels to $engine_name..."
 
   # Login (different auth per engine)
-  # Call directly (not in subshell) so AUTH_HEADER global is visible
-  AUTH_HEADER=""
+  # Call directly (not in subshell) so AUTH_ARGS global is visible
+  AUTH_ARGS=()
   SESSION_PREVIEW=""
   if [[ "$engine_type" == "nodejs" ]]; then
     login_nodejs "$api_url" || {
@@ -265,6 +302,22 @@ deploy_channels_to_engine() {
   fi
   ok "  Logged in to $engine_name (session: ${SESSION_PREVIEW}...)"
 
+  # Verify auth works before deploying channels
+  if ! verify_auth "$api_url" "$engine_name" "$extra_curl_opts"; then
+    err "  Auth verification failed — retrying login..."
+    sleep 2
+    if [[ "$engine_type" == "nodejs" ]]; then
+      login_nodejs "$api_url" || { err "  Retry login failed"; return 1; }
+    else
+      login_java "$api_url" || { err "  Retry login failed"; return 1; }
+    fi
+    if ! verify_auth "$api_url" "$engine_name" "$extra_curl_opts"; then
+      err "  Auth verification failed after retry for $engine_name"
+      return 1
+    fi
+    ok "  Auth verified on retry"
+  fi
+
   # Deploy each channel
   local channels_dir="$K8S_DIR/benchmark-channels"
   deploy_channel "$api_url" "$channels_dir/http-echo.xml" "$echo_port" "HTTP Echo" "$extra_curl_opts"
@@ -275,7 +328,7 @@ deploy_channels_to_engine() {
   log "    Deploying all channels..."
   curl -s $extra_curl_opts -X POST "$api_url/api/channels/_deploy" \
     -H "Content-Type: application/xml" \
-    $AUTH_HEADER \
+    "${AUTH_ARGS[@]}" \
     -d "<set/>" &>/dev/null || true
   ok "  Channels deployed on $engine_name"
 }
@@ -372,6 +425,9 @@ step6_run_k6() {
 step7_report() {
   log "Step 7: Benchmark report"
   echo ""
+
+  # Wait briefly for Job controller to update status conditions
+  kubectl wait --for=condition=complete job/k6-benchmark -n mirth-k6 --timeout=30s 2>/dev/null || true
 
   # Check job status
   local status
