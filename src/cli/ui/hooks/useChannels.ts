@@ -79,7 +79,7 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
 
   // Initial fetch and polling setup
   useEffect(() => {
-    refresh();
+    void refresh();
 
     if (enablePolling && refreshInterval > 0) {
       intervalRef.current = setInterval(refresh, refreshInterval * 1000);

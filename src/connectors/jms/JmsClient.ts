@@ -296,7 +296,7 @@ export class JmsClient extends EventEmitter {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.reconnect();
+      void this.reconnect();
     }, delay);
   }
 

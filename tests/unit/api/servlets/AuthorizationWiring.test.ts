@@ -452,8 +452,8 @@ describe('UserServlet authorization', () => {
   });
 
   it('does NOT add authorize to login route', () => {
-    expect(source).toContain("userRouter.post('/_login', async");
-    // login should NOT have authorize middleware
+    // Login route has rate limiter but should NOT have authorize middleware
+    expect(source).toContain("userRouter.post('/_login', loginLimiter, async");
     expect(source).not.toMatch(/userRouter\.post\('\/_login',\s*authorize/);
   });
 

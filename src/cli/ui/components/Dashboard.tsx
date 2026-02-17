@@ -133,7 +133,7 @@ export const Dashboard: FC<DashboardProps> = ({
       ws.onStateChange((_connectorId, _state) => {
         // Update channel state based on connector state
         // For now, we just trigger a refresh
-        channels.refresh();
+        void channels.refresh();
       });
     }
   }, [ws.isConnected]);

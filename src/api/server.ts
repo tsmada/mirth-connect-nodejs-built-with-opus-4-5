@@ -6,6 +6,7 @@
  */
 
 import express, { Express, Request, Response, NextFunction } from 'express';
+import helmet from 'helmet';
 import { createServer, Server as HttpServer } from 'http';
 import { authMiddleware, contentNegotiationMiddleware, shadowGuard } from './middleware/index.js';
 import { userRouter } from './servlets/UserServlet.js';
@@ -52,7 +53,9 @@ const DEFAULT_OPTIONS: ServerOptions = {
   port: 8080,
   host: '0.0.0.0',
   corsEnabled: true,
-  corsOrigins: ['*'],
+  corsOrigins: process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+    : ['*'],
 };
 
 /**
@@ -61,6 +64,14 @@ const DEFAULT_OPTIONS: ServerOptions = {
 export function createApp(options: ServerOptions = {}): Express {
   const app = express();
   const config = { ...DEFAULT_OPTIONS, ...options };
+
+  // Security headers via helmet (CSP disabled for API-only server)
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  // Warn if CORS wildcard is used
+  if (config.corsOrigins?.includes('*')) {
+    console.warn('WARNING: CORS is configured with wildcard (*). Set CORS_ORIGINS env var for production.');
+  }
 
   // CORS middleware
   if (config.corsEnabled) {
@@ -158,12 +169,13 @@ export function createApp(options: ServerOptions = {}): Express {
     });
   });
 
-  // Error handler
+  // Error handler — suppress stack traces and error details in production
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('API Error:', err);
+    const isProd = process.env.NODE_ENV === 'production';
     res.status(500).json({
       error: 'Internal Server Error',
-      message: err.message,
+      message: isProd ? 'An unexpected error occurred' : err.message,
     });
   });
 

@@ -88,7 +88,7 @@ export class JavaScriptExecutor {
 
   constructor(options: ScriptOptions = {}) {
     this.scriptBuilder = new ScriptBuilder(options);
-    this.defaultTimeout = 30000;
+    this.defaultTimeout = parseInt(process.env.MIRTH_SCRIPT_TIMEOUT || '30000', 10);
   }
 
   /**

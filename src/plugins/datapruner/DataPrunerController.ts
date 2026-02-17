@@ -167,7 +167,7 @@ class DataPrunerController {
     console.log(`Starting data pruner scheduler (interval: ${this.config.pollingIntervalHours} hours)`);
 
     this.schedulerTimer = setInterval(() => {
-      this.runScheduledPrune();
+      void this.runScheduledPrune();
     }, intervalMs);
 
     // Don't keep process alive just for pruner

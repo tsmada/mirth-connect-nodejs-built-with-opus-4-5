@@ -101,8 +101,8 @@ export function cleanExpiredSessions(): void {
   }
 }
 
-// Run cleanup every 5 minutes
-setInterval(cleanExpiredSessions, 5 * 60 * 1000);
+// Run cleanup every 5 minutes — .unref() prevents this timer from blocking process exit
+setInterval(cleanExpiredSessions, 5 * 60 * 1000).unref();
 
 /**
  * Mirth Connect password hashing (v3.x+):
@@ -289,7 +289,12 @@ export function authMiddleware(options: { required?: boolean } = { required: tru
  * Set session cookie on response
  */
 export function setSessionCookie(res: Response, sessionId: string): void {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly`);
+  const isSecure = process.env.TLS_ENABLED === 'true' || process.env.NODE_ENV === 'production';
+  const secureSuffix = isSecure ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; SameSite=Strict${secureSuffix}`
+  );
   res.setHeader(SESSION_HEADER_NAME, sessionId);
 }
 
@@ -297,9 +302,11 @@ export function setSessionCookie(res: Response, sessionId: string): void {
  * Clear session cookie on response
  */
 export function clearSessionCookie(res: Response): void {
+  const isSecure = process.env.TLS_ENABLED === 'true' || process.env.NODE_ENV === 'production';
+  const secureSuffix = isSecure ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict${secureSuffix}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
   );
 }
 

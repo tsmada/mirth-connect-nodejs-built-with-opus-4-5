@@ -16,8 +16,6 @@
 export enum DicomTlsMode {
   /** No TLS encryption */
   NO_TLS = 'notls',
-  /** TLS without encryption */
-  TLS_WITHOUT_ENCRYPTION = '3des',
   /** TLS with 3DES encryption */
   TLS_3DES = '3des',
   /** TLS with AES encryption */

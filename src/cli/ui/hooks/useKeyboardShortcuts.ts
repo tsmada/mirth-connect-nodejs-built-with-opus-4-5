@@ -87,7 +87,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions): void
       // Find matching action
       for (const action of actions) {
         if (keyMatches(input, key, action) && contextMatches(viewMode, action)) {
-          action.handler();
+          void action.handler();
           return;
         }
       }

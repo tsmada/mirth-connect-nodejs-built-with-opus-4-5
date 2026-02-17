@@ -716,7 +716,7 @@ export class DicomConnection extends EventEmitter {
    */
   private handleReleaseRq(): void {
     // Send release response
-    this.sendReleaseRp();
+    void this.sendReleaseRp();
     this.state = AssociationState.CLOSED;
     this.emit('released');
   }

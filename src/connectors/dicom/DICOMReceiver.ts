@@ -322,7 +322,7 @@ export class DICOMReceiver extends SourceConnector {
     const idleTimeout = parseInt(this.properties.idleTo, 10) * 1000;
     if (idleTimeout > 0) {
       socket.setTimeout(idleTimeout, () => {
-        this.handleTimeout(socket);
+        void this.handleTimeout(socket);
       });
     }
   }
@@ -369,13 +369,13 @@ export class DICOMReceiver extends SourceConnector {
   ): void {
     switch (pduType) {
       case PduType.A_ASSOCIATE_RQ:
-        this.handleAssociateRq(socket, association, pduData);
+        void this.handleAssociateRq(socket, association, pduData);
         break;
       case PduType.P_DATA_TF:
-        this.handleDataTf(socket, association, pduData);
+        void this.handleDataTf(socket, association, pduData);
         break;
       case PduType.A_RELEASE_RQ:
-        this.handleReleaseRq(socket, association);
+        void this.handleReleaseRq(socket, association);
         break;
       case PduType.A_ABORT:
         this.handleAbort(socket, association, pduData);

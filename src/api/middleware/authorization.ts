@@ -276,7 +276,7 @@ export function authorize(options: AuthorizeOptions): RequestHandler {
 
     // Include body params for audit (excluding sensitive data)
     if (req.body && typeof req.body === 'object') {
-      const { password, ...safeBody } = req.body as Record<string, unknown>;
+      const { password: _password, ...safeBody } = req.body as Record<string, unknown>;
       Object.assign(parameterMap, safeBody);
     }
 

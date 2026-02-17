@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import {
   User,
   LoginStatus,
@@ -39,11 +40,20 @@ import * as MirthDao from '../../db/MirthDao.js';
 
 export const userRouter = Router();
 
+// Rate limit login attempts: 10 requests per minute per IP
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', message: 'Too many login attempts. Please try again later.' },
+});
+
 /**
  * POST /users/_login
  * Login with username and password
  */
-userRouter.post('/_login', async (req: Request, res: Response) => {
+userRouter.post('/_login', loginLimiter, async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
 

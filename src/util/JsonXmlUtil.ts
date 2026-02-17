@@ -377,7 +377,7 @@ export class JsonXmlUtil {
           const prefix = elemObj['xmlnsprefix'];
           newKey = `${prefix}:${key}`;
           // Create a copy without xmlnsprefix
-          const { xmlnsprefix, ...rest } = elemObj;
+          const { xmlnsprefix: _xmlnsprefix, ...rest } = elemObj;
           newValue = this.processJsonToXml(rest);
         } else {
           newValue = this.processJsonToXml(value);

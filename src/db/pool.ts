@@ -15,12 +15,14 @@ export interface DatabaseConfig {
   connectionLimit?: number;
   waitForConnections?: boolean;
   queueLimit?: number;
+  connectTimeout?: number;
 }
 
 const DEFAULT_CONFIG: Partial<DatabaseConfig> = {
-  connectionLimit: 10,
+  connectionLimit: parseInt(process.env.DB_POOL_SIZE || '10', 10),
   waitForConnections: true,
-  queueLimit: 0,
+  queueLimit: parseInt(process.env.DB_QUEUE_LIMIT || '0', 10),
+  connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000', 10),
 };
 
 let pool: Pool | null = null;

@@ -709,7 +709,7 @@ export class FileDispatcher extends DestinationConnector {
       // Direct write with append support
       // Note: S3 canAppend() returns false; writeFile with append=true
       // on S3 will download-concat-reupload (handled by S3Client)
-      const shouldAppend = resolvedProps.outputAppend && await client.canAppend();
+      const shouldAppend = resolvedProps.outputAppend && client.canAppend();
       await client.writeFile(
         filename,
         resolvedProps.directory,

@@ -81,7 +81,7 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
 
   // Initial fetch
   useEffect(() => {
-    refresh();
+    void refresh();
   }, []);
 
   const toggleGroup = useCallback((groupId: string) => {

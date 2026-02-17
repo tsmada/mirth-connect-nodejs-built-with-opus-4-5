@@ -175,7 +175,7 @@ function ensureWorkerRunning(): void {
   }
 
   workerRunning = true;
-  processQueue();
+  void processQueue();
 }
 
 /**
