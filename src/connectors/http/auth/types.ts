@@ -157,7 +157,7 @@ export interface HttpAuthenticator {
    * - CHALLENGED: send 401 with response headers (e.g., WWW-Authenticate)
    * - FAILURE: send 401 without challenge
    */
-  authenticate(request: RequestInfo): Promise<AuthenticationResult>;
+  authenticate(request: RequestInfo, credentialsResolver?: CredentialsResolver): Promise<AuthenticationResult>;
 
   /**
    * Called when the authenticator provider is being shut down (e.g., on channel undeploy).
@@ -231,6 +231,16 @@ export interface JavaScriptAuthProperties {
   /** User script that returns AuthenticationResult or boolean. */
   script: string;
 }
+
+/**
+ * Function that resolves credentials from message context at runtime.
+ * Used when useCredentialsVariable is true.
+ * Returns a Map<string, string> (username -> password).
+ *
+ * Java: BasicAuthenticator/DigestAuthenticator call MessageMaps.get(variableName)
+ * which looks up the variable from channelMap -> sourceMap -> connectorMap.
+ */
+export type CredentialsResolver = (variableName: string) => Map<string, string> | undefined;
 
 /**
  * Union of all authentication property types.

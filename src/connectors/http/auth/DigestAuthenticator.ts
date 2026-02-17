@@ -21,6 +21,7 @@ import { createHash, randomBytes } from 'crypto';
 
 import {
   AuthenticationResult,
+  type CredentialsResolver,
   DigestAlgorithm,
   DigestAuthProperties,
   DigestQOPMode,
@@ -138,7 +139,7 @@ export class DigestAuthenticator implements HttpAuthenticator {
     this.properties = properties;
   }
 
-  async authenticate(request: RequestInfo): Promise<AuthenticationResult> {
+  async authenticate(request: RequestInfo, credentialsResolver?: CredentialsResolver): Promise<AuthenticationResult> {
     const authHeaderList = request.headers.get('authorization');
     const directives = new Map<string, string>();
     let nonceString: string | undefined;
@@ -225,7 +226,7 @@ export class DigestAuthenticator implements HttpAuthenticator {
           throw new Error(`Opaque value "${opaque}" does not match expected value "${nonceOpaque}".`);
         }
 
-        const credentialsSource = this.getCredentials();
+        const credentialsSource = this.getCredentials(credentialsResolver);
         const password = credentialsSource.get(username);
         if (password === undefined) {
           throw new Error(`Credentials for username ${username} not found.`);
@@ -347,13 +348,19 @@ export class DigestAuthenticator implements HttpAuthenticator {
   }
 
   /**
-   * Get credentials map.
+   * Get credentials map, supporting both static and runtime variable sources.
    *
-   * Java: DigestAuthenticator.getCredentials() supports both static map
-   * and runtime variable lookup.
+   * Java: DigestAuthenticator.getCredentials() checks useCredentialsVariable and
+   * if true, resolves the variable from MessageMaps. Falls back to static credentials
+   * if the variable is not found or returns empty.
    */
-  private getCredentials(): Map<string, string> {
-    // TODO: Support useCredentialsVariable when MessageMaps integration is available
+  private getCredentials(credentialsResolver?: CredentialsResolver): Map<string, string> {
+    if (this.properties.useCredentialsVariable && credentialsResolver) {
+      const resolved = credentialsResolver(this.properties.credentialsVariable);
+      if (resolved && resolved.size > 0) {
+        return resolved;
+      }
+    }
     return this.properties.credentials;
   }
 
