@@ -69,14 +69,15 @@ export class InMemorySessionStore implements SessionStore {
 }
 
 export class RedisSessionStore implements SessionStore {
-  private redis: import('ioredis').default;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private redis: any;
   private keyPrefix = 'mirth:session:';
   private ttlSeconds: number;
 
   constructor(redisUrl: string, ttlMs: number = SESSION_TIMEOUT_MS) {
-    // Dynamic import workaround: ioredis is imported at construction time
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Redis = require('ioredis') as typeof import('ioredis').default;
+    // Dynamic require: ioredis is loaded at construction time (optional dependency)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    const Redis = require('ioredis');
     this.redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryStrategy(times: number) {
@@ -145,8 +146,8 @@ export class RedisSessionStore implements SessionStore {
     if (keys.length === 0) return [];
     const values = await this.redis.mget(...keys);
     return values
-      .filter((v): v is string => v !== null)
-      .map((v) => this.deserialize(v));
+      .filter((v: string | null): v is string => v !== null)
+      .map((v: string) => this.deserialize(v));
   }
 
   async disconnect(): Promise<void> {

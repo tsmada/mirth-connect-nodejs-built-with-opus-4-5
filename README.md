@@ -302,6 +302,56 @@ Error: Deploy timeout exceeded
 ```
 Java Mirth under QEMU (M1 Mac) is slow. The timeout is set to 120 seconds in `MirthApiClient.ts`.
 
+## Production Configuration
+
+When deploying to production, review these settings to harden security and reliability.
+
+### Security
+
+| Variable | Default | Production Recommendation |
+|----------|---------|--------------------------|
+| `CORS_ORIGINS` | `*` (all origins) | Set to specific admin UI origins: `https://mirth-admin.example.com` |
+| `MIRTH_API_RATE_LIMIT` | `100` | Requests per minute per IP. Adjust based on expected API traffic. Health endpoints are exempt. |
+| `NODE_ENV` | `development` | Set to `production` to suppress stack traces in error responses |
+
+### Database Resilience
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_POOL_SIZE` | `10` | Max concurrent connections. Increase for high-volume channels. |
+| `DB_DEADLOCK_RETRIES` | `3` | Auto-retry on MySQL deadlock (error 1213) and lock wait timeout (1205). Exponential backoff. |
+| `DB_CONNECT_TIMEOUT` | `10000` | Connection timeout in ms |
+| `DB_QUEUE_LIMIT` | `0` | Max queued connection requests (0 = unlimited) |
+
+### Script Execution
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIRTH_SCRIPT_TIMEOUT` | `30000` | CPU timeout for user scripts (vm.Script timeout in ms) |
+| `MIRTH_SCRIPT_WALL_TIMEOUT` | `60000` | Wall-clock warning threshold (ms). Logs a warning if execution exceeds this — catches blocking I/O. |
+
+### Cluster Mode
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIRTH_CLUSTER_ENABLED` | `false` | Enable cluster-aware behavior (D_SERVERS registration, heartbeat) |
+| `MIRTH_CLUSTER_REDIS_URL` | (none) | Redis URL for shared sessions and cluster communication. Required for multi-instance session persistence. |
+| `MIRTH_CLUSTER_QUORUM_ENABLED` | `false` | Health check returns 503 if alive nodes < ceil(total/2). Prevents split-brain. |
+| `MIRTH_CLUSTER_DEAD_NODE_CLEANUP` | `true` | Auto-mark nodes as OFFLINE when heartbeat expires |
+| `MIRTH_CLUSTER_SECRET` | (none) | Shared secret for inter-instance API authentication |
+| `MIRTH_CLUSTER_HEARTBEAT_INTERVAL` | `10000` | Heartbeat interval in ms |
+| `MIRTH_CLUSTER_HEARTBEAT_TIMEOUT` | `30000` | Node suspect threshold in ms |
+| `MIRTH_CLUSTER_SEQUENCE_BLOCK` | `100` | Pre-allocated message ID block size |
+
+### Process Safety
+
+The server registers handlers for `uncaughtException` and `unhandledRejection`. On either event:
+1. The error is logged
+2. A graceful shutdown is attempted (in-flight messages drain)
+3. After a 5-second safety timeout, the process exits with code 1
+
+Container orchestrators (Kubernetes, ECS) should configure restart policies to automatically recover from these exits.
+
 ## Contributing
 
 1. Fork the repository
