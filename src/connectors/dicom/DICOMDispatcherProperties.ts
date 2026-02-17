@@ -107,6 +107,8 @@ export interface DICOMDispatcherProperties {
   sosndbuf: string;
   /** Request storage commitment */
   stgcmt: boolean;
+  /** Storage commitment N-EVENT-REPORT timeout (ms) */
+  stgcmtTimeout: number;
   /** TCP no-delay (disable Nagle) */
   tcpDelay: boolean;
   /** Offer default transfer syntax in separate presentation context */
@@ -179,6 +181,7 @@ export function getDefaultDICOMDispatcherProperties(): DICOMDispatcherProperties
     sorcvbuf: '0',
     sosndbuf: '0',
     stgcmt: false,
+    stgcmtTimeout: 30000,
     tcpDelay: true,
     ts1: false,
     uidnegrsp: false,

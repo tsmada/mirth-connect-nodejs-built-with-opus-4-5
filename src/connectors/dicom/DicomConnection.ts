@@ -10,10 +10,39 @@
  * - Transfer syntax negotiation
  */
 
+import * as crypto from 'crypto';
 import * as net from 'net';
 import * as tls from 'tls';
 import { EventEmitter } from 'events';
 import { TransferSyntax, SopClass, DicomTlsMode } from './DICOMReceiverProperties.js';
+
+/**
+ * DICOM Storage Commitment Push Model constants.
+ *
+ * SOP Class 1.2.840.10008.1.20.1 defines the N-ACTION / N-EVENT-REPORT
+ * protocol for verifying that an SCP has durably committed to storing
+ * previously C-STOREd SOP instances.
+ */
+export const StorageCommitment = {
+  /** Storage Commitment Push Model SOP Class UID */
+  SOP_CLASS_UID: '1.2.840.10008.1.20.1',
+  /** Well-known SOP Instance UID for the Push Model */
+  SOP_INSTANCE_UID: '1.2.840.10008.1.20.1.1',
+  /** N-ACTION Action Type ID: Request Storage Commitment */
+  ACTION_TYPE_REQUEST: 1,
+  /** N-EVENT-REPORT Event Type ID: Successful commitment */
+  EVENT_TYPE_SUCCESS: 1,
+  /** N-EVENT-REPORT Event Type ID: Failures exist */
+  EVENT_TYPE_FAILURE: 2,
+  /** DICOM Tag: Transaction UID (0008,1195) */
+  TAG_TRANSACTION_UID: { group: 0x0008, element: 0x1195 },
+  /** DICOM Tag: Referenced SOP Sequence (0008,1199) */
+  TAG_REFERENCED_SOP_SEQUENCE: { group: 0x0008, element: 0x1199 },
+  /** DICOM Tag: Referenced SOP Class UID (0008,1150) */
+  TAG_REFERENCED_SOP_CLASS_UID: { group: 0x0008, element: 0x1150 },
+  /** DICOM Tag: Referenced SOP Instance UID (0008,1155) */
+  TAG_REFERENCED_SOP_INSTANCE_UID: { group: 0x0008, element: 0x1155 },
+} as const;
 
 /**
  * DICOM PDU Types
@@ -1120,6 +1149,330 @@ export class DicomConnection extends EventEmitter {
     await this.sendPdu(pdu);
     this.state = AssociationState.CLOSED;
     this.close();
+  }
+
+  /**
+   * Request Storage Commitment for a stored SOP instance.
+   *
+   * Protocol flow (DICOM PS3.4 J.3):
+   * 1. Verify Storage Commitment Push Model SOP Class was negotiated
+   * 2. Send N-ACTION-RQ with Transaction UID and Referenced SOP Sequence
+   * 3. Wait for N-ACTION-RSP (confirms request was received)
+   * 4. Wait for N-EVENT-REPORT-RQ (actual commitment result)
+   * 5. Send N-EVENT-REPORT-RSP
+   * 6. Parse Event Type ID: 1 = success, 2 = failure
+   *
+   * @param sopClassUID - SOP Class UID of the stored instance
+   * @param sopInstanceUID - SOP Instance UID of the stored instance
+   * @param timeout - Timeout in ms for the commitment response (default 30000)
+   * @returns true if commitment confirmed, false if rejected/timeout/not negotiated
+   */
+  async requestStorageCommitment(
+    sopClassUID: string,
+    sopInstanceUID: string,
+    timeout: number = 30000
+  ): Promise<boolean> {
+    if (!this.isAssociated()) {
+      return false;
+    }
+
+    // Find the presentation context for Storage Commitment Push Model
+    const context = this.findPresentationContext(StorageCommitment.SOP_CLASS_UID);
+    if (!context || context.result !== 0) {
+      // SCP did not accept Storage Commitment Push Model — cannot proceed
+      return false;
+    }
+
+    const messageId = this.messageIdCounter++;
+    const transactionUID = this.generateDicomUid();
+
+    // Build the N-ACTION-RQ command
+    const command = this.buildNActionCommand(messageId);
+
+    // Build the N-ACTION dataset: Transaction UID + Referenced SOP Sequence
+    const dataset = this.buildStorageCommitmentDataset(
+      transactionUID,
+      sopClassUID,
+      sopInstanceUID
+    );
+
+    // Send N-ACTION command
+    await this.sendDataTf(context.id, true, true, command);
+
+    // Send N-ACTION dataset
+    await this.sendDataTf(context.id, false, true, dataset);
+
+    // Wait for N-ACTION-RSP, then N-EVENT-REPORT-RQ
+    return this.waitForStorageCommitmentResult(context.id, messageId, timeout);
+  }
+
+  /**
+   * Build N-ACTION-RQ command for Storage Commitment.
+   *
+   * DIMSE fields (PS3.7 10.1.1):
+   * - Requested SOP Class UID (0000,0003): Storage Commitment Push Model
+   * - Command Field (0000,0100): N-ACTION-RQ (0x0130)
+   * - Message ID (0000,0110)
+   * - Requested SOP Instance UID (0000,1001): Well-known Push Model Instance
+   * - Action Type ID (0000,1008): 1 (Request Storage Commitment)
+   * - Data Set Type (0000,0800): 0x0102 (data present)
+   */
+  private buildNActionCommand(messageId: number): Buffer {
+    const elements: Buffer[] = [];
+
+    // Requested SOP Class UID (0000,0003)
+    elements.push(this.encodeElement(0x0000, 0x0003, StorageCommitment.SOP_CLASS_UID));
+
+    // Command Field (0000,0100) = N-ACTION-RQ
+    elements.push(this.encodeElementUL(0x0000, 0x0100, DimseCommandType.N_ACTION_RQ));
+
+    // Message ID (0000,0110)
+    elements.push(this.encodeElementUS(0x0000, 0x0110, messageId));
+
+    // Data Set Type (0000,0800) = 0x0102 (data present)
+    elements.push(this.encodeElementUS(0x0000, 0x0800, 0x0102));
+
+    // Requested SOP Instance UID (0000,1001)
+    elements.push(this.encodeElement(0x0000, 0x1001, StorageCommitment.SOP_INSTANCE_UID));
+
+    // Action Type ID (0000,1008) = 1
+    elements.push(this.encodeElementUS(0x0000, 0x1008, StorageCommitment.ACTION_TYPE_REQUEST));
+
+    return Buffer.concat(elements);
+  }
+
+  /**
+   * Build the N-ACTION dataset for Storage Commitment request.
+   *
+   * Contains (PS3.4 J.3.1):
+   * - Transaction UID (0008,1195): unique identifier for this transaction
+   * - Referenced SOP Sequence (0008,1199): sequence of {SOP Class UID, SOP Instance UID}
+   */
+  private buildStorageCommitmentDataset(
+    transactionUID: string,
+    sopClassUID: string,
+    sopInstanceUID: string
+  ): Buffer {
+    const elements: Buffer[] = [];
+
+    // Transaction UID (0008,1195) — UI VR
+    elements.push(this.encodeElement(
+      StorageCommitment.TAG_TRANSACTION_UID.group,
+      StorageCommitment.TAG_TRANSACTION_UID.element,
+      transactionUID
+    ));
+
+    // Referenced SOP Sequence (0008,1199) — SQ VR
+    // Build the sequence item contents
+    const seqItemElements: Buffer[] = [];
+
+    // Referenced SOP Class UID (0008,1150)
+    seqItemElements.push(this.encodeElement(
+      StorageCommitment.TAG_REFERENCED_SOP_CLASS_UID.group,
+      StorageCommitment.TAG_REFERENCED_SOP_CLASS_UID.element,
+      sopClassUID
+    ));
+
+    // Referenced SOP Instance UID (0008,1155)
+    seqItemElements.push(this.encodeElement(
+      StorageCommitment.TAG_REFERENCED_SOP_INSTANCE_UID.group,
+      StorageCommitment.TAG_REFERENCED_SOP_INSTANCE_UID.element,
+      sopInstanceUID
+    ));
+
+    const seqItemContent = Buffer.concat(seqItemElements);
+
+    // Encode the sequence: SQ tag + item delimiter structure
+    // Sequence tag (0008,1199) with undefined length (FFFFFFFF)
+    const seqHeader = Buffer.alloc(8);
+    seqHeader.writeUInt16LE(StorageCommitment.TAG_REFERENCED_SOP_SEQUENCE.group, 0);
+    seqHeader.writeUInt16LE(StorageCommitment.TAG_REFERENCED_SOP_SEQUENCE.element, 2);
+    seqHeader.writeUInt32LE(0xFFFFFFFF, 4); // Undefined length
+
+    // Item tag (FFFE,E000) with explicit length
+    const itemHeader = Buffer.alloc(8);
+    itemHeader.writeUInt16LE(0xFFFE, 0);
+    itemHeader.writeUInt16LE(0xE000, 2);
+    itemHeader.writeUInt32LE(seqItemContent.length, 4);
+
+    // Sequence Delimitation Item (FFFE,E00D)
+    const seqDelim = Buffer.alloc(8);
+    seqDelim.writeUInt16LE(0xFFFE, 0);
+    seqDelim.writeUInt16LE(0xE00D, 2);
+    seqDelim.writeUInt32LE(0, 4);
+
+    elements.push(seqHeader);
+    elements.push(itemHeader);
+    elements.push(seqItemContent);
+    elements.push(seqDelim);
+
+    return Buffer.concat(elements);
+  }
+
+  /**
+   * Wait for Storage Commitment result.
+   *
+   * Two-phase response:
+   * 1. N-ACTION-RSP — confirms the SCP received the request (status check)
+   * 2. N-EVENT-REPORT-RQ — the actual commitment result (Event Type ID 1 or 2)
+   *
+   * After receiving the N-EVENT-REPORT-RQ, we send N-EVENT-REPORT-RSP to acknowledge.
+   */
+  private async waitForStorageCommitmentResult(
+    contextId: number,
+    _messageId: number,
+    timeout: number
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.removeListener('pdv', handlePdv);
+        resolve(false); // Timeout — safe default: not committed
+      }, timeout);
+
+      let phase: 'awaiting-action-rsp' | 'awaiting-event-report' = 'awaiting-action-rsp';
+      const commandBuffer: Buffer[] = [];
+
+      const handlePdv = (pdv: { contextId: number; isCommand: boolean; isLast: boolean; data: Buffer }) => {
+        if (!pdv.isCommand) return; // Only process command PDVs for N-*-RSP
+
+        commandBuffer.push(pdv.data);
+
+        if (!pdv.isLast) return; // Wait for complete command
+
+        const response = Buffer.concat(commandBuffer);
+        commandBuffer.length = 0;
+
+        const commandField = this.parseCommandField(response);
+        const status = this.parseCommandStatus(response);
+
+        if (phase === 'awaiting-action-rsp') {
+          // Phase 1: N-ACTION-RSP (0x8130)
+          if (commandField === DimseCommandType.N_ACTION_RSP) {
+            if (status !== DicomStatus.SUCCESS) {
+              // N-ACTION itself failed — SCP rejected the request
+              clearTimeout(timer);
+              this.removeListener('pdv', handlePdv);
+              resolve(false);
+              return;
+            }
+            // N-ACTION succeeded — now wait for N-EVENT-REPORT
+            phase = 'awaiting-event-report';
+          }
+        } else if (phase === 'awaiting-event-report') {
+          // Phase 2: N-EVENT-REPORT-RQ (0x0100)
+          if (commandField === DimseCommandType.N_EVENT_REPORT_RQ) {
+            clearTimeout(timer);
+            this.removeListener('pdv', handlePdv);
+
+            const eventTypeId = this.parseEventTypeId(response);
+
+            // Send N-EVENT-REPORT-RSP to acknowledge
+            void this.sendNEventReportRsp(contextId, response);
+
+            // Event Type ID 1 = success, 2 = failure
+            resolve(eventTypeId === StorageCommitment.EVENT_TYPE_SUCCESS);
+            return;
+          }
+        }
+      };
+
+      this.on('pdv', handlePdv);
+    });
+  }
+
+  /**
+   * Parse Command Field (0000,0100) from a DIMSE command buffer.
+   */
+  private parseCommandField(command: Buffer): number {
+    let offset = 0;
+    while (offset < command.length - 8) {
+      const group = command.readUInt16LE(offset);
+      const element = command.readUInt16LE(offset + 2);
+      const length = command.readUInt32LE(offset + 4);
+
+      if (group === 0x0000 && element === 0x0100) {
+        return command.readUInt32LE(offset + 8);
+      }
+
+      offset += 8 + length;
+    }
+    return 0;
+  }
+
+  /**
+   * Parse Event Type ID (0000,1002) from an N-EVENT-REPORT command buffer.
+   */
+  private parseEventTypeId(command: Buffer): number {
+    let offset = 0;
+    while (offset < command.length - 8) {
+      const group = command.readUInt16LE(offset);
+      const element = command.readUInt16LE(offset + 2);
+      const length = command.readUInt32LE(offset + 4);
+
+      if (group === 0x0000 && element === 0x1002) {
+        return command.readUInt16LE(offset + 8);
+      }
+
+      offset += 8 + length;
+    }
+    return 0; // Unknown — treat as failure
+  }
+
+  /**
+   * Send N-EVENT-REPORT-RSP to acknowledge the commitment result.
+   */
+  private async sendNEventReportRsp(contextId: number, requestCommand: Buffer): Promise<void> {
+    const requestMessageId = this.parseMessageIdField(requestCommand);
+
+    const elements: Buffer[] = [];
+
+    // Affected SOP Class UID (0000,0002)
+    elements.push(this.encodeElement(0x0000, 0x0002, StorageCommitment.SOP_CLASS_UID));
+
+    // Command Field (0000,0100) = N-EVENT-REPORT-RSP
+    elements.push(this.encodeElementUL(0x0000, 0x0100, DimseCommandType.N_EVENT_REPORT_RSP));
+
+    // Message ID Being Responded To (0000,0120)
+    elements.push(this.encodeElementUS(0x0000, 0x0120, requestMessageId));
+
+    // Status (0000,0900) = SUCCESS
+    elements.push(this.encodeElementUS(0x0000, 0x0900, DicomStatus.SUCCESS));
+
+    // Data Set Type (0000,0800) = 0x0101 (no data)
+    elements.push(this.encodeElementUS(0x0000, 0x0800, 0x0101));
+
+    const rsp = Buffer.concat(elements);
+    await this.sendDataTf(contextId, true, true, rsp);
+  }
+
+  /**
+   * Parse Message ID (0000,0110) from a command buffer.
+   */
+  private parseMessageIdField(command: Buffer): number {
+    let offset = 0;
+    while (offset < command.length - 8) {
+      const group = command.readUInt16LE(offset);
+      const element = command.readUInt16LE(offset + 2);
+      const length = command.readUInt32LE(offset + 4);
+
+      if (group === 0x0000 && element === 0x0110) {
+        return command.readUInt16LE(offset + 8);
+      }
+
+      offset += 8 + length;
+    }
+    return 0;
+  }
+
+  /**
+   * Generate a DICOM UID.
+   * Uses our implementation root + cryptographically random components.
+   */
+  private generateDicomUid(): string {
+    const root = '1.2.40.0.13.1.1.1';
+    const timestamp = Date.now();
+    const random = crypto.randomInt(0, 999999);
+    return `${root}.${timestamp}.${random}`;
   }
 
   /**
