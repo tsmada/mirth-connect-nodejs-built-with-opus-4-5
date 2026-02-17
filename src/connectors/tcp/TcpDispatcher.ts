@@ -14,6 +14,8 @@
  */
 
 import * as net from 'net';
+import * as tls from 'tls';
+import * as fs from 'fs';
 import { DestinationConnector } from '../../donkey/channel/DestinationConnector.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status } from '../../model/Status.js';
@@ -400,39 +402,86 @@ export class TcpDispatcher extends DestinationConnector {
    */
   private async connectSocket(resolvedProps: TcpDispatcherProperties): Promise<net.Socket> {
     return new Promise((resolve, reject) => {
-      const socket = new net.Socket();
-
       const timeout = setTimeout(() => {
-        socket.destroy();
         reject(new Error('Connection timeout'));
       }, resolvedProps.socketTimeout);
 
-      socket.on('error', (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      });
+      if (this.properties.tls?.enabled) {
+        const tlsProps = this.properties.tls;
+        const tlsOptions: tls.ConnectionOptions = {
+          host: resolvedProps.host,
+          port: resolvedProps.port,
+          rejectUnauthorized: tlsProps.rejectUnauthorized ?? true,
+        };
 
-      const connectOptions: net.SocketConnectOpts = {
-        host: resolvedProps.host,
-        port: resolvedProps.port,
-      };
+        if (tlsProps.certStorePath) {
+          tlsOptions.cert = fs.readFileSync(tlsProps.certStorePath);
+        }
+        if (tlsProps.keyStorePath) {
+          tlsOptions.key = fs.readFileSync(tlsProps.keyStorePath);
+        }
+        if (tlsProps.trustStorePath) {
+          tlsOptions.ca = fs.readFileSync(tlsProps.trustStorePath);
+        }
+        if (tlsProps.passphrase) {
+          tlsOptions.passphrase = tlsProps.passphrase;
+        }
+        if (tlsProps.sniServerName) {
+          tlsOptions.servername = tlsProps.sniServerName;
+        }
+        if (tlsProps.minVersion) {
+          tlsOptions.minVersion = tlsProps.minVersion as tls.SecureVersion;
+        }
+        // localAddress/localPort are net.TcpSocketConnectOpts properties forwarded by tls.connect()
+        const connectOpts = tlsOptions as tls.ConnectionOptions & { localAddress?: string; localPort?: number };
+        if (resolvedProps.localAddress) {
+          connectOpts.localAddress = resolvedProps.localAddress as string;
+        }
+        if (resolvedProps.localPort) {
+          connectOpts.localPort = resolvedProps.localPort as number;
+        }
 
-      if (resolvedProps.localAddress) {
-        connectOptions.localAddress = resolvedProps.localAddress;
+        const socket = tls.connect(connectOpts, () => {
+          clearTimeout(timeout);
+          socket.setNoDelay(true);
+          socket.setKeepAlive(resolvedProps.keepConnectionOpen);
+          resolve(socket);
+        });
+
+        socket.on('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+      } else {
+        const socket = new net.Socket();
+
+        socket.on('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+
+        const connectOptions: net.SocketConnectOpts = {
+          host: resolvedProps.host,
+          port: resolvedProps.port,
+        };
+
+        if (resolvedProps.localAddress) {
+          connectOptions.localAddress = resolvedProps.localAddress;
+        }
+        if (resolvedProps.localPort) {
+          connectOptions.localPort = resolvedProps.localPort;
+        }
+
+        socket.connect(connectOptions, () => {
+          clearTimeout(timeout);
+
+          // Configure socket options (matching Java initSocket)
+          socket.setNoDelay(true);
+          socket.setKeepAlive(resolvedProps.keepConnectionOpen);
+
+          resolve(socket);
+        });
       }
-      if (resolvedProps.localPort) {
-        connectOptions.localPort = resolvedProps.localPort;
-      }
-
-      socket.connect(connectOptions, () => {
-        clearTimeout(timeout);
-
-        // Configure socket options (matching Java initSocket)
-        socket.setNoDelay(true);
-        socket.setKeepAlive(resolvedProps.keepConnectionOpen);
-
-        resolve(socket);
-      });
     });
   }
 

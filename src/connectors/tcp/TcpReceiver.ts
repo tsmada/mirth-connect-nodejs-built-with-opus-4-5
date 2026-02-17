@@ -15,6 +15,8 @@
  */
 
 import * as net from 'net';
+import * as tls from 'tls';
+import * as fs from 'fs';
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { ListenerInfo } from '../../api/models/DashboardStatus.js';
 import {
@@ -191,9 +193,38 @@ export class TcpReceiver extends SourceConnector {
    */
   private attemptBind(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server = net.createServer((socket) => {
+      const connectionHandler = (socket: net.Socket) => {
         this.handleConnection(socket);
-      });
+      };
+
+      if (this.properties.tls?.enabled) {
+        const tlsOptions: tls.TlsOptions = {};
+        const tlsProps = this.properties.tls;
+
+        if (tlsProps.keyStorePath) {
+          tlsOptions.key = fs.readFileSync(tlsProps.keyStorePath);
+        }
+        if (tlsProps.certStorePath) {
+          tlsOptions.cert = fs.readFileSync(tlsProps.certStorePath);
+        }
+        if (tlsProps.trustStorePath) {
+          tlsOptions.ca = fs.readFileSync(tlsProps.trustStorePath);
+        }
+        if (tlsProps.requireClientCert || tlsProps.requireClientAuth) {
+          tlsOptions.requestCert = true;
+          tlsOptions.rejectUnauthorized = true;
+        }
+        if (tlsProps.passphrase) {
+          tlsOptions.passphrase = tlsProps.passphrase;
+        }
+        if (tlsProps.minVersion) {
+          tlsOptions.minVersion = tlsProps.minVersion as tls.SecureVersion;
+        }
+
+        this.server = tls.createServer(tlsOptions, connectionHandler);
+      } else {
+        this.server = net.createServer(connectionHandler);
+      }
 
       this.server.on('error', (error) => {
         if (!this.running) {
@@ -657,7 +688,9 @@ export class TcpReceiver extends SourceConnector {
       host: this.properties.host || '0.0.0.0',
       connectionCount: this.connections.size,
       maxConnections: this.properties.maxConnections,
-      transportType: this.properties.transmissionMode === TransmissionMode.MLLP ? 'MLLP' : 'TCP',
+      transportType: this.properties.tls?.enabled
+        ? (this.properties.transmissionMode === TransmissionMode.MLLP ? 'MLLPS' : 'TCP+TLS')
+        : (this.properties.transmissionMode === TransmissionMode.MLLP ? 'MLLP' : 'TCP'),
       listening: this.server.listening,
     };
   }

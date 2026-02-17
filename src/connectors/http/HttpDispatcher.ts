@@ -452,12 +452,20 @@ export class HttpDispatcher extends DestinationConnector {
     // Add body for methods that support it
     if (['POST', 'PUT', 'PATCH'].includes(props.method)) {
       if (body !== null) {
-        // Check if we need to GZIP compress the body
-        const contentEncoding = headers.get('content-encoding');
-        if (contentEncoding?.includes('gzip') || contentEncoding?.includes('x-gzip')) {
-          options.body = gzipSync(Buffer.from(body, props.charset as BufferEncoding));
-        } else {
+        if (body instanceof FormData) {
+          // Remove Content-Type so fetch auto-sets it with multipart boundary
+          const headersObj = options.headers as Record<string, string>;
+          delete headersObj['Content-Type'];
+          delete headersObj['content-type'];
           options.body = body;
+        } else {
+          // Check if we need to GZIP compress the body
+          const contentEncoding = headers.get('content-encoding');
+          if (contentEncoding?.includes('gzip') || contentEncoding?.includes('x-gzip')) {
+            options.body = gzipSync(Buffer.from(body, props.charset as BufferEncoding));
+          } else {
+            options.body = body;
+          }
         }
       }
     }
@@ -620,7 +628,7 @@ export class HttpDispatcher extends DestinationConnector {
   /**
    * Build request body
    */
-  private buildBody(connectorMessage: ConnectorMessage, props: HttpDispatcherProperties): string | null {
+  private buildBody(connectorMessage: ConnectorMessage, props: HttpDispatcherProperties): string | FormData | null {
     // Get content from properties or connector message
     let content = props.content;
 
@@ -628,6 +636,39 @@ export class HttpDispatcher extends DestinationConnector {
     if (!content) {
       const encodedContent = connectorMessage.getEncodedContent();
       content = encodedContent?.content || '';
+    }
+
+    // Check if this is a multipart/form-data request
+    const isMultipart = props.multipart || props.contentType?.toLowerCase().includes('multipart/form-data');
+
+    if (isMultipart) {
+      const formData = new FormData();
+
+      // Add parameters as form fields
+      if (props.parameters) {
+        for (const [key, values] of props.parameters) {
+          for (const value of values) {
+            formData.append(key, value);
+          }
+        }
+      }
+
+      // Add content (text or binary)
+      if (content) {
+        if (props.dataTypeBinary) {
+          // Determine MIME type for the blob (not multipart/form-data itself)
+          let blobType = props.contentType || 'application/octet-stream';
+          if (blobType.toLowerCase().includes('multipart/form-data')) {
+            blobType = 'application/octet-stream';
+          }
+          const buffer = Buffer.from(content, 'base64');
+          formData.append('content', new Blob([buffer], { type: blobType }));
+        } else {
+          formData.append('content', content);
+        }
+      }
+
+      return formData;
     }
 
     // Check if this is a form-encoded POST/PUT/PATCH
