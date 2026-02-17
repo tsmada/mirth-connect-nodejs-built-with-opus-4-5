@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node --import ./dist/instrumentation.js dist/index.js",
+    "start:no-otel": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "cli": "ts-node src/cli/index.ts",
     "cli:build": "tsc && chmod +x dist/cli/index.js",
@@ -54,6 +55,15 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.70.0",
+    "@opentelemetry/exporter-metrics-otlp-proto": "^0.212.0",
+    "@opentelemetry/exporter-prometheus": "^0.212.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.212.0",
+    "@opentelemetry/resources": "^2.5.1",
+    "@opentelemetry/sdk-metrics": "^2.5.1",
+    "@opentelemetry/sdk-node": "^0.212.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
     "@types/ws": "^8.18.1",
     "axios": "^1.7.4",
     "chalk": "^5.3.0",
@@ -73,6 +83,7 @@
     "multer": "^2.0.2",
     "mysql2": "^3.17.0",
     "nodemailer": "^7.0.13",
+    "opentelemetry-instrumentation-ws": "^0.5.0",
     "ora": "^8.0.1",
     "react": "^18.2.0",
     "sax": "^1.4.4",

@@ -28,6 +28,7 @@ import {
   type MessageWriterOptions,
 } from './MessageArchiver.js';
 import { ContentType } from '../../model/ContentType.js';
+import { messagesPruned } from '../../telemetry/metrics.js';
 
 /**
  * Default block sizes for pruning operations
@@ -324,6 +325,9 @@ export class DataPruner {
           const result = await this.pruneChannel(task);
 
           this.status.processedChannelIds.add(task.channelId);
+          if (result.numMessagesPruned > 0) {
+            messagesPruned.add(result.numMessagesPruned, { 'channel.name': task.channelName });
+          }
 
           console.log(
             `Pruned channel ${task.channelName}: ` +

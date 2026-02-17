@@ -12,6 +12,7 @@ Must maintain 100% API compatibility with Mirth Connect Administrator.
 - **Cluster**: Horizontal scaling in `src/cluster/`
 - **Artifact**: Git-backed config management in `src/artifact/`
 - **Logging**: Centralized logging with per-component debug in `src/logging/`
+- **Telemetry**: OpenTelemetry auto-instrumentation + custom metrics in `src/telemetry/`
 - **CLI Tool**: Terminal monitor utility in `src/cli/`
 
 ### REST API Servlets (Implemented)
@@ -797,7 +798,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 5,289 passing** (2,559 core + 417 artifact management + 2,313 parity/unit)
+**Total Tests: 5,888 passing** (2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational)
 
 ### Quick Validation Scripts
 
@@ -832,6 +833,7 @@ npm run validate -- --priority 1
 | Git Artifact Sync | `GET/POST /api/artifacts/*` | Git-backed config management, promotion, delta deploys |
 | Artifact CLI | `mirth-cli artifact export/import/diff/promote/deploy` | Artifact management commands |
 | Logging API | `GET/PUT/DELETE /api/system/logging/*` | Runtime log level control + per-component debug |
+| Telemetry | OTEL auto-instrumentation via `--import` | Traces, metrics, Prometheus scrape endpoint |
 
 ### Centralized Logging System (`src/logging/`)
 
@@ -1074,6 +1076,99 @@ CLI user-facing output (tables, spinners, chalk) stays as console — only inter
 | `LoggerFactory.ts` | 181 | 18 | Factory + Winston setup |
 | `LoggingServlet.ts` | 100 | 13 | REST API (4 endpoints) |
 | **Total** | **~735** | **112** | |
+
+### OpenTelemetry Instrumentation (`src/telemetry/`, `src/instrumentation.ts`)
+
+**This is a Node.js-only feature with no Java Mirth equivalent.** It provides distributed tracing, custom metrics, and Prometheus-compatible scrape endpoints via the OpenTelemetry SDK.
+
+#### Architecture
+
+```
+src/instrumentation.ts          # OTEL SDK bootstrap (loaded via --import before all imports)
+src/telemetry/
+├── metrics.ts                  # 10 custom Mirth metrics (counters, histograms, gauges)
+└── index.ts                    # Barrel exports
+```
+
+The bootstrap file (`instrumentation.ts`) must load before all other imports to monkey-patch HTTP, MySQL2, Express, Net, DNS, Undici, and WebSocket libraries for automatic trace/span creation. It is loaded via `node --import ./dist/instrumentation.js`.
+
+#### Custom Metrics
+
+| Metric | Type | Instrumented In | Description |
+|--------|------|----------------|-------------|
+| `mirth.messages.processed` | Counter | Channel.ts | Messages completing pipeline, by channel + status |
+| `mirth.messages.errors` | Counter | Channel.ts | Messages with ERROR status |
+| `mirth.message.duration` | Histogram (ms) | Channel.ts | Pipeline latency with explicit bucket boundaries |
+| `mirth.queue.depth` | UpDownCounter | ConnectorMessageQueue.ts | Queue size by channel + queue type |
+| `mirth.pruner.messages.deleted` | Counter | DataPruner.ts | Pruned message count by channel |
+| `mirth.ws.connections` | UpDownCounter | server.ts | Active WebSocket connections by path |
+| `mirth.channels.deployed` | ObservableGauge | Mirth.ts | Current deployed channel count |
+| `mirth.channels.started` | ObservableGauge | Mirth.ts | Current started channel count |
+| `mirth.db.pool.active` | ObservableGauge | Mirth.ts | Active DB pool connections |
+| `mirth.db.pool.idle` | ObservableGauge | Mirth.ts | Idle DB pool connections |
+
+#### Auto-Instrumented Libraries
+
+| Library | What You Get | OTEL Package |
+|---------|-------------|-------------|
+| Express | Route, method, status, latency spans | `@opentelemetry/instrumentation-express` |
+| MySQL2 | SQL statement, table, latency spans | `@opentelemetry/instrumentation-mysql2` |
+| HTTP (client) | Outbound request spans | `@opentelemetry/instrumentation-http` |
+| Net/TCP | Socket connection spans (MLLP!) | `@opentelemetry/instrumentation-net` |
+| DNS | DNS resolution timing | `@opentelemetry/instrumentation-dns` |
+| Undici/fetch | Native fetch in Node 20+ | `@opentelemetry/instrumentation-undici` |
+| WebSocket | Connection/message spans | `opentelemetry-instrumentation-ws` |
+| W3C traceparent | Automatic trace context propagation | Built into SDK |
+
+**Disabled:** `@opentelemetry/instrumentation-fs` — too noisy for file-heavy channels.
+
+#### Dual Export: OTLP Push + Prometheus Pull
+
+- **OTLP push** (always on): Sends traces and metrics to any OTLP-compatible backend via `http/protobuf` protocol
+- **Prometheus pull** (optional): If `MIRTH_OTEL_PROMETHEUS_PORT` is set, starts a scrape endpoint at `http://localhost:{port}/metrics`
+
+Recommended production topology: Deploy an OTEL Collector as a sidecar or DaemonSet. The Collector receives OTLP from Mirth and fans out to Datadog, Grafana Cloud, Jaeger, Prometheus Remote Write, etc.
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_SERVICE_NAME` | `mirth-connect-node` | Service name in APM/traces |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP collector/agent endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | Transport: `grpc`, `http/protobuf`, `http/json` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | (none) | Auth headers (e.g., `DD-API-KEY=...`) |
+| `OTEL_RESOURCE_ATTRIBUTES` | (none) | `deployment.environment=prod,service.namespace=mirth` |
+| `OTEL_TRACES_SAMPLER` | `parentbased_always_on` | Sampling strategy |
+| `OTEL_SDK_DISABLED` | `false` | Kill switch — disables all telemetry |
+| `MIRTH_OTEL_PROMETHEUS_PORT` | (none) | Set to enable Prometheus scrape endpoint |
+
+#### Usage
+
+```bash
+# Standard start (OTEL enabled)
+npm start
+
+# Start without OTEL (for debugging or local dev)
+npm run start:no-otel
+
+# With Prometheus scrape on port 9464
+MIRTH_OTEL_PROMETHEUS_PORT=9464 npm start
+
+# Disable OTEL at runtime without changing start command
+OTEL_SDK_DISABLED=true npm start
+
+# Point to Datadog Agent
+OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent:4318 npm start
+```
+
+#### Key Files
+
+| File | ~Lines | Tests | Purpose |
+|------|--------|-------|---------|
+| `instrumentation.ts` | 71 | (bootstrap) | OTEL SDK init, auto-instrumentation, exporters |
+| `telemetry/metrics.ts` | 96 | 13 | Custom Mirth metrics definitions |
+| `telemetry/index.ts` | 5 | — | Barrel exports |
+| **Total** | **~172** | **13** | |
 
 ### Git-Backed Artifact Management (`src/artifact/`)
 
@@ -1704,8 +1799,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Agents completed | 89 (100%) |
 | Total commits | 195+ |
 | Lines added | 81,300+ |
-| Tests added | 2,488+ |
-| Total tests passing | 5,289 |
+| Tests added | 2,501+ |
+| Total tests passing | 5,888 |
 
 ### Wave Summary
 
@@ -1731,7 +1826,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | 18 | 6 | ~2,100 | 88 | ~20 min | **Connector Parity Wave 3** (replaceConnectorProperties for File/JDBC/VM/DICOM, WS attachment resolution, File size/error properties) |
 | 19 | 3 | ~1,200 | 43 | ~20 min | **Connector Parity Wave 4** (DICOM response status QUEUED, DICOM config wiring, WS headers variable, SMTP ErrorEvent, SMTP localPort) |
 | 21 | 1 | ~500 | 15 | ~15 min | **Connector Parity Wave 5** (File errorReadingAction/errorResponseAction wiring, 3 deferral verifications) |
-| **Total** | **89** | **~81,300** | **2,488** | **~26 hrs** | |
+| 22 | 0 | ~400 | 13 | ~30 min | **Production Readiness + OTEL** (instrumentation.ts, metrics.ts, lifecycle wiring, K8s manifests, env validation) |
+| **Total** | **89** | **~81,700** | **2,501** | **~26.5 hrs** | |
 
 ### Components Ported
 
@@ -2694,9 +2790,9 @@ Team-based execution: 1 scanner (connector-parity-checker) + 1 fixer (general-pu
 
 ### Completion Status
 
-All Waves 1-21 are complete. The porting project has reached production-ready status:
+All Waves 1-22 are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-21):**
+**Completed (Waves 1-22):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -2707,6 +2803,7 @@ All Waves 1-21 are complete. The porting project has reached production-ready st
 - ✅ **JavaScript Runtime Parity** — Full parity with Java Mirth Rhino/E4X runtime across 8 waves of fixes (Waves 8-15, 315 parity tests, verified by 3 automated js-runtime-checker scans)
 - ✅ **Connector Parity** — All 9 connectors verified across 5 automated scans (Waves 16-21): replaceConnectorProperties 9/9 (100%), event dispatching 48/48 (100%), property coverage 98%, 0 critical findings remaining. 192 total findings: 98 fixed, 6 deferred (2 major + 4 minor)
 - ✅ **Kubernetes Deployment** — Full k8s validation platform with Kustomize overlays for all 4 operational modes, validated on Rancher Desktop k3s (see `k8s/README.md`)
+- ✅ **OpenTelemetry Instrumentation** — Auto-instrumentation (Express, MySQL2, HTTP, Net, DNS, WebSocket) + 10 custom Mirth metrics + OTLP push + Prometheus scrape, K8s manifests updated with OTEL env vars and memory sizing (Wave 22)
 
 **Future Enhancements (Optional):**
 - DataPruner archive integration — `MessageArchiver` exists but not connected to pruning pipeline (see `plans/datapruner-archive-integration.md`)

@@ -17,6 +17,7 @@ import {
   MessageEventType,
   NoOpEventDispatcher,
 } from '../channel/Statistics.js';
+import { queueDepth } from '../../telemetry/metrics.js';
 
 /**
  * Data source interface for loading queue messages from database
@@ -182,6 +183,7 @@ export abstract class ConnectorMessageQueue {
     if (this.size !== null) {
       this.size++;
     }
+    queueDepth.add(1, { 'channel.id': this.channelId, 'queue.type': this.metaDataId === 0 ? 'source' : 'destination' });
   }
 
   /**
@@ -191,6 +193,7 @@ export abstract class ConnectorMessageQueue {
     if (this.size !== null) {
       this.size--;
     }
+    queueDepth.add(-1, { 'channel.id': this.channelId, 'queue.type': this.metaDataId === 0 ? 'source' : 'destination' });
   }
 
   /**

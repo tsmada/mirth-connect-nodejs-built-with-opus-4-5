@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 import { createServer, Server as HttpServer } from 'http';
 import { getLogger, registerComponent } from '../logging/index.js';
 import { authMiddleware, contentNegotiationMiddleware, shadowGuard } from './middleware/index.js';
+import { wsConnections } from '../telemetry/metrics.js';
 
 registerComponent('api', 'REST API server');
 const logger = getLogger('api');
@@ -221,8 +222,12 @@ export async function startServer(options: ServerOptions = {}): Promise<HttpServ
     const { pathname } = new URL(request.url || '/', `http://${request.headers.host}`);
 
     if (pathname === '/ws/dashboardstatus') {
+      wsConnections.add(1, { 'ws.path': pathname });
+      socket.on('close', () => wsConnections.add(-1, { 'ws.path': pathname }));
       dashboardStatusWebSocket.handleUpgrade(request, socket, head);
     } else if (pathname === '/ws/serverlog') {
+      wsConnections.add(1, { 'ws.path': pathname });
+      socket.on('close', () => wsConnections.add(-1, { 'ws.path': pathname }));
       serverLogWebSocket.handleUpgrade(request, socket, head);
     } else {
       socket.destroy();

@@ -88,6 +88,14 @@ spec:
                 secretKeyRef:
                   name: cluster-secret
                   key: MIRTH_CLUSTER_SECRET
+            - name: OTEL_SERVICE_NAME
+              value: "mirth-connect-node"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4318"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=cluster"
+            - name: MIRTH_OTEL_PROMETHEUS_PORT
+              value: "9464"
           envFrom:
             - configMapRef:
                 name: node-mirth-config
@@ -112,10 +120,10 @@ spec:
             periodSeconds: 15
           resources:
             requests:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "200m"
             limits:
-              memory: "512Mi"
+              memory: "1Gi"
               cpu: "1000m"
       volumes:
         - name: mirth-tmp

@@ -113,6 +113,20 @@ export class Mirth {
 
     logger.info('Starting Mirth Connect Node.js Runtime...');
 
+    // Validate required environment before attempting DB connection
+    if (process.env['NODE_ENV'] === 'production') {
+      const missing: string[] = [];
+      if (!process.env['DB_HOST']) missing.push('DB_HOST');
+      if (!process.env['DB_NAME']) missing.push('DB_NAME');
+      if (!process.env['DB_USER']) missing.push('DB_USER');
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing required environment variables for production: ${missing.join(', ')}. ` +
+          'Set these before starting, or unset NODE_ENV=production to use defaults.'
+        );
+      }
+    }
+
     // Initialize database connection pool
     logger.info('Connecting to database...');
     initPool(this.config.database);
@@ -186,6 +200,12 @@ export class Mirth {
     await registerServer(this.config.httpPort, isShadowMode() ? 'SHADOW' : undefined);
     const clusterConfig = getClusterConfig();
     if (clusterConfig.clusterEnabled) {
+      if (!clusterConfig.redisUrl && process.env['NODE_ENV'] === 'production') {
+        throw new Error(
+          'MIRTH_CLUSTER_ENABLED=true requires MIRTH_CLUSTER_REDIS_URL in production. ' +
+          'Set MIRTH_CLUSTER_REDIS_URL to a Redis instance for shared state, or unset NODE_ENV=production to use in-memory storage.'
+        );
+      }
       startHeartbeat();
       if (!clusterConfig.redisUrl) {
         logger.warn('Cluster mode active but MIRTH_CLUSTER_REDIS_URL not set. GlobalMap will use volatile in-memory storage. Set MIRTH_CLUSTER_REDIS_URL for persistent shared state.');
@@ -198,6 +218,27 @@ export class Mirth {
 
     // Wire ChannelUtil singletons for user scripts (ChannelUtil.startChannel(), etc.)
     await this.initializeChannelUtil();
+
+    // Register OTEL observable gauges (channels deployed/started, DB pool stats)
+    try {
+      const { registerObservableGauges } = await import('../telemetry/metrics.js');
+      const { getPool } = await import('../db/pool.js');
+      registerObservableGauges({
+        getDeployedChannelCount: () => EngineController.getDeployedChannelIds().size,
+        getStartedChannelCount: () => {
+          let count = 0;
+          for (const id of EngineController.getDeployedChannelIds()) {
+            const ch = EngineController.getDeployedChannel(id);
+            if (ch && ch.getCurrentState() === 'STARTED') count++;
+          }
+          return count;
+        },
+        getDbPoolActive: () => { try { const p = getPool(); return (p as { pool?: { _allConnections?: { length: number } } }).pool?._allConnections?.length ?? 0; } catch { return 0; } },
+        getDbPoolIdle: () => { try { const p = getPool(); return (p as { pool?: { _freeConnections?: { length: number } } }).pool?._freeConnections?.length ?? 0; } catch { return 0; } },
+      });
+    } catch {
+      // Telemetry module not available — ok (no-otel mode)
+    }
 
     // Mark startup complete (health probe: /api/health/startup)
     setStartupComplete(true);
@@ -292,6 +333,14 @@ export class Mirth {
       const mgr = SecretsManager.getInstance();
       if (mgr) await mgr.shutdown();
     } catch { /* module not loaded */ }
+
+    // Flush OTEL spans/metrics before closing DB pool
+    try {
+      const { shutdown: otelShutdown } = await import('../instrumentation.js');
+      await otelShutdown();
+    } catch {
+      // OTEL not loaded (start:no-otel mode) — ok
+    }
 
     // Close database connection pool
     await closePool();

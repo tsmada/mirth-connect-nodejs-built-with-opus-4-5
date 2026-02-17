@@ -58,6 +58,7 @@ import {
 } from '../../db/DonkeyDao.js';
 import { transaction } from '../../db/pool.js';
 import { StatisticsAccumulator } from './StatisticsAccumulator.js';
+import { messagesProcessed, messagesErrored, messageDuration } from '../../telemetry/metrics.js';
 import { getServerId } from '../../cluster/ClusterIdentity.js';
 import { getClusterConfig } from '../../cluster/ClusterConfig.js';
 import { SequenceAllocator } from '../../cluster/SequenceAllocator.js';
@@ -676,6 +677,7 @@ export class Channel extends EventEmitter {
     rawData: string,
     sourceMapData?: Map<string, unknown>
   ): Promise<Message> {
+    const _otelStart = performance.now();
     const serverId = this.serverId;
 
     // Get message ID from DB sequence if tables exist, else use in-memory counter
@@ -1210,6 +1212,14 @@ export class Channel extends EventEmitter {
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
       await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+    }
+
+    // Record OTEL metrics
+    const _otelAttrs = { 'channel.name': this.name };
+    messageDuration.record(performance.now() - _otelStart, _otelAttrs);
+    messagesProcessed.add(1, { ..._otelAttrs, 'message.status': sourceMessage.getStatus() });
+    if (sourceMessage.getStatus() === Status.ERROR) {
+      messagesErrored.add(1, _otelAttrs);
     }
 
     this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });
