@@ -5,6 +5,7 @@
  * Maintains 100% API compatibility with Mirth Connect Administrator.
  */
 
+import 'dotenv/config';
 import { Mirth } from './server/Mirth.js';
 
 async function main(): Promise<void> {
