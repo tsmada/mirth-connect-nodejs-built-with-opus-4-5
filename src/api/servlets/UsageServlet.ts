@@ -149,7 +149,7 @@ async function getUsageData(): Promise<UsageData> {
     enabledChannelCount,
     deployedChannelCount: 0, // Would need to check engine state
     userCount,
-    activeSessionCount: getActiveSessionCount(),
+    activeSessionCount: await getActiveSessionCount(),
     connectorCounts,
     messageStatistics: {
       totalReceived,

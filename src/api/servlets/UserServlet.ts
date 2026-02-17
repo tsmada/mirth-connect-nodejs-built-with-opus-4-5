@@ -104,7 +104,7 @@ userRouter.post('/_login', loginLimiter, async (req: Request, res: Response) => 
     };
 
     // Create session
-    const session = createSession(user, req.ip);
+    const session = await createSession(user, req.ip);
     setSessionCookie(res, session.id);
 
     // Update login status in database
@@ -139,7 +139,7 @@ userRouter.post('/_logout', authMiddleware({ required: false }), async (req: Req
     if (req.session) {
       // Update login status in database
       await MirthDao.updatePersonLoginStatus(req.session.userId, false);
-      destroySession(req.session.id);
+      await destroySession(req.session.id);
     }
     clearSessionCookie(res);
     res.status(204).end();
@@ -310,7 +310,7 @@ userRouter.delete('/:userId', authMiddleware({ required: true }), authorize({ op
 userRouter.get('/:userId/loggedIn', authMiddleware({ required: true }), authorize({ operation: USER_IS_LOGGED_IN }), async (req: Request, res: Response) => {
   try {
     const userId = parseInt(req.params.userId as string, 10);
-    const loggedIn = isUserLoggedIn(userId);
+    const loggedIn = await isUserLoggedIn(userId);
     res.sendData(loggedIn);
   } catch (error) {
     console.error('Check logged in error:', error);
