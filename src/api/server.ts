@@ -7,6 +7,7 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createServer, Server as HttpServer } from 'http';
 import { authMiddleware, contentNegotiationMiddleware, shadowGuard } from './middleware/index.js';
 import { userRouter } from './servlets/UserServlet.js';
@@ -67,6 +68,17 @@ export function createApp(options: ServerOptions = {}): Express {
 
   // Security headers via helmet (CSP disabled for API-only server)
   app.use(helmet({ contentSecurityPolicy: false }));
+
+  // General API rate limiting (configurable via MIRTH_API_RATE_LIMIT env var)
+  const apiRateLimit = parseInt(process.env.MIRTH_API_RATE_LIMIT || '100', 10);
+  app.use('/api', rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: apiRateLimit,
+    skip: (req) => req.path.startsWith('/health'),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too Many Requests', message: 'Rate limit exceeded. Try again later.' },
+  }));
 
   // Warn if CORS wildcard is used
   if (config.corsOrigins?.includes('*')) {
