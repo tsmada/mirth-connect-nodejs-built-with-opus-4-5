@@ -28,6 +28,7 @@ import {
   DicomConnection,
   DicomStatus,
   AssociationParams,
+  StorageCommitment,
 } from './DicomConnection.js';
 
 /**
@@ -232,9 +233,17 @@ export class DICOMDispatcher extends DestinationConnector {
 
       // Handle storage commitment if configured (Java lines 238-256)
       if (resolvedProps.stgcmt && responseStatus === Status.SENT) {
-        // Storage commitment handling would go here
-        // For now, log that it was requested
-        console.log('Storage commitment requested but not yet implemented');
+        const commitTimeout = resolvedProps.stgcmtTimeout ?? 30000;
+        const committed = await connection.requestStorageCommitment(
+          sopClassUid,
+          sopInstanceUid,
+          commitTimeout
+        );
+        if (!committed) {
+          // Commitment failed or timed out — queue for retry so data is not lost
+          responseStatus = Status.QUEUED;
+          responseStatusMessage = 'Storage commitment not confirmed';
+        }
       }
 
       // Release association gracefully
@@ -444,7 +453,11 @@ export class DICOMDispatcher extends DestinationConnector {
       port: parseInt(p.port, 10),
       maxPduLengthSend: parseInt(p.sndpdulen, 10) * 1024,
       maxPduLengthReceive: parseInt(p.rcvpdulen, 10) * 1024,
-      sopClasses: [SopClass.VERIFICATION, sopClassUid],
+      sopClasses: [
+        SopClass.VERIFICATION,
+        sopClassUid,
+        ...(p.stgcmt ? [StorageCommitment.SOP_CLASS_UID] : []),
+      ],
       transferSyntaxes: this.getTransferSyntaxes(),
       connectTimeout: parseInt(p.connectTo, 10) || 30000,
       associationTimeout: parseInt(p.acceptTo, 10),
