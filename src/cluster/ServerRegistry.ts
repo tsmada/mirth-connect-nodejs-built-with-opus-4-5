@@ -34,6 +34,7 @@ interface ClusterNodeRow extends RowDataPacket {
 }
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let deadNodeTimer: ReturnType<typeof setInterval> | null = null;
 
 function rowToNode(row: ClusterNodeRow): ClusterNode {
   return {
@@ -76,6 +77,7 @@ export async function registerServer(port?: number, status?: string): Promise<vo
 /**
  * Start periodic heartbeat updates.
  * Updates LAST_HEARTBEAT in D_SERVERS at the configured interval.
+ * Also starts dead node detection if enabled.
  */
 export function startHeartbeat(): void {
   if (heartbeatTimer) return;
@@ -98,16 +100,65 @@ export function startHeartbeat(): void {
   heartbeatTimer.unref();
 
   console.warn(`[ServerRegistry] Heartbeat started (interval: ${config.heartbeatInterval}ms)`);
+
+  // Start dead node detection alongside heartbeat
+  const deadNodeCleanup = process.env['MIRTH_CLUSTER_DEAD_NODE_CLEANUP'] !== 'false';
+  if (deadNodeCleanup) {
+    startDeadNodeDetection();
+  }
 }
 
 /**
- * Stop the heartbeat interval.
+ * Stop the heartbeat interval and dead node detection.
  */
 export function stopHeartbeat(): void {
+  stopDeadNodeDetection();
+
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
     console.warn('[ServerRegistry] Heartbeat stopped');
+  }
+}
+
+/**
+ * Start periodic dead node detection.
+ * Queries for nodes with expired heartbeats and marks them OFFLINE.
+ * Runs at the same interval as heartbeat.
+ */
+export function startDeadNodeDetection(): void {
+  if (deadNodeTimer) return;
+
+  const config = getClusterConfig();
+
+  deadNodeTimer = setInterval(async () => {
+    try {
+      const deadIds = await getOfflineNodeIds();
+      for (const deadId of deadIds) {
+        await execute(
+          `UPDATE D_SERVERS SET STATUS = 'OFFLINE' WHERE SERVER_ID = :serverId AND STATUS = 'ONLINE'`,
+          { serverId: deadId }
+        );
+        console.warn(`[ServerRegistry] Marked dead node ${deadId} as OFFLINE`);
+      }
+    } catch (err) {
+      console.error('[ServerRegistry] Dead node detection failed:', err);
+    }
+  }, config.heartbeatInterval);
+
+  deadNodeTimer.unref();
+
+  console.warn('[ServerRegistry] Dead node detection started');
+}
+
+/**
+ * Stop the dead node detection interval.
+ */
+export function stopDeadNodeDetection(): void {
+  if (deadNodeTimer) {
+    clearInterval(deadNodeTimer);
+    deadNodeTimer = null;
+    console.warn('[ServerRegistry] Dead node detection stopped');
   }
 }
 

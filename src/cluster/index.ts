@@ -11,12 +11,20 @@ export {
   registerServer,
   startHeartbeat,
   stopHeartbeat,
+  startDeadNodeDetection,
+  stopDeadNodeDetection,
   deregisterServer,
   getClusterNodes,
   isNodeAlive,
   getOfflineNodeIds,
 } from './ServerRegistry.js';
 export type { ClusterNode } from './ServerRegistry.js';
+export {
+  isQuorumEnabled,
+  hasQuorum,
+  getQuorumStatus,
+} from './QuorumCheck.js';
+export type { QuorumStatus } from './QuorumCheck.js';
 export {
   healthRouter,
   setShuttingDown,
