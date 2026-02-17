@@ -17,6 +17,7 @@ import { getServerId } from './ClusterIdentity.js';
 import { EngineController } from '../controllers/EngineController.js';
 import { DeployedState } from '../api/models/DashboardStatus.js';
 import { isShadowMode, getPromotedChannels } from './ShadowMode.js';
+import { isQuorumEnabled, hasQuorum as checkQuorum, getQuorumStatus } from './QuorumCheck.js';
 
 let shuttingDown = false;
 let startupComplete = false;
@@ -54,7 +55,7 @@ export function isStartupComplete(): boolean {
 export const healthRouter = Router();
 
 // GET /api/health - Readiness probe
-healthRouter.get('/', (_req: Request, res: Response) => {
+healthRouter.get('/', async (_req: Request, res: Response) => {
   if (shuttingDown) {
     res.status(503).json({
       status: 'shutting_down',
@@ -62,6 +63,19 @@ healthRouter.get('/', (_req: Request, res: Response) => {
       uptime: Math.floor((Date.now() - startTime) / 1000),
     });
     return;
+  }
+
+  if (isQuorumEnabled()) {
+    const quorumOk = await checkQuorum();
+    if (!quorumOk) {
+      const status = await getQuorumStatus();
+      res.status(503).json({
+        status: 'no_quorum',
+        serverId: getServerId(),
+        quorum: status,
+      });
+      return;
+    }
   }
 
   const shadowMode = isShadowMode();
