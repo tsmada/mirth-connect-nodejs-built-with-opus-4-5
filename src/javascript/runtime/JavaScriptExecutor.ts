@@ -38,6 +38,12 @@ import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Message } from '../../model/Message.js';
 import { Response } from '../../model/Response.js';
 import { Status } from '../../model/Status.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('javascript', 'Script execution engine');
+const logger = getLogger('javascript');
+
+const WALL_TIMEOUT_MS = parseInt(process.env.MIRTH_SCRIPT_WALL_TIMEOUT || '60000', 10);
 
 /**
  * Script execution result
@@ -126,11 +132,16 @@ export class JavaScriptExecutor {
     try {
       const compiled = new vm.Script(script, { filename: 'script.js' });
       const result = compiled.runInContext(context, { timeout }) as T;
+      const elapsed = Date.now() - startTime;
+
+      if (elapsed > WALL_TIMEOUT_MS) {
+        logger.warn(`Script wall-clock timeout exceeded: ${elapsed}ms (limit: ${WALL_TIMEOUT_MS}ms). This may indicate blocking I/O in user script.`);
+      }
 
       return {
         success: true,
         result,
-        executionTime: Date.now() - startTime,
+        executionTime: elapsed,
       };
     } catch (error) {
       return {
