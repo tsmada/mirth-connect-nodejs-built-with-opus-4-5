@@ -2,7 +2,7 @@
  * Authentication Middleware
  *
  * Session-based authentication matching Mirth Connect behavior.
- * Uses simple in-memory session store (replace with Redis in production).
+ * Supports pluggable session stores: in-memory (default) or Redis (cluster mode).
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -10,8 +10,14 @@ import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { User } from '../models/User.js';
 
-// Session store (in-memory for now)
-interface Session {
+// Session configuration
+const SESSION_COOKIE_NAME = 'JSESSIONID';
+const SESSION_HEADER_NAME = 'X-Session-ID';
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+export { SESSION_TIMEOUT_MS };
+
+export interface Session {
   id: string;
   userId: number;
   user: User;
@@ -20,12 +26,152 @@ interface Session {
   ipAddress?: string;
 }
 
-const sessions = new Map<string, Session>();
+export interface SessionStore {
+  get(id: string): Promise<Session | undefined>;
+  set(id: string, session: Session): Promise<void>;
+  delete(id: string): Promise<boolean>;
+  has(id: string): Promise<boolean>;
+  clear(): Promise<void>;
+  size(): Promise<number>;
+  values(): Promise<Session[]>;
+}
 
-// Session configuration
-const SESSION_COOKIE_NAME = 'JSESSIONID';
-const SESSION_HEADER_NAME = 'X-Session-ID';
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+export class InMemorySessionStore implements SessionStore {
+  private sessions = new Map<string, Session>();
+
+  async get(id: string): Promise<Session | undefined> {
+    return this.sessions.get(id);
+  }
+
+  async set(id: string, session: Session): Promise<void> {
+    this.sessions.set(id, session);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.sessions.delete(id);
+  }
+
+  async has(id: string): Promise<boolean> {
+    return this.sessions.has(id);
+  }
+
+  async clear(): Promise<void> {
+    this.sessions.clear();
+  }
+
+  async size(): Promise<number> {
+    return this.sessions.size;
+  }
+
+  async values(): Promise<Session[]> {
+    return Array.from(this.sessions.values());
+  }
+}
+
+export class RedisSessionStore implements SessionStore {
+  private redis: import('ioredis').default;
+  private keyPrefix = 'mirth:session:';
+  private ttlSeconds: number;
+
+  constructor(redisUrl: string, ttlMs: number = SESSION_TIMEOUT_MS) {
+    // Dynamic import workaround: ioredis is imported at construction time
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Redis = require('ioredis') as typeof import('ioredis').default;
+    this.redis = new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      retryStrategy(times: number) {
+        if (times > 3) return null; // Stop retrying
+        return Math.min(times * 200, 2000);
+      },
+    });
+    this.ttlSeconds = Math.ceil(ttlMs / 1000);
+  }
+
+  private key(id: string): string {
+    return `${this.keyPrefix}${id}`;
+  }
+
+  private serialize(session: Session): string {
+    return JSON.stringify({
+      ...session,
+      createdAt: session.createdAt.toISOString(),
+      lastAccess: session.lastAccess.toISOString(),
+    });
+  }
+
+  private deserialize(data: string): Session {
+    const parsed = JSON.parse(data);
+    return {
+      ...parsed,
+      createdAt: new Date(parsed.createdAt),
+      lastAccess: new Date(parsed.lastAccess),
+    };
+  }
+
+  async get(id: string): Promise<Session | undefined> {
+    const data = await this.redis.get(this.key(id));
+    if (!data) return undefined;
+    return this.deserialize(data);
+  }
+
+  async set(id: string, session: Session): Promise<void> {
+    await this.redis.set(this.key(id), this.serialize(session), 'EX', this.ttlSeconds);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await this.redis.del(this.key(id));
+    return result > 0;
+  }
+
+  async has(id: string): Promise<boolean> {
+    const result = await this.redis.exists(this.key(id));
+    return result > 0;
+  }
+
+  async clear(): Promise<void> {
+    const keys = await this.redis.keys(`${this.keyPrefix}*`);
+    if (keys.length > 0) {
+      await this.redis.del(...keys);
+    }
+  }
+
+  async size(): Promise<number> {
+    const keys = await this.redis.keys(`${this.keyPrefix}*`);
+    return keys.length;
+  }
+
+  async values(): Promise<Session[]> {
+    const keys = await this.redis.keys(`${this.keyPrefix}*`);
+    if (keys.length === 0) return [];
+    const values = await this.redis.mget(...keys);
+    return values
+      .filter((v): v is string => v !== null)
+      .map((v) => this.deserialize(v));
+  }
+
+  async disconnect(): Promise<void> {
+    await this.redis.quit();
+  }
+}
+
+export function createSessionStore(): SessionStore {
+  const redisUrl = process.env.MIRTH_CLUSTER_REDIS_URL;
+  if (redisUrl) {
+    try {
+      return new RedisSessionStore(redisUrl);
+    } catch (err) {
+      console.warn('Failed to connect to Redis, falling back to in-memory sessions:', err);
+      return new InMemorySessionStore();
+    }
+  }
+  return new InMemorySessionStore();
+}
+
+// Module-level session store — pluggable via MIRTH_CLUSTER_REDIS_URL
+const sessionStore: SessionStore = createSessionStore();
+
+// Export for testing
+export { sessionStore };
 
 /**
  * Extend Request type with session info
@@ -43,7 +189,7 @@ declare global {
 /**
  * Create a new session for a user
  */
-export function createSession(user: User, ipAddress?: string): Session {
+export async function createSession(user: User, ipAddress?: string): Promise<Session> {
   const session: Session = {
     id: uuidv4(),
     userId: user.id,
@@ -52,57 +198,56 @@ export function createSession(user: User, ipAddress?: string): Session {
     lastAccess: new Date(),
     ipAddress,
   };
-  sessions.set(session.id, session);
+  await sessionStore.set(session.id, session);
   return session;
 }
 
 /**
  * Get session by ID
  */
-export function getSession(sessionId: string): Session | undefined {
-  return sessions.get(sessionId);
+export async function getSession(sessionId: string): Promise<Session | undefined> {
+  return sessionStore.get(sessionId);
 }
 
 /**
  * Destroy a session
  */
-export function destroySession(sessionId: string): boolean {
-  return sessions.delete(sessionId);
+export async function destroySession(sessionId: string): Promise<boolean> {
+  return sessionStore.delete(sessionId);
 }
 
 /**
  * Check if a user is logged in
  */
-export function isUserLoggedIn(userId: number): boolean {
-  for (const session of sessions.values()) {
-    if (session.userId === userId) {
-      return true;
-    }
-  }
-  return false;
+export async function isUserLoggedIn(userId: number): Promise<boolean> {
+  const allSessions = await sessionStore.values();
+  return allSessions.some((s) => s.userId === userId);
 }
 
 /**
  * Get all sessions for a user
  */
-export function getUserSessions(userId: number): Session[] {
-  return Array.from(sessions.values()).filter((s) => s.userId === userId);
+export async function getUserSessions(userId: number): Promise<Session[]> {
+  const allSessions = await sessionStore.values();
+  return allSessions.filter((s) => s.userId === userId);
 }
 
 /**
- * Clean expired sessions
+ * Clean expired sessions (no-op for Redis — TTL handles expiration)
  */
-export function cleanExpiredSessions(): void {
+export async function cleanExpiredSessions(): Promise<void> {
+  if (sessionStore instanceof RedisSessionStore) return;
   const now = Date.now();
-  for (const [id, session] of sessions.entries()) {
+  const allSessions = await sessionStore.values();
+  for (const session of allSessions) {
     if (now - session.lastAccess.getTime() > SESSION_TIMEOUT_MS) {
-      sessions.delete(id);
+      await sessionStore.delete(session.id);
     }
   }
 }
 
 // Run cleanup every 5 minutes — .unref() prevents this timer from blocking process exit
-setInterval(cleanExpiredSessions, 5 * 60 * 1000).unref();
+setInterval(() => { cleanExpiredSessions().catch(() => {}); }, 5 * 60 * 1000).unref();
 
 /**
  * Mirth Connect password hashing (v3.x+):
@@ -253,35 +398,40 @@ function getSessionIdFromRequest(req: Request): string | undefined {
  * Authentication middleware - validates session
  */
 export function authMiddleware(options: { required?: boolean } = { required: true }) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const sessionId = getSessionIdFromRequest(req);
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const sessionId = getSessionIdFromRequest(req);
 
-    if (sessionId) {
-      const session = getSession(sessionId);
-      if (session) {
-        // Check if session is expired
-        const now = Date.now();
-        if (now - session.lastAccess.getTime() > SESSION_TIMEOUT_MS) {
-          destroySession(sessionId);
-        } else {
-          // Update last access time
-          session.lastAccess = new Date();
-          req.session = session;
-          req.userId = session.userId;
-          req.user = session.user;
+      if (sessionId) {
+        const session = await getSession(sessionId);
+        if (session) {
+          // Check if session is expired
+          const now = Date.now();
+          if (now - session.lastAccess.getTime() > SESSION_TIMEOUT_MS) {
+            await destroySession(sessionId);
+          } else {
+            // Update last access time
+            session.lastAccess = new Date();
+            await sessionStore.set(sessionId, session);
+            req.session = session;
+            req.userId = session.userId;
+            req.user = session.user;
+          }
         }
       }
-    }
 
-    if (options.required && !req.session) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-      return;
-    }
+      if (options.required && !req.session) {
+        res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Authentication required',
+        });
+        return;
+      }
 
-    next();
+      next();
+    } catch (err) {
+      next(err);
+    }
   };
 }
 
@@ -313,16 +463,17 @@ export function clearSessionCookie(res: Response): void {
 /**
  * Get active session count
  */
-export function getActiveSessionCount(): number {
-  return sessions.size;
+export async function getActiveSessionCount(): Promise<number> {
+  return sessionStore.size();
 }
 
 /**
  * Get all active users
  */
-export function getActiveUsers(): User[] {
+export async function getActiveUsers(): Promise<User[]> {
+  const allSessions = await sessionStore.values();
   const userMap = new Map<number, User>();
-  for (const session of sessions.values()) {
+  for (const session of allSessions) {
     if (!userMap.has(session.userId)) {
       userMap.set(session.userId, session.user);
     }
