@@ -15,7 +15,7 @@ import { EventEmitter } from 'events';
 import { PoolConnection } from 'mysql2/promise';
 import { Message, MessageData } from '../../model/Message.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
-import { Status } from '../../model/Status.js';
+import { Status, isFinalStatus } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
 import { SourceConnector } from './SourceConnector.js';
 import { DestinationConnector } from './DestinationConnector.js';
@@ -626,6 +626,33 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Check whether all destination connector messages have reached a terminal status.
+   * Terminal statuses are SENT, FILTERED, and ERROR — these mean processing is complete.
+   * QUEUED, PENDING, RECEIVED, and TRANSFORMED are NOT terminal.
+   *
+   * Used to guard content removal: content must not be pruned while any
+   * destination is still mid-processing (e.g. sitting in a destination queue).
+   *
+   * Matches Java Mirth's check in Channel.java finishMessage() — verifies
+   * DB-persisted statuses rather than in-memory state for crash safety.
+   */
+  private async allDestinationsTerminal(messageId: number): Promise<boolean> {
+    try {
+      const statuses = await getConnectorMessageStatuses(this.id, messageId);
+      for (const [metaDataId, status] of statuses) {
+        if (metaDataId === 0) continue; // Skip source connector
+        if (!isFinalStatus(status)) {
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      // If we can't verify, don't remove (safe default)
+      return false;
+    }
+  }
+
+  /**
    * Dispatch a raw message through the channel pipeline
    */
   async dispatchRawMessage(
@@ -1127,34 +1154,13 @@ export class Channel extends EventEmitter {
       message.setProcessed(true);
       txn4Ops.push((conn) => updateMessageProcessed(this.id, messageId, true, conn));
 
-      // Content/attachment removal
+      // Content/attachment removal — only if all destinations are in terminal state
       if (this.storageSettings.removeContentOnCompletion) {
-        let shouldRemove = false;
-
         if (!this.storageSettings.removeOnlyFilteredOnCompletion ||
             sourceMessage.getStatus() === Status.FILTERED) {
-          // DB check: verify all destination connectors are in terminal state
-          // before removing content. This prevents removing content for messages
-          // still being processed by queue-enabled destinations.
-          try {
-            const statuses = await getConnectorMessageStatuses(this.id, messageId);
-            shouldRemove = true;
-            for (const [metaDataId, status] of statuses) {
-              if (metaDataId === 0) continue; // Skip source connector
-              if (status !== Status.SENT && status !== Status.FILTERED &&
-                  status !== Status.ERROR) {
-                shouldRemove = false;
-                break;
-              }
-            }
-          } catch {
-            // If we can't verify, don't remove (safe default)
-            shouldRemove = false;
+          if (await this.allDestinationsTerminal(messageId)) {
+            txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
           }
-        }
-
-        if (shouldRemove) {
-          txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
         }
       }
       if (this.storageSettings.removeAttachmentsOnCompletion) {
@@ -1707,11 +1713,13 @@ export class Channel extends EventEmitter {
       message.setProcessed(true);
       txn4Ops.push((conn) => updateMessageProcessed(this.id, messageId, true, conn));
 
+      // Content/attachment removal — only if all destinations are in terminal state
       if (this.storageSettings.removeContentOnCompletion) {
-        const shouldRemove = !this.storageSettings.removeOnlyFilteredOnCompletion ||
-          sourceMessage.getStatus() === Status.FILTERED;
-        if (shouldRemove) {
-          txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
+        if (!this.storageSettings.removeOnlyFilteredOnCompletion ||
+            sourceMessage.getStatus() === Status.FILTERED) {
+          if (await this.allDestinationsTerminal(messageId)) {
+            txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
+          }
         }
       }
       if (this.storageSettings.removeAttachmentsOnCompletion) {
