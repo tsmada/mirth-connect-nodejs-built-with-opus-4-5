@@ -149,6 +149,9 @@ export class Channel extends EventEmitter {
   // (matches Java Mirth Statistics.java batching pattern)
   private statsAccumulator = new StatisticsAccumulator();
 
+  // Count of persistence failures (DB transaction errors) for observability
+  private persistenceFailureCount = 0;
+
   // Source queue for async processing mode (respondAfterProcessing=false)
   private sourceQueue: SourceQueue | null = null;
   private sourceQueueAbortController: AbortController | null = null;
@@ -269,6 +272,13 @@ export class Channel extends EventEmitter {
    */
   getStatistics(): ChannelStatistics {
     return { ...this.stats };
+  }
+
+  /**
+   * Get the number of persistence (DB transaction) failures since channel start.
+   */
+  getPersistenceFailureCount(): number {
+    return this.persistenceFailureCount;
   }
 
   /**
@@ -565,6 +575,7 @@ export class Channel extends EventEmitter {
       if (!this.tablesExist) return;
       await operation();
     } catch (err) {
+      this.persistenceFailureCount++;
       logger.error(`[${this.name}] DB persist error: ${err}`);
     }
   }
@@ -592,6 +603,7 @@ export class Channel extends EventEmitter {
         }
       });
     } catch (err) {
+      this.persistenceFailureCount++;
       logger.error(`[${this.name}] DB transaction error: ${err}`);
     }
   }
@@ -621,6 +633,7 @@ export class Channel extends EventEmitter {
         }
       });
     } catch (err) {
+      this.persistenceFailureCount++;
       logger.error(`[${this.name}] DB transaction error, falling back to sequential: ${err}`);
       // Fallback: execute each operation individually
       for (const op of operations) {

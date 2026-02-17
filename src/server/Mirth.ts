@@ -126,6 +126,19 @@ export class Mirth {
       logger.warn('SECURITY: Using default database credentials (mirth/mirth). Change DB_USER and DB_PASSWORD for production.');
     }
 
+    // Block default database credentials in production unless explicitly opted in
+    const isDefaultUser = this.config.database.user === 'mirth' && !process.env['DB_USER'];
+    const isDefaultPass = this.config.database.password === 'mirth' && !process.env['DB_PASSWORD'];
+    if ((isDefaultUser || isDefaultPass) && process.env.NODE_ENV === 'production') {
+      if (process.env['MIRTH_ALLOW_DEFAULT_CREDENTIALS'] !== 'true') {
+        throw new Error(
+          'Default database credentials are not allowed in production. ' +
+          'Set DB_USER/DB_PASSWORD environment variables, or set MIRTH_ALLOW_DEFAULT_CREDENTIALS=true to override.'
+        );
+      }
+      logger.warn('Using default database credentials in production (MIRTH_ALLOW_DEFAULT_CREDENTIALS=true)');
+    }
+
     // Initialize schema based on operational mode
     const { detectMode, verifySchema, ensureCoreTables, ensureNodeJsTables, seedDefaults } = await import('../db/SchemaManager.js');
 

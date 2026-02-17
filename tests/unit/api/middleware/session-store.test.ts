@@ -216,6 +216,47 @@ describe('createSessionStore', () => {
   });
 });
 
+describe('createSessionStore cluster warning', () => {
+  const origRedisUrl = process.env.MIRTH_CLUSTER_REDIS_URL;
+  const origClusterEnabled = process.env.MIRTH_CLUSTER_ENABLED;
+
+  afterEach(() => {
+    if (origRedisUrl === undefined) delete process.env.MIRTH_CLUSTER_REDIS_URL;
+    else process.env.MIRTH_CLUSTER_REDIS_URL = origRedisUrl;
+    if (origClusterEnabled === undefined) delete process.env.MIRTH_CLUSTER_ENABLED;
+    else process.env.MIRTH_CLUSTER_ENABLED = origClusterEnabled;
+  });
+
+  test('returns InMemorySessionStore when cluster enabled but no Redis URL', () => {
+    delete process.env.MIRTH_CLUSTER_REDIS_URL;
+    process.env.MIRTH_CLUSTER_ENABLED = 'true';
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = createSessionStore();
+
+    expect(store).toBeInstanceOf(InMemorySessionStore);
+    // Warning should have been logged (via console.warn fallback or logger)
+    // We verify the store type is correct — the warning is a side effect
+    warnSpy.mockRestore();
+  });
+
+  test('does not warn when cluster is not enabled', () => {
+    delete process.env.MIRTH_CLUSTER_REDIS_URL;
+    delete process.env.MIRTH_CLUSTER_ENABLED;
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = createSessionStore();
+
+    expect(store).toBeInstanceOf(InMemorySessionStore);
+    // No cluster warning expected — only Redis fallback warnings are possible
+    const clusterWarnings = warnSpy.mock.calls.filter((args) =>
+      String(args[0]).includes('Cluster mode enabled')
+    );
+    expect(clusterWarnings).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+});
+
 describe('SESSION_TIMEOUT_MS', () => {
   test('is 30 minutes', () => {
     expect(SESSION_TIMEOUT_MS).toBe(30 * 60 * 1000);

@@ -143,7 +143,11 @@ export async function transaction<T>(
     await connection.rollback();
     throw error;
   } finally {
-    connection.release();
+    try {
+      connection.release();
+    } catch (releaseErr) {
+      getDbLogger().error('Failed to release connection', releaseErr as Error);
+    }
   }
 }
 

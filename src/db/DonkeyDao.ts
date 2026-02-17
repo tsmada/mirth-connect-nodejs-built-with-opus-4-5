@@ -38,33 +38,43 @@ function statusToColumn(status: Status): string {
   }
 }
 
+// Channel ID validation — prevents SQL injection via table name interpolation
+const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+export function validateChannelId(id: string): string {
+  if (!UUID_PATTERN.test(id)) {
+    throw new Error(`Invalid channel ID format: ${id}`);
+  }
+  return id.replace(/-/g, '_');
+}
+
 // Table name helpers
 export function messageTable(channelId: string): string {
-  return `D_M${channelId.replace(/-/g, '_')}`;
+  return `D_M${validateChannelId(channelId)}`;
 }
 
 export function connectorMessageTable(channelId: string): string {
-  return `D_MM${channelId.replace(/-/g, '_')}`;
+  return `D_MM${validateChannelId(channelId)}`;
 }
 
 export function contentTable(channelId: string): string {
-  return `D_MC${channelId.replace(/-/g, '_')}`;
+  return `D_MC${validateChannelId(channelId)}`;
 }
 
-function attachmentTable(channelId: string): string {
-  return `D_MA${channelId.replace(/-/g, '_')}`;
+export function attachmentTable(channelId: string): string {
+  return `D_MA${validateChannelId(channelId)}`;
 }
 
 export function statisticsTable(channelId: string): string {
-  return `D_MS${channelId.replace(/-/g, '_')}`;
+  return `D_MS${validateChannelId(channelId)}`;
 }
 
-function sequenceTable(channelId: string): string {
-  return `D_MSQ${channelId.replace(/-/g, '_')}`;
+export function sequenceTable(channelId: string): string {
+  return `D_MSQ${validateChannelId(channelId)}`;
 }
 
 function customMetadataTable(channelId: string): string {
-  return `D_MCM${channelId.replace(/-/g, '_')}`;
+  return `D_MCM${validateChannelId(channelId)}`;
 }
 
 // Row interfaces

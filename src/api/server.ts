@@ -87,6 +87,9 @@ export function createApp(options: ServerOptions = {}): Express {
   // Warn if CORS wildcard is used
   if (config.corsOrigins?.includes('*')) {
     logger.warn('CORS configured with wildcard (*). Set CORS_ORIGINS env var for production.');
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('CORS wildcard (*) is not allowed in production. Set the CORS_ORIGINS environment variable.');
+    }
   }
 
   // CORS middleware

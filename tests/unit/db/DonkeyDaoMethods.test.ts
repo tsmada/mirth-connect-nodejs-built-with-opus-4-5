@@ -34,7 +34,7 @@ function createMockConn() {
   };
 }
 
-const TEST_CHANNEL = 'abc-123-def';
+const TEST_CHANNEL = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const CH = TEST_CHANNEL.replace(/-/g, '_');
 
 describe('DonkeyDao - New Methods', () => {

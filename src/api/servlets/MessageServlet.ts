@@ -49,6 +49,14 @@ import {
 } from '../middleware/operations.js';
 import { QueryBuilder } from '../../db/QueryBuilder.js';
 import { EngineController } from '../../controllers/EngineController.js';
+import {
+  messageTable,
+  connectorMessageTable,
+  contentTable,
+  attachmentTable,
+  statisticsTable,
+  sequenceTable,
+} from '../../db/DonkeyDao.js';
 
 // Configure multer for multipart file uploads
 const upload = multer.default({
@@ -80,22 +88,7 @@ function getChannelId(req: Request): string {
 // - AttachmentParams: { channelId: string, messageId: string, attachmentId: string }
 // (Type definitions not used - params extracted directly via req.params with type assertions)
 
-// Table name helpers
-function messageTable(channelId: string): string {
-  return `D_M${channelId.replace(/-/g, '_')}`;
-}
-
-function connectorMessageTable(channelId: string): string {
-  return `D_MM${channelId.replace(/-/g, '_')}`;
-}
-
-function contentTable(channelId: string): string {
-  return `D_MC${channelId.replace(/-/g, '_')}`;
-}
-
-function attachmentTable(channelId: string): string {
-  return `D_MA${channelId.replace(/-/g, '_')}`;
-}
+// Table name helpers imported from DonkeyDao (with UUID validation)
 
 // ============================================================================
 // Message Response Types
@@ -921,11 +914,11 @@ messageRouter.post(
 
       // Get next message ID
       const [seqRows] = await pool.query<RowDataPacket[]>(
-        `SELECT ID FROM D_MSQ${channelId.replace(/-/g, '_')} FOR UPDATE`
+        `SELECT ID FROM ${sequenceTable(channelId)} FOR UPDATE`
       );
       const nextId = (seqRows[0]?.ID ?? 0) + 1;
       await pool.execute(
-        `UPDATE D_MSQ${channelId.replace(/-/g, '_')} SET ID = ?`,
+        `UPDATE ${sequenceTable(channelId)} SET ID = ?`,
         [nextId]
       );
 
@@ -1113,7 +1106,7 @@ messageRouter.delete(
       // Clear statistics if requested
       if (clearStatistics) {
         try {
-          await pool.execute(`UPDATE D_MS${channelId.replace(/-/g, '_')} SET
+          await pool.execute(`UPDATE ${statisticsTable(channelId)} SET
             RECEIVED = 0, FILTERED = 0, TRANSFORMED = 0, PENDING = 0, SENT = 0, ERROR = 0`);
         } catch {
           // Statistics table might not exist
@@ -1161,7 +1154,7 @@ messageRouter.post(
       if (clearStatistics && removedCount > 0) {
         try {
           const pool = getPool();
-          await pool.execute(`UPDATE D_MS${channelId.replace(/-/g, '_')} SET
+          await pool.execute(`UPDATE ${statisticsTable(channelId)} SET
             RECEIVED = GREATEST(RECEIVED - ?, 0)`, [removedCount]);
         } catch {
           // Statistics table might not exist
@@ -1246,7 +1239,7 @@ messageRouter.post(
       const pool = getPool();
 
       // Get next message ID
-      const seqTable = `D_MSQ${channelId.replace(/-/g, '_')}`;
+      const seqTable = `${sequenceTable(channelId)}`;
       const [seqRows] = await pool.query<RowDataPacket[]>(
         `SELECT ID FROM ${seqTable} FOR UPDATE`
       );

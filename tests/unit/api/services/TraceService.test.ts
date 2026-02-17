@@ -103,7 +103,7 @@ describe('TraceService', () => {
 
   describe('traceMessage - single node', () => {
     it('should trace a root message with no chain', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1);
 
       const result = await traceMessage(channelId, 1);
@@ -120,7 +120,7 @@ describe('TraceService', () => {
     });
 
     it('should include content when requested', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1);
 
       const result = await traceMessage(channelId, 1, { includeContent: true });
@@ -131,7 +131,7 @@ describe('TraceService', () => {
     });
 
     it('should exclude content when not requested', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1);
 
       const result = await traceMessage(channelId, 1, { includeContent: false });
@@ -142,7 +142,7 @@ describe('TraceService', () => {
 
   describe('traceMessage - error handling', () => {
     it('should handle message not found', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       const tableSuffix = channelId.replace(/-/g, '_');
 
       mockGetAllChannels.mockResolvedValue([]);
@@ -167,7 +167,7 @@ describe('TraceService', () => {
     });
 
     it('should handle missing channel tables', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
 
       mockGetAllChannels.mockResolvedValue([]);
       mockGetIdsAndNames.mockResolvedValue({});
@@ -188,7 +188,7 @@ describe('TraceService', () => {
 
   describe('traceMessage - direction option', () => {
     it('should respect forward-only direction', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1);
 
       const result = await traceMessage(channelId, 1, { direction: 'forward' });
@@ -199,7 +199,7 @@ describe('TraceService', () => {
     });
 
     it('should respect backward-only direction', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1);
 
       const result = await traceMessage(channelId, 1, { direction: 'backward' });
@@ -211,7 +211,7 @@ describe('TraceService', () => {
 
   describe('traceMessage - content truncation', () => {
     it('should truncate content at maxContentLength', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       const tableSuffix = channelId.replace(/-/g, '_');
       const longContent = 'A'.repeat(10000);
 
@@ -270,8 +270,8 @@ describe('TraceService', () => {
 
   describe('traceMessage - dependency graph', () => {
     it('should detect Channel Writer destinations in dependency graph', async () => {
-      const sourceId = 'src-aaa-bbb-ccc-ddd';
-      const targetId = 'tgt-aaa-bbb-ccc-ddd';
+      const sourceId = 'a0a0a0a0-b1b1-c2c2-d3d3-e4e4e4e4e4e4';
+      const targetId = 'f5f5f5f5-a6a6-b7b7-c8c8-d9d9d9d9d9d9';
 
       mockGetAllChannels.mockResolvedValue([
         {
@@ -406,7 +406,7 @@ describe('TraceService', () => {
 
   describe('error status detection', () => {
     it('should report hasErrors when a node has ERROR status', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1, 'E');
 
       const result = await traceMessage(channelId, 1);
@@ -470,7 +470,7 @@ describe('TraceService', () => {
     }
 
     it('should treat corrupted JSON sourceMap as root message', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupWithSourceMap(channelId, 1, 'NOT VALID JSON {{{');
 
       const result = await traceMessage(channelId, 1, { includeContent: false });
@@ -482,7 +482,7 @@ describe('TraceService', () => {
     });
 
     it('should treat empty JSON object sourceMap as root message', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupWithSourceMap(channelId, 1, '{}');
 
       const result = await traceMessage(channelId, 1, { includeContent: false });
@@ -494,7 +494,7 @@ describe('TraceService', () => {
     });
 
     it('should treat sourceMap with empty arrays as root message', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       const sourceMap = JSON.stringify({
         sourceChannelIds: [],
         sourceMessageIds: [],
@@ -508,9 +508,9 @@ describe('TraceService', () => {
     });
 
     it('should handle mismatched sourceMap array lengths gracefully', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       const sourceMap = JSON.stringify({
-        sourceChannelIds: ['ch-parent-1', 'ch-parent-2'],
+        sourceChannelIds: ['11111111-aaaa-bbbb-cccc-dddddddddddd', '22222222-aaaa-bbbb-cccc-dddddddddddd'],
         sourceMessageIds: [1],  // Length mismatch!
       });
       setupWithSourceMap(channelId, 1, sourceMap);
@@ -524,8 +524,8 @@ describe('TraceService', () => {
     });
 
     it('should fall back to singular sourceMap keys when arrays absent', async () => {
-      const parentId = 'parent-aaa-bbb-ccc';
-      const childId = 'child-aaa-bbb-ccc';
+      const parentId = 'aaa11111-bbbb-cccc-dddd-eeeeeeeeeeee';
+      const childId = 'fff22222-aaaa-bbbb-cccc-dddddddddddd';
       const parentSuffix = parentId.replace(/-/g, '_');
       const childSuffix = childId.replace(/-/g, '_');
 
@@ -608,8 +608,8 @@ describe('TraceService', () => {
 
   describe('traceMessage - circular reference protection', () => {
     it('should not infinite loop on circular sourceMap references', async () => {
-      const channelA = 'ch-aaa-bbb-ccc-ddd';
-      const channelB = 'ch-bbb-ccc-ddd-eee';
+      const channelA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      const channelB = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
       const suffixA = channelA.replace(/-/g, '_');
       const suffixB = channelB.replace(/-/g, '_');
 
@@ -685,9 +685,9 @@ describe('TraceService', () => {
 
   describe('traceMessage - forward trace error isolation', () => {
     it('should return error node when one downstream channel fails', async () => {
-      const sourceId = 'src-iso-aaa-bbb-ccc';
-      const goodTargetId = 'good-tgt-aaa-bbb';
-      const badTargetId = 'bad-tgt-aaa-bbb';
+      const sourceId = '11111111-2222-3333-4444-555555555555';
+      const goodTargetId = '66666666-7777-8888-9999-aaaaaaaaaaaa';
+      const badTargetId = 'bbbbbbbb-cccc-dddd-eeee-111111111111';
       const sourceSuffix = sourceId.replace(/-/g, '_');
       const goodSuffix = goodTargetId.replace(/-/g, '_');
       const badSuffix = badTargetId.replace(/-/g, '_');
@@ -786,7 +786,7 @@ describe('TraceService', () => {
 
   describe('traceMessage - max depth boundary', () => {
     it('should stop tracing forward when maxDepth is reached', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       setupSingleMessageMock(channelId, 1);
 
       // maxDepth = 0 means don't trace any children
@@ -798,7 +798,7 @@ describe('TraceService', () => {
 
   describe('traceMessage - missing connector message', () => {
     it('should default to RECEIVED status when no connector message exists', async () => {
-      const channelId = 'aaa-bbb-ccc-ddd-eee';
+      const channelId = 'aaabbbcc-cddd-eeef-1234-567890abcdef';
       const tableSuffix = channelId.replace(/-/g, '_');
 
       mockGetAllChannels.mockResolvedValue([

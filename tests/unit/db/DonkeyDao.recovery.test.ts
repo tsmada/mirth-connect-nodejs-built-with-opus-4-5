@@ -16,7 +16,7 @@ jest.mock('../../../src/db/pool.js', () => ({
 import { getUnfinishedMessages, getUnfinishedMessagesByServerId } from '../../../src/db/DonkeyDao';
 
 describe('DonkeyDao recovery queries', () => {
-  const channelId = 'abc-123-def';
+  const channelId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -41,11 +41,11 @@ describe('DonkeyDao recovery queries', () => {
     it('should use the correct table name from channelId', async () => {
       mockQuery.mockResolvedValue([[]]);
 
-      await getUnfinishedMessagesByServerId('aa-bb-cc', 'srv-1');
+      await getUnfinishedMessagesByServerId('aabbccdd-0011-2233-4455-667788990011', 'srv-1');
 
       const [sql] = mockQuery.mock.calls[0]!;
       // Dashes replaced with underscores for MySQL table name
-      expect(sql).toContain('D_Maa_bb_cc');
+      expect(sql).toContain('D_Maabbccdd_0011_2233_4455_667788990011');
     });
 
     it('should return empty array when no unfinished messages', async () => {

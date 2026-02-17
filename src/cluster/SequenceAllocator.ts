@@ -10,14 +10,11 @@
 
 import { RowDataPacket } from 'mysql2/promise';
 import { getPool } from '../db/pool.js';
+import { sequenceTable } from '../db/DonkeyDao.js';
 
 interface SequenceBlock {
   nextId: number;   // Next ID to return
   maxId: number;    // Last ID in this block (exclusive)
-}
-
-function sequenceTable(channelId: string): string {
-  return `D_MSQ${channelId.replace(/-/g, '_')}`;
 }
 
 export class SequenceAllocator {

@@ -171,7 +171,7 @@ describe('ChannelStatisticsServlet', () => {
     });
 
     it('should return 404 for non-existent channel', async () => {
-      const channelId = 'nonexistent-channel-id';
+      const channelId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
       // Mock table doesn't exist
       mockPool.query.mockResolvedValueOnce([[], []]);
@@ -210,13 +210,13 @@ describe('ChannelStatisticsServlet', () => {
 
   describe('POST /channels/statistics/_getStatistics', () => {
     it('should handle channel IDs in array body format', async () => {
-      const channelIds = ['channel-1', 'channel-2'];
+      const channelIds = ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'];
 
       // Mock table checks and queries for both channels
       mockPool.query
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSchannel_1' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS11111111_1111_1111_1111_111111111111' }], []])
         .mockResolvedValueOnce([[{ METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: 10, FILTERED: 1, TRANSFORMED: 0, PENDING: 1, SENT: 8, ERROR: 0 }], []])
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSchannel_2' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS22222222_2222_2222_2222_222222222222' }], []])
         .mockResolvedValueOnce([[{ METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: 20, FILTERED: 2, TRANSFORMED: 0, PENDING: 2, SENT: 16, ERROR: 0 }], []]);
 
       const response = await request(app)
@@ -226,8 +226,8 @@ describe('ChannelStatisticsServlet', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ channelId: 'channel-1', received: 10 }),
-          expect.objectContaining({ channelId: 'channel-2', received: 20 }),
+          expect.objectContaining({ channelId: '11111111-1111-1111-1111-111111111111', received: 10 }),
+          expect.objectContaining({ channelId: '22222222-2222-2222-2222-222222222222', received: 20 }),
         ]),
       );
     });
@@ -235,15 +235,15 @@ describe('ChannelStatisticsServlet', () => {
     it('should handle XML set format from Java client', async () => {
       const body = {
         set: {
-          string: ['channel-1', 'channel-2'],
+          string: ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'],
         },
       };
 
       // Mock queries
       mockPool.query
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSchannel_1' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS11111111_1111_1111_1111_111111111111' }], []])
         .mockResolvedValueOnce([[{ METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: 5, FILTERED: 0, TRANSFORMED: 0, PENDING: 0, SENT: 5, ERROR: 0 }], []])
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSchannel_2' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS22222222_2222_2222_2222_222222222222' }], []])
         .mockResolvedValueOnce([[{ METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: 15, FILTERED: 0, TRANSFORMED: 0, PENDING: 0, SENT: 15, ERROR: 0 }], []]);
 
       const response = await request(app)
@@ -257,12 +257,12 @@ describe('ChannelStatisticsServlet', () => {
     it('should handle single string in XML format', async () => {
       const body = {
         set: {
-          string: 'single-channel',
+          string: '33333333-3333-3333-3333-333333333333',
         },
       };
 
       mockPool.query
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSsingle_channel' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS33333333_3333_3333_3333_333333333333' }], []])
         .mockResolvedValueOnce([[{ METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: 100, FILTERED: 0, TRANSFORMED: 0, PENDING: 0, SENT: 100, ERROR: 0 }], []]);
 
       const response = await request(app)
@@ -271,7 +271,7 @@ describe('ChannelStatisticsServlet', () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([
-        expect.objectContaining({ channelId: 'single-channel', received: 100 }),
+        expect.objectContaining({ channelId: '33333333-3333-3333-3333-333333333333', received: 100 }),
       ]);
     });
   });
@@ -297,12 +297,12 @@ describe('ChannelStatisticsServlet', () => {
     });
 
     it('should only clear specified statistic types based on query params', async () => {
-      const channelId = 'test-channel';
+      const channelId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
       const body = {
         [channelId]: null,
       };
 
-      mockPool.query.mockResolvedValueOnce([[{ TABLE_NAME: 'D_MStest_channel' }], []]);
+      mockPool.query.mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSaaaaaaaa_bbbb_cccc_dddd_eeeeeeeeeeee' }], []]);
       mockPool.execute.mockResolvedValueOnce([{ affectedRows: 1 }, []]);
 
       const response = await request(app)
@@ -334,12 +334,12 @@ describe('ChannelStatisticsServlet', () => {
       // Mock finding all statistics tables
       mockPool.query
         .mockResolvedValueOnce([[
-          { TABLE_NAME: 'D_MSchannel_1' },
-          { TABLE_NAME: 'D_MSchannel_2' },
+          { TABLE_NAME: 'D_MS11111111_1111_1111_1111_111111111111' },
+          { TABLE_NAME: 'D_MS22222222_2222_2222_2222_222222222222' },
         ], []])
         // Table exists checks
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSchannel_1' }], []])
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSchannel_2' }], []]);
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS11111111_1111_1111_1111_111111111111' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MS22222222_2222_2222_2222_222222222222' }], []]);
 
       mockPool.execute
         .mockResolvedValueOnce([{ affectedRows: 1 }, []])
@@ -364,10 +364,10 @@ describe('ChannelStatisticsServlet', () => {
 
   describe('Statistics aggregation', () => {
     it('should aggregate statistics across multiple connectors', async () => {
-      const channelId = 'multi-connector-channel';
+      const channelId = 'aabbccdd-eeff-0011-2233-445566778899';
 
       mockPool.query
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSmulti_connector_channel' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSaabbccdd_eeff_0011_2233_445566778899' }], []])
         .mockResolvedValueOnce([[
           { METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: 100, FILTERED: 10, TRANSFORMED: 0, PENDING: 5, SENT: 0, ERROR: 5 },
           { METADATA_ID: 1, SERVER_ID: 's1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 10, SENT: 70, ERROR: 5 },
@@ -389,10 +389,10 @@ describe('ChannelStatisticsServlet', () => {
     });
 
     it('should handle null values in statistics rows', async () => {
-      const channelId = 'null-stats-channel';
+      const channelId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
       mockPool.query
-        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSnull_stats_channel' }], []])
+        .mockResolvedValueOnce([[{ TABLE_NAME: 'D_MSdddddddd_dddd_dddd_dddd_dddddddddddd' }], []])
         .mockResolvedValueOnce([[
           { METADATA_ID: 0, SERVER_ID: 's1', RECEIVED: null, FILTERED: null, TRANSFORMED: null, PENDING: null, SENT: null, ERROR: null },
         ], []]);

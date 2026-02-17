@@ -276,7 +276,18 @@ export function authorize(options: AuthorizeOptions): RequestHandler {
 
     // Include body params for audit (excluding sensitive data)
     if (req.body && typeof req.body === 'object') {
-      const { password: _password, ...safeBody } = req.body as Record<string, unknown>;
+      const SENSITIVE_KEYS = new Set([
+        'password', 'token', 'apiKey', 'apikey', 'secret',
+        'passphrase', 'credential', 'credentials', 'authorization',
+        'accessToken', 'refreshToken', 'privateKey', 'secretKey',
+      ]);
+      const body = req.body as Record<string, unknown>;
+      const safeBody: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (!SENSITIVE_KEYS.has(key) && !SENSITIVE_KEYS.has(key.toLowerCase())) {
+          safeBody[key] = value;
+        }
+      }
       Object.assign(parameterMap, safeBody);
     }
 

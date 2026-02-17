@@ -13,6 +13,7 @@ import { RowDataPacket } from 'mysql2/promise';
 import { getPool } from '../../db/pool.js';
 import { ChannelController } from '../../controllers/ChannelController.js';
 import { ContentType } from '../../model/ContentType.js';
+import { messageTable, connectorMessageTable, contentTable } from '../../db/DonkeyDao.js';
 import {
   SOURCE_CHANNEL_ID,
   SOURCE_CHANNEL_IDS,
@@ -81,22 +82,6 @@ const DEFAULT_TRACE_OPTIONS: TraceOptions = {
   maxChildren: 50,
   direction: 'both',
 };
-
-// =============================================================================
-// Table name helpers (mirror DonkeyDao pattern)
-// =============================================================================
-
-function messageTable(channelId: string): string {
-  return `D_M${channelId.replace(/-/g, '_')}`;
-}
-
-function connectorMessageTable(channelId: string): string {
-  return `D_MM${channelId.replace(/-/g, '_')}`;
-}
-
-function contentTable(channelId: string): string {
-  return `D_MC${channelId.replace(/-/g, '_')}`;
-}
 
 // =============================================================================
 // Row interfaces

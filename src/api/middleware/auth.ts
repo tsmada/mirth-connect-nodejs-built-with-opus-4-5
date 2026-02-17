@@ -9,6 +9,21 @@ import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { User } from '../models/User.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+let _authLogger: ReturnType<typeof getLogger> | null = null;
+function getAuthLogger() {
+  if (!_authLogger) {
+    try {
+      registerComponent('auth', 'Authentication and session management');
+      _authLogger = getLogger('auth');
+    } catch {
+      // Logging not yet initialized — fall back to console
+      return null;
+    }
+  }
+  return _authLogger;
+}
 
 // Session configuration
 const SESSION_COOKIE_NAME = 'JSESSIONID';
@@ -161,11 +176,18 @@ export function createSessionStore(): SessionStore {
     try {
       return new RedisSessionStore(redisUrl);
     } catch (err) {
-      console.warn('Failed to connect to Redis, falling back to in-memory sessions:', err);
-      return new InMemorySessionStore();
+      const msg = 'Failed to connect to Redis, falling back to in-memory sessions';
+      getAuthLogger()?.warn(msg) ?? console.warn(msg + ':', err);
+      // Fall through to in-memory with cluster warning below
     }
   }
-  return new InMemorySessionStore();
+
+  const store = new InMemorySessionStore();
+  if (process.env['MIRTH_CLUSTER_ENABLED'] === 'true') {
+    const msg = 'Cluster mode enabled but using in-memory sessions. Users authenticated on one node will get 403 on other nodes. Set MIRTH_CLUSTER_REDIS_URL to fix.';
+    getAuthLogger()?.warn(msg) ?? console.warn(msg);
+  }
+  return store;
 }
 
 // Module-level session store — pluggable via MIRTH_CLUSTER_REDIS_URL

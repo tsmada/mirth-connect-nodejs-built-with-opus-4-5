@@ -60,7 +60,7 @@ function createMockConn() {
   };
 }
 
-const TEST_CHANNEL = 'abc-123-def';
+const TEST_CHANNEL = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 // Table name helper mirrors the source: hyphens replaced with underscores
 const CH = TEST_CHANNEL.replace(/-/g, '_');
 
@@ -78,24 +78,28 @@ describe('DonkeyDao', () => {
   // ==========================================================================
   describe('table name helpers', () => {
     it('messageTable should produce correct name', () => {
-      expect(messageTable('abc-123-def')).toBe('D_Mabc_123_def');
+      expect(messageTable(TEST_CHANNEL)).toBe(`D_M${CH}`);
     });
 
     it('connectorMessageTable should produce correct name', () => {
-      expect(connectorMessageTable('abc-123-def')).toBe('D_MMabc_123_def');
+      expect(connectorMessageTable(TEST_CHANNEL)).toBe(`D_MM${CH}`);
     });
 
     it('contentTable should produce correct name', () => {
-      expect(contentTable('abc-123-def')).toBe('D_MCabc_123_def');
+      expect(contentTable(TEST_CHANNEL)).toBe(`D_MC${CH}`);
     });
 
     it('statisticsTable should produce correct name', () => {
-      expect(statisticsTable('abc-123-def')).toBe('D_MSabc_123_def');
+      expect(statisticsTable(TEST_CHANNEL)).toBe(`D_MS${CH}`);
     });
 
     it('should handle UUIDs with multiple hyphens', () => {
       const uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
       expect(messageTable(uuid)).toBe('D_Ma1b2c3d4_e5f6_7890_abcd_ef1234567890');
+    });
+
+    it('should reject non-UUID channel IDs', () => {
+      expect(() => messageTable('invalid-id')).toThrow('Invalid channel ID format');
     });
   });
 

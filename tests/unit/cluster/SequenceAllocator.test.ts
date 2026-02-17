@@ -11,7 +11,7 @@ import { getPool } from '../../../src/db/pool.js';
 const mockGetPool = getPool as jest.MockedFunction<typeof getPool>;
 
 describe('SequenceAllocator', () => {
-  const channelId = 'abc-def-123';
+  const channelId = 'abcdef12-3456-7890-abcd-ef1234567890';
   let allocator: SequenceAllocator;
 
   // Helpers for building mock connections
@@ -86,7 +86,7 @@ describe('SequenceAllocator', () => {
       await allocator.allocateId(channelId);
 
       // Channel ID dashes are replaced with underscores
-      const expectedTable = 'D_MSQabc_def_123';
+      const expectedTable = 'D_MSQabcdef12_3456_7890_abcd_ef1234567890';
       const selectCall = (conn.query.mock.calls as any[][]).find(
         (call) => typeof call[0] === 'string' && call[0].includes('SELECT')
       );
@@ -109,8 +109,8 @@ describe('SequenceAllocator', () => {
     });
 
     it('should handle multiple channels independently', async () => {
-      const channel1 = 'channel-1';
-      const channel2 = 'channel-2';
+      const channel1 = '11111111-1111-1111-1111-111111111111';
+      const channel2 = '22222222-2222-2222-2222-222222222222';
       let queryCount = 0;
 
       const conn = createMockConnection((sql: string) => {

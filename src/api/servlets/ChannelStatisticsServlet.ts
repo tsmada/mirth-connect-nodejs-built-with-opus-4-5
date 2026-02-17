@@ -15,6 +15,7 @@
 import { Router, Request, Response } from 'express';
 import { RowDataPacket } from 'mysql2';
 import { getPool } from '../../db/pool.js';
+import { statisticsTable } from '../../db/DonkeyDao.js';
 import { authorize } from '../middleware/authorization.js';
 import {
   CHANNEL_STATS_GET,
@@ -80,13 +81,6 @@ interface ChannelStatisticsResponse {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Get statistics table name for a channel
- */
-function statisticsTable(channelId: string): string {
-  return `D_MS${channelId.replace(/-/g, '_')}`;
-}
 
 /**
  * Check if statistics table exists
