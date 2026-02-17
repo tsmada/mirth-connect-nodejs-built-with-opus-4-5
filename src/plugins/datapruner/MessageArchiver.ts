@@ -13,10 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-// Note: zlib compression can be added in future enhancement
-// import { createGzip } from 'zlib';
-// import { pipeline } from 'stream/promises';
-// import { Readable } from 'stream';
+import { createGzip, type Gzip } from 'zlib';
 
 /**
  * Archive format options
@@ -132,6 +129,7 @@ export interface ArchiveAttachment {
 export class MessageArchiver {
   private options: MessageWriterOptions;
   private currentFile: fs.WriteStream | null = null;
+  private currentGzip: Gzip | null = null;
   private currentFilePath: string = '';
   private currentMessageCount: number = 0;
   private totalArchived: number = 0;
@@ -194,9 +192,10 @@ export class MessageArchiver {
       await this.openNewFile(channelId);
     }
 
-    // Write message
+    // Write message (to gzip stream if compressing, otherwise direct to file)
     const content = this.formatMessage(message);
-    this.currentFile!.write(content);
+    const writeTarget = this.currentGzip ?? this.currentFile!;
+    writeTarget.write(content);
     this.currentMessageCount++;
     this.totalArchived++;
   }
@@ -298,12 +297,13 @@ export class MessageArchiver {
 
     this.currentFilePath = path.join(dir, filename);
 
-    // Open file stream
+    // Open file stream (with optional gzip compression)
+    this.currentFile = fs.createWriteStream(this.currentFilePath);
     if (this.options.compress) {
-      // Create a pass-through that compresses
-      this.currentFile = fs.createWriteStream(this.currentFilePath);
+      this.currentGzip = createGzip();
+      this.currentGzip.pipe(this.currentFile);
     } else {
-      this.currentFile = fs.createWriteStream(this.currentFilePath);
+      this.currentGzip = null;
     }
   }
 
@@ -311,7 +311,28 @@ export class MessageArchiver {
    * Close the current archive file
    */
   async closeCurrentFile(): Promise<void> {
-    if (this.currentFile) {
+    if (this.currentGzip) {
+      // When gzip is piped to the file stream, ending gzip automatically
+      // flushes remaining data and ends the destination file stream.
+      // We wait for the file stream's 'finish' event to ensure all data is written.
+      const fileFinished = this.currentFile
+        ? new Promise<void>((resolve, reject) => {
+            this.currentFile!.on('finish', resolve);
+            this.currentFile!.on('error', reject);
+          })
+        : Promise.resolve();
+
+      await new Promise<void>((resolve, reject) => {
+        this.currentGzip!.end((err: Error | null | undefined) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      await fileFinished;
+      this.currentGzip = null;
+      this.currentFile = null;
+    } else if (this.currentFile) {
       await new Promise<void>((resolve, reject) => {
         this.currentFile!.end((err: Error | null | undefined) => {
           if (err) reject(err);
