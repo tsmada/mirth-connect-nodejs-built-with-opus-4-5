@@ -7,3 +7,4 @@ resources:
   - node-mirth-deployment.yaml
   - node-mirth-service.yaml
   - node-mirth-configmap.yaml
+  - otel-collector.yaml

@@ -38,8 +38,9 @@ function statusToColumn(status: Status): string {
   }
 }
 
-// Channel ID validation — prevents SQL injection via table name interpolation
-const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+// Channel ID validation — prevents SQL injection via table name interpolation.
+// Accepts standard hex UUIDs and test IDs with alphanumeric segments (e.g. ks000001-...).
+const UUID_PATTERN = /^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$/i;
 
 export function validateChannelId(id: string): string {
   if (!UUID_PATTERN.test(id)) {

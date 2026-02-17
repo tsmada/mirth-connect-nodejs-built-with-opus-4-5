@@ -13,8 +13,9 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
 import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
-import { PeriodicExportingMetricReader, type MetricReader } from '@opentelemetry/sdk-metrics';
+import { PeriodicExportingMetricReader, MeterProvider } from '@opentelemetry/sdk-metrics';
 import { resourceFromAttributes } from '@opentelemetry/resources';
+import { metrics } from '@opentelemetry/api';
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -28,25 +29,35 @@ const resource = resourceFromAttributes({
 });
 
 // OTLP metrics exporter (push to collector/agent)
-const metricReaders: MetricReader[] = [
-  new PeriodicExportingMetricReader({
-    exporter: new OTLPMetricExporter(),
-    exportIntervalMillis: 60_000,
-  }),
-];
+const otlpMetricReader = new PeriodicExportingMetricReader({
+  exporter: new OTLPMetricExporter(),
+  exportIntervalMillis: 60_000,
+});
 
 // Optional Prometheus scrape endpoint (pull)
 const promPort = process.env['MIRTH_OTEL_PROMETHEUS_PORT'];
+let promExporter: PrometheusExporter | undefined;
 if (promPort) {
-  metricReaders.push(
-    new PrometheusExporter({ port: parseInt(promPort, 10) }) as unknown as MetricReader,
-  );
+  promExporter = new PrometheusExporter({ port: parseInt(promPort, 10) });
+}
+
+// When Prometheus is enabled, create a MeterProvider with both readers.
+// NodeSDK only accepts one metricReader, so we build our own MeterProvider
+// and pass it to the SDK via the global metrics API.
+let meterProvider: MeterProvider | undefined;
+if (promExporter) {
+  meterProvider = new MeterProvider({
+    resource,
+    readers: [otlpMetricReader, promExporter],
+  });
+  metrics.setGlobalMeterProvider(meterProvider);
 }
 
 const sdk = new NodeSDK({
   resource,
   traceExporter: new OTLPTraceExporter(),
-  metricReader: metricReaders[0]!,
+  // Only wire the OTLP reader when Prometheus isn't handling it via MeterProvider
+  ...(promExporter ? {} : { metricReader: otlpMetricReader }),
   instrumentations: [
     getNodeAutoInstrumentations({
       // fs instrumentation is too noisy for file-heavy channels
@@ -68,4 +79,7 @@ process.on('SIGTERM', () => {
  */
 export async function shutdown(): Promise<void> {
   await sdk.shutdown();
+  if (meterProvider) {
+    await meterProvider.shutdown();
+  }
 }
