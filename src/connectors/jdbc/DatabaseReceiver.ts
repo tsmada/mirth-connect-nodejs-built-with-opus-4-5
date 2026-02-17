@@ -549,26 +549,31 @@ export class DatabaseReceiver extends SourceConnector {
     if (this.properties.aggregateResults) {
       // Send all results as single message
       const xml = resultsToXml(rows);
-      await this.dispatchRawMessage(xml);
+      const processedMessage = await this.dispatchRawMessage(xml);
 
       // Run aggregate post-process update (Java: runAggregatePostProcess)
+      // Java passes mergedConnectorMessage from dispatchResult.getProcessedMessage()
       if (this.properties.updateMode !== UpdateMode.NEVER && this.compiledUpdateScript) {
-        await this.runUpdateScript(null, rows, null);
+        const merged = processedMessage?.getMergedConnectorMessage() ?? null;
+        await this.runUpdateScript(null, rows, merged);
       }
     } else {
       // Send each row as separate message
       for (const row of rows) {
         const xml = resultsToXml([row as Record<string, unknown>]);
-        await this.dispatchRawMessage(xml);
+        const processedMessage = await this.dispatchRawMessage(xml);
 
         // Run per-row post-process update (Java: runPostProcess with UPDATE_EACH)
+        // Java: delegate.runPostProcess(resultMap, dispatchResult.getProcessedMessage().getMergedConnectorMessage())
         if (this.properties.updateMode === UpdateMode.EACH && this.compiledUpdateScript) {
-          await this.runUpdateScript(row as Record<string, unknown>, null, null);
+          const merged = processedMessage?.getMergedConnectorMessage() ?? null;
+          await this.runUpdateScript(row as Record<string, unknown>, null, merged);
         }
       }
     }
 
     // Run afterPoll update (Java: afterPoll with UPDATE_ONCE and !aggregateResults)
+    // Java afterPoll passes null for both resultMap and mergedConnectorMessage
     if (
       this.properties.updateMode === UpdateMode.ONCE &&
       !this.properties.aggregateResults &&

@@ -273,17 +273,18 @@ describe('FileDispatcher', () => {
     });
   });
 
-  describe('remote schemes (not implemented)', () => {
-    it('should reject FTP scheme', async () => {
+  describe('remote schemes', () => {
+    it('should require host for FTP scheme', async () => {
       const dispatcher = new FileDispatcher({
         metaDataId: 1,
         properties: {
           scheme: FileScheme.FTP,
           directory: '/path',
+          // host is missing
         },
       });
 
-      await expect(dispatcher.start()).rejects.toThrow('not yet implemented');
+      await expect(dispatcher.start()).rejects.toThrow('Host is required for FTP connections');
     });
 
     it('should require host for SFTP scheme', async () => {
@@ -299,16 +300,32 @@ describe('FileDispatcher', () => {
       await expect(dispatcher.start()).rejects.toThrow('Host is required for SFTP');
     });
 
-    it('should reject S3 scheme', async () => {
+    it('should require host for SMB scheme', async () => {
+      const dispatcher = new FileDispatcher({
+        metaDataId: 1,
+        properties: {
+          scheme: FileScheme.SMB,
+          directory: '/path',
+          // host is missing
+        },
+      });
+
+      await expect(dispatcher.start()).rejects.toThrow('Host is required for SMB connections');
+    });
+
+    it('should not require host for S3 scheme (uses bucket from directory)', async () => {
       const dispatcher = new FileDispatcher({
         metaDataId: 1,
         properties: {
           scheme: FileScheme.S3,
           directory: '/path',
+          // host is optional for S3 (custom endpoint)
         },
       });
 
-      await expect(dispatcher.start()).rejects.toThrow('not yet implemented');
+      // S3 will attempt to connect and fail on canWrite (no real S3 available)
+      // but should NOT fail with "Host is required"
+      await expect(dispatcher.start()).rejects.not.toThrow('Host is required');
     });
   });
 });

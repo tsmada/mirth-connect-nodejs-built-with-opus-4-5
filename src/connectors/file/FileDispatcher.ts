@@ -6,6 +6,9 @@
  * Key behaviors to replicate:
  * - Write files to local filesystem (FILE scheme)
  * - Write files to SFTP server (SFTP scheme)
+ * - Write files to FTP/FTPS server (FTP scheme)
+ * - Write files to S3 bucket (S3 scheme)
+ * - Write files to SMB/CIFS share (SMB scheme)
  * - Support output filename patterns
  * - Append vs overwrite modes (Java default: append=true)
  * - Binary and text mode writing
@@ -29,6 +32,11 @@ import {
 } from './FileConnectorProperties.js';
 import { SftpConnection } from './sftp/SftpConnection.js';
 import { getDefaultSftpSchemeProperties } from './sftp/SftpSchemeProperties.js';
+import { FileSystemClient } from './backends/types.js';
+import { createFileSystemClient } from './backends/factory.js';
+import { getLogger } from '../../logging/index.js';
+
+const logger = getLogger('file-connector');
 
 export interface FileDispatcherConfig {
   name?: string;
@@ -44,16 +52,18 @@ export interface FileDispatcherConfig {
 
 /**
  * File Destination Connector that writes files
- * Supports local filesystem (FILE) and SFTP schemes
+ * Supports local filesystem (FILE), SFTP, FTP, S3, and SMB schemes
  */
 export class FileDispatcher extends DestinationConnector {
   private properties: FileDispatcherProperties;
   private sftpConnection: SftpConnection | null = null;
+  /** Generic backend client for FTP, S3, SMB schemes */
+  private backendClient: FileSystemClient | null = null;
 
   /** Timer for idle connection eviction (CPC-RCG-003) */
   private idleTimer: NodeJS.Timeout | null = null;
-  /** Timestamp of last SFTP operation */
-  private lastSftpActivityTime = 0;
+  /** Timestamp of last remote operation (SFTP or backend) */
+  private lastRemoteActivityTime = 0;
 
   constructor(config: FileDispatcherConfig) {
     super({
@@ -202,9 +212,8 @@ export class FileDispatcher extends DestinationConnector {
       case FileScheme.FTP:
       case FileScheme.S3:
       case FileScheme.SMB:
-        throw new Error(
-          `File scheme ${this.properties.scheme} not yet implemented`
-        );
+        await this.initializeBackendClient();
+        break;
 
       default:
         throw new Error(`Unknown file scheme: ${this.properties.scheme}`);
@@ -234,6 +243,16 @@ export class FileDispatcher extends DestinationConnector {
     if (this.sftpConnection) {
       await this.sftpConnection.disconnect();
       this.sftpConnection = null;
+    }
+
+    // Clean up backend client (FTP/S3/SMB) if active
+    if (this.backendClient) {
+      try {
+        await this.backendClient.disconnect();
+      } catch {
+        // Ignore disconnect errors during shutdown
+      }
+      this.backendClient = null;
     }
 
     this.running = false;
@@ -278,7 +297,14 @@ export class FileDispatcher extends DestinationConnector {
 
         case FileScheme.SFTP:
           filePath = await this.writeSftpFile(filename, content, resolvedProps);
-          this.lastSftpActivityTime = Date.now();
+          this.lastRemoteActivityTime = Date.now();
+          break;
+
+        case FileScheme.FTP:
+        case FileScheme.S3:
+        case FileScheme.SMB:
+          filePath = await this.writeBackendFile(filename, content, resolvedProps);
+          this.lastRemoteActivityTime = Date.now();
           break;
 
         default:
@@ -313,11 +339,17 @@ export class FileDispatcher extends DestinationConnector {
       // Java: dispatches IDLE in finally block after each write
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
 
-      // If keepConnectionOpen is false, destroy the SFTP connection after each send
+      // If keepConnectionOpen is false, destroy the remote connection after each send
       // Java: fileConnector.destroyConnection() vs releaseConnection()
-      if (!resolvedProps.keepConnectionOpen && this.sftpConnection) {
-        await this.sftpConnection.disconnect();
-        this.sftpConnection = null;
+      if (!resolvedProps.keepConnectionOpen) {
+        if (this.sftpConnection) {
+          await this.sftpConnection.disconnect();
+          this.sftpConnection = null;
+        }
+        if (this.backendClient) {
+          try { await this.backendClient.disconnect(); } catch { /* ignore */ }
+          this.backendClient = null;
+        }
       }
     }
   }
@@ -357,7 +389,7 @@ export class FileDispatcher extends DestinationConnector {
       throw new Error(`Cannot write to SFTP directory: ${this.properties.directory}`);
     }
 
-    this.lastSftpActivityTime = Date.now();
+    this.lastRemoteActivityTime = Date.now();
   }
 
   /**
@@ -371,17 +403,50 @@ export class FileDispatcher extends DestinationConnector {
   }
 
   /**
+   * Initialize backend client (FTP/S3/SMB) for writing.
+   * Matches the pattern in FileReceiver.initializeBackendClientWithRetry()
+   * but without retry logic (dispatcher retries are handled at the send level).
+   */
+  private async initializeBackendClient(): Promise<void> {
+    if (!this.properties.host && this.properties.scheme !== FileScheme.S3) {
+      throw new Error(`Host is required for ${this.properties.scheme} connections`);
+    }
+
+    logger.info(`Initializing ${this.properties.scheme} connection to ${this.properties.host || 'S3'}...`);
+
+    this.backendClient = createFileSystemClient(this.properties.scheme, this.properties);
+    await this.backendClient.connect();
+
+    // Verify we can write to the directory
+    const canWrite = await this.backendClient.canWrite(this.properties.directory);
+    if (!canWrite) {
+      throw new Error(`Cannot write to ${this.properties.scheme} directory: ${this.properties.directory}`);
+    }
+
+    this.lastRemoteActivityTime = Date.now();
+    logger.info(`${this.properties.scheme} connection established`);
+  }
+
+  /**
+   * Ensure backend client is active, reconnecting if needed.
+   */
+  private async ensureBackendClient(): Promise<FileSystemClient> {
+    if (!this.backendClient || !this.backendClient.isConnected()) {
+      await this.initializeBackendClient();
+    }
+    return this.backendClient!;
+  }
+
+  /**
    * Start idle connection eviction timer (CPC-RCG-003)
    * Matches Java FileConnector connection pool eviction with maxIdleTime.
    * When keepConnectionOpen=true and maxIdleTime>0, periodically check
    * if the SFTP connection has been idle too long and close it.
    */
   private startIdleEviction(): void {
-    if (
-      this.properties.scheme !== FileScheme.SFTP &&
-      this.properties.scheme !== FileScheme.FTP
-    ) {
-      return; // Only applies to remote connections
+    // Only applies to remote connections (SFTP, FTP, S3, SMB)
+    if (this.properties.scheme === FileScheme.FILE) {
+      return;
     }
 
     if (!this.properties.keepConnectionOpen) {
@@ -394,14 +459,27 @@ export class FileDispatcher extends DestinationConnector {
 
     // Check every second (Java: timeBetweenEvictionRunsMillis = 1000)
     this.idleTimer = setInterval(() => {
+      const idleTime = Date.now() - this.lastRemoteActivityTime;
+      if (idleTime <= this.properties.maxIdleTime) {
+        return;
+      }
+
+      // Evict SFTP connection if idle
       if (this.sftpConnection && this.sftpConnection.isConnected()) {
-        const idleTime = Date.now() - this.lastSftpActivityTime;
-        if (idleTime > this.properties.maxIdleTime) {
-          this.sftpConnection.disconnect().catch(() => {
-            // Ignore disconnect errors during eviction
-          });
-          this.sftpConnection = null;
-        }
+        this.sftpConnection.disconnect().catch(() => {
+          // Ignore disconnect errors during eviction
+        });
+        this.sftpConnection = null;
+        logger.debug(`SFTP connection evicted after ${idleTime}ms idle`);
+      }
+
+      // Evict backend client (FTP/S3/SMB) if idle
+      if (this.backendClient && this.backendClient.isConnected()) {
+        this.backendClient.disconnect().catch(() => {
+          // Ignore disconnect errors during eviction
+        });
+        this.backendClient = null;
+        logger.debug(`${this.properties.scheme} connection evicted after ${idleTime}ms idle`);
       }
     }, 1000);
   }
@@ -569,6 +647,74 @@ export class FileDispatcher extends DestinationConnector {
         resolvedProps.directory,
         dataToWrite,
         resolvedProps.outputAppend
+      );
+    }
+
+    return remotePath;
+  }
+
+  /**
+   * Write file via backend client (FTP/S3/SMB)
+   * Matches Java FileDispatcher.send() for remote schemes.
+   */
+  private async writeBackendFile(
+    filename: string,
+    content: string | Buffer,
+    resolvedProps: FileDispatcherProperties
+  ): Promise<string> {
+    const client = await this.ensureBackendClient();
+    const remotePath = `${resolvedProps.directory}/${filename}`.replace(/\/+/g, '/');
+
+    // Check if file exists and errorOnExists is set
+    if (resolvedProps.errorOnExists) {
+      const exists = await client.exists(filename, resolvedProps.directory);
+      if (exists) {
+        throw new Error(`File already exists: ${remotePath}`);
+      }
+    }
+
+    // Convert content to buffer
+    let dataToWrite: Buffer;
+    if (resolvedProps.binary && typeof content === 'string') {
+      dataToWrite = Buffer.from(content, 'base64');
+    } else if (typeof content === 'string') {
+      dataToWrite = Buffer.from(content, resolvedProps.charsetEncoding as BufferEncoding);
+    } else {
+      dataToWrite = content;
+    }
+
+    // Handle temp file pattern for atomic writes
+    // Java: temporary flag OR explicit tempFilename
+    const useTempFile = resolvedProps.temporary || !!resolvedProps.tempFilename;
+    if (useTempFile) {
+      const tempSuffix = resolvedProps.tempFilename || '.tmp';
+      const tempFilename = `${filename}${tempSuffix}`;
+
+      // Write to temp file (no append for temp files)
+      await client.writeFile(
+        tempFilename,
+        resolvedProps.directory,
+        dataToWrite,
+        false
+      );
+
+      // Rename temp file to final name
+      await client.move(
+        tempFilename,
+        resolvedProps.directory,
+        filename,
+        resolvedProps.directory
+      );
+    } else {
+      // Direct write with append support
+      // Note: S3 canAppend() returns false; writeFile with append=true
+      // on S3 will download-concat-reupload (handled by S3Client)
+      const shouldAppend = resolvedProps.outputAppend && await client.canAppend();
+      await client.writeFile(
+        filename,
+        resolvedProps.directory,
+        dataToWrite,
+        shouldAppend
       );
     }
 

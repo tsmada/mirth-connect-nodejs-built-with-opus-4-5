@@ -11,7 +11,8 @@
  * - Handle responses based on message processing result
  * - GZIP compression support
  * - Connection status event dispatching (CPC-MCE-001)
- * - Basic auth support (CPC-MAM-001)
+ * - Pluggable authentication via AuthenticatorProvider (CPC-MAM-002)
+ *   Supports: Basic, Digest, JavaScript, and legacy inline Basic auth
  */
 
 import express, { Express, Request, Response, NextFunction } from 'express';
@@ -30,6 +31,13 @@ import {
   getDefaultHttpReceiverProperties,
   isBinaryMimeType,
 } from './HttpConnectorProperties.js';
+import {
+  type HttpAuthenticator,
+  type RequestInfo,
+  AuthStatus,
+  createAuthenticator,
+  getDefaultBasicAuthProperties,
+} from './auth/index.js';
 
 export interface HttpReceiverConfig {
   name?: string;
@@ -45,6 +53,7 @@ export class HttpReceiver extends SourceConnector {
   private properties: HttpReceiverProperties;
   private app: Express | null = null;
   private server: Server | null = null;
+  private authenticator: HttpAuthenticator | null = null;
 
   constructor(config: HttpReceiverConfig) {
     super({
@@ -146,6 +155,11 @@ export class HttpReceiver extends SourceConnector {
           this.running = false;
           this.server = null;
           this.app = null;
+          // CPC-MAM-002: Shutdown authenticator (e.g., clear Digest nonce cache)
+          if (this.authenticator?.shutdown) {
+            this.authenticator.shutdown();
+          }
+          this.authenticator = null;
           // CPC-MCE-001: Dispatch DISCONNECTED on stop
           this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
           resolve();
@@ -185,43 +199,135 @@ export class HttpReceiver extends SourceConnector {
   }
 
   /**
-   * Configure Basic auth middleware (CPC-MAM-001)
+   * Configure pluggable authentication middleware (CPC-MAM-002).
    *
-   * Java uses Jetty's ConstraintSecurityHandler with a custom Authenticator
-   * that delegates to AuthenticatorProvider. We implement Basic auth inline
-   * since the Java plugin architecture is not needed.
+   * Java: HttpReceiver.onDeploy() creates an AuthenticatorProvider based on
+   * HttpAuthConnectorPluginProperties.AuthType. The ConstraintSecurityHandler
+   * wraps the handler collection and calls authenticator.authenticate(RequestInfo)
+   * before each request reaches the RequestHandler.
+   *
+   * Node.js: We create the appropriate HttpAuthenticator from authProperties
+   * (if set) or fall back to the legacy username/password inline Basic auth.
+   * The authenticator is called as Express middleware before request handling.
+   *
+   * Supported auth types (matching Java's AuthenticatorProviderFactory):
+   * - BASIC: RFC 7617, multi-user credentials map
+   * - DIGEST: RFC 7616, MD5/MD5-sess, auth/auth-int QOP
+   * - JAVASCRIPT: Custom script returns AuthenticationResult or boolean
+   * - NONE (legacy): Inline Basic auth with single username/password
    */
   private configureAuthentication(): void {
     if (!this.app) return;
 
-    const username = this.properties.username ?? '';
-    const password = this.properties.password ?? '';
-    const authType = this.properties.authenticationType ?? 'Basic';
+    // Priority 1: Use authProperties (pluggable system) if configured
+    if (this.properties.authProperties) {
+      this.authenticator = createAuthenticator(this.properties.authProperties);
+    } else {
+      // Priority 2: Legacy inline Basic auth with single username/password
+      const username = this.properties.username ?? '';
+      const password = this.properties.password ?? '';
+      const realm = 'Mirth Connect';
 
-    if (authType === 'Basic') {
-      this.app.use((req: Request, res: Response, next: NextFunction) => {
-        const authHeader = req.headers['authorization'];
+      const basicProps = getDefaultBasicAuthProperties();
+      basicProps.realm = realm;
+      basicProps.credentials.set(username, password);
 
-        if (!authHeader || !authHeader.startsWith('Basic ')) {
-          res.setHeader('WWW-Authenticate', 'Basic realm="Mirth Connect"');
-          res.status(401).send('Authentication required');
-          return;
-        }
-
-        const base64Credentials = authHeader.slice(6); // Remove 'Basic '
-        const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
-        const [reqUsername, reqPassword] = credentials.split(':');
-
-        if (reqUsername === username && reqPassword === password) {
-          next();
-        } else {
-          res.setHeader('WWW-Authenticate', 'Basic realm="Mirth Connect"');
-          res.status(401).send('Invalid credentials');
-        }
-      });
+      this.authenticator = createAuthenticator(basicProps);
     }
-    // Digest auth on receiver side is handled by Java's plugin system
-    // and rarely used in practice — Basic is the common case
+
+    // Install the authenticator as Express middleware
+    // Java: ConstraintSecurityHandler.validateRequest() runs before RequestHandler.handle()
+    this.app.use(async (req: Request, res: Response, next: NextFunction) => {
+      if (!this.authenticator) {
+        next();
+        return;
+      }
+
+      try {
+        // Build RequestInfo from Express request (matches Java's RequestInfo construction)
+        const requestInfo = this.buildRequestInfo(req);
+        const result = await this.authenticator.authenticate(requestInfo);
+
+        // Apply response headers from the AuthenticationResult
+        // Java: iterates result.getResponseHeaders() and sets them on the servlet response
+        for (const [key, values] of result.responseHeaders) {
+          if (key && values) {
+            for (let i = 0; i < values.length; i++) {
+              if (i === 0) {
+                res.setHeader(key, values[i]!);
+              } else {
+                res.append(key, values[i]!);
+              }
+            }
+          }
+        }
+
+        switch (result.status) {
+          case AuthStatus.SUCCESS:
+            // Java: returns UserAuthentication, request continues to RequestHandler
+            next();
+            break;
+          case AuthStatus.CHALLENGED:
+            // Java: response.sendError(SC_UNAUTHORIZED), returns SEND_CONTINUE
+            res.status(401).send('Authentication required');
+            break;
+          case AuthStatus.FAILURE:
+          default:
+            // Java: response.sendError(SC_UNAUTHORIZED), returns SEND_FAILURE
+            res.status(401).send('Authentication failed');
+            break;
+        }
+      } catch (_err) {
+        // Java: logs error, dispatches ErrorEvent, throws ServerAuthException
+        res.status(401).send('Authentication error');
+      }
+    });
+  }
+
+  /**
+   * Build a RequestInfo object from an Express request.
+   *
+   * Java: HttpReceiver.createSecurityHandler().validateRequest() builds RequestInfo
+   * from HttpServletRequest fields. The entity body is lazily loaded via EntityProvider.
+   */
+  private buildRequestInfo(req: Request): RequestInfo {
+    // Build headers map (case-insensitive keys, multi-value)
+    const headers = new Map<string, string[]>();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value !== undefined) {
+        headers.set(key.toLowerCase(), Array.isArray(value) ? value : [value]);
+      }
+    }
+
+    // Build query parameters map
+    const queryParameters = new Map<string, string[]>();
+    for (const [key, value] of Object.entries(req.query)) {
+      if (value !== undefined) {
+        queryParameters.set(key, Array.isArray(value) ? (value as string[]) : [String(value)]);
+      }
+    }
+
+    return {
+      remoteAddress: (req.ip || req.socket.remoteAddress || '').trim(),
+      remotePort: req.socket.remotePort || 0,
+      localAddress: (req.socket.localAddress || '').trim(),
+      localPort: req.socket.localPort || 0,
+      protocol: `HTTP/${req.httpVersion}`.trim(),
+      method: req.method.trim(),
+      requestURI: (req.originalUrl || req.url || '').trim(),
+      headers,
+      queryParameters,
+      getEntity: () => {
+        // Lazy entity body provider (matches Java's EntityProvider pattern)
+        if (Buffer.isBuffer(req.body)) {
+          return req.body;
+        }
+        if (typeof req.body === 'string') {
+          return Buffer.from(req.body, 'utf-8');
+        }
+        return Buffer.alloc(0);
+      },
+    };
   }
 
   /**

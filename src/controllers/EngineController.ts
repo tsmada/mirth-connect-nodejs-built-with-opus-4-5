@@ -335,6 +335,15 @@ export class EngineController {
         }
       }
 
+      // Register in cluster channel registry (non-fatal)
+      try {
+        const { registerDeployment } = await import('../cluster/ChannelRegistry.js');
+        const { getServerId } = await import('../cluster/ClusterIdentity.js');
+        await registerDeployment(getServerId(), channelId);
+      } catch {
+        // Non-fatal — cluster visibility only
+      }
+
       logger.info(`Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`);
     } catch (error) {
       logger.error(`Failed to deploy channel ${channelConfig.name}`, error as Error);
@@ -377,8 +386,28 @@ export class EngineController {
     // Clean up messageComplete throttle entry
     messageCompleteLastEmit.delete(channelId);
 
+    // Remove from Donkey engine (prevents stale channel reference on redeploy)
+    const donkey = getDonkeyInstance();
+    if (donkey && donkey.getChannel(channelId)) {
+      try {
+        await donkey.undeployChannel(channelId);
+      } catch {
+        // Channel may already be removed — safe to ignore
+      }
+    }
+
     // Remove from deployed channels
     deployedChannels.delete(channelId);
+
+    // Unregister from cluster channel registry (non-fatal)
+    try {
+      const { unregisterDeployment } = await import('../cluster/ChannelRegistry.js');
+      const { getServerId } = await import('../cluster/ClusterIdentity.js');
+      await unregisterDeployment(getServerId(), channelId);
+    } catch {
+      // Non-fatal — cluster visibility only
+    }
+
     logger.info(`Channel ${name} undeployed`);
   }
 
@@ -600,6 +629,13 @@ export class EngineController {
    */
   static getDeployedCount(): number {
     return deployedChannels.size;
+  }
+
+  /**
+   * Get all deployed channel IDs
+   */
+  static getDeployedChannelIds(): Set<string> {
+    return new Set(deployedChannels.keys());
   }
 
   /**

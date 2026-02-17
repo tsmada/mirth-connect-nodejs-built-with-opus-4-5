@@ -648,7 +648,7 @@ export class XMLProxy {
 
     const refIndex = refChild.childIndex();
     if (refIndex >= 0 && refIndex < children.length) {
-      children.splice(refIndex + 1, 0, ...newChild.nodes);
+      children.splice(refIndex + 1, 0, ...newChild.getNodes());
     }
 
     return this;
@@ -676,6 +676,186 @@ export class XMLProxy {
     for (let i = 0; i < this.nodes.length; i++) {
       yield new XMLProxy([this.nodes[i]!], this.tagName, this);
     }
+  }
+
+  /**
+   * E4X copy() — deep clone of the XML node
+   */
+  copy(): XMLProxy {
+    if (this.nodes.length === 0) return new XMLProxy([], this.tagName);
+    const cloned = JSON.parse(JSON.stringify(this.nodes)) as OrderedNode[];
+    return new XMLProxy(cloned, this.tagName);
+  }
+
+  /**
+   * E4X replace(propertyName, value) — replace a named child element
+   */
+  replace(propertyName: string, value: XMLProxy | string): XMLProxy {
+    if (this.nodes.length === 0) return this;
+
+    const node = this.nodes[0]!;
+    const tagName = this.getNodeTagName(node);
+    if (!tagName) return this;
+
+    const children = node[tagName];
+    if (!Array.isArray(children)) return this;
+
+    const idx = children.findIndex((child) => {
+      const ct = this.getNodeTagName(child as OrderedNode);
+      return ct === propertyName;
+    });
+
+    if (idx === -1) return this;
+
+    if (value instanceof XMLProxy && value.getNodes().length > 0) {
+      children.splice(idx, 1, ...value.getNodes());
+    } else {
+      children[idx] = { [propertyName]: [{ '#text': String(value) }] } as unknown as OrderedNode;
+    }
+
+    return this;
+  }
+
+  /**
+   * E4X insertChildBefore(refChild, newChild) — insert before reference node
+   */
+  insertChildBefore(refChild: XMLProxy, newChild: XMLProxy | string): XMLProxy {
+    if (this.nodes.length === 0) return this;
+
+    const node = this.nodes[0]!;
+    const tagName = this.getNodeTagName(node);
+    if (!tagName) return this;
+
+    const children = node[tagName];
+    if (!Array.isArray(children)) return this;
+
+    // Use getNodes() instead of .nodes — .nodes goes through the Proxy get trap
+    const newNodes = typeof newChild === 'string'
+      ? XMLProxy.create(newChild).getNodes()
+      : newChild.getNodes();
+
+    const refNodes = refChild.getNodes();
+    if (refNodes.length === 0) {
+      // No reference → prepend
+      children.unshift(...newNodes);
+    } else {
+      const refIdx = children.indexOf(refNodes[0] as OrderedNode);
+      if (refIdx >= 0) {
+        children.splice(refIdx, 0, ...newNodes);
+      } else {
+        // Reference not found → prepend
+        children.unshift(...newNodes);
+      }
+    }
+
+    return this;
+  }
+
+  /**
+   * E4X prependChild(child) — insert child at the beginning
+   */
+  prependChild(child: XMLProxy | string): XMLProxy {
+    if (this.nodes.length === 0) return this;
+
+    const node = this.nodes[0]!;
+    const tagName = this.getNodeTagName(node);
+    if (!tagName) return this;
+
+    const children = node[tagName];
+    if (!Array.isArray(children)) return this;
+
+    // Use getNodes() instead of .nodes — .nodes goes through the Proxy get trap
+    const newNodes = typeof child === 'string'
+      ? XMLProxy.create(child).getNodes()
+      : child.getNodes();
+
+    children.unshift(...newNodes);
+    return this;
+  }
+
+  /**
+   * E4X contains(value) — check if this XML contains a value
+   */
+  contains(value: XMLProxy | string): boolean {
+    if (typeof value === 'string') {
+      return this.toString() === value;
+    }
+    if (value.getNodes().length === 0) return false;
+    const targetStr = value.toXMLString();
+    for (const node of this.nodes) {
+      const nodeProxy = new XMLProxy([node], this.tagName);
+      if (nodeProxy.toXMLString() === targetStr) return true;
+    }
+    return false;
+  }
+
+  /**
+   * E4X nodeKind() — return the kind of this node
+   */
+  nodeKind(): string {
+    return 'element';
+  }
+
+  /**
+   * E4X localName() — return the local name without namespace prefix
+   */
+  localName(): string {
+    if (this.nodes.length === 0) return '';
+    const node = this.nodes[0]!;
+    const tag = this.getNodeTagName(node);
+    if (!tag) return '';
+    const colonIdx = tag.indexOf(':');
+    return colonIdx >= 0 ? tag.substring(colonIdx + 1) : tag;
+  }
+
+  /**
+   * E4X normalize() — normalize adjacent text nodes (noop for fast-xml-parser)
+   */
+  normalize(): XMLProxy {
+    return this;
+  }
+
+  /**
+   * Convert XML to a JSON-compatible object
+   */
+  toJSON(): Record<string, unknown> | null {
+    if (this.nodes.length === 0) return null;
+
+    const node = this.nodes[0]!;
+    const tagName = this.getNodeTagName(node);
+    if (!tagName) return null;
+
+    const result: Record<string, unknown> = {};
+
+    // Add attributes
+    const attrs = node[':@'] as Record<string, string> | undefined;
+    if (attrs) {
+      for (const [key, val] of Object.entries(attrs)) {
+        result[key.replace('@_', '@')] = val;
+      }
+    }
+
+    // Add children
+    const children = node[tagName];
+    if (Array.isArray(children)) {
+      for (const child of children) {
+        const childNode = child as OrderedNode;
+        const childTag = this.getNodeTagName(childNode);
+        if (childTag) {
+          const childProxy = new XMLProxy([childNode], childTag);
+          const childChildren = childNode[childTag];
+          if (Array.isArray(childChildren) && childChildren.length === 1 && (childChildren[0] as OrderedNode)['#text'] !== undefined) {
+            result[childTag] = (childChildren[0] as OrderedNode)['#text'];
+          } else {
+            result[childTag] = childProxy.toJSON();
+          }
+        } else if (childNode['#text'] !== undefined) {
+          result['#text'] = childNode['#text'];
+        }
+      }
+    }
+
+    return result;
   }
 
   /**

@@ -32,6 +32,11 @@ import {
 } from './FileConnectorProperties.js';
 import { SftpConnection, SftpFileInfo } from './sftp/SftpConnection.js';
 import { getDefaultSftpSchemeProperties } from './sftp/SftpSchemeProperties.js';
+import { FileSystemClient } from './backends/types.js';
+import { createFileSystemClient } from './backends/factory.js';
+import { getLogger } from '../../logging/index.js';
+
+const logger = getLogger('file-connector');
 
 export interface FileReceiverConfig {
   name?: string;
@@ -42,12 +47,14 @@ export interface FileReceiverConfig {
 
 /**
  * File Source Connector that polls for files
- * Supports local filesystem (FILE) and SFTP schemes
+ * Supports local filesystem (FILE), SFTP, FTP, S3, and SMB schemes
  */
 export class FileReceiver extends SourceConnector {
   private properties: FileReceiverProperties;
   private pollTimer: NodeJS.Timeout | null = null;
   private sftpConnection: SftpConnection | null = null;
+  /** Generic backend client for FTP, S3, SMB schemes */
+  private backendClient: FileSystemClient | null = null;
 
   /** Monotonically increasing poll counter for generating unique pollIds */
   private pollCounter = 0;
@@ -106,9 +113,8 @@ export class FileReceiver extends SourceConnector {
       case FileScheme.FTP:
       case FileScheme.S3:
       case FileScheme.SMB:
-        throw new Error(
-          `File scheme ${this.properties.scheme} not yet implemented`
-        );
+        await this.initializeBackendClientWithRetry();
+        break;
 
       default:
         throw new Error(`Unknown file scheme: ${this.properties.scheme}`);
@@ -139,6 +145,12 @@ export class FileReceiver extends SourceConnector {
     if (this.sftpConnection) {
       await this.sftpConnection.disconnect();
       this.sftpConnection = null;
+    }
+
+    // Clean up backend client (FTP/S3/SMB) if active
+    if (this.backendClient) {
+      await this.backendClient.disconnect();
+      this.backendClient = null;
     }
 
     this.running = false;
@@ -238,18 +250,68 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
+   * Initialize FTP/S3/SMB backend client with retry logic.
+   */
+  private async initializeBackendClientWithRetry(): Promise<void> {
+    if (this.properties.scheme !== FileScheme.S3 && !this.properties.host) {
+      throw new Error(`Host is required for ${this.properties.scheme} connections`);
+    }
+
+    const maxRetries = this.properties.maxRetryCount;
+    const retryDelay = this.properties.retryDelay;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        this.backendClient = createFileSystemClient(this.properties.scheme, this.properties);
+        await this.backendClient.connect();
+
+        // Verify we can read the directory
+        const canRead = await this.backendClient.canRead(this.properties.directory);
+        if (!canRead) {
+          throw new Error(`Cannot read ${this.properties.scheme} directory: ${this.properties.directory}`);
+        }
+        return; // Success
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (this.backendClient) {
+          try { await this.backendClient.disconnect(); } catch { /* ignore */ }
+          this.backendClient = null;
+        }
+
+        if (attempt < maxRetries) {
+          const delay = retryDelay * (attempt + 1);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError ?? new Error(`Failed to establish ${this.properties.scheme} connection`);
+  }
+
+  /**
+   * Ensure the backend client is connected, reconnecting with retry if needed.
+   */
+  private async ensureBackendClient(): Promise<FileSystemClient> {
+    if (!this.backendClient || !this.backendClient.isConnected()) {
+      await this.initializeBackendClientWithRetry();
+    }
+    return this.backendClient!;
+  }
+
+  /**
    * Start polling timer
    */
   private startPolling(): void {
     // Execute first poll immediately
     this.poll().catch((err) => {
-      console.error('Poll error:', err);
+      logger.error('Poll error:', err instanceof Error ? err : undefined);
     });
 
     // Schedule subsequent polls
     this.pollTimer = setInterval(() => {
       this.poll().catch((err) => {
-        console.error('Poll error:', err);
+        logger.error('Poll error:', err instanceof Error ? err : undefined);
       });
     }, this.properties.pollInterval);
   }
@@ -297,6 +359,12 @@ export class FileReceiver extends SourceConnector {
           files = await this.listSftpFiles(this.properties.directory);
           break;
 
+        case FileScheme.FTP:
+        case FileScheme.S3:
+        case FileScheme.SMB:
+          files = await this.listBackendFiles(this.properties.directory);
+          break;
+
         default:
           throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
       }
@@ -328,7 +396,7 @@ export class FileReceiver extends SourceConnector {
         this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
       }
     } catch (error) {
-      console.error('File poll error:', error);
+      logger.error('File poll error:', error instanceof Error ? error : undefined);
     } finally {
       // Java: poll() dispatches IDLE in finally block
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
@@ -405,6 +473,38 @@ export class FileReceiver extends SourceConnector {
   }
 
   /**
+   * List files using the generic backend client (FTP, S3, SMB).
+   * The backend's listFiles() handles filtering internally.
+   */
+  private async listBackendFiles(directory: string): Promise<FileInfo[]> {
+    const client = await this.ensureBackendClient();
+
+    const files = await client.listFiles(
+      directory,
+      this.properties.fileFilter,
+      this.properties.regex,
+      this.properties.ignoreDot
+    );
+
+    // Handle directory recursion for backend schemes
+    if (this.properties.directoryRecursion) {
+      const subdirs = await client.listDirectories(directory);
+      for (const subdir of subdirs) {
+        // Skip hidden directories if configured
+        const dirName = subdir.split(/[/\\]/).pop() || '';
+        if (this.properties.ignoreDot && dirName.startsWith('.')) {
+          continue;
+        }
+
+        const subFiles = await this.listBackendFiles(subdir);
+        files.push(...subFiles);
+      }
+    }
+
+    return files;
+  }
+
+  /**
    * Filter files based on pattern and age
    * Matches Java FileReceiver.isFileValid() with checkFileAge/fileAge (CPC-DVM-005)
    */
@@ -412,7 +512,7 @@ export class FileReceiver extends SourceConnector {
     const now = Date.now();
 
     return files.filter((file) => {
-      // For SFTP, filtering is already done in listSftpFiles
+      // For SFTP and backend clients, filename filtering is done in listFiles
       // For local files, check pattern match
       if (this.properties.scheme === FileScheme.FILE) {
         if (
@@ -514,7 +614,7 @@ export class FileReceiver extends SourceConnector {
       await this.dispatchRawMessage(content, sourceMapData);
     } catch (error) {
       readError = true;
-      console.error(`Error processing file ${file.path}:`, error);
+      logger.error(`Error processing file ${file.path}:`, error instanceof Error ? error : undefined);
     }
 
     // Three-path action selection matching Java FileReceiver.java:440-450
@@ -534,6 +634,11 @@ export class FileReceiver extends SourceConnector {
 
       case FileScheme.SFTP:
         return this.readSftpFile(file);
+
+      case FileScheme.FTP:
+      case FileScheme.S3:
+      case FileScheme.SMB:
+        return this.readBackendFile(file);
 
       default:
         throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
@@ -565,6 +670,24 @@ export class FileReceiver extends SourceConnector {
       return buffer.toString('base64');
     } else {
       return await sftp.readFileAsString(
+        file.name,
+        file.directory,
+        this.properties.charsetEncoding as BufferEncoding
+      );
+    }
+  }
+
+  /**
+   * Read file content via the generic backend client (FTP, S3, SMB).
+   */
+  private async readBackendFile(file: FileInfo): Promise<string> {
+    const client = await this.ensureBackendClient();
+
+    if (this.properties.binary) {
+      const buffer = await client.readFile(file.name, file.directory);
+      return buffer.toString('base64');
+    } else {
+      return await client.readFileAsString(
         file.name,
         file.directory,
         this.properties.charsetEncoding as BufferEncoding
@@ -640,6 +763,14 @@ export class FileReceiver extends SourceConnector {
         break;
       }
 
+      case FileScheme.FTP:
+      case FileScheme.S3:
+      case FileScheme.SMB: {
+        const client = await this.ensureBackendClient();
+        await client.delete(file.name, file.directory, false);
+        break;
+      }
+
       default:
         throw new Error(`Unsupported scheme: ${this.properties.scheme}`);
     }
@@ -666,6 +797,14 @@ export class FileReceiver extends SourceConnector {
       case FileScheme.SFTP: {
         const sftp = await this.ensureSftpConnection();
         await sftp.move(file.name, file.directory, destName, toDirectory);
+        break;
+      }
+
+      case FileScheme.FTP:
+      case FileScheme.S3:
+      case FileScheme.SMB: {
+        const client = await this.ensureBackendClient();
+        await client.move(file.name, file.directory, destName, toDirectory);
         break;
       }
 

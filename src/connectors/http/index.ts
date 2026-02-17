@@ -17,3 +17,24 @@ export {
 export { HttpReceiver, HttpReceiverConfig } from './HttpReceiver.js';
 
 export { HttpDispatcher, HttpDispatcherConfig, HttpResponse } from './HttpDispatcher.js';
+
+// Authentication module (CPC-MAM-002)
+export {
+  AuthStatus,
+  AuthType,
+  AuthenticationResult,
+  type BasicAuthProperties,
+  type DigestAuthProperties,
+  DigestAlgorithm,
+  DigestQOPMode,
+  type HttpAuthProperties,
+  type HttpAuthenticator,
+  type JavaScriptAuthProperties,
+  type RequestInfo,
+  createAuthenticator,
+  getDefaultBasicAuthProperties,
+  getDefaultDigestAuthProperties,
+  BasicAuthenticator,
+  DigestAuthenticator,
+  JavaScriptAuthenticator,
+} from './auth/index.js';

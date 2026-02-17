@@ -13,6 +13,7 @@
 import { Donkey } from '../donkey/Donkey.js';
 import { startServer } from '../api/server.js';
 import { initPool, closePool } from '../db/pool.js';
+import { initEncryptorFromEnv } from '../db/Encryptor.js';
 import { ChannelController } from '../controllers/ChannelController.js';
 import { EngineController } from '../controllers/EngineController.js';
 import type { Server } from 'http';
@@ -55,6 +56,13 @@ let mirthInstance: Mirth | null = null;
 export function getMirthInstance(): Mirth | null {
   return mirthInstance;
 }
+
+// Synchronous caches for ChannelUtil channel controller adapter.
+// Populated once at startup by refreshChannelUtilCache().
+let channelNameCache: string[] = [];
+let channelIdCache: string[] = [];
+const channelCacheById = new Map<string, { id: string; name: string }>();
+const channelCacheByName = new Map<string, { id: string; name: string }>();
 
 export type OperationalMode = 'takeover' | 'standalone' | 'auto';
 
@@ -110,6 +118,14 @@ export class Mirth {
     initPool(this.config.database);
     logger.info(`Connected to database at ${this.config.database.host}:${this.config.database.port}`);
 
+    // Initialize content encryptor from environment (MIRTH_ENCRYPTION_KEY)
+    initEncryptorFromEnv();
+
+    // Warn about default credentials
+    if (this.config.database.user === 'mirth' && this.config.database.password === 'mirth') {
+      logger.warn('SECURITY: Using default database credentials (mirth/mirth). Change DB_USER and DB_PASSWORD for production.');
+    }
+
     // Initialize schema based on operational mode
     const { detectMode, verifySchema, ensureCoreTables, ensureNodeJsTables, seedDefaults } = await import('../db/SchemaManager.js');
 
@@ -128,6 +144,7 @@ export class Mirth {
       logger.info('Standalone mode: ensuring core tables exist...');
       await ensureCoreTables();
       await seedDefaults();
+      logger.warn('SECURITY: Default admin/admin credentials seeded. Change the admin password before production use.');
       logger.info('Core schema initialized');
     } else {
       // Takeover mode - verify existing schema
@@ -157,10 +174,17 @@ export class Mirth {
     const clusterConfig = getClusterConfig();
     if (clusterConfig.clusterEnabled) {
       startHeartbeat();
+      if (!clusterConfig.redisUrl) {
+        logger.warn('Cluster mode active but MIRTH_CLUSTER_REDIS_URL not set. GlobalMap will use volatile in-memory storage. Set MIRTH_CLUSTER_REDIS_URL for persistent shared state.');
+      }
+      logger.warn('Cluster mode: session store is in-memory. Sessions will not be shared across instances. Consider a shared session store for production.');
     }
 
     // Load channels from database and deploy them
     await this.loadAndDeployChannels();
+
+    // Wire ChannelUtil singletons for user scripts (ChannelUtil.startChannel(), etc.)
+    await this.initializeChannelUtil();
 
     // Mark startup complete (health probe: /api/health/startup)
     setStartupComplete(true);
@@ -348,6 +372,204 @@ export class Mirth {
     this.initializeVMRouter();
     await dataPrunerController.initialize();
     logger.info('Shadow mode cutover complete: VMRouter and DataPruner initialized');
+  }
+
+  /**
+   * Initialize ChannelUtil singletons so user scripts can call
+   * ChannelUtil.getChannelNames(), ChannelUtil.startChannel(), etc.
+   */
+  private async initializeChannelUtil(): Promise<void> {
+    try {
+      const {
+        setChannelUtilChannelController,
+        setChannelUtilEngineController,
+      } = await import('../javascript/userutil/ChannelUtil.js');
+      const { EngineController: EC } = await import('../controllers/EngineController.js');
+      const { Status } = await import('../model/Status.js');
+      const { DeployedState: UserDeployedState } = await import('../javascript/userutil/DeployedState.js');
+
+      // --- ErrorTaskHandler helper ---
+      type IErrorTaskHandler = { isErrored(): boolean; getError(): Error | null };
+      function noError(): IErrorTaskHandler {
+        return { isErrored: () => false, getError: () => null };
+      }
+      function withError(err: unknown): IErrorTaskHandler {
+        return {
+          isErrored: () => true,
+          getError: () => (err instanceof Error ? err : new Error(String(err))),
+        };
+      }
+
+      // --- Channel controller adapter ---
+      setChannelUtilChannelController({
+        getChannelNames(): string[] {
+          // Synchronous — we cache the last result; caller is inside a VM script.
+          // Fallback: return empty array (channels load asynchronously).
+          return channelNameCache;
+        },
+        getChannelIds(): string[] {
+          return channelIdCache;
+        },
+        getChannelById(channelId: string) {
+          const entry = channelCacheById.get(channelId);
+          return entry ?? null;
+        },
+        getChannelByName(channelName: string) {
+          const entry = channelCacheByName.get(channelName);
+          return entry ?? null;
+        },
+        getDeployedChannels(_channelIds: string[] | null) {
+          const ids = EC.getDeployedChannelIds();
+          const result: { id: string; name: string }[] = [];
+          for (const id of ids) {
+            const ch = channelCacheById.get(id);
+            if (ch) result.push(ch);
+          }
+          return result;
+        },
+        getDeployedChannelById(channelId: string) {
+          if (!EC.isDeployed(channelId)) return null;
+          return channelCacheById.get(channelId) ?? null;
+        },
+        getDeployedChannelByName(channelName: string) {
+          const lookup = EC.getDeployedChannelByName(channelName);
+          return lookup ?? null;
+        },
+        async resetStatistics(
+          _channelMap: Map<string, (number | null)[]>,
+          _statusesToReset: Set<typeof Status[keyof typeof Status]>
+        ) {
+          // Stub — statistics reset through ChannelStatisticsServlet is the primary path
+        },
+      });
+
+      // --- Engine controller adapter ---
+      setChannelUtilEngineController({
+        getDeployedIds(): Set<string> {
+          return EC.getDeployedChannelIds();
+        },
+        getDeployedChannel(channelId: string) {
+          const ch = EC.getDeployedChannel(channelId);
+          if (!ch) return null;
+          return {
+            getMetaDataIds() {
+              const ids = [0]; // source connector
+              for (let i = 0; i < ch.getDestinationConnectors().length; i++) {
+                ids.push(i + 1);
+              }
+              return ids;
+            },
+          };
+        },
+        getChannelStatus(channelId: string) {
+          const ch = EC.getDeployedChannel(channelId);
+          if (!ch) return null;
+          const stats = ch.getStatistics();
+          const statMap = new Map<typeof Status[keyof typeof Status], number>();
+          statMap.set(Status.RECEIVED, stats.received);
+          statMap.set(Status.FILTERED, stats.filtered);
+          statMap.set(Status.SENT, stats.sent);
+          statMap.set(Status.ERROR, stats.error);
+          statMap.set(Status.QUEUED, stats.queued);
+          // Map DashboardStatus DeployedState → userutil DeployedState (string-compatible)
+          const rawState = ch.getCurrentState() as string;
+          const mappedState = (UserDeployedState as Record<string, string>)[rawState] as
+            typeof UserDeployedState[keyof typeof UserDeployedState] | undefined;
+          return {
+            channelId,
+            name: ch.getName(),
+            state: mappedState ?? UserDeployedState.UNKNOWN,
+            statistics: statMap,
+          };
+        },
+        async startChannels(channelIds: Set<string>) {
+          try {
+            for (const id of channelIds) await EC.startChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async stopChannels(channelIds: Set<string>) {
+          try {
+            for (const id of channelIds) await EC.stopChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async pauseChannels(channelIds: Set<string>) {
+          try {
+            for (const id of channelIds) await EC.pauseChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async resumeChannels(channelIds: Set<string>) {
+          try {
+            for (const id of channelIds) await EC.resumeChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async haltChannels(channelIds: Set<string>) {
+          try {
+            for (const id of channelIds) await EC.haltChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async deployChannels(channelIds: Set<string>, _context: unknown | null) {
+          try {
+            for (const id of channelIds) await EC.deployChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async undeployChannels(channelIds: Set<string>, _context: unknown | null) {
+          try {
+            for (const id of channelIds) await EC.undeployChannel(id);
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async startConnector(channelConnectorMap: Map<string, number[]>) {
+          try {
+            for (const [chId, metaIds] of channelConnectorMap) {
+              for (const mid of metaIds) await EC.startConnector(chId, mid);
+            }
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+        async stopConnector(channelConnectorMap: Map<string, number[]>) {
+          try {
+            for (const [chId, metaIds] of channelConnectorMap) {
+              for (const mid of metaIds) await EC.stopConnector(chId, mid);
+            }
+            return noError();
+          } catch (e) { return withError(e); }
+        },
+      });
+
+      // Populate synchronous caches for the channel controller adapter
+      await this.refreshChannelUtilCache();
+
+      logger.info('ChannelUtil singletons initialized');
+    } catch (err) {
+      logger.warn(`Failed to initialize ChannelUtil: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Refresh the synchronous channel cache used by ChannelUtil adapters.
+   * Called once at startup after channels are loaded from the database.
+   */
+  private async refreshChannelUtilCache(): Promise<void> {
+    try {
+      const allChannels = await ChannelController.getAllChannels();
+      channelNameCache = allChannels.map((c) => c.name);
+      channelIdCache = allChannels.map((c) => c.id);
+      channelCacheById.clear();
+      channelCacheByName.clear();
+      for (const ch of allChannels) {
+        const entry = { id: ch.id, name: ch.name };
+        channelCacheById.set(ch.id, entry);
+        channelCacheByName.set(ch.name, entry);
+      }
+    } catch {
+      // Non-fatal — cache remains empty
+    }
   }
 
   /**

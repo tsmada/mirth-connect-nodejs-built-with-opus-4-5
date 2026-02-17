@@ -79,7 +79,7 @@ class TestSourceConnector extends SourceConnector {
 
   // Expose dispatchRawMessage for testing
   async testDispatch(rawData: string, sourceMap?: Map<string, unknown>): Promise<void> {
-    return this.dispatchRawMessage(rawData, sourceMap);
+    await this.dispatchRawMessage(rawData, sourceMap);
   }
 }
 
@@ -545,13 +545,13 @@ describe('Channel', () => {
       expect(message.isProcessed()).toBe(true);
     });
 
-    it('should persist SOURCE_MAP content via insertContent (single write) at end of pipeline', async () => {
+    it('should persist SOURCE_MAP content via storeContent (upsert) at end of pipeline', async () => {
       const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
 
       await channel.dispatchRawMessage('<test>hello</test>', sourceMap);
 
-      // Final SOURCE_MAP write uses insertContent (single write, no early insert)
-      expect(insertContent).toHaveBeenCalledWith(
+      // Final SOURCE_MAP write uses storeContent (upsert — storeMaps may have already INSERTed it)
+      expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),  // messageId
         0,                   // metaDataId
@@ -1025,8 +1025,8 @@ describe('Channel', () => {
       await rawChannel.dispatchRawMessage('<test/>', sourceMap);
       await rawChannel.stop();
 
-      // SOURCE_MAP should still be persisted for trace feature (via insertContent, single write)
-      const sourceMapCalls = (insertContent as jest.Mock).mock.calls.filter(
+      // SOURCE_MAP should still be persisted for trace feature (via storeContent, single write)
+      const sourceMapCalls = (storeContent as jest.Mock).mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
       );
       expect(sourceMapCalls.length).toBeGreaterThanOrEqual(1);
@@ -1651,25 +1651,18 @@ describe('Channel', () => {
   });
 
   describe('SOURCE_MAP single write (Phase 0C — consolidated)', () => {
-    it('should use insertContent for SOURCE_MAP at end of pipeline (no storeContent upsert)', async () => {
+    it('should use storeContent for SOURCE_MAP at end of pipeline (single write)', async () => {
       await channel.start();
 
       const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
       await channel.dispatchRawMessage('<test/>', sourceMap);
 
-      // insertContent should be called for SOURCE_MAP (single write at end of pipeline)
-      const insertContentMock = insertContent as jest.Mock;
-      const sourceMapInsertCalls = insertContentMock.mock.calls.filter(
-        (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
-      );
-      expect(sourceMapInsertCalls.length).toBe(1);
-
-      // storeContent should NOT be called for SOURCE_MAP (no upsert needed)
+      // storeContent should be called for SOURCE_MAP (single write at end of pipeline)
       const storeContentMock = storeContent as jest.Mock;
       const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
       );
-      expect(sourceMapStoreCalls.length).toBe(0);
+      expect(sourceMapStoreCalls.length).toBe(1);
 
       await channel.stop();
     });
@@ -1683,12 +1676,12 @@ describe('Channel', () => {
       const sourceMap = new Map<string, unknown>([['traceId', '12345']]);
       await channel.dispatchRawMessage('<test/>', sourceMap);
 
-      // insertContent calls for SOURCE_MAP should be exactly 1 (only the final write)
-      const insertContentMock = insertContent as jest.Mock;
-      const sourceMapInsertCalls = insertContentMock.mock.calls.filter(
+      // storeContent calls for SOURCE_MAP should be exactly 1 (only the final write)
+      const storeContentMock = storeContent as jest.Mock;
+      const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
       );
-      expect(sourceMapInsertCalls.length).toBe(1);
+      expect(sourceMapStoreCalls.length).toBe(1);
 
       await channel.stop();
     });

@@ -37,7 +37,7 @@ class TestSourceConnector extends SourceConnector {
 
   // Expose protected method for testing
   async testDispatch(rawData: string, sourceMap?: Map<string, unknown>): Promise<void> {
-    return this.dispatchRawMessage(rawData, sourceMap);
+    await this.dispatchRawMessage(rawData, sourceMap);
   }
 }
 

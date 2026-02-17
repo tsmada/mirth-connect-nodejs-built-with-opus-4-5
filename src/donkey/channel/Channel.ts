@@ -1182,6 +1182,8 @@ export class Channel extends EventEmitter {
     // Final SOURCE_MAP write — upsert because storeMaps may have already INSERTed it during source intake
     // Always persisted regardless of storeMaps flag — needed for trace feature
     const srcMap = sourceMessage.getSourceMap();
+    // Remove internal-only keys before persisting (not meaningful outside the pipeline)
+    srcMap.delete(DESTINATION_SET_KEY);
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
       await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
@@ -1736,6 +1738,8 @@ export class Channel extends EventEmitter {
 
     // Final SOURCE_MAP write — upsert because storeMaps may have already INSERTed it during source intake
     const srcMap = sourceMessage.getSourceMap();
+    // Remove internal-only keys before persisting (not meaningful outside the pipeline)
+    srcMap.delete(DESTINATION_SET_KEY);
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
       await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));

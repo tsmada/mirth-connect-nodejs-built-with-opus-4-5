@@ -10,6 +10,8 @@
  * - Support for headers, parameters, authentication
  */
 
+import type { HttpAuthProperties } from './auth/types.js';
+
 /**
  * HTTP Receiver (Source) Properties
  */
@@ -56,12 +58,21 @@ export interface HttpReceiverProperties {
 
   /** Use authentication for incoming requests (CPC-MAM-001) */
   useAuthentication?: boolean;
-  /** Authentication type for incoming requests */
+  /** Authentication type for incoming requests (legacy — kept for backward compat) */
   authenticationType?: 'Basic' | 'Digest';
-  /** Username for authentication */
+  /** Username for authentication (legacy — use authProperties.credentials instead) */
   username?: string;
-  /** Password for authentication */
+  /** Password for authentication (legacy — use authProperties.credentials instead) */
   password?: string;
+
+  /**
+   * Pluggable authentication configuration (CPC-MAM-002).
+   *
+   * Java: HttpAuthConnectorPluginProperties — stored in connectorPluginProperties.
+   * When set, this takes precedence over the legacy username/password/authenticationType
+   * fields above. Supports Basic, Digest, and JavaScript auth types.
+   */
+  authProperties?: HttpAuthProperties;
 }
 
 /**

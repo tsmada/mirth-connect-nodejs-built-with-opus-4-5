@@ -13,6 +13,7 @@
 import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
+import type { Message } from '../../model/Message.js';
 import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
@@ -256,17 +257,22 @@ export abstract class SourceConnector {
   }
 
   /**
-   * Dispatch a raw message to the channel
+   * Dispatch a raw message to the channel.
+   *
+   * Returns the processed Message object, matching Java's SourceConnector.dispatchRawMessage()
+   * which returns DispatchResult containing the processed message. Subclasses that need
+   * the processed message (e.g., DatabaseReceiver for update scripts, TcpReceiver for
+   * response handling) can capture the return value.
    */
   protected async dispatchRawMessage(
     rawData: string,
     sourceMap?: Map<string, unknown>
-  ): Promise<void> {
+  ): Promise<Message> {
     if (!this.channel) {
       throw new Error('Source connector is not attached to a channel');
     }
 
-    await this.channel.dispatchRawMessage(rawData, sourceMap);
+    return this.channel.dispatchRawMessage(rawData, sourceMap);
   }
 
   /**

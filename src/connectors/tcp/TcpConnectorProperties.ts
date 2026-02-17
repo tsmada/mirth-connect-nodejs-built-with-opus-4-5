@@ -66,6 +66,32 @@ export const NEW_CONNECTION = 1;
 export const NEW_CONNECTION_ON_RECOVERY = 2;
 
 /**
+ * TLS/SSL properties for TCP connectors (MLLPS support)
+ */
+export interface TlsProperties {
+  /** Enable TLS for this connector */
+  enabled: boolean;
+  /** Path to private key file (PEM format) */
+  keyStorePath?: string;
+  /** Path to certificate file (PEM format) */
+  certStorePath?: string;
+  /** Path to trusted CA certificate file (PEM format) */
+  trustStorePath?: string;
+  /** Reject connections with invalid/self-signed certificates */
+  rejectUnauthorized?: boolean;
+  /** Require client certificate (mTLS) — receiver only */
+  requireClientCert?: boolean;
+  /** Alias for requireClientCert (Java Mirth naming) */
+  requireClientAuth?: boolean;
+  /** SNI server name for TLS connections */
+  sniServerName?: string;
+  /** Minimum TLS version (e.g., 'TLSv1.2') */
+  minVersion?: string;
+  /** Key passphrase (if key is encrypted) */
+  passphrase?: string;
+}
+
+/**
  * TCP Receiver (Source) Properties
  */
 export interface TcpReceiverProperties {
@@ -107,6 +133,8 @@ export interface TcpReceiverProperties {
   bindRetryAttempts: number;
   /** Server mode bind retry interval in milliseconds */
   bindRetryInterval: number;
+  /** TLS/SSL configuration (MLLPS) */
+  tls?: TlsProperties;
 }
 
 /**
@@ -149,6 +177,8 @@ export interface TcpDispatcherProperties {
   localPort?: number;
   /** Socket timeout for connection (ms) */
   socketTimeout: number;
+  /** TLS/SSL configuration (MLLPS) */
+  tls?: TlsProperties;
 }
 
 /**

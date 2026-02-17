@@ -254,21 +254,14 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
     await channel.dispatchRawMessage('MSH|test', sourceMap);
 
     // Count SOURCE_MAP writes
-    const insertContentMock = insertContent as jest.Mock;
     const storeContentMock = storeContent as jest.Mock;
 
-    const sourceMapInserts = insertContentMock.mock.calls.filter(
-      (call: any[]) => call[3] === ContentType.SOURCE_MAP
-    );
     const sourceMapUpserts = storeContentMock.mock.calls.filter(
       (call: any[]) => call[3] === ContentType.SOURCE_MAP
     );
 
-    // Should have exactly ONE insertContent for SOURCE_MAP (at end of pipeline)
-    expect(sourceMapInserts.length).toBe(1);
-
-    // Should have ZERO storeContent for SOURCE_MAP (no UPSERT needed anymore)
-    expect(sourceMapUpserts.length).toBe(0);
+    // Should have exactly ONE storeContent for SOURCE_MAP (at end of pipeline)
+    expect(sourceMapUpserts.length).toBe(1);
   });
 
   test('empty sourceMap skipped (no DB write)', async () => {
@@ -279,21 +272,16 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
     channel.addDestinationConnector(dest);
     channel.updateCurrentState(DeployedState.STARTED);
 
-    // No sourceMap provided -> empty map
+    // No sourceMap provided -> empty map (internal keys like DESTINATION_SET_KEY are cleaned up before persist)
     await channel.dispatchRawMessage('MSH|test');
 
-    const insertContentMock = insertContent as jest.Mock;
     const storeContentMock = storeContent as jest.Mock;
 
-    const sourceMapInserts = insertContentMock.mock.calls.filter(
-      (call: any[]) => call[3] === ContentType.SOURCE_MAP
-    );
     const sourceMapUpserts = storeContentMock.mock.calls.filter(
       (call: any[]) => call[3] === ContentType.SOURCE_MAP
     );
 
-    // No source map data -> no writes at all
-    expect(sourceMapInserts.length).toBe(0);
+    // No user-provided source map data -> no writes (internal keys cleaned before persist)
     expect(sourceMapUpserts.length).toBe(0);
   });
 
@@ -315,21 +303,14 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
     // Wait for source queue processing
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    const insertContentMock = insertContent as jest.Mock;
     const storeContentMock = storeContent as jest.Mock;
 
-    const sourceMapInserts = insertContentMock.mock.calls.filter(
-      (call: any[]) => call[3] === ContentType.SOURCE_MAP
-    );
     const sourceMapUpserts = storeContentMock.mock.calls.filter(
       (call: any[]) => call[3] === ContentType.SOURCE_MAP
     );
 
-    // Should have exactly ONE insertContent for SOURCE_MAP (at end of pipeline)
-    expect(sourceMapInserts.length).toBe(1);
-
-    // Should have ZERO storeContent for SOURCE_MAP
-    expect(sourceMapUpserts.length).toBe(0);
+    // Should have exactly ONE storeContent for SOURCE_MAP (at end of pipeline)
+    expect(sourceMapUpserts.length).toBe(1);
 
     await channel.stop();
   });

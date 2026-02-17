@@ -54,10 +54,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.454.0",
     "@types/ws": "^8.18.1",
     "axios": "^1.6.2",
-    "basic-ftp": "^5.0.4",
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
     "conf": "^12.0.0",
@@ -69,6 +67,7 @@
     "ink": "^4.4.1",
     "js-yaml": "^4.1.1",
     "multer": "^2.0.2",
+    "mysql2": "^3.17.0",
     "nodemailer": "^7.0.13",
     "ora": "^8.0.1",
     "react": "^18.2.0",
@@ -79,8 +78,7 @@
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "ws": "^8.19.0",
-    "xslt-processor": "^4.8.2",
-    "mysql2": "^3.17.0"
+    "xslt-processor": "^4.8.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -108,5 +106,10 @@
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.991.0",
+    "@marsaud/smb2": "^0.18.0",
+    "basic-ftp": "^5.1.0"
   }
 }

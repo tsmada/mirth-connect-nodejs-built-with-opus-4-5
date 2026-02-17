@@ -11,6 +11,9 @@
  */
 
 import { SftpSchemeProperties } from './sftp/SftpSchemeProperties.js';
+import { FtpSchemeProperties } from './backends/FtpSchemeProperties.js';
+import { S3SchemeProperties } from './backends/S3SchemeProperties.js';
+import { SmbSchemeProperties } from './backends/SmbSchemeProperties.js';
 
 /**
  * File scheme types
@@ -121,6 +124,12 @@ export interface FileReceiverProperties {
   retryDelay: number;
   /** SFTP-specific scheme properties */
   sftpSchemeProperties?: SftpSchemeProperties;
+  /** FTP-specific scheme properties */
+  ftpSchemeProperties?: FtpSchemeProperties;
+  /** S3-specific scheme properties */
+  s3SchemeProperties?: S3SchemeProperties;
+  /** SMB-specific scheme properties */
+  smbSchemeProperties?: SmbSchemeProperties;
 }
 
 /**
@@ -171,6 +180,12 @@ export interface FileDispatcherProperties {
   maxIdleTime: number;
   /** SFTP-specific scheme properties */
   sftpSchemeProperties?: SftpSchemeProperties;
+  /** FTP-specific scheme properties */
+  ftpSchemeProperties?: FtpSchemeProperties;
+  /** S3-specific scheme properties */
+  s3SchemeProperties?: S3SchemeProperties;
+  /** SMB-specific scheme properties */
+  smbSchemeProperties?: SmbSchemeProperties;
 }
 
 /**
