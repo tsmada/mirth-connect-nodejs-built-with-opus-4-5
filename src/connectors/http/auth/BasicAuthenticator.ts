@@ -15,6 +15,7 @@
 import {
   AuthenticationResult,
   type BasicAuthProperties,
+  type CredentialsResolver,
   type HttpAuthenticator,
   type RequestInfo,
 } from './types.js';
@@ -26,7 +27,7 @@ export class BasicAuthenticator implements HttpAuthenticator {
     this.properties = properties;
   }
 
-  async authenticate(request: RequestInfo): Promise<AuthenticationResult> {
+  async authenticate(request: RequestInfo, credentialsResolver?: CredentialsResolver): Promise<AuthenticationResult> {
     const authHeaderList = request.headers.get('authorization');
 
     if (authHeaderList && authHeaderList.length > 0) {
@@ -49,7 +50,7 @@ export class BasicAuthenticator implements HttpAuthenticator {
             const username = credentials.substring(0, colonIndex);
             const password = credentials.substring(colonIndex + 1);
 
-            const credentialsSource = this.getCredentials();
+            const credentialsSource = this.getCredentials(credentialsResolver);
 
             // Return successful result if the passwords match
             if (credentialsSource.get(username) === password) {
@@ -67,16 +68,19 @@ export class BasicAuthenticator implements HttpAuthenticator {
   }
 
   /**
-   * Get the credentials map. Currently only supports static credentials.
-   * The useCredentialsVariable path would require access to message maps
-   * (channel scope) which is not available at the authenticator level in
-   * the Node.js architecture.
+   * Get the credentials map, supporting both static and runtime variable sources.
    *
-   * Java: BasicAuthenticator.getCredentials() supports both static map
-   * and runtime variable lookup via MessageMaps.
+   * Java: BasicAuthenticator.getCredentials() checks useCredentialsVariable and
+   * if true, resolves the variable from MessageMaps. Falls back to static credentials
+   * if the variable is not found or returns empty.
    */
-  private getCredentials(): Map<string, string> {
-    // TODO: Support useCredentialsVariable when MessageMaps integration is available
+  private getCredentials(credentialsResolver?: CredentialsResolver): Map<string, string> {
+    if (this.properties.useCredentialsVariable && credentialsResolver) {
+      const resolved = credentialsResolver(this.properties.credentialsVariable);
+      if (resolved && resolved.size > 0) {
+        return resolved;
+      }
+    }
     return this.properties.credentials;
   }
 }

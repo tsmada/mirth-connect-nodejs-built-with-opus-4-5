@@ -16,6 +16,7 @@ export {
   AuthType,
   AuthenticationResult,
   type BasicAuthProperties,
+  type CredentialsResolver,
   DigestAlgorithm,
   type DigestAuthProperties,
   DigestQOPMode,
