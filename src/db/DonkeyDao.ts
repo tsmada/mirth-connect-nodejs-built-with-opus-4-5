@@ -773,6 +773,49 @@ export async function getStatistics(channelId: string): Promise<StatisticsRow[]>
 }
 
 // ============================================================================
+// Batch Content/Attachment Loading (for archive-before-prune)
+// ============================================================================
+
+/**
+ * Get all content rows for a batch of message IDs.
+ * Used by the DataPruner archive phase to avoid N+1 queries.
+ */
+export async function getContentBatch(
+  channelId: string,
+  messageIds: number[]
+): Promise<ContentRow[]> {
+  if (messageIds.length === 0) return [];
+  const pool = getPool();
+  const placeholders = messageIds.map(() => '?').join(', ');
+  const [rows] = await pool.query<ContentRow[]>(
+    `SELECT * FROM ${contentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
+    messageIds
+  );
+  return rows;
+}
+
+/**
+ * Get all attachment rows for a batch of message IDs.
+ * Used by the DataPruner archive phase to avoid N+1 queries.
+ */
+export async function getAttachmentsBatch(
+  channelId: string,
+  messageIds: number[]
+): Promise<AttachmentRow[]> {
+  if (messageIds.length === 0) return [];
+  const pool = getPool();
+  const placeholders = messageIds.map(() => '?').join(', ');
+  const [rows] = await pool.query<AttachmentRow[]>(
+    `SELECT ID, MESSAGE_ID, TYPE, SEGMENT_ID, ATTACHMENT
+     FROM ${attachmentTable(channelId)}
+     WHERE MESSAGE_ID IN (${placeholders})
+     ORDER BY ID, SEGMENT_ID`,
+    messageIds
+  );
+  return rows;
+}
+
+// ============================================================================
 // Data Pruner Methods
 // ============================================================================
 

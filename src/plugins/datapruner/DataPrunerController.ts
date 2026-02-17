@@ -8,6 +8,7 @@
 import { dataPruner, DataPruner, DEFAULT_PRUNING_BLOCK_SIZE, DEFAULT_ARCHIVING_BLOCK_SIZE, SkipStatus } from './DataPruner.js';
 import { DataPrunerStatus } from './DataPrunerStatus.js';
 import * as MirthDao from '../../db/MirthDao.js';
+import type { MessageWriterOptions } from './MessageArchiver.js';
 
 /**
  * Data pruner configuration
@@ -21,6 +22,7 @@ export interface DataPrunerConfig {
   pruneEvents: boolean;
   maxEventAgeDays: number | null;
   skipStatuses: SkipStatus[];
+  archiverOptions?: MessageWriterOptions;
 }
 
 /**
@@ -119,6 +121,9 @@ class DataPrunerController {
     dataPruner.setPruneEvents(this.config.pruneEvents);
     dataPruner.setMaxEventAge(this.config.maxEventAgeDays);
     dataPruner.setSkipStatuses(this.config.skipStatuses);
+    if (this.config.archiverOptions) {
+      dataPruner.setArchiverOptions(this.config.archiverOptions);
+    }
   }
 
   /**
