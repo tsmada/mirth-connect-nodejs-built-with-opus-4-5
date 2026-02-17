@@ -12,6 +12,10 @@
 import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
 import { createChannelTables, channelTablesExist as donkeyChannelTablesExist } from './DonkeyDao.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('database', 'Database pool and queries');
+const logger = getLogger('database');
 
 export type OperationalMode = 'takeover' | 'standalone';
 
@@ -72,14 +76,14 @@ export async function detectMode(): Promise<OperationalMode> {
     );
 
     if (rows.length > 0) {
-      console.warn('[SchemaManager] Auto-detected mode: takeover (existing schema found)');
+      logger.info('Auto-detected mode: takeover (existing schema found)');
       return 'takeover';
     }
   } catch {
     // If we can't query, assume standalone
   }
 
-  console.warn('[SchemaManager] Auto-detected mode: standalone (no existing schema)');
+  logger.info('Auto-detected mode: standalone (no existing schema)');
   return 'standalone';
 }
 
@@ -149,7 +153,7 @@ export async function verifySchema(): Promise<SchemaVerificationResult> {
  * Uses CREATE TABLE IF NOT EXISTS for idempotency
  */
 export async function ensureCoreTables(): Promise<void> {
-  console.warn('[SchemaManager] Ensuring core tables exist...');
+  logger.info('Ensuring core tables exist...');
 
   await transaction(async (connection) => {
     // SCHEMA_INFO
@@ -288,7 +292,7 @@ export async function ensureCoreTables(): Promise<void> {
   // Also create Node.js-only tables (safe to call separately or as part of ensureCoreTables)
   await ensureNodeJsTables();
 
-  console.warn('[SchemaManager] Core tables ensured');
+  logger.info('Core tables ensured');
 }
 
 /**
@@ -384,7 +388,7 @@ export async function ensureNodeJsTables(): Promise<void> {
  * - Global script placeholders
  */
 export async function seedDefaults(): Promise<void> {
-  console.warn('[SchemaManager] Seeding default data...');
+  logger.info('Seeding default data...');
 
   await transaction(async (connection) => {
     // Use INSERT IGNORE to handle concurrent inserts safely (no TOCTOU race).
@@ -401,7 +405,7 @@ export async function seedDefaults(): Promise<void> {
          FROM PERSON WHERE USERNAME = 'admin'`
       );
 
-      console.warn('[SchemaManager] Created default admin user');
+      logger.info('Created default admin user');
     }
 
     // Insert schema version (INSERT IGNORE for idempotency)
@@ -441,7 +445,7 @@ export async function seedDefaults(): Promise<void> {
       );
     }
 
-    console.warn('[SchemaManager] Default configuration seeded');
+    logger.info('Default configuration seeded');
   });
 }
 
@@ -452,7 +456,7 @@ export async function seedDefaults(): Promise<void> {
  * 2. Creates D_M{channelId}, D_MM{channelId}, etc. tables
  */
 export async function ensureChannelTables(channelId: string): Promise<void> {
-  console.warn(`[SchemaManager] Ensuring channel tables for ${channelId}...`);
+  logger.info(`Ensuring channel tables for ${channelId}...`);
 
   // Register in D_CHANNELS (INSERT IGNORE for idempotency)
   // Explicitly provide LOCAL_CHANNEL_ID to handle both AUTO_INCREMENT and
@@ -476,7 +480,7 @@ export async function ensureChannelTables(channelId: string): Promise<void> {
   // Create the actual message tables using DonkeyDao
   await createChannelTables(channelId);
 
-  console.warn(`[SchemaManager] Channel tables ensured for ${channelId}`);
+  logger.info(`Channel tables ensured for ${channelId}`);
 }
 
 /**
