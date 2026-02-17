@@ -11,7 +11,11 @@ import { RowDataPacket } from 'mysql2/promise';
 import { query, execute } from '../db/pool.js';
 import { getServerId } from './ClusterIdentity.js';
 import { getClusterConfig } from './ClusterConfig.js';
+import { getLogger, registerComponent } from '../logging/index.js';
 import os from 'os';
+
+registerComponent('cluster', 'Cluster operations');
+const logger = getLogger('cluster');
 
 export interface ClusterNode {
   serverId: string;
@@ -70,7 +74,7 @@ export async function registerServer(port?: number, status?: string): Promise<vo
     { serverId, hostname, port: port ?? null, apiUrl, serverStatus }
   );
 
-  console.warn(`[ServerRegistry] Registered server ${serverId} (${hostname}:${port ?? 'N/A'})`);
+  logger.info(`Registered server ${serverId} (${hostname}:${port ?? 'N/A'})`);
 }
 
 /**
@@ -90,14 +94,14 @@ export function startHeartbeat(): void {
         { serverId }
       );
     } catch (err) {
-      console.error('[ServerRegistry] Heartbeat update failed:', err);
+      logger.error('Heartbeat update failed', err as Error);
     }
   }, config.heartbeatInterval);
 
   // Don't prevent process exit
   heartbeatTimer.unref();
 
-  console.warn(`[ServerRegistry] Heartbeat started (interval: ${config.heartbeatInterval}ms)`);
+  logger.info(`Heartbeat started (interval: ${config.heartbeatInterval}ms)`);
 }
 
 /**
@@ -107,7 +111,7 @@ export function stopHeartbeat(): void {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
-    console.warn('[ServerRegistry] Heartbeat stopped');
+    logger.info('Heartbeat stopped');
   }
 }
 
@@ -122,9 +126,9 @@ export async function deregisterServer(): Promise<void> {
       `UPDATE D_SERVERS SET STATUS = 'OFFLINE', LAST_HEARTBEAT = NOW() WHERE SERVER_ID = :serverId`,
       { serverId }
     );
-    console.warn(`[ServerRegistry] Deregistered server ${serverId}`);
+    logger.info(`Deregistered server ${serverId}`);
   } catch (err) {
-    console.error('[ServerRegistry] Failed to deregister:', err);
+    logger.error('Failed to deregister', err as Error);
   }
 }
 

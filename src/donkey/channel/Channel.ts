@@ -13,7 +13,11 @@
 
 import { EventEmitter } from 'events';
 import { PoolConnection } from 'mysql2/promise';
+import { getLogger, registerComponent } from '../../logging/index.js';
 import { Message, MessageData } from '../../model/Message.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
@@ -312,7 +316,7 @@ export class Channel extends EventEmitter {
       }
       this.stats = { received, sent, error, filtered, queued };
     } catch (err) {
-      console.error(`[${this.name}] Failed to load statistics: ${err}`);
+      logger.error(`[${this.name}] Failed to load statistics: ${err}`);
     }
   }
 
@@ -368,7 +372,7 @@ export class Channel extends EventEmitter {
         try {
           await runRecoveryTask(this.id, this.serverId);
         } catch (err) {
-          console.error(`[${this.name}] Recovery task failed: ${err}`);
+          logger.error(`[${this.name}] Recovery task failed: ${err}`);
         }
       }
 
@@ -428,7 +432,7 @@ export class Channel extends EventEmitter {
             }
           } catch (stopError) {
             // Log but continue stopping other connectors
-            console.error(`Error stopping connector during rollback: ${stopError}`);
+            logger.error(`[${this.name}] Error stopping connector during rollback: ${stopError}`);
           }
         }
 
@@ -495,7 +499,7 @@ export class Channel extends EventEmitter {
   async pause(): Promise<void> {
     if (this.currentState !== DeployedState.STARTED) {
       if (this.currentState === DeployedState.PAUSED) {
-        console.warn(`Channel ${this.name} (${this.id}) is already paused.`);
+        logger.warn(`Channel ${this.name} (${this.id}) is already paused.`);
         return;
       }
       throw new Error(`Cannot pause channel in state: ${this.currentState}`);
@@ -561,7 +565,7 @@ export class Channel extends EventEmitter {
       if (!this.tablesExist) return;
       await operation();
     } catch (err) {
-      console.error(`[${this.name}] DB persist error: ${err}`);
+      logger.error(`[${this.name}] DB persist error: ${err}`);
     }
   }
 
@@ -588,7 +592,7 @@ export class Channel extends EventEmitter {
         }
       });
     } catch (err) {
-      console.error(`[${this.name}] DB transaction error: ${err}`);
+      logger.error(`[${this.name}] DB transaction error: ${err}`);
     }
   }
 
@@ -617,7 +621,7 @@ export class Channel extends EventEmitter {
         }
       });
     } catch (err) {
-      console.error(`[${this.name}] DB transaction error, falling back to sequential: ${err}`);
+      logger.error(`[${this.name}] DB transaction error, falling back to sequential: ${err}`);
       // Fallback: execute each operation individually
       for (const op of operations) {
         await this.persistToDb(op);
@@ -706,7 +710,7 @@ export class Channel extends EventEmitter {
           });
         }
       } catch (err) {
-        console.error(`[${this.name}] Attachment extraction error: ${err}`);
+        logger.error(`[${this.name}] Attachment extraction error: ${err}`);
         // Continue with original content if extraction fails
       }
     }
@@ -1327,7 +1331,7 @@ export class Channel extends EventEmitter {
 
       } catch (error) {
         if (signal.aborted) break;
-        console.error(`[${this.name}] Source queue processing error: ${error}`);
+        logger.error(`[${this.name}] Source queue processing error: ${error}`);
       }
     }
   }

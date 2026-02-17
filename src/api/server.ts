@@ -8,7 +8,11 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import { createServer, Server as HttpServer } from 'http';
+import { getLogger, registerComponent } from '../logging/index.js';
 import { authMiddleware, contentNegotiationMiddleware, shadowGuard } from './middleware/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 import { userRouter } from './servlets/UserServlet.js';
 import { channelRouter } from './servlets/ChannelServlet.js';
 import { channelStatusRouter } from './servlets/ChannelStatusServlet.js';
@@ -70,7 +74,7 @@ export function createApp(options: ServerOptions = {}): Express {
 
   // Warn if CORS wildcard is used
   if (config.corsOrigins?.includes('*')) {
-    console.warn('WARNING: CORS is configured with wildcard (*). Set CORS_ORIGINS env var for production.');
+    logger.warn('CORS configured with wildcard (*). Set CORS_ORIGINS env var for production.');
   }
 
   // CORS middleware
@@ -171,7 +175,7 @@ export function createApp(options: ServerOptions = {}): Express {
 
   // Error handler — suppress stack traces and error details in production
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('API Error:', err);
+    logger.error('API error', err);
     const isProd = process.env.NODE_ENV === 'production';
     res.status(500).json({
       error: 'Internal Server Error',
@@ -212,8 +216,8 @@ export async function startServer(options: ServerOptions = {}): Promise<HttpServ
 
   return new Promise((resolve) => {
     server.listen(config.port!, config.host!, () => {
-      console.log(`Mirth Connect API server listening on http://${config.host}:${config.port}`);
-      console.log(`WebSocket endpoints available at /ws/dashboardstatus and /ws/serverlog`);
+      logger.info(`Mirth Connect API server listening on http://${config.host}:${config.port}`);
+      logger.info(`WebSocket endpoints available at /ws/dashboardstatus and /ws/serverlog`);
       resolve(server);
     });
   });
