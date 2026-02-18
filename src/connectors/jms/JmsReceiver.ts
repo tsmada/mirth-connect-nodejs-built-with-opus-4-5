@@ -24,6 +24,10 @@ import {
   AcknowledgeMode,
 } from './JmsConnectorProperties.js';
 import type { BatchAdaptor } from '../../donkey/message/BatchAdaptor.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('jms-connector', 'JMS messaging (STOMP)');
+const logger = getLogger('jms-connector');
 
 export interface JmsReceiverConfig {
   name?: string;
@@ -420,7 +424,7 @@ export class JmsReceiver extends SourceConnector {
     const channelId = this.channel?.getId() ?? 'unknown';
     const channelName = this.channel?.getName() ?? 'unknown';
     // Log in format matching Java: "message (channel: name)"
-    console.error(`${errorMessage} (channel: ${channelName}): ${error.message}`);
+    logger.error(`${errorMessage} (channel: ${channelName}): ${error.message}`);
 
     // Dispatch error event through channel event emitter (for dashboard integration)
     if (this.channel) {

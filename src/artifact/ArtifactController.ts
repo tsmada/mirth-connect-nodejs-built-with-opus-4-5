@@ -35,6 +35,10 @@ import type { ApprovalRecord } from './promotion/PromotionGate.js';
 import type { FileTreeEntry, SensitiveField, DecomposedChannel } from './types.js';
 import { sanitizeName } from './types.js';
 import type { RepoMetadata } from './git/GitSyncService.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('artifact', 'Git artifact sync');
+const logger = getLogger('artifact');
 
 // --- Types -------------------------------------------------------------------
 
@@ -92,7 +96,7 @@ export class ArtifactController {
     ArtifactController.watcher = new GitWatcher(
       ArtifactController.repoPath!,
       async () => {
-        console.log('[Artifact] File change detected in artifact repo');
+        logger.info('[Artifact] File change detected in artifact repo');
       }
     );
 

@@ -20,6 +20,10 @@ import {
 import * as CodeTemplateController from './CodeTemplateController.js';
 import { CodeTemplate } from './models/CodeTemplate.js';
 import { CodeTemplateLibrary } from './models/CodeTemplateLibrary.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const codeTemplateRouter = Router();
 
@@ -145,7 +149,7 @@ codeTemplateRouter.get('/codeTemplateLibraries', authorize({ operation: CODE_TEM
     );
     res.sendData(libraries);
   } catch (error) {
-    console.error('Get code template libraries error:', error);
+    logger.error('Get code template libraries error', error as Error);
     res.status(500).json({ error: 'Failed to get code template libraries' });
   }
 });
@@ -173,7 +177,7 @@ codeTemplateRouter.post(
       );
       res.sendData(libraries);
     } catch (error) {
-      console.error('Get code template libraries error:', error);
+      logger.error('Get code template libraries error', error as Error);
       res.status(500).json({ error: 'Failed to get code template libraries' });
     }
   }
@@ -200,7 +204,7 @@ codeTemplateRouter.get('/codeTemplateLibraries/:libraryId', authorize({ operatio
 
     res.sendData(library);
   } catch (error) {
-    console.error('Get code template library error:', error);
+    logger.error('Get code template library error', error as Error);
     res.status(500).json({ error: 'Failed to get code template library' });
   }
 });
@@ -217,7 +221,7 @@ codeTemplateRouter.put('/codeTemplateLibraries', authorize({ operation: CODE_TEM
     const success = await CodeTemplateController.updateCodeTemplateLibraries(libraries, override);
     res.sendData(success);
   } catch (error) {
-    console.error('Update code template libraries error:', error);
+    logger.error('Update code template libraries error', error as Error);
     res.status(500).json({ error: 'Failed to update code template libraries' });
   }
 });
@@ -242,7 +246,7 @@ codeTemplateRouter.get('/codeTemplates', authorize({ operation: CODE_TEMPLATE_GE
     const templates = await CodeTemplateController.getCodeTemplates(templateIds);
     res.sendData(templates);
   } catch (error) {
-    console.error('Get code templates error:', error);
+    logger.error('Get code templates error', error as Error);
     res.status(500).json({ error: 'Failed to get code templates' });
   }
 });
@@ -263,7 +267,7 @@ codeTemplateRouter.post('/codeTemplates/_getCodeTemplates', authorize({ operatio
     const templates = await CodeTemplateController.getCodeTemplates(templateIdSet);
     res.sendData(templates);
   } catch (error) {
-    console.error('Get code templates error:', error);
+    logger.error('Get code templates error', error as Error);
     res.status(500).json({ error: 'Failed to get code templates' });
   }
 });
@@ -285,7 +289,7 @@ codeTemplateRouter.get('/codeTemplates/:codeTemplateId', authorize({ operation: 
 
     res.sendData(template);
   } catch (error) {
-    console.error('Get code template error:', error);
+    logger.error('Get code template error', error as Error);
     res.status(500).json({ error: 'Failed to get code template' });
   }
 });
@@ -302,7 +306,7 @@ codeTemplateRouter.post('/codeTemplates/_getSummary', authorize({ operation: COD
     const summaries = await CodeTemplateController.getCodeTemplateSummary(revisionMap);
     res.sendData(summaries);
   } catch (error) {
-    console.error('Get code template summary error:', error);
+    logger.error('Get code template summary error', error as Error);
     res.status(500).json({ error: 'Failed to get code template summary' });
   }
 });
@@ -324,7 +328,7 @@ codeTemplateRouter.put('/codeTemplates/:codeTemplateId', authorize({ operation: 
     );
     res.sendData(success);
   } catch (error) {
-    console.error('Update code template error:', error);
+    logger.error('Update code template error', error as Error);
     res.status(500).json({ error: 'Failed to update code template' });
   }
 });
@@ -340,7 +344,7 @@ codeTemplateRouter.delete('/codeTemplates/:codeTemplateId', authorize({ operatio
     await CodeTemplateController.removeCodeTemplate(codeTemplateId);
     res.status(204).end();
   } catch (error) {
-    console.error('Delete code template error:', error);
+    logger.error('Delete code template error', error as Error);
     res.status(500).json({ error: 'Failed to delete code template' });
   }
 });
@@ -369,7 +373,7 @@ codeTemplateRouter.post('/codeTemplateLibraries/_bulkUpdate', authorize({ operat
 
     res.sendData(result);
   } catch (error) {
-    console.error('Bulk update error:', error);
+    logger.error('Bulk update error', error as Error);
     res.status(500).json({ error: 'Failed to perform bulk update' });
   }
 });

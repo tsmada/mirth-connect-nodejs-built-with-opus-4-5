@@ -30,6 +30,10 @@ import {
   DicomStatus,
   AssociationState,
 } from './DicomConnection.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('dicom-connector', 'DICOM C-STORE/C-ECHO receiver');
+const logger = getLogger('dicom-connector');
 
 /**
  * Configuration for DICOM Receiver
@@ -204,7 +208,7 @@ export class DICOMReceiver extends SourceConnector {
         if (!this.running) {
           reject(error);
         } else {
-          console.error('DICOM Server error:', error);
+          logger.error('DICOM Server error', error as Error);
         }
       });
 
@@ -241,7 +245,7 @@ export class DICOMReceiver extends SourceConnector {
         if (!this.running) {
           reject(error);
         } else {
-          console.error('DICOM TLS Server error:', error);
+          logger.error('DICOM TLS Server error', error as Error);
         }
       });
 
@@ -381,7 +385,7 @@ export class DICOMReceiver extends SourceConnector {
         this.handleAbort(socket, association, pduData);
         break;
       default:
-        console.warn(`Unknown PDU type: ${pduType}`);
+        logger.warn(`Unknown PDU type: ${pduType}`);
     }
   }
 
@@ -805,7 +809,7 @@ export class DICOMReceiver extends SourceConnector {
   ): Promise<void> {
     const context = association.presentationContexts.get(contextId);
     if (!context) {
-      console.warn(`Unknown presentation context: ${contextId}`);
+      logger.warn(`Unknown presentation context: ${contextId}`);
       return;
     }
 
@@ -817,7 +821,7 @@ export class DICOMReceiver extends SourceConnector {
         await this.handleCEchoRq(socket, association, contextId, state);
         break;
       default:
-        console.warn(`Unsupported DIMSE command: ${state.dimseCommand}`);
+        logger.warn(`Unsupported DIMSE command: ${state.dimseCommand}`);
         // Send error response
         break;
     }
@@ -877,7 +881,7 @@ export class DICOMReceiver extends SourceConnector {
       // Send success response
       await this.sendCStoreRsp(socket, contextId, state.messageId!, DicomStatus.SUCCESS);
     } catch (error) {
-      console.error('Error processing C-STORE:', error);
+      logger.error('Error processing C-STORE', error as Error);
       await this.sendCStoreRsp(socket, contextId, state.messageId!, DicomStatus.PROCESSING_FAILURE);
     }
   }
@@ -999,7 +1003,7 @@ export class DICOMReceiver extends SourceConnector {
    * Handle socket error
    */
   private handleError(socket: net.Socket, error: Error): void {
-    console.error('DICOM socket error:', error);
+    logger.error('DICOM socket error', error as Error);
     this.associations.delete(socket);
   }
 

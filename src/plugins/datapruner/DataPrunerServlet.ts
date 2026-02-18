@@ -8,6 +8,10 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../../api/middleware/auth.js';
 import { dataPrunerController, DataPrunerConfig } from './DataPrunerController.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('data-pruner', 'Pruning engine');
+const logger = getLogger('data-pruner');
 
 export const dataPrunerRouter = Router();
 
@@ -23,7 +27,7 @@ dataPrunerRouter.get('/status', async (_req: Request, res: Response) => {
     const status = dataPrunerController.getStatusForApi();
     res.sendData(status);
   } catch (error) {
-    console.error('Get data pruner status error:', error);
+    logger.error('Get data pruner status error', error as Error);
     res.status(500).json({ error: 'Failed to get data pruner status' });
   }
 });
@@ -37,7 +41,7 @@ dataPrunerRouter.get('/lastStatus', async (_req: Request, res: Response) => {
     const status = dataPrunerController.getLastStatusForApi();
     res.sendData(status);
   } catch (error) {
-    console.error('Get last data pruner status error:', error);
+    logger.error('Get last data pruner status error', error as Error);
     res.status(500).json({ error: 'Failed to get last data pruner status' });
   }
 });
@@ -51,7 +55,7 @@ dataPrunerRouter.get('/config', async (_req: Request, res: Response) => {
     const config = dataPrunerController.getConfiguration();
     res.sendData(config);
   } catch (error) {
-    console.error('Get data pruner config error:', error);
+    logger.error('Get data pruner config error', error as Error);
     res.status(500).json({ error: 'Failed to get data pruner configuration' });
   }
 });
@@ -66,7 +70,7 @@ dataPrunerRouter.put('/config', async (req: Request, res: Response) => {
     await dataPrunerController.updateConfiguration(config);
     res.sendData({ success: true });
   } catch (error) {
-    console.error('Update data pruner config error:', error);
+    logger.error('Update data pruner config error', error as Error);
     res.status(500).json({ error: 'Failed to update data pruner configuration' });
   }
 });
@@ -80,7 +84,7 @@ dataPrunerRouter.get('/running', async (_req: Request, res: Response) => {
     const running = dataPrunerController.isRunning();
     res.sendData(running);
   } catch (error) {
-    console.error('Get data pruner running status error:', error);
+    logger.error('Get data pruner running status error', error as Error);
     res.status(500).json({ error: 'Failed to get running status' });
   }
 });
@@ -99,7 +103,7 @@ dataPrunerRouter.post('/_start', async (_req: Request, res: Response) => {
       res.status(409).json({ error: 'Data pruner is already running' });
     }
   } catch (error) {
-    console.error('Start data pruner error:', error);
+    logger.error('Start data pruner error', error as Error);
     res.status(500).json({ error: 'Failed to start data pruner' });
   }
 });
@@ -113,7 +117,7 @@ dataPrunerRouter.post('/_stop', async (_req: Request, res: Response) => {
     await dataPrunerController.stopPruner();
     res.sendData({ success: true, message: 'Data pruner stopped' });
   } catch (error) {
-    console.error('Stop data pruner error:', error);
+    logger.error('Stop data pruner error', error as Error);
     res.status(500).json({ error: 'Failed to stop data pruner' });
   }
 });
@@ -128,7 +132,7 @@ dataPrunerRouter.get('/timeElapsed', async (_req: Request, res: Response) => {
     const elapsed = pruner.getTimeElapsed();
     res.sendData(elapsed);
   } catch (error) {
-    console.error('Get time elapsed error:', error);
+    logger.error('Get time elapsed error', error as Error);
     res.status(500).json({ error: 'Failed to get time elapsed' });
   }
 });

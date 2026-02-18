@@ -23,6 +23,10 @@ import { DeployedState } from '../../api/models/DashboardStatus.js';
 import { dashboardStatusController } from '../../plugins/dashboardstatus/DashboardStatusController.js';
 import type { ConnectionStatusEvent, ConnectorCountEvent } from '../../plugins/dashboardstatus/DashboardStatusController.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -512,7 +516,7 @@ export abstract class DestinationConnector {
             await updateSendAttempts(channelId, messageId, metaDataId, connectorMessage.getSendAttempts(), sendDate);
             await updateStatistics(channelId, metaDataId, serverId, Status.SENT);
           } catch (dbErr) {
-            console.error(`[${this.name}] Queue DB persist error: ${dbErr}`);
+            logger.error(`[${this.name}] Queue DB persist error: ${dbErr}`);
           }
         }
 
@@ -537,7 +541,7 @@ export abstract class DestinationConnector {
                 await updateErrors(channelId, messageId, metaDataId, String(error));
                 await updateStatistics(channelId, metaDataId, connectorMessage.getServerId(), Status.ERROR);
               } catch (dbErr) {
-                console.error(`[${this.name}] Queue error persist error: ${dbErr}`);
+                logger.error(`[${this.name}] Queue error persist error: ${dbErr}`);
               }
             }
 

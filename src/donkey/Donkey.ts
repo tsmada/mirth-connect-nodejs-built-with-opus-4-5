@@ -11,6 +11,10 @@
 
 import { Channel } from './channel/Channel.js';
 import { initializeExecutor } from '../javascript/runtime/JavaScriptExecutor.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 export class Donkey {
   private channels: Map<string, Channel> = new Map();
@@ -22,20 +26,20 @@ export class Donkey {
       throw new Error('Donkey engine is already running');
     }
 
-    console.warn('Starting Donkey engine...');
+    logger.warn('Starting Donkey engine...');
 
     // Initialize JavaScript runtime (singleton executor)
     if (!this.initialized) {
       initializeExecutor();
       this.initialized = true;
-      console.warn('JavaScript runtime initialized');
+      logger.warn('JavaScript runtime initialized');
     }
 
     // Message persistence is handled by DonkeyDao when messages are processed
     // Channel configurations are loaded by Mirth.ts from the database
 
     this.running = true;
-    console.warn('Donkey engine started');
+    logger.warn('Donkey engine started');
   }
 
   async stop(): Promise<void> {
@@ -43,7 +47,7 @@ export class Donkey {
       return;
     }
 
-    console.warn('Stopping Donkey engine...');
+    logger.warn('Stopping Donkey engine...');
 
     // Stop all channels
     for (const channel of this.channels.values()) {
@@ -52,7 +56,7 @@ export class Donkey {
     this.channels.clear();
 
     this.running = false;
-    console.warn('Donkey engine stopped');
+    logger.warn('Donkey engine stopped');
   }
 
   async deployChannel(channel: Channel): Promise<void> {

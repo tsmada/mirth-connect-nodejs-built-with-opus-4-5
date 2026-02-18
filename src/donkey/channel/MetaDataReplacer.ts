@@ -16,6 +16,10 @@
 
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { MetaDataColumn, MetaDataColumnType } from '../../api/models/ServerSettings.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 const MAX_STRING_LENGTH = 255;
 const MAX_NUMBER_VALUE = 1e16;
@@ -50,7 +54,7 @@ export function setMetaDataMap(
         // Match Java behavior: log a warning but continue processing.
         // Metadata values are not essential for message processing.
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn(
+        logger.warn(
           `MetaDataReplacer: Could not cast value '${String(value)}' to ${column.type}: ${msg}`
         );
       }

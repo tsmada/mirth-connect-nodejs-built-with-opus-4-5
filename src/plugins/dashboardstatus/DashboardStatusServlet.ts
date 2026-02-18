@@ -8,6 +8,10 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../../api/middleware/auth.js';
 import { dashboardStatusController } from './DashboardStatusController.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 export const dashboardStatusRouter = Router();
 
@@ -32,7 +36,7 @@ dashboardStatusRouter.get('/connectorstates', async (_req: Request, res: Respons
 
     res.json(result);
   } catch (error) {
-    console.error('Get connector states error:', error);
+    logger.error('Get connector states error', error as Error);
     res.status(500).json({ error: 'Failed to get connector states' });
   }
 });
@@ -62,7 +66,7 @@ dashboardStatusRouter.get('/channellog', async (req: Request, res: Response) => 
 
     res.json(logs);
   } catch (error) {
-    console.error('Get channel log error:', error);
+    logger.error('Get channel log error', error as Error);
     res.status(500).json({ error: 'Failed to get channel log' });
   }
 });
@@ -87,7 +91,7 @@ dashboardStatusRouter.get('/channellog/:channelId', async (req: Request, res: Re
 
     res.json(logs);
   } catch (error) {
-    console.error('Get channel log error:', error);
+    logger.error('Get channel log error', error as Error);
     res.status(500).json({ error: 'Failed to get channel log' });
   }
 });
@@ -103,7 +107,7 @@ dashboardStatusRouter.get('/statemap', async (_req: Request, res: Response) => {
     const stateMap = dashboardStatusController.getConnectorStateMapForApi();
     res.json(stateMap);
   } catch (error) {
-    console.error('Get state map error:', error);
+    logger.error('Get state map error', error as Error);
     res.status(500).json({ error: 'Failed to get state map' });
   }
 });
@@ -120,7 +124,7 @@ dashboardStatusRouter.get('/stats', async (_req: Request, res: Response) => {
       serverId: dashboardStatusController.getServerId(),
     });
   } catch (error) {
-    console.error('Get dashboard stats error:', error);
+    logger.error('Get dashboard stats error', error as Error);
     res.status(500).json({ error: 'Failed to get dashboard stats' });
   }
 });
@@ -134,7 +138,7 @@ dashboardStatusRouter.delete('/channellog', async (_req: Request, res: Response)
     dashboardStatusController.clearAllLogs();
     res.json({ success: true, message: 'All channel logs cleared' });
   } catch (error) {
-    console.error('Clear channel logs error:', error);
+    logger.error('Clear channel logs error', error as Error);
     res.status(500).json({ error: 'Failed to clear channel logs' });
   }
 });
@@ -149,7 +153,7 @@ dashboardStatusRouter.delete('/channellog/:channelId', async (req: Request, res:
     dashboardStatusController.clearChannelLog(channelId);
     res.json({ success: true, message: `Logs cleared for channel ${channelId}` });
   } catch (error) {
-    console.error('Clear channel log error:', error);
+    logger.error('Clear channel log error', error as Error);
     res.status(500).json({ error: 'Failed to clear channel log' });
   }
 });
@@ -164,7 +168,7 @@ dashboardStatusRouter.delete('/state/:channelId', async (req: Request, res: Resp
     dashboardStatusController.resetChannelState(channelId);
     res.json({ success: true, message: `State reset for channel ${channelId}` });
   } catch (error) {
-    console.error('Reset channel state error:', error);
+    logger.error('Reset channel state error', error as Error);
     res.status(500).json({ error: 'Failed to reset channel state' });
   }
 });

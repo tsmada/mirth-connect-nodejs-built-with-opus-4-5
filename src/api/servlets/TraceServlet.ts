@@ -12,6 +12,10 @@ import { Router, Request, Response } from 'express';
 import { authorize } from '../middleware/authorization.js';
 import { MESSAGE_TRACE } from '../middleware/operations.js';
 import { traceMessage, TraceOptions } from '../services/TraceService.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const traceRouter = Router();
 
@@ -82,7 +86,7 @@ traceRouter.get(
         return;
       }
 
-      console.error('Trace error:', error);
+      logger.error('Trace error', error as Error);
       res.status(500).json({ error: 'Failed to trace message' });
     }
   }

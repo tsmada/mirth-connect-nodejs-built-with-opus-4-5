@@ -36,6 +36,10 @@ import {
   ALERT_DISABLE,
   ALERT_REMOVE,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const alertRouter = Router();
 
@@ -125,7 +129,7 @@ alertRouter.post(
       await AlertDao.upsertAlert(alertModel);
       res.sendData(alertModel);
     } catch (error) {
-      console.error('Create alert error:', error);
+      logger.error('Create alert error', error as Error);
       res.status(500).json({ error: 'Failed to create alert' });
     }
   }
@@ -143,7 +147,7 @@ alertRouter.get(
       const statuses = await AlertDao.getAlertStatuses();
       res.sendData(statuses);
     } catch (error) {
-      console.error('Get alert statuses error:', error);
+      logger.error('Get alert statuses error', error as Error);
       res.status(500).json({ error: 'Failed to get alert statuses' });
     }
   }
@@ -161,7 +165,7 @@ alertRouter.get(
       const options = getAlertProtocolOptions();
       res.sendData(options);
     } catch (error) {
-      console.error('Get alert options error:', error);
+      logger.error('Get alert options error', error as Error);
       res.status(500).json({ error: 'Failed to get alert options' });
     }
   }
@@ -196,7 +200,7 @@ alertRouter.post(
 
       res.sendData(alerts);
     } catch (error) {
-      console.error('Get alerts POST error:', error);
+      logger.error('Get alerts POST error', error as Error);
       res.status(500).json({ error: 'Failed to get alerts' });
     }
   }
@@ -217,7 +221,7 @@ alertRouter.post(
       };
       res.sendData(info);
     } catch (error) {
-      console.error('Get alert info error:', error);
+      logger.error('Get alert info error', error as Error);
       res.status(500).json({ error: 'Failed to get alert info' });
     }
   }
@@ -242,7 +246,7 @@ alertRouter.get(
 
       res.sendData(alert);
     } catch (error) {
-      console.error('Get alert error:', error);
+      logger.error('Get alert error', error as Error);
       res.status(500).json({ error: 'Failed to get alert' });
     }
   }
@@ -273,7 +277,7 @@ alertRouter.post(
 
       res.sendData(info);
     } catch (error) {
-      console.error('Get alert info error:', error);
+      logger.error('Get alert info error', error as Error);
       res.status(500).json({ error: 'Failed to get alert info' });
     }
   }
@@ -313,7 +317,7 @@ alertRouter.put(
       await AlertDao.updateAlert(alertModel);
       res.sendData(alertModel);
     } catch (error) {
-      console.error('Update alert error:', error);
+      logger.error('Update alert error', error as Error);
       res.status(500).json({ error: 'Failed to update alert' });
     }
   }
@@ -338,7 +342,7 @@ alertRouter.post(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Enable alert error:', error);
+      logger.error('Enable alert error', error as Error);
       res.status(500).json({ error: 'Failed to enable alert' });
     }
   }
@@ -363,7 +367,7 @@ alertRouter.post(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Disable alert error:', error);
+      logger.error('Disable alert error', error as Error);
       res.status(500).json({ error: 'Failed to disable alert' });
     }
   }
@@ -388,7 +392,7 @@ alertRouter.delete(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Remove alert error:', error);
+      logger.error('Remove alert error', error as Error);
       res.status(500).json({ error: 'Failed to remove alert' });
     }
   }
@@ -415,7 +419,7 @@ alertRouter.get(
 
       res.sendData(alerts);
     } catch (error) {
-      console.error('Get alerts error:', error);
+      logger.error('Get alerts error', error as Error);
       res.status(500).json({ error: 'Failed to get alerts' });
     }
   }

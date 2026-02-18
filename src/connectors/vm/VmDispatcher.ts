@@ -33,6 +33,10 @@ import {
   GlobalChannelMapStore,
   ConfigurationMap,
 } from '../../javascript/userutil/MirthMap.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('vm-connector', 'Channel Writer/Reader');
+const logger = getLogger('vm-connector');
 
 /**
  * Connection status event types for VM dispatcher
@@ -200,7 +204,7 @@ export class VmDispatcher extends DestinationConnector {
       try {
         listener(status, info);
       } catch (error) {
-        console.error('Error in dispatcher status listener:', error);
+        logger.error('Error in dispatcher status listener', error as Error);
       }
     }
   }

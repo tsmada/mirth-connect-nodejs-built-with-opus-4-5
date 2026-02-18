@@ -17,6 +17,10 @@ import { RowDataPacket } from 'mysql2';
 import { authorize } from '../middleware/authorization.js';
 import { USAGE_GET_DATA } from '../middleware/operations.js';
 import { getActiveSessionCount } from '../middleware/auth.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const usageRouter = Router();
 
@@ -176,7 +180,7 @@ usageRouter.get(
       const usageData = await getUsageData();
       res.sendData(usageData);
     } catch (error) {
-      console.error('Get usage data error:', error);
+      logger.error('Get usage data error', error as Error);
       res.status(500).json({ error: 'Failed to get usage data' });
     }
   }

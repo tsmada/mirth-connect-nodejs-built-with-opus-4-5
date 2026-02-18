@@ -37,6 +37,10 @@ import {
   USER_IS_LOGGED_IN,
 } from '../middleware/operations.js';
 import * as MirthDao from '../../db/MirthDao.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const userRouter = Router();
 
@@ -124,7 +128,7 @@ userRouter.post('/_login', loginLimiter, async (req: Request, res: Response) => 
 
     res.sendData(loginStatus);
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', error as Error);
     const status = createLoginStatus(LoginStatusType.FAIL, 'An error occurred during login');
     res.sendData(status, 500);
   }
@@ -144,7 +148,7 @@ userRouter.post('/_logout', authMiddleware({ required: false }), async (req: Req
     clearSessionCookie(res);
     res.status(204).end();
   } catch (error) {
-    console.error('Logout error:', error);
+    logger.error('Logout error', error as Error);
     res.status(500).json({ error: 'An error occurred during logout' });
   }
 });
@@ -159,7 +163,7 @@ userRouter.get('/', authMiddleware({ required: true }), authorize({ operation: U
     const users: User[] = rows.map(personRowToUser);
     res.sendData(users);
   } catch (error) {
-    console.error('Get users error:', error);
+    logger.error('Get users error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve users' });
   }
 });
@@ -201,7 +205,7 @@ userRouter.get('/:userIdOrName', authMiddleware({ required: true }), authorize({
     const user = personRowToUser(personRow);
     res.sendData(user);
   } catch (error) {
-    console.error('Get user error:', error);
+    logger.error('Get user error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve user' });
   }
 });
@@ -244,7 +248,7 @@ userRouter.post('/', authMiddleware({ required: true }), authorize({ operation: 
 
     res.status(201).end();
   } catch (error) {
-    console.error('Create user error:', error);
+    logger.error('Create user error', error as Error);
     res.status(500).json({ error: 'Failed to create user' });
   }
 });
@@ -276,7 +280,7 @@ userRouter.put('/:userId', authMiddleware({ required: true }), authorize({ opera
 
     res.status(204).end();
   } catch (error) {
-    console.error('Update user error:', error);
+    logger.error('Update user error', error as Error);
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
@@ -298,7 +302,7 @@ userRouter.delete('/:userId', authMiddleware({ required: true }), authorize({ op
     await MirthDao.deletePerson(userId);
     res.status(204).end();
   } catch (error) {
-    console.error('Delete user error:', error);
+    logger.error('Delete user error', error as Error);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
@@ -313,7 +317,7 @@ userRouter.get('/:userId/loggedIn', authMiddleware({ required: true }), authoriz
     const loggedIn = await isUserLoggedIn(userId);
     res.sendData(loggedIn);
   } catch (error) {
-    console.error('Check logged in error:', error);
+    logger.error('Check logged in error', error as Error);
     res.status(500).json({ error: 'Failed to check login status' });
   }
 });
@@ -355,7 +359,7 @@ userRouter.put('/:userId/password', authMiddleware({ required: true }), authoriz
     await MirthDao.updatePersonPassword(userId, hashedPassword);
     res.sendData([]);
   } catch (error) {
-    console.error('Update password error:', error);
+    logger.error('Update password error', error as Error);
     res.status(500).json({ error: 'Failed to update password' });
   }
 });
@@ -394,7 +398,7 @@ userRouter.get('/:userId/preferences/:name', authMiddleware({ required: true }),
 
     res.type('text/plain').send(value);
   } catch (error) {
-    console.error('Get preference error:', error);
+    logger.error('Get preference error', error as Error);
     res.status(500).json({ error: 'Failed to get preference' });
   }
 });
@@ -416,7 +420,7 @@ userRouter.put('/:userId/preferences/:name', authMiddleware({ required: true }),
 
     res.status(204).end();
   } catch (error) {
-    console.error('Set preference error:', error);
+    logger.error('Set preference error', error as Error);
     res.status(500).json({ error: 'Failed to set preference' });
   }
 });
@@ -443,7 +447,7 @@ userRouter.get('/:userId/preferences', authMiddleware({ required: true }), autho
       res.sendData(prefs);
     }
   } catch (error) {
-    console.error('Get preferences error:', error);
+    logger.error('Get preferences error', error as Error);
     res.status(500).json({ error: 'Failed to get preferences' });
   }
 });
@@ -460,7 +464,7 @@ userRouter.put('/:userId/preferences', authMiddleware({ required: true }), autho
     await MirthDao.setPersonPreferences(userId, preferences);
     res.status(204).end();
   } catch (error) {
-    console.error('Set preferences error:', error);
+    logger.error('Set preferences error', error as Error);
     res.status(500).json({ error: 'Failed to set preferences' });
   }
 });

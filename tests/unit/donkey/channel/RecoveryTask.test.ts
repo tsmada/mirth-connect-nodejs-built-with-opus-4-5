@@ -5,6 +5,14 @@
  * stuck at RECEIVED or PENDING are recovered by marking them as ERROR.
  */
 
+// Mock logger
+const mockLogInfo = jest.fn();
+const mockLogError = jest.fn();
+jest.mock('../../../../src/logging/index.js', () => ({
+  registerComponent: jest.fn(),
+  getLogger: () => ({ info: mockLogInfo, error: mockLogError, warn: jest.fn(), debug: jest.fn(), isDebugEnabled: () => false }),
+}));
+
 // Mock DAO functions
 const mockGetUnfinishedMessagesByServerId = jest.fn();
 const mockGetConnectorMessagesByStatus = jest.fn();
@@ -37,8 +45,6 @@ describe('RecoveryTask', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(console, 'error').mockImplementation(() => {});
     mockUpdateConnectorMessageStatus.mockResolvedValue(undefined);
     mockUpdateErrors.mockResolvedValue(undefined);
     mockUpdateStatistics.mockResolvedValue(undefined);
@@ -46,7 +52,6 @@ describe('RecoveryTask', () => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   it('returns zero counts when no unfinished messages exist', async () => {
@@ -104,7 +109,7 @@ describe('RecoveryTask', () => {
     );
 
     // Verify log message
-    expect(console.log).toHaveBeenCalledWith(
+    expect(mockLogInfo).toHaveBeenCalledWith(
       expect.stringContaining('Recovered 1 unfinished messages (2 marked as ERROR)')
     );
   });
@@ -139,7 +144,7 @@ describe('RecoveryTask', () => {
     const result = await runRecoveryTask(channelId, serverId);
 
     expect(result).toEqual({ recovered: 1, errors: 1 });
-    expect(console.error).toHaveBeenCalledWith(
+    expect(mockLogError).toHaveBeenCalledWith(
       expect.stringContaining('Error recovering message 10')
     );
   });
@@ -150,7 +155,7 @@ describe('RecoveryTask', () => {
     const result = await runRecoveryTask(channelId, serverId);
 
     expect(result).toEqual({ recovered: 0, errors: 0 });
-    expect(console.error).toHaveBeenCalledWith(
+    expect(mockLogError).toHaveBeenCalledWith(
       expect.stringContaining('Failed to run recovery')
     );
   });
@@ -160,7 +165,7 @@ describe('RecoveryTask', () => {
 
     await runRecoveryTask(channelId, serverId);
 
-    expect(console.log).not.toHaveBeenCalled();
+    expect(mockLogInfo).not.toHaveBeenCalled();
   });
 
   it('uses transaction for atomicity per message', async () => {

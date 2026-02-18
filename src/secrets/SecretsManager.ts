@@ -10,6 +10,10 @@
 import { SecretCache, type CacheStats } from './SecretCache.js';
 import type { SecretValue, SecretsProvider, SecretsManagerConfig } from './types.js';
 import { parseSecretsConfig } from './types.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('secrets', 'Secret management');
+const logger = getLogger('secrets');
 
 let instance: SecretsManager | null = null;
 
@@ -43,7 +47,7 @@ export class SecretsManager {
         await provider.initialize();
         mgr.providers.push(provider);
       } catch (err) {
-        console.error(`[SecretsManager] Failed to initialize provider '${type}':`, (err as Error).message);
+        logger.error(`Failed to initialize provider '${type}': ${(err as Error).message}`);
         // Continue with remaining providers — partial availability is better than total failure
       }
     }
@@ -77,7 +81,7 @@ export class SecretsManager {
         await provider.initialize();
         mgr.providers.push(provider);
       } catch (err) {
-        console.error(`[SecretsManager] Failed to initialize provider '${provider.name}':`, (err as Error).message);
+        logger.error(`Failed to initialize provider '${provider.name}': ${(err as Error).message}`);
       }
     }
 
@@ -123,7 +127,7 @@ export class SecretsManager {
           return secret;
         }
       } catch (err) {
-        console.error(`[SecretsManager] Provider '${provider.name}' error for key '${key}':`, (err as Error).message);
+        logger.error(`Provider '${provider.name}' error for key '${key}': ${(err as Error).message}`);
         // Continue to next provider
       }
     }
@@ -156,7 +160,7 @@ export class SecretsManager {
     for (let i = 0; i < results.length; i++) {
       const result = results[i]!;
       if (result.status === 'rejected') {
-        console.error(`[SecretsManager] Failed to preload key '${keys[i]}':`, result.reason);
+        logger.error(`Failed to preload key '${keys[i]}': ${result.reason}`);
       }
     }
   }
@@ -252,7 +256,7 @@ export class SecretsManager {
     if (this.config.cacheTtlSeconds <= 0) return;
     this.refreshTimer = setInterval(() => {
       this.refreshSyncCache().catch(err =>
-        console.error('[SecretsManager] Sync cache refresh failed:', err)
+        logger.error('[SecretsManager] Sync cache refresh failed', err as Error)
       );
     }, this.config.cacheTtlSeconds * 1000);
     if (this.refreshTimer && typeof this.refreshTimer === 'object' && 'unref' in this.refreshTimer) {

@@ -18,6 +18,10 @@ import {
   CHANNEL_RESUME,
   CHANNEL_HALT,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const channelStatusRouter = Router();
 
@@ -37,7 +41,7 @@ channelStatusRouter.get('/:channelId/status', authorize({ operation: CHANNEL_STA
 
     res.sendData(status);
   } catch (error) {
-    console.error('Get channel status error:', error);
+    logger.error('Get channel status error', error as Error);
     res.status(500).json({ error: 'Failed to get channel status' });
   }
 });
@@ -60,7 +64,7 @@ channelStatusRouter.get('/statuses', authorize({ operation: CHANNEL_STATUS_GET_A
     const statuses = await EngineController.getChannelStatuses(ids, filter, includeUndeployed);
     res.sendData(statuses);
   } catch (error) {
-    console.error('Get channel statuses error:', error);
+    logger.error('Get channel statuses error', error as Error);
     res.status(500).json({ error: 'Failed to get channel statuses' });
   }
 });
@@ -79,7 +83,7 @@ channelStatusRouter.post('/statuses/_getChannelStatusList', authorize({ operatio
     const statuses = await EngineController.getChannelStatuses(ids, filter, includeUndeployed);
     res.sendData(statuses);
   } catch (error) {
-    console.error('Get channel statuses POST error:', error);
+    logger.error('Get channel statuses POST error', error as Error);
     res.status(500).json({ error: 'Failed to get channel statuses' });
   }
 });
@@ -96,7 +100,7 @@ channelStatusRouter.get('/statuses/initial', authorize({ operation: CHANNEL_STAT
     const info = await EngineController.getDashboardChannelInfo(fetchSize, filter);
     res.sendData(info);
   } catch (error) {
-    console.error('Get dashboard channel info error:', error);
+    logger.error('Get dashboard channel info error', error as Error);
     res.status(500).json({ error: 'Failed to get dashboard channel info' });
   }
 });
@@ -111,7 +115,7 @@ channelStatusRouter.post('/:channelId/_start', authorize({ operation: CHANNEL_ST
     await EngineController.startChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Start channel error:', error);
+    logger.error('Start channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -136,7 +140,7 @@ channelStatusRouter.post('/_start', authorize({ operation: CHANNEL_START }), asy
 
     res.status(204).end();
   } catch (error) {
-    console.error('Start channels error:', error);
+    logger.error('Start channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -156,7 +160,7 @@ channelStatusRouter.post('/:channelId/_stop', authorize({ operation: CHANNEL_STO
     await EngineController.stopChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Stop channel error:', error);
+    logger.error('Stop channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -181,7 +185,7 @@ channelStatusRouter.post('/_stop', authorize({ operation: CHANNEL_STOP }), async
 
     res.status(204).end();
   } catch (error) {
-    console.error('Stop channels error:', error);
+    logger.error('Stop channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -201,7 +205,7 @@ channelStatusRouter.post('/:channelId/_halt', authorize({ operation: CHANNEL_HAL
     await EngineController.haltChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Halt channel error:', error);
+    logger.error('Halt channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -226,7 +230,7 @@ channelStatusRouter.post('/_halt', authorize({ operation: CHANNEL_HALT }), async
 
     res.status(204).end();
   } catch (error) {
-    console.error('Halt channels error:', error);
+    logger.error('Halt channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -246,7 +250,7 @@ channelStatusRouter.post('/:channelId/_pause', authorize({ operation: CHANNEL_PA
     await EngineController.pauseChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Pause channel error:', error);
+    logger.error('Pause channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -271,7 +275,7 @@ channelStatusRouter.post('/_pause', authorize({ operation: CHANNEL_PAUSE }), asy
 
     res.status(204).end();
   } catch (error) {
-    console.error('Pause channels error:', error);
+    logger.error('Pause channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -291,7 +295,7 @@ channelStatusRouter.post('/:channelId/_resume', authorize({ operation: CHANNEL_R
     await EngineController.resumeChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Resume channel error:', error);
+    logger.error('Resume channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -316,7 +320,7 @@ channelStatusRouter.post('/_resume', authorize({ operation: CHANNEL_RESUME }), a
 
     res.status(204).end();
   } catch (error) {
-    console.error('Resume channels error:', error);
+    logger.error('Resume channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -345,7 +349,7 @@ channelStatusRouter.post('/_startConnectors', authorize({ operation: CHANNEL_STA
 
     res.status(204).end();
   } catch (error) {
-    console.error('Start connectors error:', error);
+    logger.error('Start connectors error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -374,7 +378,7 @@ channelStatusRouter.post('/_stopConnectors', authorize({ operation: CHANNEL_STOP
 
     res.status(204).end();
   } catch (error) {
-    console.error('Stop connectors error:', error);
+    logger.error('Stop connectors error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -395,7 +399,7 @@ channelStatusRouter.post('/:channelId/connector/:metaDataId/_start', authorize({
     await EngineController.startConnector(channelId, parseInt(metaDataId, 10));
     res.status(204).end();
   } catch (error) {
-    console.error('Start connector error:', error);
+    logger.error('Start connector error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -416,7 +420,7 @@ channelStatusRouter.post('/:channelId/connector/:metaDataId/_stop', authorize({ 
     await EngineController.stopConnector(channelId, parseInt(metaDataId, 10));
     res.status(204).end();
   } catch (error) {
-    console.error('Stop connector error:', error);
+    logger.error('Stop connector error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });

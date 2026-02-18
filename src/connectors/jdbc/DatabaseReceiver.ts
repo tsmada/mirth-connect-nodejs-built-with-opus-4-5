@@ -31,6 +31,10 @@ import {
 } from '../../javascript/runtime/ScopeBuilder.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('jdbc-connector', 'Database connector');
+const logger = getLogger('jdbc-connector');
 
 export interface DatabaseReceiverConfig {
   name?: string;
@@ -349,13 +353,13 @@ export class DatabaseReceiver extends SourceConnector {
   private startPolling(): void {
     // Execute first poll immediately
     this.poll().catch((err) => {
-      console.error('Poll error:', err);
+      logger.error('Poll error', err as Error);
     });
 
     // Schedule subsequent polls
     this.pollTimer = setInterval(() => {
       this.poll().catch((err) => {
-        console.error('Poll error:', err);
+        logger.error('Poll error', err as Error);
       });
     }, this.properties.pollInterval);
   }
@@ -404,7 +408,7 @@ export class DatabaseReceiver extends SourceConnector {
           }
 
           if (retries > this.properties.retryCount) {
-            console.error('Database poll failed after retries:', error);
+            logger.error('Database poll failed after retries', error as Error);
             break;
           }
 

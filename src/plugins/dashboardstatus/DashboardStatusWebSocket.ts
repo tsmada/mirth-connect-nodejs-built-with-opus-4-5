@@ -29,6 +29,10 @@ import {
   ConnectionStateItem,
   serializeConnectionStateItem,
 } from './ConnectionStateItem.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 /**
  * WebSocket message types
@@ -102,7 +106,7 @@ export class DashboardStatusWebSocketHandler {
       this.pingClients();
     }, 30000);
 
-    console.log(`Dashboard Status WebSocket attached at ${path}`);
+    logger.info(`Dashboard Status WebSocket attached at ${path}`);
   }
 
   /**
@@ -129,7 +133,7 @@ export class DashboardStatusWebSocketHandler {
       this.pingClients();
     }, 30000);
 
-    console.log(`Dashboard Status WebSocket listening on port ${port}`);
+    logger.info(`Dashboard Status WebSocket listening on port ${port}`);
   }
 
   /**
@@ -165,7 +169,7 @@ export class DashboardStatusWebSocketHandler {
     });
 
     ws.on('error', (error) => {
-      console.error('Dashboard Status WebSocket error:', error);
+      logger.error('Dashboard Status WebSocket error', error as Error);
       this.handleClose(ws);
     });
 

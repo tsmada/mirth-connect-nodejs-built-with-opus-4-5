@@ -19,6 +19,10 @@ import {
 } from '../api/models/ServerSettings.js';
 import { ChannelMetadata } from '../api/models/Channel.js';
 import * as MirthDao from '../db/MirthDao.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 // In-memory storage for settings (persisted to database)
 let serverSettings: ServerSettings = getDefaultServerSettings();
@@ -279,7 +283,7 @@ export class ConfigurationController {
    * Reload a resource
    */
   static async reloadResource(resourceId: string): Promise<void> {
-    console.log(`Reloading resource: ${resourceId}`);
+    logger.info(`Reloading resource: ${resourceId}`);
     // In a real implementation, this would reload libraries
   }
 

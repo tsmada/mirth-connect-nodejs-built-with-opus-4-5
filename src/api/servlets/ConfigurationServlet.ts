@@ -50,6 +50,10 @@ import {
   CONFIG_TEST_EMAIL,
 } from '../middleware/operations.js';
 import { ChannelController } from '../../controllers/ChannelController.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const configurationRouter = Router();
 
@@ -66,7 +70,7 @@ configurationRouter.get('/id', authorize({ operation: CONFIG_GET_SERVER_ID }), a
     const serverId = await ConfigurationController.getServerId();
     res.type('text/plain').send(serverId);
   } catch (error) {
-    console.error('Get server ID error:', error);
+    logger.error('Get server ID error', error as Error);
     res.status(500).json({ error: 'Failed to get server ID' });
   }
 });
@@ -141,7 +145,7 @@ configurationRouter.get('/about', authorize({ operation: CONFIG_GET_ABOUT }), as
     };
     res.sendData(about);
   } catch (error) {
-    console.error('Get about error:', error);
+    logger.error('Get about error', error as Error);
     res.status(500).json({ error: 'Failed to get about information' });
   }
 });
@@ -155,7 +159,7 @@ configurationRouter.get('/settings', authorize({ operation: CONFIG_GET_SETTINGS 
     const settings = await ConfigurationController.getServerSettings();
     res.sendData(settings);
   } catch (error) {
-    console.error('Get server settings error:', error);
+    logger.error('Get server settings error', error as Error);
     res.status(500).json({ error: 'Failed to get server settings' });
   }
 });
@@ -170,7 +174,7 @@ configurationRouter.put('/settings', authorize({ operation: CONFIG_SET_SETTINGS 
     await ConfigurationController.setServerSettings(settings);
     res.status(204).end();
   } catch (error) {
-    console.error('Set server settings error:', error);
+    logger.error('Set server settings error', error as Error);
     res.status(500).json({ error: 'Failed to set server settings' });
   }
 });
@@ -184,7 +188,7 @@ configurationRouter.get('/encryption', authorize({ operation: CONFIG_GET_ENCRYPT
     const settings = await ConfigurationController.getEncryptionSettings();
     res.sendData(settings);
   } catch (error) {
-    console.error('Get encryption settings error:', error);
+    logger.error('Get encryption settings error', error as Error);
     res.status(500).json({ error: 'Failed to get encryption settings' });
   }
 });
@@ -223,7 +227,7 @@ configurationRouter.get('/globalScripts', authorize({ operation: CONFIG_GET_GLOB
     const scripts = await ConfigurationController.getGlobalScripts();
     res.sendData(scripts);
   } catch (error) {
-    console.error('Get global scripts error:', error);
+    logger.error('Get global scripts error', error as Error);
     res.status(500).json({ error: 'Failed to get global scripts' });
   }
 });
@@ -238,7 +242,7 @@ configurationRouter.put('/globalScripts', authorize({ operation: CONFIG_SET_GLOB
     await ConfigurationController.setGlobalScripts(scripts);
     res.status(204).end();
   } catch (error) {
-    console.error('Set global scripts error:', error);
+    logger.error('Set global scripts error', error as Error);
     res.status(500).json({ error: 'Failed to set global scripts' });
   }
 });
@@ -252,7 +256,7 @@ configurationRouter.get('/configurationMap', authorize({ operation: CONFIG_GET_C
     const configMap = await ConfigurationController.getConfigurationMap();
     res.sendData(configMap);
   } catch (error) {
-    console.error('Get configuration map error:', error);
+    logger.error('Get configuration map error', error as Error);
     res.status(500).json({ error: 'Failed to get configuration map' });
   }
 });
@@ -267,7 +271,7 @@ configurationRouter.put('/configurationMap', authorize({ operation: CONFIG_SET_C
     await ConfigurationController.setConfigurationMap(configMap);
     res.status(204).end();
   } catch (error) {
-    console.error('Set configuration map error:', error);
+    logger.error('Set configuration map error', error as Error);
     res.status(500).json({ error: 'Failed to set configuration map' });
   }
 });
@@ -281,7 +285,7 @@ configurationRouter.get('/databaseDrivers', authorize({ operation: CONFIG_GET_DB
     const drivers = await ConfigurationController.getDatabaseDrivers();
     res.sendData(drivers);
   } catch (error) {
-    console.error('Get database drivers error:', error);
+    logger.error('Get database drivers error', error as Error);
     res.status(500).json({ error: 'Failed to get database drivers' });
   }
 });
@@ -296,7 +300,7 @@ configurationRouter.put('/databaseDrivers', authorize({ operation: CONFIG_SET_DB
     await ConfigurationController.setDatabaseDrivers(drivers);
     res.status(204).end();
   } catch (error) {
-    console.error('Set database drivers error:', error);
+    logger.error('Set database drivers error', error as Error);
     res.status(500).json({ error: 'Failed to set database drivers' });
   }
 });
@@ -310,7 +314,7 @@ configurationRouter.get('/passwordRequirements', authorize({ operation: CONFIG_G
     const requirements = await ConfigurationController.getPasswordRequirements();
     res.sendData(requirements);
   } catch (error) {
-    console.error('Get password requirements error:', error);
+    logger.error('Get password requirements error', error as Error);
     res.status(500).json({ error: 'Failed to get password requirements' });
   }
 });
@@ -324,7 +328,7 @@ configurationRouter.get('/updateSettings', authorize({ operation: CONFIG_GET_UPD
     const settings = await ConfigurationController.getUpdateSettings();
     res.sendData(settings);
   } catch (error) {
-    console.error('Get update settings error:', error);
+    logger.error('Get update settings error', error as Error);
     res.status(500).json({ error: 'Failed to get update settings' });
   }
 });
@@ -339,7 +343,7 @@ configurationRouter.put('/updateSettings', authorize({ operation: CONFIG_SET_UPD
     await ConfigurationController.setUpdateSettings(settings);
     res.status(204).end();
   } catch (error) {
-    console.error('Set update settings error:', error);
+    logger.error('Set update settings error', error as Error);
     res.status(500).json({ error: 'Failed to set update settings' });
   }
 });
@@ -366,7 +370,7 @@ configurationRouter.get('/resources', authorize({ operation: CONFIG_GET_RESOURCE
     const resources = await ConfigurationController.getResources();
     res.sendData(resources);
   } catch (error) {
-    console.error('Get resources error:', error);
+    logger.error('Get resources error', error as Error);
     res.status(500).json({ error: 'Failed to get resources' });
   }
 });
@@ -381,7 +385,7 @@ configurationRouter.put('/resources', authorize({ operation: CONFIG_SET_RESOURCE
     await ConfigurationController.setResources(resources);
     res.status(204).end();
   } catch (error) {
-    console.error('Set resources error:', error);
+    logger.error('Set resources error', error as Error);
     res.status(500).json({ error: 'Failed to set resources' });
   }
 });
@@ -396,7 +400,7 @@ configurationRouter.post('/resources/:resourceId/_reload', authorize({ operation
     await ConfigurationController.reloadResource(resourceId);
     res.status(204).end();
   } catch (error) {
-    console.error('Reload resource error:', error);
+    logger.error('Reload resource error', error as Error);
     res.status(500).json({ error: 'Failed to reload resource' });
   }
 });
@@ -410,7 +414,7 @@ configurationRouter.get('/channelDependencies', authorize({ operation: CONFIG_GE
     const dependencies = await ConfigurationController.getChannelDependencies();
     res.sendData(dependencies);
   } catch (error) {
-    console.error('Get channel dependencies error:', error);
+    logger.error('Get channel dependencies error', error as Error);
     res.status(500).json({ error: 'Failed to get channel dependencies' });
   }
 });
@@ -425,7 +429,7 @@ configurationRouter.put('/channelDependencies', authorize({ operation: CONFIG_SE
     await ConfigurationController.setChannelDependencies(dependencies);
     res.status(204).end();
   } catch (error) {
-    console.error('Set channel dependencies error:', error);
+    logger.error('Set channel dependencies error', error as Error);
     res.status(500).json({ error: 'Failed to set channel dependencies' });
   }
 });
@@ -439,7 +443,7 @@ configurationRouter.get('/channelTags', authorize({ operation: CONFIG_GET_CHANNE
     const tags = await ConfigurationController.getChannelTags();
     res.sendData(tags);
   } catch (error) {
-    console.error('Get channel tags error:', error);
+    logger.error('Get channel tags error', error as Error);
     res.status(500).json({ error: 'Failed to get channel tags' });
   }
 });
@@ -454,7 +458,7 @@ configurationRouter.put('/channelTags', authorize({ operation: CONFIG_SET_CHANNE
     await ConfigurationController.setChannelTags(tags);
     res.status(204).end();
   } catch (error) {
-    console.error('Set channel tags error:', error);
+    logger.error('Set channel tags error', error as Error);
     res.status(500).json({ error: 'Failed to set channel tags' });
   }
 });
@@ -468,7 +472,7 @@ configurationRouter.get('/channelMetadata', authorize({ operation: CONFIG_GET_CH
     const metadata = await ConfigurationController.getChannelMetadata();
     res.sendData(metadata);
   } catch (error) {
-    console.error('Get channel metadata error:', error);
+    logger.error('Get channel metadata error', error as Error);
     res.status(500).json({ error: 'Failed to get channel metadata' });
   }
 });
@@ -483,7 +487,7 @@ configurationRouter.put('/channelMetadata', authorize({ operation: CONFIG_SET_CH
     await ConfigurationController.setChannelMetadata(metadata);
     res.status(204).end();
   } catch (error) {
-    console.error('Set channel metadata error:', error);
+    logger.error('Set channel metadata error', error as Error);
     res.status(500).json({ error: 'Failed to set channel metadata' });
   }
 });
@@ -554,7 +558,7 @@ configurationRouter.get('/configuration', authorize({ operation: CONFIG_GET_SERV
 
     res.sendData(configuration);
   } catch (error) {
-    console.error('Get server configuration error:', error);
+    logger.error('Get server configuration error', error as Error);
     res.status(500).json({ error: 'Failed to get server configuration' });
   }
 });
@@ -614,7 +618,7 @@ configurationRouter.put('/configuration', authorize({ operation: CONFIG_SET_SERV
 
     res.status(204).end();
   } catch (error) {
-    console.error('Set server configuration error:', error);
+    logger.error('Set server configuration error', error as Error);
     res.status(500).json({ error: 'Failed to restore server configuration' });
   }
 });
@@ -661,7 +665,7 @@ configurationRouter.post('/_testEmail', authorize({ operation: CONFIG_TEST_EMAIL
       res.type('text/plain').send(`Failed to send test email: ${(emailError as Error).message}`);
     }
   } catch (error) {
-    console.error('Test email error:', error);
+    logger.error('Test email error', error as Error);
     res.status(500).json({ error: 'Failed to send test email' });
   }
 });
