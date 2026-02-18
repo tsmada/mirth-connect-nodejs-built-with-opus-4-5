@@ -436,3 +436,83 @@ describe('GlobalChannelMapStore with backend factory', () => {
     expect(store.get('channel-1').get('preloaded')).toBe('data');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Round-trip persistence (simulates restart)
+// ---------------------------------------------------------------------------
+
+describe('GlobalMap round-trip persistence', () => {
+  beforeEach(() => {
+    GlobalMap.resetInstance();
+  });
+
+  afterEach(() => {
+    GlobalMap.resetInstance();
+  });
+
+  it('should persist $g values across simulated restarts', async () => {
+    // --- Session 1: write data ---
+    const backend = new InMemoryMapBackend();
+    GlobalMap.setBackend(backend);
+    const gm1 = GlobalMap.getInstance();
+    gm1.put('counter', 42);
+    gm1.put('config', { retries: 3 });
+
+    // Wait for async write-through
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await backend.get('counter')).toBe(42);
+
+    // --- Simulate restart: reset singleton ---
+    GlobalMap.resetInstance();
+
+    // --- Session 2: restore from backend ---
+    GlobalMap.setBackend(backend);
+    const gm2 = GlobalMap.getInstance();
+    await gm2.loadFromBackend();
+
+    expect(gm2.get('counter')).toBe(42);
+    expect(gm2.get('config')).toEqual({ retries: 3 });
+  });
+});
+
+describe('GlobalChannelMapStore round-trip persistence', () => {
+  beforeEach(() => {
+    GlobalChannelMapStore.resetInstance();
+  });
+
+  afterEach(() => {
+    GlobalChannelMapStore.resetInstance();
+  });
+
+  it('should persist $gc values across simulated restarts', async () => {
+    // Shared backends that survive "restart"
+    const backends = new Map<string, InMemoryMapBackend>();
+    const factory = (channelId: string) => {
+      if (!backends.has(channelId)) {
+        backends.set(channelId, new InMemoryMapBackend());
+      }
+      return backends.get(channelId)!;
+    };
+
+    // --- Session 1: write per-channel data ---
+    GlobalChannelMapStore.setBackendFactory(factory);
+    const store1 = GlobalChannelMapStore.getInstance();
+    store1.get('ch-A').put('seq', 100);
+    store1.get('ch-B').put('cache', ['a', 'b']);
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await backends.get('ch-A')!.get('seq')).toBe(100);
+
+    // --- Simulate restart ---
+    GlobalChannelMapStore.resetInstance();
+
+    // --- Session 2: restore from backends ---
+    GlobalChannelMapStore.setBackendFactory(factory);
+    const store2 = GlobalChannelMapStore.getInstance();
+    await store2.loadChannelFromBackend('ch-A');
+    await store2.loadChannelFromBackend('ch-B');
+
+    expect(store2.get('ch-A').get('seq')).toBe(100);
+    expect(store2.get('ch-B').get('cache')).toEqual(['a', 'b']);
+  });
+});

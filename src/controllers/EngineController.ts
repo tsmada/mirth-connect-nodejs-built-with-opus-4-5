@@ -31,6 +31,7 @@ import { ConnectionStatusEventType } from '../plugins/dashboardstatus/Connection
 import type { StateChangeEvent } from '../donkey/channel/Channel.js';
 import { isShadowMode, isChannelActive, isChannelPromoted } from '../cluster/ShadowMode.js';
 import { getLogger, registerComponent } from '../logging/index.js';
+import { GlobalChannelMapStore } from '../javascript/userutil/MirthMap.js';
 import { getAllCodeTemplateScriptsForChannel } from '../plugins/codetemplates/CodeTemplateController.js';
 import { createJavaScriptExecutor } from '../javascript/runtime/JavaScriptExecutor.js';
 
@@ -320,6 +321,13 @@ export class EngineController {
 
       // Set to STOPPED after successful deployment build
       runtimeChannel.updateCurrentState(DeployedState.STOPPED);
+
+      // Warm per-channel GlobalChannelMap ($gc) from database backend
+      try {
+        await GlobalChannelMapStore.getInstance().loadChannelFromBackend(channelId);
+      } catch (gcError) {
+        logger.warn(`Failed to load GlobalChannelMap for ${channelConfig.name}: ${String(gcError)}`);
+      }
 
       // Determine initial state from channel properties
       const initialState = channelConfig.properties?.initialState || DeployedState.STARTED;

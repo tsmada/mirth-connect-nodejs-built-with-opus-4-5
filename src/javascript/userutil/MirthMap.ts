@@ -11,6 +11,9 @@
 
 import type { MapBackend } from '../../cluster/MapBackend.js';
 import type { RowDataPacket } from 'mysql2/promise';
+import { getLogger } from '../../logging/index.js';
+
+const logger = getLogger('server');
 
 /**
  * Base MirthMap class - Java-compatible Map for script scope
@@ -301,7 +304,7 @@ export class GlobalMap extends MirthMap {
     if (this.backend) {
       // Fire-and-forget write-through to backend
       this.backend.set(key, value).catch((err) => {
-        console.error(`[GlobalMap] Backend write failed for key "${key}":`, err);
+        logger.error(`[GlobalMap] Backend write failed for key "${key}": ${String(err)}`);
       });
     }
     return previous;
@@ -314,7 +317,7 @@ export class GlobalMap extends MirthMap {
     const value = super.remove(key);
     if (this.backend) {
       this.backend.delete(key).catch((err) => {
-        console.error(`[GlobalMap] Backend delete failed for key "${key}":`, err);
+        logger.error(`[GlobalMap] Backend delete failed for key "${key}": ${String(err)}`);
       });
     }
     return value;
@@ -327,7 +330,7 @@ export class GlobalMap extends MirthMap {
     super.clear();
     if (this.backend) {
       this.backend.clear().catch((err) => {
-        console.error('[GlobalMap] Backend clear failed:', err);
+        logger.error(`[GlobalMap] Backend clear failed: ${String(err)}`);
       });
     }
   }
@@ -357,7 +360,7 @@ class BackendAwareMirthMap extends MirthMap {
   override put(key: string, value: unknown): unknown {
     const previous = super.put(key, value);
     this.backend.set(key, value).catch((err) => {
-      console.error(`[GlobalChannelMap] Backend write failed for key "${key}":`, err);
+      logger.error(`[GlobalChannelMap] Backend write failed for key "${key}": ${String(err)}`);
     });
     return previous;
   }
@@ -365,7 +368,7 @@ class BackendAwareMirthMap extends MirthMap {
   override remove(key: string): unknown {
     const value = super.remove(key);
     this.backend.delete(key).catch((err) => {
-      console.error(`[GlobalChannelMap] Backend delete failed for key "${key}":`, err);
+      logger.error(`[GlobalChannelMap] Backend delete failed for key "${key}": ${String(err)}`);
     });
     return value;
   }
@@ -373,7 +376,7 @@ class BackendAwareMirthMap extends MirthMap {
   override clear(): void {
     super.clear();
     this.backend.clear().catch((err) => {
-      console.error('[GlobalChannelMap] Backend clear failed:', err);
+      logger.error(`[GlobalChannelMap] Backend clear failed: ${String(err)}`);
     });
   }
 

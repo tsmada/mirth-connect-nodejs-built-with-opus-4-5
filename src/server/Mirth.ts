@@ -31,6 +31,8 @@ import { getClusterConfig } from '../cluster/ClusterConfig.js';
 import { setShadowMode, isShadowMode } from '../cluster/ShadowMode.js';
 import { initializeLogging, shutdownLogging, getLogger, registerComponent } from '../logging/index.js';
 import { serverLogController } from '../plugins/serverlog/ServerLogController.js';
+import { DatabaseMapBackend } from '../cluster/MapBackend.js';
+import { GlobalMap, GlobalChannelMapStore, ConfigurationMap } from '../javascript/userutil/MirthMap.js';
 
 registerComponent('server', 'Server lifecycle');
 const logger = getLogger('server');
@@ -211,6 +213,27 @@ export class Mirth {
         logger.warn('Cluster mode active but MIRTH_CLUSTER_REDIS_URL not set. GlobalMap will use volatile in-memory storage. Set MIRTH_CLUSTER_REDIS_URL for persistent shared state.');
       }
       logger.warn('Cluster mode: session store is in-memory. Sessions will not be shared across instances. Consider a shared session store for production.');
+    }
+
+    // Wire GlobalMap and GlobalChannelMap to database backend for persistent $g/$gc
+    // This benefits both single-instance (survives restarts) and cluster (shared state)
+    GlobalMap.setBackend(new DatabaseMapBackend('global'));
+    GlobalChannelMapStore.setBackendFactory((channelId) => new DatabaseMapBackend('gcm:' + channelId));
+    await GlobalMap.getInstance().loadFromBackend();
+    logger.info('GlobalMap database backend initialized');
+
+    // Load ConfigurationMap ($cfg) from database
+    // Java Mirth stores ConfigurationProperty objects but exposes only the .value strings
+    try {
+      const configProps = await ConfigurationController.getConfigurationMap();
+      const valueMap: Record<string, unknown> = {};
+      for (const [key, prop] of Object.entries(configProps)) {
+        valueMap[key] = prop.value;
+      }
+      ConfigurationMap.getInstance().load(valueMap);
+      logger.info(`ConfigurationMap loaded (${Object.keys(configProps).length} entries)`);
+    } catch (err) {
+      logger.warn(`Failed to load ConfigurationMap: ${String(err)}`);
     }
 
     // Load channels from database and deploy them
