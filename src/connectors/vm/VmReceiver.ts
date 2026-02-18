@@ -229,6 +229,6 @@ export class VmReceiver extends SourceConnector {
   handleRecoveredResponse(dispatchResult: unknown): void {
     // In the Java implementation, this calls finishDispatch(dispatchResult)
     // For now, we log the recovery
-    console.info('VM Receiver handling recovered response:', dispatchResult);
+    logger.info(`VM Receiver handling recovered response: ${dispatchResult}`);
   }
 }
