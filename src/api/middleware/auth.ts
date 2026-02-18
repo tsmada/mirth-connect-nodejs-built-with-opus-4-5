@@ -177,7 +177,7 @@ export function createSessionStore(): SessionStore {
       return new RedisSessionStore(redisUrl);
     } catch (err) {
       const msg = 'Failed to connect to Redis, falling back to in-memory sessions';
-      getAuthLogger()?.warn(msg) ?? console.warn(msg + ':', err);
+      getAuthLogger()?.warn(`${msg}: ${(err as Error).message}`);
       // Fall through to in-memory with cluster warning below
     }
   }
@@ -185,7 +185,7 @@ export function createSessionStore(): SessionStore {
   const store = new InMemorySessionStore();
   if (process.env['MIRTH_CLUSTER_ENABLED'] === 'true') {
     const msg = 'Cluster mode enabled but using in-memory sessions. Users authenticated on one node will get 403 on other nodes. Set MIRTH_CLUSTER_REDIS_URL to fix.';
-    getAuthLogger()?.warn(msg) ?? console.warn(msg);
+    getAuthLogger()?.warn(msg);
   }
   return store;
 }

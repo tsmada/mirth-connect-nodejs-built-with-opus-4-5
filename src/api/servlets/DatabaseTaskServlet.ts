@@ -19,6 +19,10 @@
 import { Router, Request, Response } from 'express';
 import { authorize } from '../middleware/authorization.js';
 import { DATABASE_TASK_GET, DATABASE_TASK_GET_ALL, DATABASE_TASK_RUN, DATABASE_TASK_CANCEL } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const databaseTaskRouter = Router();
 
@@ -212,7 +216,7 @@ databaseTaskRouter.get(
       const tasks = getAvailableTasks();
       res.sendData(tasks);
     } catch (error) {
-      console.error('Get database tasks error:', error);
+      logger.error('Get database tasks error', error as Error);
       res.status(500).json({ error: 'Failed to get database tasks' });
     }
   }
@@ -237,7 +241,7 @@ databaseTaskRouter.get(
 
       res.sendData(task);
     } catch (error) {
-      console.error('Get database task error:', error);
+      logger.error('Get database task error', error as Error);
       res.status(500).json({ error: 'Failed to get database task' });
     }
   }
@@ -262,7 +266,7 @@ databaseTaskRouter.post(
 
       res.sendData({ started: true, taskId });
     } catch (error) {
-      console.error('Run database task error:', error);
+      logger.error('Run database task error', error as Error);
       res.status(500).json({ error: 'Failed to run database task' });
     }
   }
@@ -287,7 +291,7 @@ databaseTaskRouter.post(
 
       res.sendData({ cancelled: true, taskId });
     } catch (error) {
-      console.error('Cancel database task error:', error);
+      logger.error('Cancel database task error', error as Error);
       res.status(500).json({ error: 'Failed to cancel database task' });
     }
   }

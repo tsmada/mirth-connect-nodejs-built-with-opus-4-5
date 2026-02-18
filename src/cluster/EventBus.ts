@@ -14,6 +14,10 @@ import { RowDataPacket } from 'mysql2/promise';
 import { query, execute } from '../db/pool.js';
 import { getClusterConfig } from './ClusterConfig.js';
 import { getServerId } from './ClusterIdentity.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('cluster', 'Cluster operations');
+const logger = getLogger('cluster');
 
 export interface EventBus {
   publish(channel: string, data: unknown): Promise<void>;
@@ -39,7 +43,7 @@ export class LocalEventBus implements EventBus {
       try {
         handler(data);
       } catch (err) {
-        console.error(`[LocalEventBus] Handler error on channel "${channel}":`, err);
+        logger.error(`[LocalEventBus] Handler error on channel "${channel}":`, err as Error);
       }
     }
   }
@@ -119,7 +123,7 @@ export class DatabasePollingEventBus implements EventBus {
         try {
           handler(data);
         } catch (err) {
-          console.error(`[DatabasePollingEventBus] Handler error on channel "${channel}":`, err);
+          logger.error(`[DatabasePollingEventBus] Handler error on channel "${channel}":`, err as Error);
         }
       }
     }
@@ -181,13 +185,13 @@ export class DatabasePollingEventBus implements EventBus {
             try {
               handler(data);
             } catch (err) {
-              console.error(`[DatabasePollingEventBus] Poll handler error on "${row.CHANNEL}":`, err);
+              logger.error(`[DatabasePollingEventBus] Poll handler error on "${row.CHANNEL}":`, err as Error);
             }
           }
         }
       }
     } catch (err) {
-      console.error('[DatabasePollingEventBus] Poll error:', err);
+      logger.error('[DatabasePollingEventBus] Poll error', err as Error);
     }
   }
 }
@@ -225,7 +229,7 @@ export class RedisEventBus implements EventBus {
               try {
                 handler(data);
               } catch (err) {
-                console.error(`[RedisEventBus] Handler error on channel "${channel}":`, err);
+                logger.error(`[RedisEventBus] Handler error on channel "${channel}":`, err as Error);
               }
             }
           }
@@ -256,7 +260,7 @@ export class RedisEventBus implements EventBus {
     if (isNewChannel) {
       const sub = this.subClient as { subscribe: (ch: string) => Promise<number> };
       sub.subscribe(channel).catch((err: Error) => {
-        console.error(`[RedisEventBus] Failed to subscribe to "${channel}":`, err);
+        logger.error(`[RedisEventBus] Failed to subscribe to "${channel}":`, err as Error);
       });
     }
   }
@@ -269,7 +273,7 @@ export class RedisEventBus implements EventBus {
         this.handlers.delete(channel);
         const sub = this.subClient as { unsubscribe: (ch: string) => Promise<number> };
         sub.unsubscribe(channel).catch((err: Error) => {
-          console.error(`[RedisEventBus] Failed to unsubscribe from "${channel}":`, err);
+          logger.error(`[RedisEventBus] Failed to unsubscribe from "${channel}":`, err as Error);
         });
       }
     }
@@ -304,7 +308,7 @@ export function createEventBus(): EventBus {
     try {
       return new RedisEventBus(config.redisUrl);
     } catch (err) {
-      console.warn('[EventBus] Redis unavailable, falling back to database polling:', err);
+      logger.warn('Redis unavailable, falling back to database polling');
     }
   }
 

@@ -17,6 +17,10 @@ import { getPool, transaction } from './pool.js';
 import { Status, parseStatus } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
 import { getEncryptor, isEncryptionEnabled } from './Encryptor.js';
+import { getLogger, registerComponent } from '../logging/index.js';
+
+registerComponent('database', 'DB pool/queries');
+const logger = getLogger('database');
 
 export type DbConnection = Pool | PoolConnection;
 
@@ -662,7 +666,7 @@ export async function getContent(
       row.CONTENT = getEncryptor().decrypt(row.CONTENT);
       row.IS_ENCRYPTED = 0;
     } catch (err) {
-      console.error(`[DonkeyDao] Failed to decrypt content (messageId=${messageId}, metaDataId=${metaDataId}, contentType=${contentType}): ${err}`);
+      logger.error(`[DonkeyDao] Failed to decrypt content (messageId=${messageId}, metaDataId=${metaDataId}, contentType=${contentType}): ${err}`);
     }
   }
 

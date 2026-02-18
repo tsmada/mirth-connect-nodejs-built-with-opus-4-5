@@ -57,6 +57,10 @@ import {
   statisticsTable,
   sequenceTable,
 } from '../../db/DonkeyDao.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 // Configure multer for multipart file uploads
 const upload = multer.default({
@@ -475,7 +479,7 @@ messageRouter.get(
       const maxId = await getMaxMessageId(channelId);
       res.sendData(maxId);
     } catch (error) {
-      console.error('Get max message ID error:', error);
+      logger.error('Get max message ID error', error as Error);
       res.status(500).json({ error: 'Failed to get max message ID' });
     }
   }
@@ -495,7 +499,7 @@ messageRouter.get(
       const count = await countMessages(channelId, filter);
       res.sendData(count);
     } catch (error) {
-      console.error('Get message count error:', error);
+      logger.error('Get message count error', error as Error);
       res.status(500).json({ error: 'Failed to get message count' });
     }
   }
@@ -515,7 +519,7 @@ messageRouter.post(
       const count = await countMessages(channelId, filter);
       res.sendData(count);
     } catch (error) {
-      console.error('Get message count POST error:', error);
+      logger.error('Get message count POST error', error as Error);
       res.status(500).json({ error: 'Failed to get message count' });
     }
   }
@@ -549,7 +553,7 @@ messageRouter.get(
 
       res.sendData(message);
     } catch (error) {
-      console.error('Get message error:', error);
+      logger.error('Get message error', error as Error);
       res.status(500).json({ error: 'Failed to get message' });
     }
   }
@@ -582,7 +586,7 @@ messageRouter.delete(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Delete message error:', error);
+      logger.error('Delete message error', error as Error);
       res.status(500).json({ error: 'Failed to delete message' });
     }
   }
@@ -610,7 +614,7 @@ messageRouter.get(
       const messages = await searchMessages(channelId, filter, offset, limit, includeContent);
       res.sendData(messages);
     } catch (error) {
-      console.error('Search messages error:', error);
+      logger.error('Search messages error', error as Error);
       res.status(500).json({ error: 'Failed to search messages' });
     }
   }
@@ -634,7 +638,7 @@ messageRouter.post(
       const messages = await searchMessages(channelId, filter, offset, limit, includeContent);
       res.sendData(messages);
     } catch (error) {
-      console.error('Search messages POST error:', error);
+      logger.error('Search messages POST error', error as Error);
       res.status(500).json({ error: 'Failed to search messages' });
     }
   }
@@ -712,7 +716,7 @@ messageRouter.post(
         results,
       });
     } catch (error) {
-      console.error('Reprocess messages error:', error);
+      logger.error('Reprocess messages error', error as Error);
       res.status(500).json({ error: 'Failed to reprocess messages' });
     }
   }
@@ -790,7 +794,7 @@ messageRouter.post(
         filterDestinations,
       });
     } catch (error) {
-      console.error('Reprocess message error:', error);
+      logger.error('Reprocess message error', error as Error);
       res.status(500).json({ error: 'Failed to reprocess message' });
     }
   }
@@ -821,7 +825,7 @@ messageRouter.get(
       const attachments = await getAttachments(channelId, messageId);
       res.sendData(attachments);
     } catch (error) {
-      console.error('Get attachments error:', error);
+      logger.error('Get attachments error', error as Error);
       res.status(500).json({ error: 'Failed to get attachments' });
     }
   }
@@ -857,7 +861,7 @@ messageRouter.get(
       res.setHeader('Content-Disposition', `attachment; filename="${attachmentId}"`);
       res.send(data);
     } catch (error) {
-      console.error('Get attachment error:', error);
+      logger.error('Get attachment error', error as Error);
       res.status(500).json({ error: 'Failed to get attachment' });
     }
   }
@@ -971,7 +975,7 @@ messageRouter.post(
         originalId: importedMessage.messageId,
       });
     } catch (error) {
-      console.error('Import message error:', error);
+      logger.error('Import message error', error as Error);
       res.status(500).json({ error: 'Failed to import message' });
     }
   }
@@ -1007,7 +1011,7 @@ messageRouter.post(
         res.send(`<messages count="${messages.length}"></messages>`);
       }
     } catch (error) {
-      console.error('Export messages error:', error);
+      logger.error('Export messages error', error as Error);
       res.status(500).json({ error: 'Failed to export messages' });
     }
   }
@@ -1071,7 +1075,7 @@ messageRouter.post(
         processed: result.processed,
       });
     } catch (error) {
-      console.error('Process message error:', error);
+      logger.error('Process message error', error as Error);
       res.status(500).json({ error: 'Failed to process message' });
     }
   }
@@ -1115,7 +1119,7 @@ messageRouter.delete(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Remove all messages error:', error);
+      logger.error('Remove all messages error', error as Error);
       res.status(500).json({ error: 'Failed to remove messages' });
     }
   }
@@ -1163,7 +1167,7 @@ messageRouter.post(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Remove messages error:', error);
+      logger.error('Remove messages error', error as Error);
       res.status(500).json({ error: 'Failed to remove messages' });
     }
   }
@@ -1296,7 +1300,7 @@ messageRouter.post(
         filename: req.file.originalname,
       });
     } catch (error) {
-      console.error('Import message multipart error:', error);
+      logger.error('Import message multipart error', error as Error);
       res.status(500).json({ error: 'Failed to import message' });
     }
   }
@@ -1368,7 +1372,7 @@ messageRouter.post(
         res.json(messages);
       }
     } catch (error) {
-      console.error('Export encrypted messages error:', error);
+      logger.error('Export encrypted messages error', error as Error);
       res.status(500).json({ error: 'Failed to export messages' });
     }
   }
@@ -1448,7 +1452,7 @@ messageRouter.post(
         size: data.length,
       });
     } catch (error) {
-      console.error('Create attachment error:', error);
+      logger.error('Create attachment error', error as Error);
       res.status(500).json({ error: 'Failed to create attachment' });
     }
   }
@@ -1528,7 +1532,7 @@ messageRouter.put(
         size: data.length,
       });
     } catch (error) {
-      console.error('Update attachment error:', error);
+      logger.error('Update attachment error', error as Error);
       res.status(500).json({ error: 'Failed to update attachment' });
     }
   }
@@ -1575,7 +1579,7 @@ messageRouter.delete(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Delete attachment error:', error);
+      logger.error('Delete attachment error', error as Error);
       res.status(500).json({ error: 'Failed to delete attachment' });
     }
   }
@@ -1697,7 +1701,7 @@ messageRouter.post(
         results,
       });
     } catch (error) {
-      console.error('Bulk reprocess messages error:', error);
+      logger.error('Bulk reprocess messages error', error as Error);
       res.status(500).json({ error: 'Failed to reprocess messages' });
     }
   }
@@ -1792,7 +1796,7 @@ messageRouter.get(
         encrypted: row.IS_ENCRYPTED === 1,
       });
     } catch (error) {
-      console.error('Get content error:', error);
+      logger.error('Get content error', error as Error);
       res.status(500).json({ error: 'Failed to get content' });
     }
   }
@@ -1904,7 +1908,7 @@ messageRouter.put(
         updated: true,
       });
     } catch (error) {
-      console.error('Update content error:', error);
+      logger.error('Update content error', error as Error);
       res.status(500).json({ error: 'Failed to update content' });
     }
   }

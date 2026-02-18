@@ -15,6 +15,10 @@ import * as os from 'os';
 import { authorize } from '../middleware/authorization.js';
 import { SYSTEM_GET_INFO, SYSTEM_GET_STATS } from '../middleware/operations.js';
 import { getLocalChannelIds, getStatistics, StatisticsRow } from '../../db/DonkeyDao.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const systemRouter = Router();
 
@@ -114,7 +118,7 @@ systemRouter.get(
       const info = getSystemInfo();
       res.sendData(info);
     } catch (error) {
-      console.error('Get system info error:', error);
+      logger.error('Get system info error', error as Error);
       res.status(500).json({ error: 'Failed to get system info' });
     }
   }
@@ -132,7 +136,7 @@ systemRouter.get(
       const stats = getSystemStats();
       res.sendData(stats);
     } catch (error) {
-      console.error('Get system stats error:', error);
+      logger.error('Get system stats error', error as Error);
       res.status(500).json({ error: 'Failed to get system stats' });
     }
   }
@@ -220,7 +224,7 @@ systemRouter.get(
 
       res.sendData(results);
     } catch (error) {
-      console.error('Get cluster statistics error:', error);
+      logger.error('Get cluster statistics error', error as Error);
       res.status(500).json({ error: 'Failed to get cluster statistics' });
     }
   }

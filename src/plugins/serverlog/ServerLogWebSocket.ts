@@ -20,6 +20,10 @@ import {
   serializeServerLogItem,
   shouldDisplayLogLevel,
 } from './ServerLogItem.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 /**
  * WebSocket message types
@@ -103,7 +107,7 @@ export class ServerLogWebSocketHandler {
       this.pingClients();
     }, 30000);
 
-    console.log(`Server Log WebSocket attached at ${path}`);
+    logger.info(`Server Log WebSocket attached at ${path}`);
   }
 
   /**
@@ -130,7 +134,7 @@ export class ServerLogWebSocketHandler {
       this.pingClients();
     }, 30000);
 
-    console.log(`Server Log WebSocket listening on port ${port}`);
+    logger.info(`Server Log WebSocket listening on port ${port}`);
   }
 
   /**
@@ -159,7 +163,7 @@ export class ServerLogWebSocketHandler {
     });
 
     ws.on('error', (error) => {
-      console.error('Server Log WebSocket error:', error);
+      logger.error('Server Log WebSocket error', error as Error);
       this.handleClose(ws);
     });
 

@@ -27,6 +27,10 @@ import {
   EXTENSION_GET_PROPERTIES,
   EXTENSION_SET_PROPERTIES,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const extensionRouter = Router();
 
@@ -375,7 +379,7 @@ extensionRouter.get(
       const extensions = await getAllExtensions();
       res.sendData(extensions);
     } catch (error) {
-      console.error('Get extensions error:', error);
+      logger.error('Get extensions error', error as Error);
       res.status(500).json({ error: 'Failed to get extensions' });
     }
   }
@@ -397,7 +401,7 @@ extensionRouter.get(
       );
       res.sendData(connectors);
     } catch (error) {
-      console.error('Get connectors error:', error);
+      logger.error('Get connectors error', error as Error);
       res.status(500).json({ error: 'Failed to get connectors' });
     }
   }
@@ -419,7 +423,7 @@ extensionRouter.get(
       );
       res.sendData(plugins);
     } catch (error) {
-      console.error('Get plugins error:', error);
+      logger.error('Get plugins error', error as Error);
       res.status(500).json({ error: 'Failed to get plugins' });
     }
   }
@@ -444,7 +448,7 @@ extensionRouter.get(
 
       res.sendData(extension);
     } catch (error) {
-      console.error('Get extension error:', error);
+      logger.error('Get extension error', error as Error);
       res.status(500).json({ error: 'Failed to get extension' });
     }
   }
@@ -469,7 +473,7 @@ extensionRouter.get(
 
       res.sendData(extension.enabled);
     } catch (error) {
-      console.error('Get extension enabled error:', error);
+      logger.error('Get extension enabled error', error as Error);
       res.status(500).json({ error: 'Failed to check extension enabled' });
     }
   }
@@ -499,7 +503,7 @@ extensionRouter.put(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Set extension enabled error:', error);
+      logger.error('Set extension enabled error', error as Error);
       res.status(500).json({ error: 'Failed to set extension enabled' });
     }
   }
@@ -528,7 +532,7 @@ extensionRouter.post(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Set extension enabled POST error:', error);
+      logger.error('Set extension enabled POST error', error as Error);
       res.status(500).json({ error: 'Failed to set extension enabled' });
     }
   }
@@ -553,7 +557,7 @@ extensionRouter.get(
 
       res.sendData(properties);
     } catch (error) {
-      console.error('Get extension properties error:', error);
+      logger.error('Get extension properties error', error as Error);
       res.status(500).json({ error: 'Failed to get extension properties' });
     }
   }
@@ -583,7 +587,7 @@ extensionRouter.put(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Set extension properties error:', error);
+      logger.error('Set extension properties error', error as Error);
       res.status(500).json({ error: 'Failed to set extension properties' });
     }
   }

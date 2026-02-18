@@ -23,6 +23,10 @@ import {
   CHANNEL_GET_IDS_AND_NAMES,
   MESSAGE_REMOVE_ALL,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const channelRouter = Router();
 
@@ -63,7 +67,7 @@ channelRouter.get('/', authorize({ operation: CHANNEL_GET_CHANNELS }), async (re
 
     res.sendData(channels);
   } catch (error) {
-    console.error('Get channels error:', error);
+    logger.error('Get channels error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve channels' });
   }
 });
@@ -100,7 +104,7 @@ channelRouter.post('/_getChannels', authorize({ operation: CHANNEL_GET_CHANNELS 
 
     res.sendData(channels);
   } catch (error) {
-    console.error('Get channels POST error:', error);
+    logger.error('Get channels POST error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve channels' });
   }
 });
@@ -115,7 +119,7 @@ channelRouter.get('/idsAndNames', authorize({ operation: CHANNEL_GET_IDS_AND_NAM
     const idsAndNames = await ChannelController.getChannelIdsAndNames();
     res.sendData(idsAndNames);
   } catch (error) {
-    console.error('Get channel IDs and names error:', error);
+    logger.error('Get channel IDs and names error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve channel IDs and names' });
   }
 });
@@ -156,7 +160,7 @@ channelRouter.get('/:channelId', authorize({ operation: CHANNEL_GET_CHANNEL, che
 
     res.sendData(channel);
   } catch (error) {
-    console.error('Get channel error:', error);
+    logger.error('Get channel error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve channel' });
   }
 });
@@ -173,7 +177,7 @@ channelRouter.post('/_getSummary', authorize({ operation: CHANNEL_GET_CHANNEL_SU
     const summaries = await ChannelController.getChannelSummaries(cachedChannels, ignoreNewChannels);
     res.sendData(summaries);
   } catch (error) {
-    console.error('Get channel summary error:', error);
+    logger.error('Get channel summary error', error as Error);
     res.status(500).json({ error: 'Failed to retrieve channel summary' });
   }
 });
@@ -220,7 +224,7 @@ channelRouter.post('/', authorize({ operation: CHANNEL_CREATE }), async (req: Re
     const success = await ChannelController.createChannelWithXml(channelData, rawXml);
     res.sendData(success, success ? 201 : 500);
   } catch (error) {
-    console.error('Create channel error:', error);
+    logger.error('Create channel error', error as Error);
     res.status(500).json({ error: 'Failed to create channel' });
   }
 });
@@ -250,7 +254,7 @@ channelRouter.put('/:channelId', authorize({ operation: CHANNEL_UPDATE, checkAut
     const success = await ChannelController.updateChannel(channelId, channelData);
     res.sendData(success);
   } catch (error) {
-    console.error('Update channel error:', error);
+    logger.error('Update channel error', error as Error);
     res.status(500).json({ error: 'Failed to update channel' });
   }
 });
@@ -272,7 +276,7 @@ channelRouter.delete('/:channelId', authorize({ operation: CHANNEL_REMOVE, check
     await ChannelController.deleteChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Delete channel error:', error);
+    logger.error('Delete channel error', error as Error);
     res.status(500).json({ error: 'Failed to delete channel' });
   }
 });
@@ -296,7 +300,7 @@ channelRouter.delete('/', authorize({ operation: CHANNEL_REMOVE }), async (req: 
 
     res.status(204).end();
   } catch (error) {
-    console.error('Delete channels error:', error);
+    logger.error('Delete channels error', error as Error);
     res.status(500).json({ error: 'Failed to delete channels' });
   }
 });
@@ -319,7 +323,7 @@ channelRouter.post('/_removeChannels', authorize({ operation: CHANNEL_REMOVE }),
 
     res.status(204).end();
   } catch (error) {
-    console.error('Remove channels error:', error);
+    logger.error('Remove channels error', error as Error);
     res.status(500).json({ error: 'Failed to remove channels' });
   }
 });
@@ -371,7 +375,7 @@ channelRouter.delete('/_removeAllMessages', authorize({ operation: MESSAGE_REMOV
 
     res.status(204).end();
   } catch (error) {
-    console.error('Remove all messages error:', error);
+    logger.error('Remove all messages error', error as Error);
     res.status(500).json({ error: 'Failed to remove all messages' });
   }
 });
@@ -419,7 +423,7 @@ channelRouter.post('/_removeAllMessagesPost', authorize({ operation: MESSAGE_REM
 
     res.status(204).end();
   } catch (error) {
-    console.error('Remove all messages POST error:', error);
+    logger.error('Remove all messages POST error', error as Error);
     res.status(500).json({ error: 'Failed to remove all messages' });
   }
 });
@@ -449,7 +453,7 @@ channelRouter.post('/_setInitialState', authorize({ operation: CHANNEL_UPDATE })
 
     res.status(204).end();
   } catch (error) {
-    console.error('Set initial state error:', error);
+    logger.error('Set initial state error', error as Error);
     res.status(500).json({ error: 'Failed to set initial state' });
   }
 });
@@ -475,7 +479,7 @@ channelRouter.post('/:channelId/initialState/:initialState', authorize({ operati
 
     res.status(204).end();
   } catch (error) {
-    console.error('Set channel initial state error:', error);
+    logger.error('Set channel initial state error', error as Error);
     res.status(500).json({ error: 'Failed to set initial state' });
   }
 });
@@ -505,7 +509,7 @@ channelRouter.post('/_setEnabled', authorize({ operation: CHANNEL_UPDATE }), asy
 
     res.status(204).end();
   } catch (error) {
-    console.error('Set enabled error:', error);
+    logger.error('Set enabled error', error as Error);
     res.status(500).json({ error: 'Failed to set enabled' });
   }
 });
@@ -521,7 +525,7 @@ channelRouter.post('/:channelId/enabled/:enabled', authorize({ operation: CHANNE
     await ChannelController.setChannelEnabled(channelId, enabled === 'true');
     res.status(204).end();
   } catch (error) {
-    console.error('Set channel enabled error:', error);
+    logger.error('Set channel enabled error', error as Error);
     res.status(500).json({ error: 'Failed to set channel enabled' });
   }
 });
@@ -548,7 +552,7 @@ channelRouter.get('/:channelId/connectorNames', authorize({ operation: CHANNEL_G
 
     res.sendData(connectorNames);
   } catch (error) {
-    console.error('Get connector names error:', error);
+    logger.error('Get connector names error', error as Error);
     res.status(500).json({ error: 'Failed to get connector names' });
   }
 });
@@ -570,7 +574,7 @@ channelRouter.get('/:channelId/metaDataColumns', authorize({ operation: CHANNEL_
     const columns = channel.properties.metaDataColumns || [];
     res.sendData(columns);
   } catch (error) {
-    console.error('Get metadata columns error:', error);
+    logger.error('Get metadata columns error', error as Error);
     res.status(500).json({ error: 'Failed to get metadata columns' });
   }
 });

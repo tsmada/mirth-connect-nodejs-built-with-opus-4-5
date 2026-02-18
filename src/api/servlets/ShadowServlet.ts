@@ -24,6 +24,10 @@ import { EngineController } from '../../controllers/EngineController.js';
 import { execute } from '../../db/pool.js';
 import { getServerId } from '../../cluster/ClusterIdentity.js';
 import { getMirthInstance } from '../../server/Mirth.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const shadowRouter = Router();
 
@@ -99,7 +103,7 @@ shadowRouter.post('/promote', async (req: Request, res: Response) => {
           { serverId }
         );
       } catch (err) {
-        console.error('[Shadow] Failed to update D_SERVERS status:', err);
+        logger.error('[Shadow] Failed to update D_SERVERS status', err as Error);
       }
 
       res.json({
@@ -187,7 +191,7 @@ shadowRouter.post('/demote', async (req: Request, res: Response) => {
     try {
       await EngineController.stopChannel(channelId);
     } catch (stopError) {
-      console.error(`[Shadow] Error stopping channel ${channelId}:`, stopError);
+      logger.error(`Error stopping channel ${channelId} during demotion`, stopError as Error);
       // Continue with demotion even if stop fails
     }
 

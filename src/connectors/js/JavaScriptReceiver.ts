@@ -34,6 +34,10 @@ import {
   getDefaultJavaScriptReceiverProperties,
   JAVASCRIPT_RECEIVER_NAME,
 } from './JavaScriptReceiverProperties.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('javascript', 'Script execution');
+const logger = getLogger('javascript');
 
 export interface JavaScriptReceiverConfig {
   name?: string;
@@ -144,12 +148,12 @@ export class JavaScriptReceiver extends SourceConnector {
   private startPolling(): void {
     // First poll runs immediately (matches Java PollConnector behavior)
     this.poll().catch((err) =>
-      console.error('JS Receiver poll error:', err)
+      logger.error('JS Receiver poll error', err as Error)
     );
 
     this.pollTimer = setInterval(() => {
       this.poll().catch((err) =>
-        console.error('JS Receiver poll error:', err)
+        logger.error('JS Receiver poll error', err as Error)
       );
     }, this.properties.pollInterval);
   }
@@ -230,7 +234,7 @@ export class JavaScriptReceiver extends SourceConnector {
           timestamp: new Date(),
         });
       }
-      console.error(`Error in JavaScript Receiver poll:`, error);
+      logger.error(`Error in JavaScript Receiver poll:`, error as Error);
     } finally {
       this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
     }

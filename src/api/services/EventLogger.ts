@@ -190,8 +190,8 @@ async function processQueue(): Promise<void> {
         await insertEvent(event);
       } catch (error) {
         // Log to console but don't throw - event logging should never break the app
-        console.error('Failed to insert event:', error);
-        console.error('Event:', event);
+        logger.error('Failed to insert event', error as Error);
+        logger.error(`Failed event: ${JSON.stringify(event)}`);
       }
     }
 
@@ -225,6 +225,10 @@ export function getQueuedEventCount(): number {
 // ============================================================================
 
 import { Request, Response, NextFunction } from 'express';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 /**
  * Middleware to log request completion

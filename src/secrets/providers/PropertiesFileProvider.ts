@@ -1,5 +1,9 @@
 import { readFile } from 'fs/promises';
 import type { SecretValue, SecretsProvider } from '../types.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('secrets', 'Secret management');
+const logger = getLogger('secrets');
 
 /**
  * Reads Java-style .properties files and .env files.
@@ -25,8 +29,8 @@ export class PropertiesFileProvider implements SecretsProvider {
       const content = await readFile(this.filePath, 'utf-8');
       this.properties = PropertiesFileProvider.parse(content);
     } catch (err) {
-      console.warn(
-        `[PropertiesFileProvider] Failed to read ${this.filePath}: ${(err as Error).message}`
+      logger.warn(
+        `Failed to read ${this.filePath}: ${(err as Error).message}`
       );
     }
   }

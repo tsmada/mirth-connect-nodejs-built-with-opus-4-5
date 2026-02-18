@@ -9,6 +9,10 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../../api/middleware/auth.js';
 import { serverLogController } from './ServerLogController.js';
 import { parseLogLevel } from './ServerLogItem.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 export const serverLogRouter = Router();
 
@@ -63,7 +67,7 @@ serverLogRouter.get('/', async (req: Request, res: Response) => {
 
     res.json(serialized);
   } catch (error) {
-    console.error('Get server logs error:', error);
+    logger.error('Get server logs error', error as Error);
     res.status(500).json({ error: 'Failed to get server logs' });
   }
 });
@@ -81,7 +85,7 @@ serverLogRouter.get('/status', async (_req: Request, res: Response) => {
       serverId: serverLogController.getServerId(),
     });
   } catch (error) {
-    console.error('Get server log status error:', error);
+    logger.error('Get server log status error', error as Error);
     res.status(500).json({ error: 'Failed to get server log status' });
   }
 });
@@ -95,7 +99,7 @@ serverLogRouter.delete('/', async (_req: Request, res: Response) => {
     serverLogController.clearLogs();
     res.json({ success: true, message: 'Server logs cleared' });
   } catch (error) {
-    console.error('Clear server logs error:', error);
+    logger.error('Clear server logs error', error as Error);
     res.status(500).json({ error: 'Failed to clear server logs' });
   }
 });
@@ -124,7 +128,7 @@ serverLogRouter.put('/config', async (req: Request, res: Response): Promise<void
       maxSize: serverLogController.getMaxLogSize(),
     });
   } catch (error) {
-    console.error('Update server log config error:', error);
+    logger.error('Update server log config error', error as Error);
     res.status(500).json({ error: 'Failed to update server log configuration' });
   }
 });

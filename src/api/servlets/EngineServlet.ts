@@ -13,6 +13,10 @@ import {
   ENGINE_UNDEPLOY,
   ENGINE_REDEPLOY_ALL,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const engineRouter = Router();
 
@@ -77,7 +81,7 @@ engineRouter.post('/_redeployAll', authorize({ operation: ENGINE_REDEPLOY_ALL })
     await EngineController.redeployAllChannels();
     res.status(204).end();
   } catch (error) {
-    console.error('Redeploy all channels error:', error);
+    logger.error('Redeploy all channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -97,7 +101,7 @@ engineRouter.post('/:channelId/_deploy', authorize({ operation: ENGINE_DEPLOY, c
     await EngineController.deployChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Deploy channel error:', error);
+    logger.error('Deploy channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -118,18 +122,18 @@ engineRouter.post('/_deploy', authorize({ operation: ENGINE_DEPLOY }), async (re
     const errors: Array<{ channelId: string; error: string }> = [];
 
     if (channelIds.length > 0) {
-      console.log(`[EngineServlet] Deploying channels: ${channelIds.join(', ')}`);
+      logger.info(`[EngineServlet] Deploying channels: ${channelIds.join(', ')}`);
       for (const id of channelIds) {
         try {
           await EngineController.deployChannel(id);
         } catch (err) {
           const msg = (err as Error).message;
-          console.error(`[EngineServlet] Failed to deploy channel ${id}: ${msg}`);
+          logger.error(`[EngineServlet] Failed to deploy channel ${id}: ${msg}`);
           errors.push({ channelId: id, error: msg });
         }
       }
     } else {
-      console.log('[EngineServlet] No specific channels requested, deploying all');
+      logger.info('[EngineServlet] No specific channels requested, deploying all');
       await EngineController.deployAllChannels();
     }
 
@@ -140,7 +144,7 @@ engineRouter.post('/_deploy', authorize({ operation: ENGINE_DEPLOY }), async (re
       res.status(204).end();
     }
   } catch (error) {
-    console.error('Deploy channels error:', error);
+    logger.error('Deploy channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -160,7 +164,7 @@ engineRouter.post('/:channelId/_undeploy', authorize({ operation: ENGINE_UNDEPLO
     await EngineController.undeployChannel(channelId);
     res.status(204).end();
   } catch (error) {
-    console.error('Undeploy channel error:', error);
+    logger.error('Undeploy channel error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });
@@ -179,18 +183,18 @@ engineRouter.post('/_undeploy', authorize({ operation: ENGINE_UNDEPLOY }), async
     const channelIds = extractChannelIds(req.body);
 
     if (channelIds.length > 0) {
-      console.log(`[EngineServlet] Undeploying channels: ${channelIds.join(', ')}`);
+      logger.info(`[EngineServlet] Undeploying channels: ${channelIds.join(', ')}`);
       for (const id of channelIds) {
         await EngineController.undeployChannel(id);
       }
     } else {
-      console.log('[EngineServlet] No specific channels requested, undeploying all');
+      logger.info('[EngineServlet] No specific channels requested, undeploying all');
       await EngineController.undeployAllChannels();
     }
 
     res.status(204).end();
   } catch (error) {
-    console.error('Undeploy channels error:', error);
+    logger.error('Undeploy channels error', error as Error);
     const returnErrors = req.query.returnErrors === 'true';
     if (returnErrors) {
       res.status(500).json({ error: (error as Error).message });

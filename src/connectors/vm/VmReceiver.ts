@@ -17,6 +17,10 @@ import {
   VmReceiverProperties,
   getDefaultVmReceiverProperties,
 } from './VmConnectorProperties.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('vm-connector', 'Channel Writer/Reader');
+const logger = getLogger('vm-connector');
 
 /**
  * Connection status event types for VM connector
@@ -117,7 +121,7 @@ export class VmReceiver extends SourceConnector {
       try {
         listener(status);
       } catch (error) {
-        console.error('Error in connection status listener:', error);
+        logger.error('Error in connection status listener', error as Error);
       }
     }
   }

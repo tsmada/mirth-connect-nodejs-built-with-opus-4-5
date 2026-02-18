@@ -1,4 +1,11 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+
+const mockLogError = jest.fn();
+jest.mock('../../../src/logging/index.js', () => ({
+  registerComponent: jest.fn(),
+  getLogger: () => ({ info: jest.fn(), error: mockLogError, warn: jest.fn(), debug: jest.fn(), isDebugEnabled: () => false }),
+}));
+
 import { SecretsManager } from '../../../src/secrets/SecretsManager.js';
 import type { SecretValue, SecretsProvider } from '../../../src/secrets/types.js';
 
@@ -98,7 +105,7 @@ describe('SecretsManager', () => {
       (failProvider.initialize as jest.MockedFunction<() => Promise<void>>)
         .mockRejectedValue(new Error('boom'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockLogError.mockClear();
       const mgr = await SecretsManager.initializeWithProviders(
         [failProvider, createMockProvider('file')],
         { providers: ['env', 'file'], cacheTtlSeconds: 0 },
@@ -107,7 +114,7 @@ describe('SecretsManager', () => {
       // Only 'file' should be registered (env failed)
       expect(mgr.getProviderStatus()).toHaveLength(1);
       expect(mgr.getProviderStatus()[0]!.name).toBe('file');
-      consoleSpy.mockRestore();
+      // logger mock auto-clears
     });
 
     it('should preload keys from config', async () => {
@@ -197,7 +204,7 @@ describe('SecretsManager', () => {
       (failProvider.get as jest.MockedFunction<(key: string) => Promise<SecretValue | undefined>>)
         .mockRejectedValue(new Error('provider error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockLogError.mockClear();
       const mgr = await SecretsManager.initializeWithProviders(
         [failProvider, createMockProvider('file', { 'key': 'fallback' })],
         { providers: ['env', 'file'], cacheTtlSeconds: 300 },
@@ -206,7 +213,7 @@ describe('SecretsManager', () => {
 
       expect(result).toBeDefined();
       expect(result!.value).toBe('fallback');
-      consoleSpy.mockRestore();
+      // logger mock auto-clears
     });
   });
 
@@ -267,7 +274,7 @@ describe('SecretsManager', () => {
       (provider.get as jest.MockedFunction<(key: string) => Promise<SecretValue | undefined>>)
         .mockRejectedValue(new Error('boom'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockLogError.mockClear();
       const mgr = await SecretsManager.initializeWithProviders(
         [provider],
         { providers: ['env'], cacheTtlSeconds: 0 },
@@ -275,8 +282,8 @@ describe('SecretsManager', () => {
       // Should not throw
       await mgr.preload(['broken-key']);
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(mockLogError).toHaveBeenCalled();
+      // logger mock auto-clears
     });
   });
 

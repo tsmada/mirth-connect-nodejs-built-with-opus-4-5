@@ -30,6 +30,10 @@ import {
   AssociationParams,
   StorageCommitment,
 } from './DicomConnection.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('dicom-connector', 'DICOM C-STORE sender');
+const logger = getLogger('dicom-connector');
 
 /**
  * Configuration for DICOM Dispatcher
@@ -420,7 +424,7 @@ export class DICOMDispatcher extends DestinationConnector {
         if (group > 0x0008) break;
       }
     } catch (e) {
-      console.warn('Error parsing DICOM UIDs, using defaults:', e);
+      logger.warn('Error parsing DICOM UIDs, using defaults');
     }
 
     return { sopClassUid, sopInstanceUid };
@@ -611,7 +615,7 @@ export class DICOMDispatcher extends DestinationConnector {
       await connection.release();
       return status === DicomStatus.SUCCESS;
     } catch (error) {
-      console.error('DICOM verification failed:', error);
+      logger.error('DICOM verification failed', error as Error);
       return false;
     } finally {
       if (connection) {

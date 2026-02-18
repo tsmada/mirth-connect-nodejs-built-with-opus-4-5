@@ -16,6 +16,10 @@ import { query, execute } from '../../db/pool.js';
 import { RowDataPacket } from 'mysql2';
 import { authorize } from '../middleware/authorization.js';
 import { CHANNEL_GROUP_GET, CHANNEL_GROUP_UPDATE } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const channelGroupRouter = Router();
 
@@ -194,7 +198,7 @@ channelGroupRouter.get(
       const groups = await getChannelGroups(ids);
       res.sendData(groups);
     } catch (error) {
-      console.error('Get channel groups error:', error);
+      logger.error('Get channel groups error', error as Error);
       res.status(500).json({ error: 'Failed to get channel groups' });
     }
   }
@@ -223,7 +227,7 @@ channelGroupRouter.post(
       const groups = await getChannelGroups(ids);
       res.sendData(groups);
     } catch (error) {
-      console.error('Get channel groups POST error:', error);
+      logger.error('Get channel groups POST error', error as Error);
       res.status(500).json({ error: 'Failed to get channel groups' });
     }
   }
@@ -279,7 +283,7 @@ channelGroupRouter.post(
       // Return true on success (matches Java API)
       res.sendData(true);
     } catch (error) {
-      console.error('Bulk update channel groups error:', error);
+      logger.error('Bulk update channel groups error', error as Error);
       res.status(500).json({ error: 'Failed to update channel groups' });
     }
   }

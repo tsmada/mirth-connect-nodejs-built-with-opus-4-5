@@ -29,6 +29,10 @@ import {
 } from './MessageArchiver.js';
 import { ContentType } from '../../model/ContentType.js';
 import { messagesPruned } from '../../telemetry/metrics.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('data-pruner', 'Pruning engine');
+const logger = getLogger('data-pruner');
 
 /**
  * Default block sizes for pruning operations
@@ -260,7 +264,7 @@ export class DataPruner {
    */
   async start(): Promise<boolean> {
     if (this.running) {
-      console.warn('The data pruner is already running');
+      logger.warn('The data pruner is already running');
       return false;
     }
 
@@ -269,11 +273,11 @@ export class DataPruner {
     this.status.startTime = new Date();
     this.abortController = new AbortController();
 
-    console.log('Triggering data pruner task');
+    logger.info('Triggering data pruner task');
 
     // Run pruning asynchronously
     this.run().catch((error) => {
-      console.error('Data pruner error:', error);
+      logger.error('Data pruner error', error as Error);
     });
 
     return true;
@@ -284,7 +288,7 @@ export class DataPruner {
    */
   async stop(): Promise<void> {
     if (this.running && this.abortController) {
-      console.log('Halting Data Pruner');
+      logger.info('Halting Data Pruner');
       this.abortController.abort();
       this.running = false;
     }
@@ -295,7 +299,7 @@ export class DataPruner {
    */
   private async run(): Promise<void> {
     try {
-      console.log(`Executing pruner, started at ${new Date().toLocaleString()}`);
+      logger.info(`Executing pruner, started at ${new Date().toLocaleString()}`);
 
       // Prune events if enabled
       if (this.pruneEvents && this.maxEventAge !== null) {
@@ -305,10 +309,10 @@ export class DataPruner {
       // Build task queue
       const taskQueue = await this.buildTaskQueue();
 
-      console.log(`Pruner task queue built, ${taskQueue.length} channels will be processed`);
+      logger.info(`Pruner task queue built, ${taskQueue.length} channels will be processed`);
 
       if (taskQueue.length === 0) {
-        console.log('No messages to prune');
+        logger.info('No messages to prune');
       }
 
       // Process each channel
@@ -329,7 +333,7 @@ export class DataPruner {
             messagesPruned.add(result.numMessagesPruned, { 'channel.name': task.channelName });
           }
 
-          console.log(
+          logger.info(
             `Pruned channel ${task.channelName}: ` +
               `${result.numMessagesArchived} archived, ` +
               `${result.numMessagesPruned} messages, ${result.numContentPruned} content rows`
@@ -339,7 +343,7 @@ export class DataPruner {
             throw error;
           }
           this.status.failedChannelIds.add(task.channelId);
-          console.error(`Failed to prune messages for channel ${task.channelName}:`, error);
+          logger.error(`Failed to prune messages for channel ${task.channelName}:`, error as Error);
         } finally {
           this.status.pendingChannelIds.delete(task.channelId);
           this.status.currentChannelId = null;
@@ -347,19 +351,19 @@ export class DataPruner {
         }
       }
 
-      console.log('Pruner job finished executing');
+      logger.info('Pruner job finished executing');
     } catch (error) {
       if (error instanceof AbortError) {
-        console.log('Data Pruner halted');
+        logger.info('Data Pruner halted');
       } else {
-        console.error('An error occurred while executing the data pruner:', error);
+        logger.error('An error occurred while executing the data pruner', error as Error);
       }
     } finally {
       // Finalize archiver (close any open file handles)
       try {
         await messageArchiver.finalize();
       } catch (err) {
-        console.error('Failed to finalize message archiver:', err);
+        logger.error('Failed to finalize message archiver', err as Error);
       }
       this.status.endTime = new Date();
       this.lastStatus = cloneDataPrunerStatus(this.status);
@@ -472,7 +476,7 @@ export class DataPruner {
    * that batch is skipped (data safety — matching Java Mirth behavior).
    */
   private async pruneChannel(task: PrunerTask): Promise<PruneResult> {
-    console.log(`Executing pruner for channel: ${task.channelId}`);
+    logger.info(`Executing pruner for channel: ${task.channelId}`);
 
     if (!task.messageDateThreshold && !task.contentDateThreshold) {
       return createPruneResult();
@@ -498,7 +502,7 @@ export class DataPruner {
         // Check if channel tables exist
         const tablesExist = await DonkeyDao.channelTablesExist(task.channelId);
         if (!tablesExist) {
-          console.warn(`No message tables found for ${task.channelId}`);
+          logger.warn(`No message tables found for ${task.channelId}`);
           return result;
         }
 
@@ -542,7 +546,7 @@ export class DataPruner {
         );
 
         if (messageIds.length === 0) {
-          console.log(`No messages to prune for channel ${task.channelId}`);
+          logger.info(`No messages to prune for channel ${task.channelId}`);
           return result;
         }
 
@@ -571,7 +575,7 @@ export class DataPruner {
         }
 
         if (retries > 0) {
-          console.warn(
+          logger.warn(
             `Failed to prune messages for channel ${task.channelName}. Retries remaining: ${retries}`
           );
           retries--;
@@ -646,9 +650,9 @@ export class DataPruner {
         this.numExported += archiveMessages.length;
       } catch (error) {
         // Archiving failed for this batch — skip deletion (data safety)
-        console.error(
-          `Failed to archive batch for channel ${channelName} (messages ${batchIds[0]}-${batchIds[batchIds.length - 1]}), skipping deletion:`,
-          error
+        logger.error(
+          `Failed to archive batch for channel ${channelName} (messages ${batchIds[0]}-${batchIds[batchIds.length - 1]}), skipping deletion`,
+          error as Error
         );
       }
     }
@@ -674,7 +678,7 @@ export class DataPruner {
       );
       return messages.map((m) => m.messageId);
     } catch (error) {
-      console.error('Failed to get messages to prune:', error);
+      logger.error('Failed to get messages to prune', error as Error);
       return [];
     }
   }
@@ -704,7 +708,7 @@ export class DataPruner {
         result.numContentPruned = messageIds.length; // Approximate
       }
     } catch (error) {
-      console.error('Failed to prune message batch:', error);
+      logger.error('Failed to prune message batch', error as Error);
     }
 
     return result;
@@ -714,7 +718,7 @@ export class DataPruner {
    * Prune old events
    */
   private async pruneEventData(): Promise<void> {
-    console.log('Pruning events');
+    logger.info('Pruning events');
     this.status.isPruningEvents = true;
 
     try {
@@ -728,9 +732,9 @@ export class DataPruner {
       dateThreshold.setDate(dateThreshold.getDate() - this.maxEventAge);
 
       const deleted = await EventDao.deleteEventsBeforeDate(dateThreshold);
-      console.log(`Pruned ${deleted} events older than ${dateThreshold.toISOString()}`);
+      logger.info(`Pruned ${deleted} events older than ${dateThreshold.toISOString()}`);
     } catch (error) {
-      console.error('Failed to prune events:', error);
+      logger.error('Failed to prune events', error as Error);
     } finally {
       this.status.isPruningEvents = false;
     }

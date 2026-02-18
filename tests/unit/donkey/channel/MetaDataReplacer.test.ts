@@ -1,3 +1,9 @@
+const mockLogWarn = jest.fn();
+jest.mock('../../../../src/logging/index.js', () => ({
+  registerComponent: jest.fn(),
+  getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: mockLogWarn, debug: jest.fn(), isDebugEnabled: () => false }),
+}));
+
 import {
   setMetaDataMap,
   getMetaDataValue,
@@ -194,7 +200,7 @@ describe('MetaDataReplacer', () => {
     });
 
     it('should log warning but continue on cast errors', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLogWarn.mockClear();
 
       const msg = createConnectorMessage({
         connectorMap: new Map([
@@ -214,10 +220,8 @@ describe('MetaDataReplacer', () => {
       // Bad value should be skipped
       expect(result.has('BAD')).toBe(false);
       // Warning should have been logged
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      expect(warnSpy.mock.calls[0]![0]).toContain('not-a-number');
-
-      warnSpy.mockRestore();
+      expect(mockLogWarn).toHaveBeenCalledTimes(1);
+      expect(mockLogWarn.mock.calls[0]![0]).toContain('not-a-number');
     });
   });
 

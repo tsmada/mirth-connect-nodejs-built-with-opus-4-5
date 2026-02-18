@@ -38,6 +38,10 @@ import {
   EVENT_EXPORT,
   EVENT_REMOVE,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const eventRouter = Router();
 
@@ -65,7 +69,7 @@ eventRouter.get(
       const maxId = await getMaxEventId();
       res.sendData(maxId);
     } catch (error) {
-      console.error('Get max event ID error:', error);
+      logger.error('Get max event ID error', error as Error);
       res.status(500).json({ error: 'Failed to get max event ID' });
     }
   }
@@ -84,7 +88,7 @@ eventRouter.get(
       const count = await countEvents(filter);
       res.sendData(count);
     } catch (error) {
-      console.error('Get event count error:', error);
+      logger.error('Get event count error', error as Error);
       res.status(500).json({ error: 'Failed to get event count' });
     }
   }
@@ -103,7 +107,7 @@ eventRouter.post(
       const count = await countEvents(filter);
       res.sendData(count);
     } catch (error) {
-      console.error('Get event count POST error:', error);
+      logger.error('Get event count POST error', error as Error);
       res.status(500).json({ error: 'Failed to get event count' });
     }
   }
@@ -134,7 +138,7 @@ eventRouter.get(
 
       res.sendData(toServerEventResponse(event));
     } catch (error) {
-      console.error('Get event error:', error);
+      logger.error('Get event error', error as Error);
       res.status(500).json({ error: 'Failed to get event' });
     }
   }
@@ -158,7 +162,7 @@ eventRouter.post(
 
       res.sendData(responses);
     } catch (error) {
-      console.error('Search events error:', error);
+      logger.error('Search events error', error as Error);
       res.status(500).json({ error: 'Failed to search events' });
     }
   }
@@ -182,7 +186,7 @@ eventRouter.get(
 
       res.sendData(responses);
     } catch (error) {
-      console.error('Get events error:', error);
+      logger.error('Get events error', error as Error);
       res.status(500).json({ error: 'Failed to get events' });
     }
   }
@@ -204,7 +208,7 @@ eventRouter.post(
       res.setHeader('Content-Disposition', 'attachment; filename="events.csv"');
       res.send(csv);
     } catch (error) {
-      console.error('Export events error:', error);
+      logger.error('Export events error', error as Error);
       res.status(500).json({ error: 'Failed to export events' });
     }
   }
@@ -242,7 +246,7 @@ eventRouter.delete(
         res.status(204).end();
       }
     } catch (error) {
-      console.error('Remove events error:', error);
+      logger.error('Remove events error', error as Error);
       res.status(500).json({ error: 'Failed to remove events' });
     }
   }

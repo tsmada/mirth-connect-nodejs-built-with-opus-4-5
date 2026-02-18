@@ -23,6 +23,10 @@ import {
   CHANNEL_STATS_CLEAR,
   CHANNEL_STATS_CLEAR_ALL,
 } from '../middleware/operations.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 export const channelStatisticsRouter = Router();
 
@@ -259,7 +263,7 @@ channelStatisticsRouter.get(
 
       res.sendData(statistics);
     } catch (error) {
-      console.error('Get channel statistics error:', error);
+      logger.error('Get channel statistics error', error as Error);
       res.status(500).json({ error: 'Failed to get channel statistics' });
     }
   }
@@ -302,7 +306,7 @@ channelStatisticsRouter.post(
 
       res.sendData(statistics);
     } catch (error) {
-      console.error('Get channel statistics POST error:', error);
+      logger.error('Get channel statistics POST error', error as Error);
       res.status(500).json({ error: 'Failed to get channel statistics' });
     }
   }
@@ -327,7 +331,7 @@ channelStatisticsRouter.get(
 
       res.sendData(stats);
     } catch (error) {
-      console.error('Get channel statistics error:', error);
+      logger.error('Get channel statistics error', error as Error);
       res.status(500).json({ error: 'Failed to get channel statistics' });
     }
   }
@@ -397,7 +401,7 @@ channelStatisticsRouter.post(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Clear statistics error:', error);
+      logger.error('Clear statistics error', error as Error);
       res.status(500).json({ error: 'Failed to clear statistics' });
     }
   }
@@ -422,7 +426,7 @@ channelStatisticsRouter.post(
 
       res.status(204).end();
     } catch (error) {
-      console.error('Clear all statistics error:', error);
+      logger.error('Clear all statistics error', error as Error);
       res.status(500).json({ error: 'Failed to clear all statistics' });
     }
   }

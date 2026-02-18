@@ -9,6 +9,10 @@ import { dataPruner, DataPruner, DEFAULT_PRUNING_BLOCK_SIZE, DEFAULT_ARCHIVING_B
 import { DataPrunerStatus } from './DataPrunerStatus.js';
 import * as MirthDao from '../../db/MirthDao.js';
 import type { MessageWriterOptions } from './MessageArchiver.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('data-pruner', 'Pruning engine');
+const logger = getLogger('data-pruner');
 
 /**
  * Data pruner configuration
@@ -68,7 +72,7 @@ class DataPrunerController {
     }
 
     this.initialized = true;
-    console.log('Data Pruner Controller initialized');
+    logger.info('Data Pruner Controller initialized');
   }
 
   /**
@@ -82,7 +86,7 @@ class DataPrunerController {
     }
 
     this.initialized = false;
-    console.log('Data Pruner Controller shutdown');
+    logger.info('Data Pruner Controller shutdown');
   }
 
   /**
@@ -107,7 +111,7 @@ class DataPrunerController {
     try {
       await MirthDao.setConfiguration('Data Pruner', 'pruner.config', JSON.stringify(this.config));
     } catch (error) {
-      console.error('Failed to save data pruner configuration:', error);
+      logger.error('Failed to save data pruner configuration', error as Error);
     }
   }
 
@@ -169,7 +173,7 @@ class DataPrunerController {
 
     const intervalMs = this.config.pollingIntervalHours * 60 * 60 * 1000;
 
-    console.log(`Starting data pruner scheduler (interval: ${this.config.pollingIntervalHours} hours)`);
+    logger.info(`Starting data pruner scheduler (interval: ${this.config.pollingIntervalHours} hours)`);
 
     this.schedulerTimer = setInterval(() => {
       void this.runScheduledPrune();
@@ -188,7 +192,7 @@ class DataPrunerController {
     if (this.schedulerTimer) {
       clearInterval(this.schedulerTimer);
       this.schedulerTimer = null;
-      console.log('Data pruner scheduler stopped');
+      logger.info('Data pruner scheduler stopped');
     }
   }
 
@@ -197,11 +201,11 @@ class DataPrunerController {
    */
   private async runScheduledPrune(): Promise<void> {
     if (dataPruner.isRunning()) {
-      console.log('Data pruner is already running, skipping scheduled run');
+      logger.info('Data pruner is already running, skipping scheduled run');
       return;
     }
 
-    console.log('Running scheduled data prune');
+    logger.info('Running scheduled data prune');
     await this.startPruner();
   }
 

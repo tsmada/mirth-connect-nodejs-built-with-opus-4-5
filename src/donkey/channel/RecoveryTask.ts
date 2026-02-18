@@ -16,6 +16,10 @@ import {
 } from '../../db/DonkeyDao.js';
 import { transaction } from '../../db/pool.js';
 import { Status } from '../../model/Status.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('engine', 'Channel deploy/start/stop');
+const logger = getLogger('engine');
 
 export interface RecoveryResult {
   recovered: number;
@@ -71,15 +75,15 @@ export async function runRecoveryTask(
 
         result.recovered++;
       } catch (err) {
-        console.error(`[RecoveryTask] Error recovering message ${msg.ID}: ${err}`);
+        logger.error(`[RecoveryTask] Error recovering message ${msg.ID}: ${err}`);
       }
     }
 
     if (result.recovered > 0) {
-      console.log(`[RecoveryTask] Recovered ${result.recovered} unfinished messages (${result.errors} marked as ERROR) for channel ${channelId}`);
+      logger.info(`[RecoveryTask] Recovered ${result.recovered} unfinished messages (${result.errors} marked as ERROR) for channel ${channelId}`);
     }
   } catch (err) {
-    console.error(`[RecoveryTask] Failed to run recovery for channel ${channelId}: ${err}`);
+    logger.error(`[RecoveryTask] Failed to run recovery for channel ${channelId}: ${err}`);
   }
 
   return result;

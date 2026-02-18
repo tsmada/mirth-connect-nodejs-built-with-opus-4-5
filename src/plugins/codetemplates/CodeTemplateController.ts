@@ -23,6 +23,10 @@ import {
 } from './models/CodeTemplateLibrary.js';
 import { ContextType } from './models/ContextType.js';
 import { CodeTemplateType } from './models/CodeTemplateProperties.js';
+import { getLogger, registerComponent } from '../../logging/index.js';
+
+registerComponent('api', 'REST API server');
+const logger = getLogger('api');
 
 // In-memory cache for code templates
 let codeTemplateCache: Map<string, CodeTemplate> = new Map();
@@ -80,7 +84,7 @@ export async function initializeCache(): Promise<void> {
 
     cacheInitialized = true;
   } catch (error) {
-    console.error('Failed to initialize code template cache:', error);
+    logger.error('Failed to initialize code template cache', error as Error);
     throw error;
   }
 }
@@ -529,7 +533,7 @@ function deserializeCodeTemplate(xml: string): CodeTemplate | null {
       },
     };
   } catch (error) {
-    console.error('Failed to deserialize code template:', error);
+    logger.error('Failed to deserialize code template', error as Error);
     return null;
   }
 }
@@ -615,7 +619,7 @@ function deserializeLibrary(xml: string): CodeTemplateLibrary | null {
       codeTemplates,
     };
   } catch (error) {
-    console.error('Failed to deserialize library:', error);
+    logger.error('Failed to deserialize library', error as Error);
     return null;
   }
 }

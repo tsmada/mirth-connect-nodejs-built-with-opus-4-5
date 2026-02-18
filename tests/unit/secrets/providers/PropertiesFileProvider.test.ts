@@ -1,3 +1,9 @@
+const mockLogWarn = jest.fn();
+jest.mock('../../../../src/logging/index.js', () => ({
+  registerComponent: jest.fn(),
+  getLogger: () => ({ info: jest.fn(), error: jest.fn(), warn: mockLogWarn, debug: jest.fn(), isDebugEnabled: () => false }),
+}));
+
 import { PropertiesFileProvider } from '../../../../src/secrets/providers/PropertiesFileProvider.js';
 import { writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -95,14 +101,13 @@ describe('PropertiesFileProvider', () => {
     });
 
     test('initialize with missing file logs warning and continues', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLogWarn.mockClear();
       const provider = new PropertiesFileProvider('/nonexistent/file.properties');
       await provider.initialize();
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[PropertiesFileProvider] Failed to read')
+      expect(mockLogWarn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to read')
       );
-      warnSpy.mockRestore();
 
       // Provider should still work, just empty
       expect(await provider.list()).toEqual([]);
