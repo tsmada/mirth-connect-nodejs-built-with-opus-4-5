@@ -75,7 +75,7 @@
     "dotenv": "^17.3.1",
     "express": "^4.18.2",
     "express-rate-limit": "^8.2.1",
-    "fast-xml-parser": "^4.5.3",
+    "fast-xml-parser": "^5.3.6",
     "helmet": "^8.1.0",
     "ink": "^4.4.1",
     "ioredis": "^5.9.3",
@@ -124,11 +124,12 @@
     "typescript": "^5.3.3"
   },
   "optionalDependencies": {
-    "@aws-sdk/client-s3": "^3.991.0",
+    "@aws-sdk/client-s3": "^3.992.0",
     "@marsaud/smb2": "^0.18.0",
     "basic-ftp": "^5.1.0"
   },
   "overrides": {
-    "qs": ">=6.14.2"
+    "qs": ">=6.14.2",
+    "fast-xml-parser": "$fast-xml-parser"
   }
 }
