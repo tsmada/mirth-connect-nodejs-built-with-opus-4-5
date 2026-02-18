@@ -68,11 +68,6 @@ const sdk = new NodeSDK({
 
 sdk.start();
 
-// Graceful shutdown on SIGTERM (container orchestrator)
-process.on('SIGTERM', () => {
-  void sdk.shutdown();
-});
-
 /**
  * Exported for Mirth.ts to call during graceful shutdown.
  * Flushes pending spans and metrics before process exit.

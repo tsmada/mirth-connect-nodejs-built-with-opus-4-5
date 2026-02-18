@@ -117,9 +117,11 @@ export function createApp(options: ServerOptions = {}): Express {
   }
 
   // Body parsing - support text for raw XML
-  app.use(express.text({ type: ['application/xml', 'text/xml'] }));
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Limit raised to 10mb (Express default is 100KB) to handle large channel XML configs,
+  // bulk message imports, and HL7v3 documents.
+  app.use(express.text({ type: ['application/xml', 'text/xml'], limit: '10mb' }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // Content negotiation middleware
   app.use(contentNegotiationMiddleware());
