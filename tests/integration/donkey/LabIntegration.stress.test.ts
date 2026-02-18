@@ -21,6 +21,7 @@ jest.mock('../../../src/db/pool.js', () => ({
     const fakeConn = {};
     return fn(fakeConn);
   }),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 jest.mock('../../../src/db/DonkeyDao.js', () => ({

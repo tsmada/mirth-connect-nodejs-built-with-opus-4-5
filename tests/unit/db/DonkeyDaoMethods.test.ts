@@ -6,6 +6,7 @@ const mockTransaction = jest.fn<(cb: (conn: unknown) => Promise<void>) => Promis
 jest.mock('../../../src/db/pool.js', () => ({
   getPool: jest.fn(),
   transaction: mockTransaction,
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 import {

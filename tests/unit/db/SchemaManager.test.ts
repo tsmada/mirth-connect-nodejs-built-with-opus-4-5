@@ -6,6 +6,7 @@ jest.mock('../../../src/db/pool.js', () => ({
   query: jest.fn(),
   execute: jest.fn(),
   transaction: jest.fn(),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 // Mock DonkeyDao

@@ -5,6 +5,7 @@ jest.mock('../../../src/db/pool.js', () => ({
   getPool: jest.fn(),
   query: jest.fn(),
   execute: jest.fn(),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 jest.mock('../../../src/cluster/ClusterIdentity.js', () => ({

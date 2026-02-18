@@ -3,6 +3,7 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 // Mock the database pool
 jest.mock('../../../src/db/pool.js', () => ({
   getPool: jest.fn(),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 import { SequenceAllocator } from '../../../src/cluster/SequenceAllocator.js';

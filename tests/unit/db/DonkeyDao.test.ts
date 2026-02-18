@@ -4,6 +4,7 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 jest.mock('../../../src/db/pool.js', () => ({
   getPool: jest.fn(),
   transaction: jest.fn(),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 import {

@@ -11,6 +11,7 @@ const mockPool = { query: mockQuery };
 jest.mock('../../../src/db/pool.js', () => ({
   getPool: () => mockPool,
   transaction: jest.fn(async (cb: Function) => cb(mockPool)),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 import { getUnfinishedMessages, getUnfinishedMessagesByServerId } from '../../../src/db/DonkeyDao';

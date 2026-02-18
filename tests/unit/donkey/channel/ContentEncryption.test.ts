@@ -17,6 +17,7 @@ jest.mock('../../../../src/db/pool.js', () => ({
     return callback(mockPoolConnection);
   }),
   getPool: jest.fn(),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 jest.mock('../../../../src/donkey/channel/RecoveryTask.js', () => ({

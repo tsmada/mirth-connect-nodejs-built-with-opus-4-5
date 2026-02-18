@@ -9,6 +9,7 @@ const mockQuery = jest.fn<(sql: string, params?: unknown) => Promise<unknown[]>>
 jest.mock('../../../src/db/pool.js', () => ({
   query: (sql: string, params?: unknown) => mockQuery(sql, params),
   execute: (sql: string, params?: unknown) => mockExecute(sql, params),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 jest.mock('../../../src/cluster/ClusterConfig.js', () => ({

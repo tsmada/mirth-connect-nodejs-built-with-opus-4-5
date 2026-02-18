@@ -539,6 +539,10 @@ R=RECEIVED, F=FILTERED, T=TRANSFORMED, S=SENT, Q=QUEUED, E=ERROR, P=PENDING
 $c=channelMap, $s=sourceMap, $g=globalMap, $gc=globalChannelMap,
 $cfg=configurationMap, $r=responseMap, $co=connectorMap
 
+## TLS and HTTPS
+
+Node.js Mirth serves HTTP-only on port 8080 by design (12-factor pattern). TLS is terminated at the infrastructure layer (reverse proxy, K8s Ingress, cloud LB) — not by the application. Connector-level TLS (MLLPS, DICOM TLS, SMTP TLS) uses PEM files configured per-connector. See [`docs/tls-and-https.md`](docs/tls-and-https.md) for reverse proxy configs, JKS-to-PEM conversion, cluster security, and certificate management.
+
 ## Database
 
 ### Operational Modes (CRITICAL CONCEPT)

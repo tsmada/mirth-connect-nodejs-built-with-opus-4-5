@@ -20,6 +20,7 @@ const mockPool = {
 
 jest.mock('../../../../src/db/pool.js', () => ({
   getPool: jest.fn(() => mockPool),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 // Mock authorization - must passthrough to actual route handlers

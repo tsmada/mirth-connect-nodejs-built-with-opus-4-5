@@ -34,6 +34,7 @@ jest.mock('../../../../src/db/DonkeyDao.js', () => ({
 const mockConn = { execute: jest.fn(), query: jest.fn() };
 jest.mock('../../../../src/db/pool.js', () => ({
   transaction: jest.fn(async (cb: Function) => cb(mockConn)),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 import { runRecoveryTask } from '../../../../src/donkey/channel/RecoveryTask';

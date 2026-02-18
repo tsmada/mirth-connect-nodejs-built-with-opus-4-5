@@ -12,6 +12,7 @@ jest.mock('../../../src/db/pool.js', () => ({
     query: mockQuery,
     execute: mockExecute,
   }),
+  withRetry: jest.fn((fn: any) => fn()),
 }));
 
 import {

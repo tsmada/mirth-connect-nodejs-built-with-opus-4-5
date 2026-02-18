@@ -192,6 +192,61 @@ When Node.js Mirth runs in takeover mode alongside Java Mirth:
 | readinessProbe | `/api/health` | 200 when ready, 503 during shutdown |
 | livenessProbe | `/api/health/live` | Always 200 |
 
+## TLS / HTTPS
+
+Node.js Mirth serves HTTP on port 8080 by design (12-factor pattern). TLS termination is handled at the infrastructure layer — Ingress controller, cloud LB, or reverse proxy. See [`docs/tls-and-https.md`](../docs/tls-and-https.md) for the full guide.
+
+**Ingress with cert-manager:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mirth-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/websocket-services: "node-mirth"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - mirth.example.com
+      secretName: mirth-tls-cert
+  rules:
+    - host: mirth.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: node-mirth
+                port:
+                  number: 8080
+```
+
+**Key environment variables:**
+
+- `TLS_ENABLED=true` — Sets `Secure` flag on session cookies when behind HTTPS proxy
+- `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` — Trust additional CAs for outbound HTTPS
+- `MIRTH_CLUSTER_SECRET` — Inter-instance API authentication (see [Cluster Security](../docs/tls-and-https.md#4-cluster-security))
+
+**Connector certificates (MLLP/DICOM TLS):**
+
+```yaml
+volumes:
+  - name: connector-certs
+    secret:
+      secretName: mirth-connector-certs
+containers:
+  - name: node-mirth
+    volumeMounts:
+      - name: connector-certs
+        mountPath: /etc/mirth/certs
+        readOnly: true
+```
+
 ## Side-by-Side Benchmark: Java Mirth vs Node.js Mirth
 
 Compares Java Mirth 3.9.1 and Node.js Mirth side-by-side on identical hardware with identical resource allocations. Uses [k6](https://k6.io/) for load generation with tagged metrics for per-engine breakdowns.
