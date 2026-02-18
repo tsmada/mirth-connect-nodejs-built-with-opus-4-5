@@ -23,7 +23,7 @@ export interface DatabaseConfig {
 const DEFAULT_CONFIG: Partial<DatabaseConfig> = {
   connectionLimit: parseInt(process.env.DB_POOL_SIZE || '10', 10),
   waitForConnections: true,
-  queueLimit: parseInt(process.env.DB_QUEUE_LIMIT || '0', 10),
+  queueLimit: parseInt(process.env.DB_QUEUE_LIMIT || '200', 10),
   connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000', 10),
 };
 
