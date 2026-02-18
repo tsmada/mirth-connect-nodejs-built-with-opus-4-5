@@ -9,7 +9,7 @@
  */
 
 import { RowDataPacket } from 'mysql2/promise';
-import { getPool } from '../db/pool.js';
+import { getPool, withRetry } from '../db/pool.js';
 import { sequenceTable } from '../db/DonkeyDao.js';
 
 interface SequenceBlock {
@@ -44,37 +44,39 @@ export class SequenceAllocator {
    * instead of 1, amortizing the lock cost across many messages.
    */
   private async allocateBlock(channelId: string): Promise<SequenceBlock> {
-    const pool = getPool();
-    const connection = await pool.getConnection();
+    return withRetry(async () => {
+      const pool = getPool();
+      const connection = await pool.getConnection();
 
-    try {
-      await connection.beginTransaction();
+      try {
+        await connection.beginTransaction();
 
-      const table = sequenceTable(channelId);
+        const table = sequenceTable(channelId);
 
-      // Lock the sequence row and read current value
-      const [rows] = await connection.query<RowDataPacket[]>(
-        `SELECT LOCAL_CHANNEL_ID FROM ${table} WHERE ID = 1 FOR UPDATE`
-      );
+        // Lock the sequence row and read current value
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT LOCAL_CHANNEL_ID FROM ${table} WHERE ID = 1 FOR UPDATE`
+        );
 
-      const currentId = (rows[0]?.LOCAL_CHANNEL_ID as number) ?? 1;
-      const newMaxId = currentId + this.blockSize;
+        const currentId = (rows[0]?.LOCAL_CHANNEL_ID as number) ?? 1;
+        const newMaxId = currentId + this.blockSize;
 
-      // Advance the sequence by the full block size
-      await connection.query(
-        `UPDATE ${table} SET LOCAL_CHANNEL_ID = ? WHERE ID = 1`,
-        [newMaxId]
-      );
+        // Advance the sequence by the full block size
+        await connection.query(
+          `UPDATE ${table} SET LOCAL_CHANNEL_ID = ? WHERE ID = 1`,
+          [newMaxId]
+        );
 
-      await connection.commit();
+        await connection.commit();
 
-      return { nextId: currentId, maxId: newMaxId };
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
+        return { nextId: currentId, maxId: newMaxId };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    });
   }
 
   /**

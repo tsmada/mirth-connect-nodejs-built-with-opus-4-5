@@ -56,7 +56,7 @@ import {
   insertCustomMetaData,
   getConnectorMessageStatuses,
 } from '../../db/DonkeyDao.js';
-import { transaction } from '../../db/pool.js';
+import { transaction, withRetry } from '../../db/pool.js';
 import { StatisticsAccumulator } from './StatisticsAccumulator.js';
 import { messagesProcessed, messagesErrored, messageDuration } from '../../telemetry/metrics.js';
 import { getServerId } from '../../cluster/ClusterIdentity.js';
@@ -598,11 +598,11 @@ export class Channel extends EventEmitter {
       if (!this.tablesExist) return;
       if (operations.length === 0) return;
 
-      await transaction(async (conn) => {
+      await withRetry(() => transaction(async (conn) => {
         for (const op of operations) {
           await op(conn);
         }
-      });
+      }));
     } catch (err) {
       this.persistenceFailureCount++;
       logger.error(`[${this.name}] DB transaction error: ${err}`);

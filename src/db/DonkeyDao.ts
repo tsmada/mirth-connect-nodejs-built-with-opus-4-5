@@ -13,7 +13,7 @@
  */
 
 import { RowDataPacket, Pool, PoolConnection } from 'mysql2/promise';
-import { getPool, transaction } from './pool.js';
+import { getPool, transaction, withRetry } from './pool.js';
 import { Status, parseStatus } from '../model/Status.js';
 import { ContentType } from '../model/ContentType.js';
 import { getEncryptor, isEncryptionEnabled } from './Encryptor.js';
@@ -308,33 +308,35 @@ export async function dropChannelTables(channelId: string): Promise<void> {
  * Get next message ID for a channel
  */
 export async function getNextMessageId(channelId: string): Promise<number> {
-  const pool = getPool();
-  const connection = await pool.getConnection();
+  return withRetry(async () => {
+    const pool = getPool();
+    const connection = await pool.getConnection();
 
-  try {
-    await connection.beginTransaction();
+    try {
+      await connection.beginTransaction();
 
-    // Get and increment sequence
-    const [rows] = await connection.query<RowDataPacket[]>(
-      `SELECT LOCAL_CHANNEL_ID FROM ${sequenceTable(channelId)} WHERE ID = 1 FOR UPDATE`
-    );
+      // Get and increment sequence
+      const [rows] = await connection.query<RowDataPacket[]>(
+        `SELECT LOCAL_CHANNEL_ID FROM ${sequenceTable(channelId)} WHERE ID = 1 FOR UPDATE`
+      );
 
-    const currentId = (rows[0]?.LOCAL_CHANNEL_ID as number) ?? 1;
-    const nextId = currentId + 1;
+      const currentId = (rows[0]?.LOCAL_CHANNEL_ID as number) ?? 1;
+      const nextId = currentId + 1;
 
-    await connection.query(
-      `UPDATE ${sequenceTable(channelId)} SET LOCAL_CHANNEL_ID = ? WHERE ID = 1`,
-      [nextId]
-    );
+      await connection.query(
+        `UPDATE ${sequenceTable(channelId)} SET LOCAL_CHANNEL_ID = ? WHERE ID = 1`,
+        [nextId]
+      );
 
-    await connection.commit();
-    return currentId;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+      await connection.commit();
+      return currentId;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  });
 }
 
 /**
@@ -1034,7 +1036,7 @@ export async function pruneMessages(channelId: string, messageIds: number[]): Pr
     return 0;
   }
 
-  return await transaction(async (connection) => {
+  return await withRetry(() => transaction(async (connection) => {
     const placeholders = messageIds.map(() => '?').join(', ');
 
     // Delete in order: content, attachments, custom metadata, connector messages, messages
@@ -1064,7 +1066,7 @@ export async function pruneMessages(channelId: string, messageIds: number[]): Pr
     );
 
     return (result as { affectedRows: number }).affectedRows;
-  });
+  }));
 }
 
 /**
@@ -1364,13 +1366,13 @@ export async function deleteMessageAttachments(
  * Ported from JdbcDao.deleteMessage() (single message variant).
  */
 export async function deleteMessage(channelId: string, messageId: number): Promise<void> {
-  await transaction(async (conn) => {
+  await withRetry(() => transaction(async (conn) => {
     await conn.execute(`DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
     await conn.execute(`DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
     await conn.execute(`DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
     await conn.execute(`DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
     await conn.execute(`DELETE FROM ${messageTable(channelId)} WHERE ID = ?`, [messageId]);
-  });
+  }));
 }
 
 /**
