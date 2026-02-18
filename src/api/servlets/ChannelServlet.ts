@@ -260,6 +260,60 @@ channelRouter.put('/:channelId', authorize({ operation: CHANNEL_UPDATE, checkAut
 });
 
 /**
+ * DELETE /channels/_removeAllMessages
+ * Remove all messages from specified channels
+ * Called by GUI bulk "Remove All Messages" action
+ * NOTE: Must be registered BEFORE DELETE /:channelId to avoid Express matching
+ * "_removeAllMessages" as a channelId parameter.
+ */
+channelRouter.delete('/_removeAllMessages', authorize({ operation: MESSAGE_REMOVE_ALL }), async (req: Request, res: Response) => {
+  try {
+    const channelIds = req.query.channelId;
+    const clearStatistics = req.query.clearStatistics !== 'false';
+
+    if (!channelIds) {
+      res.status(400).json({ error: 'Channel IDs required' });
+      return;
+    }
+
+    const ids = Array.isArray(channelIds) ? channelIds as string[] : [channelIds as string];
+    const pool = getPool();
+
+    for (const channelId of ids) {
+      const tableId = channelId.replace(/-/g, '_');
+
+      // Check if tables exist
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [`D_M${tableId}`]
+      );
+
+      if (rows.length === 0) continue;
+
+      // Truncate all message-related tables
+      await pool.execute(`TRUNCATE TABLE D_MC${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_MA${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_MM${tableId}`);
+      await pool.execute(`TRUNCATE TABLE D_M${tableId}`);
+
+      if (clearStatistics) {
+        try {
+          await pool.execute(`UPDATE D_MS${tableId} SET RECEIVED = 0, FILTERED = 0, TRANSFORMED = 0, PENDING = 0, SENT = 0, ERROR = 0`);
+        } catch {
+          // Stats table might not exist
+        }
+      }
+    }
+
+    res.status(204).end();
+  } catch (error) {
+    logger.error('Remove all messages error', error as Error);
+    res.status(500).json({ error: 'Failed to remove all messages' });
+  }
+});
+
+/**
  * DELETE /channels/:channelId
  * Delete a channel
  */
@@ -325,58 +379,6 @@ channelRouter.post('/_removeChannels', authorize({ operation: CHANNEL_REMOVE }),
   } catch (error) {
     logger.error('Remove channels error', error as Error);
     res.status(500).json({ error: 'Failed to remove channels' });
-  }
-});
-
-/**
- * DELETE /channels/_removeAllMessages
- * Remove all messages from specified channels
- * Called by GUI bulk "Remove All Messages" action
- */
-channelRouter.delete('/_removeAllMessages', authorize({ operation: MESSAGE_REMOVE_ALL }), async (req: Request, res: Response) => {
-  try {
-    const channelIds = req.query.channelId;
-    const clearStatistics = req.query.clearStatistics !== 'false';
-
-    if (!channelIds) {
-      res.status(400).json({ error: 'Channel IDs required' });
-      return;
-    }
-
-    const ids = Array.isArray(channelIds) ? channelIds as string[] : [channelIds as string];
-    const pool = getPool();
-
-    for (const channelId of ids) {
-      const tableId = channelId.replace(/-/g, '_');
-
-      // Check if tables exist
-      const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT TABLE_NAME FROM information_schema.TABLES
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-        [`D_M${tableId}`]
-      );
-
-      if (rows.length === 0) continue;
-
-      // Truncate all message-related tables
-      await pool.execute(`TRUNCATE TABLE D_MC${tableId}`);
-      await pool.execute(`TRUNCATE TABLE D_MA${tableId}`);
-      await pool.execute(`TRUNCATE TABLE D_MM${tableId}`);
-      await pool.execute(`TRUNCATE TABLE D_M${tableId}`);
-
-      if (clearStatistics) {
-        try {
-          await pool.execute(`UPDATE D_MS${tableId} SET RECEIVED = 0, FILTERED = 0, TRANSFORMED = 0, PENDING = 0, SENT = 0, ERROR = 0`);
-        } catch {
-          // Stats table might not exist
-        }
-      }
-    }
-
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Remove all messages error', error as Error);
-    res.status(500).json({ error: 'Failed to remove all messages' });
   }
 });
 

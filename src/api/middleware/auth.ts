@@ -12,7 +12,7 @@ import { User } from '../models/User.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
 let _authLogger: ReturnType<typeof getLogger> | null = null;
-function getAuthLogger() {
+function getAuthLogger(): ReturnType<typeof getLogger> | null {
   if (!_authLogger) {
     try {
       registerComponent('auth', 'Authentication and session management');
@@ -83,19 +83,34 @@ export class InMemorySessionStore implements SessionStore {
   }
 }
 
+/**
+ * Minimal interface for the ioredis methods used by RedisSessionStore.
+ * Avoids `any` propagation while keeping ioredis as an optional dependency.
+ */
+interface RedisClient {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, mode: string, ttl: number): Promise<string>;
+  del(...keys: string[]): Promise<number>;
+  exists(key: string): Promise<number>;
+  keys(pattern: string): Promise<string[]>;
+  mget(...keys: string[]): Promise<(string | null)[]>;
+  quit(): Promise<string>;
+}
+
 export class RedisSessionStore implements SessionStore {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private redis: any;
+  private redis: RedisClient;
   private keyPrefix = 'mirth:session:';
   private ttlSeconds: number;
 
   constructor(redisUrl: string, ttlMs: number = SESSION_TIMEOUT_MS) {
     // Dynamic require: ioredis is loaded at construction time (optional dependency)
     // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-    const Redis = require('ioredis');
+    const Redis = require('ioredis') as {
+      new (url: string, opts: object): RedisClient;
+    };
     this.redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
-      retryStrategy(times: number) {
+      retryStrategy(times: number): number | null {
         if (times > 3) return null; // Stop retrying
         return Math.min(times * 200, 2000);
       },
@@ -116,7 +131,10 @@ export class RedisSessionStore implements SessionStore {
   }
 
   private deserialize(data: string): Session {
-    const parsed = JSON.parse(data);
+    const parsed = JSON.parse(data) as { createdAt: string; lastAccess: string } & Omit<
+      Session,
+      'createdAt' | 'lastAccess'
+    >;
     return {
       ...parsed,
       createdAt: new Date(parsed.createdAt),
@@ -184,7 +202,8 @@ export function createSessionStore(): SessionStore {
 
   const store = new InMemorySessionStore();
   if (process.env['MIRTH_CLUSTER_ENABLED'] === 'true') {
-    const msg = 'Cluster mode enabled but using in-memory sessions. Users authenticated on one node will get 403 on other nodes. Set MIRTH_CLUSTER_REDIS_URL to fix.';
+    const msg =
+      'Cluster mode enabled but using in-memory sessions. Users authenticated on one node will get 403 on other nodes. Set MIRTH_CLUSTER_REDIS_URL to fix.';
     getAuthLogger()?.warn(msg);
   }
   return store;
@@ -200,6 +219,7 @@ export { sessionStore };
  * Extend Request type with session info
  */
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       session?: Session;
@@ -270,7 +290,12 @@ export async function cleanExpiredSessions(): Promise<void> {
 }
 
 // Run cleanup every 5 minutes — .unref() prevents this timer from blocking process exit
-setInterval(() => { cleanExpiredSessions().catch(() => {}); }, 5 * 60 * 1000).unref();
+setInterval(
+  () => {
+    cleanExpiredSessions().catch(() => {});
+  },
+  5 * 60 * 1000
+).unref();
 
 /**
  * Mirth Connect password hashing (v3.x+):
@@ -320,7 +345,11 @@ export function hashPassword(password: string, existingSalt?: Buffer): string {
  * @param _salt Unused - kept for interface compatibility (salt is embedded in hash)
  * @param storedHash Base64 encoded password hash from database
  */
-export function verifyPassword(password: string, _salt: string | null, storedHash: string | null): boolean {
+export function verifyPassword(
+  password: string,
+  _salt: string | null,
+  storedHash: string | null
+): boolean {
   if (!storedHash) {
     return false;
   }
