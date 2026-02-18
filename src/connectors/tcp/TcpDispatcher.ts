@@ -59,6 +59,11 @@ export class TcpDispatcher extends DestinationConnector {
    */
   private timeoutTimers: Map<string, NodeJS.Timeout> = new Map();
 
+  /** Cached TLS certificate buffers — loaded once at start() to avoid fs.readFileSync per send */
+  private cachedTlsCert?: Buffer;
+  private cachedTlsKey?: Buffer;
+  private cachedTlsCa?: Buffer;
+
   constructor(config: TcpDispatcherConfig) {
     super({
       name: config.name ?? 'TCP Sender',
@@ -100,6 +105,14 @@ export class TcpDispatcher extends DestinationConnector {
       return;
     }
 
+    // Cache TLS certificate buffers at start time to avoid fs.readFileSync on every send
+    if (this.properties.tls?.enabled) {
+      const tlsProps = this.properties.tls;
+      if (tlsProps.certStorePath) this.cachedTlsCert = fs.readFileSync(tlsProps.certStorePath);
+      if (tlsProps.keyStorePath) this.cachedTlsKey = fs.readFileSync(tlsProps.keyStorePath);
+      if (tlsProps.trustStorePath) this.cachedTlsCa = fs.readFileSync(tlsProps.trustStorePath);
+    }
+
     // CPC-MCE-001: Dispatch IDLE event on deploy (matching Java onDeploy)
     this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
 
@@ -126,6 +139,11 @@ export class TcpDispatcher extends DestinationConnector {
       this.closeSocketQuietly(socketKey, socket);
     }
     this.connectedSockets.clear();
+
+    // Clear cached TLS buffers
+    this.cachedTlsCert = undefined;
+    this.cachedTlsKey = undefined;
+    this.cachedTlsCa = undefined;
 
     this.running = false;
   }
@@ -414,14 +432,14 @@ export class TcpDispatcher extends DestinationConnector {
           rejectUnauthorized: tlsProps.rejectUnauthorized ?? true,
         };
 
-        if (tlsProps.certStorePath) {
-          tlsOptions.cert = fs.readFileSync(tlsProps.certStorePath);
+        if (this.cachedTlsCert) {
+          tlsOptions.cert = this.cachedTlsCert;
         }
-        if (tlsProps.keyStorePath) {
-          tlsOptions.key = fs.readFileSync(tlsProps.keyStorePath);
+        if (this.cachedTlsKey) {
+          tlsOptions.key = this.cachedTlsKey;
         }
-        if (tlsProps.trustStorePath) {
-          tlsOptions.ca = fs.readFileSync(tlsProps.trustStorePath);
+        if (this.cachedTlsCa) {
+          tlsOptions.ca = this.cachedTlsCa;
         }
         if (tlsProps.passphrase) {
           tlsOptions.passphrase = tlsProps.passphrase;

@@ -48,6 +48,10 @@ export interface DICOMDispatcherConfig {
 export class DICOMDispatcher extends DestinationConnector {
   private properties: DICOMDispatcherProperties;
 
+  /** Cached TLS certificate buffers — loaded once at start() to avoid fs.readFileSync per send */
+  private cachedTlsPfx?: Buffer;
+  private cachedTlsCa?: Buffer;
+
   constructor(config: DICOMDispatcherConfig = {}) {
     super({
       name: config.name ?? 'DICOM Sender',
@@ -74,6 +78,28 @@ export class DICOMDispatcher extends DestinationConnector {
    */
   setProperties(properties: Partial<DICOMDispatcherProperties>): void {
     this.properties = { ...this.properties, ...properties };
+  }
+
+  /**
+   * Cache TLS certificate buffers at start time to avoid fs.readFileSync on every send.
+   */
+  protected override async onStart(): Promise<void> {
+    if (this.properties.tls !== DicomTlsMode.NO_TLS) {
+      if (this.properties.keyStore && this.properties.keyStorePW) {
+        this.cachedTlsPfx = fs.readFileSync(this.properties.keyStore);
+      }
+      if (this.properties.trustStore && this.properties.trustStorePW) {
+        this.cachedTlsCa = fs.readFileSync(this.properties.trustStore);
+      }
+    }
+  }
+
+  /**
+   * Clear cached TLS buffers on stop.
+   */
+  protected override async onStop(): Promise<void> {
+    this.cachedTlsPfx = undefined;
+    this.cachedTlsCa = undefined;
   }
 
   /**
@@ -561,13 +587,13 @@ export class DICOMDispatcher extends DestinationConnector {
         rejectUnauthorized: !p.noClientAuth,
       };
 
-      if (p.keyStore && p.keyStorePW) {
-        params.tlsOptions.pfx = fs.readFileSync(p.keyStore);
+      if (this.cachedTlsPfx) {
+        params.tlsOptions.pfx = this.cachedTlsPfx;
         params.tlsOptions.passphrase = p.keyStorePW;
       }
 
-      if (p.trustStore && p.trustStorePW) {
-        params.tlsOptions.ca = fs.readFileSync(p.trustStore);
+      if (this.cachedTlsCa) {
+        params.tlsOptions.ca = this.cachedTlsCa;
       }
     }
 
