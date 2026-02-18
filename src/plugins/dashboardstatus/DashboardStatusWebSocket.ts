@@ -76,9 +76,11 @@ export class DashboardStatusWebSocketHandler {
   private controller: DashboardStatusController;
   private clients: Map<WebSocket, ClientState> = new Map();
   private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private maxClients: number;
 
   constructor(controller: DashboardStatusController = dashboardStatusController) {
     this.controller = controller;
+    this.maxClients = parseInt(process.env.MIRTH_WS_MAX_CLIENTS || '100', 10);
   }
 
   /**
@@ -134,6 +136,12 @@ export class DashboardStatusWebSocketHandler {
    * Handle new WebSocket connection
    */
   private handleConnection(ws: WebSocket, _req: IncomingMessage): void {
+    // Reject if at capacity (close code 1013 = Try Again Later)
+    if (this.clients.size >= this.maxClients) {
+      ws.close(1013, 'Maximum WebSocket connections reached');
+      return;
+    }
+
     const clientState: ClientState = {
       subscribed: false,
       channelId: null,

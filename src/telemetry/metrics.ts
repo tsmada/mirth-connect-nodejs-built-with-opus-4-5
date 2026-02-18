@@ -98,4 +98,33 @@ export function registerObservableGauges(accessors: {
   }).addCallback((result) => {
     result.observe(accessors.getDbPoolIdle());
   });
+
+  // Process memory gauges — essential for memory leak detection
+  meter.createObservableGauge('mirth.process.heap_used', {
+    description: 'V8 heap memory used by the process',
+    unit: 'By',
+  }).addCallback((result) => {
+    result.observe(process.memoryUsage().heapUsed);
+  });
+
+  meter.createObservableGauge('mirth.process.heap_total', {
+    description: 'V8 total heap size allocated',
+    unit: 'By',
+  }).addCallback((result) => {
+    result.observe(process.memoryUsage().heapTotal);
+  });
+
+  meter.createObservableGauge('mirth.process.rss', {
+    description: 'Resident set size (total memory allocated for the process)',
+    unit: 'By',
+  }).addCallback((result) => {
+    result.observe(process.memoryUsage().rss);
+  });
+
+  meter.createObservableGauge('mirth.process.external', {
+    description: 'Memory used by C++ objects bound to JavaScript objects',
+    unit: 'By',
+  }).addCallback((result) => {
+    result.observe(process.memoryUsage().external);
+  });
 }

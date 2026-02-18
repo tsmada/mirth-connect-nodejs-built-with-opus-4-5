@@ -51,9 +51,15 @@ describe('Channel ID Validation', () => {
       expect(() => validateChannelId('a1b2c3d4-e5f-7890-abcd-ef1234567890')).toThrow('Invalid channel ID format');
     });
 
-    test('rejects UUID with non-hex characters', () => {
-      expect(() => validateChannelId('g1b2c3d4-e5f6-7890-abcd-ef1234567890')).toThrow('Invalid channel ID format');
-      expect(() => validateChannelId('a1b2c3d4-e5f6-7890-abcd-zz1234567890')).toThrow('Invalid channel ID format');
+    test('accepts alphanumeric segments (test IDs like ks000001-...)', () => {
+      // The regex deliberately allows [a-z0-9], not just hex, for test ID compatibility
+      expect(() => validateChannelId('g1b2c3d4-e5f6-7890-abcd-ef1234567890')).not.toThrow();
+      expect(() => validateChannelId('ks000001-e5f6-7890-abcd-ef1234567890')).not.toThrow();
+    });
+
+    test('rejects non-alphanumeric characters', () => {
+      expect(() => validateChannelId('a1b2c3d4-e5f6-7890-ab!d-ef1234567890')).toThrow('Invalid channel ID format');
+      expect(() => validateChannelId('a1b2c3d4-e5f6-7890-abcd-ef12345_7890')).toThrow('Invalid channel ID format');
     });
   });
 

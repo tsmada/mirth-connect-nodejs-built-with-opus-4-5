@@ -10,7 +10,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer, Server as HttpServer } from 'http';
 import { getLogger, registerComponent } from '../logging/index.js';
-import { authMiddleware, contentNegotiationMiddleware, shadowGuard } from './middleware/index.js';
+import { authMiddleware, contentNegotiationMiddleware, shadowGuard, requestIdMiddleware } from './middleware/index.js';
 import { wsConnections } from '../telemetry/metrics.js';
 
 registerComponent('api', 'REST API server');
@@ -120,6 +120,9 @@ export function createApp(options: ServerOptions = {}): Express {
   app.use(express.text({ type: ['application/xml', 'text/xml'] }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Request correlation ID (before routes, after body parsing)
+  app.use(requestIdMiddleware());
 
   // Content negotiation middleware
   app.use(contentNegotiationMiddleware());
