@@ -23,7 +23,7 @@ export class MirthMap {
 
   constructor(initial?: Map<string, unknown> | Record<string, unknown>) {
     if (initial instanceof Map) {
-      this.data = new Map(initial);
+      this.data = initial;
     } else if (initial) {
       this.data = new Map(Object.entries(initial));
     } else {

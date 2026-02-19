@@ -268,6 +268,12 @@ export class EngineController {
       throw new Error(`Channel not found: ${channelId}`);
     }
 
+    // If channel is already deployed, undeploy it first (releases ports, cleans up)
+    if (deployedChannels.has(channelId)) {
+      logger.info(`Channel ${channelConfig.name} already deployed — undeploying before redeploy`);
+      await this.undeployChannel(channelId);
+    }
+
     // Ensure channel tables exist before deployment
     await ensureChannelTables(channelId);
     logger.debug(`Channel tables verified for ${channelConfig.name}`);
@@ -279,6 +285,7 @@ export class EngineController {
       // Fetch code templates for this channel and create a per-channel executor
       try {
         const codeTemplateScripts = await getAllCodeTemplateScriptsForChannel(channelId);
+        logger.debug(`Channel ${channelConfig.name}: found ${codeTemplateScripts.length} code template scripts`);
         if (codeTemplateScripts.length > 0) {
           const channelExecutor = createJavaScriptExecutor({ codeTemplates: codeTemplateScripts });
           runtimeChannel.setExecutor(channelExecutor);

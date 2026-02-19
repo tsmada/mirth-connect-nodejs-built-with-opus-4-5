@@ -30,8 +30,15 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist/
 
 # Kitchen-sink validation directories (used by File connector scenarios)
+# Deep-validation directories added for DV channels (batch input, route outputs, chain, audit)
 RUN mkdir -p /tmp/mirth-ks/input \
+             /tmp/mirth-ks/input/batch \
              /tmp/mirth-ks/output \
+             /tmp/mirth-ks/output/batch \
+             /tmp/mirth-ks/output/dv07 \
+             /tmp/mirth-ks/output/dv08 \
+             /tmp/mirth-ks/output/chain \
+             /tmp/mirth-ks/output/route-a \
              /tmp/mirth-ks/audit \
              /tmp/mirth-ks/chain-trace \
              /tmp/mirth-ks/response-output && \

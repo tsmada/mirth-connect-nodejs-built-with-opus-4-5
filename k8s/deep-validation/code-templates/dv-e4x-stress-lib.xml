@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>dv-lib-0002-0002-0002-000000000002</id>
+  <name>DV E4X Stress Utilities</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>E4X stress test utility functions for Deep Validation integration test channels</description>
+  <includeNewChannels>true</includeNewChannels>
+  <enabledChannelIds/>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0006-0006-0006-000000000006</id>
+      <name>buildPatientXml</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Build a Patient XML document using E4X.
+ * @param {Object} name - Object with given and family properties
+ * @param {string} mrn - Medical Record Number
+ * @param {string} gender - Patient gender
+ * @param {number} age - Patient age
+ * @return {XML} Patient XML object
+ */
+function buildPatientXml(name, mrn, gender, age) {
+    var xml = new XML('&lt;Patient version="2.0"/&gt;');
+    xml.name.given = name.given || '';
+    xml.name.family = name.family || '';
+    xml.mrn = mrn || '';
+    xml.demographics.gender = gender || '';
+    xml.demographics.age = String(age || 0);
+    xml.@created = DateUtil.getCurrentDate('yyyy-MM-dd');
+    return xml;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0007-0007-0007-000000000007</id>
+      <name>scrubPHI</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Scrub PHI from an XML string by masking SSNs and names.
+ * @param {string} xmlStr - XML string potentially containing PHI
+ * @return {string} Scrubbed XML string
+ */
+function scrubPHI(xmlStr) {
+    // Replace SSN patterns with masked values
+    var result = String(xmlStr);
+    result = result.replace(/\d{3}-\d{2}-\d{4}/g, 'XXX-XX-XXXX');
+    // Replace names in known fields (simplified)
+    result = result.replace(/(&lt;name&gt;)[^&lt;]*(&lt;\/name&gt;)/g, '$1[REDACTED]$2');
+    return result;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0008-0008-0008-000000000008</id>
+      <name>extractIdentifiers</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Extract identifiers from a list into a type-keyed map.
+ * @param {Array|XMLList} identifierList - List of identifier objects with type and value
+ * @return {Object} Map of type to value
+ */
+function extractIdentifiers(identifierList) {
+    var result = {};
+    if (identifierList &amp;&amp; typeof identifierList === 'object') {
+        for (var i = 0; i &lt; identifierList.length; i++) {
+            var id = identifierList[i];
+            if (id.type &amp;&amp; id.value) {
+                result[String(id.type)] = String(id.value);
+            }
+        }
+    }
+    return result;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0009-0009-0009-000000000009</id>
+      <name>buildAuditXml</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Build an audit entry as XML string using E4X.
+ * @param {string} channelName - Channel that processed the message
+ * @param {string|number} messageId - Message ID
+ * @param {string} status - Processing status
+ * @param {string} details - Additional details
+ * @return {string} Audit XML string
+ */
+function buildAuditXml(channelName, messageId, status, details) {
+    var xml = new XML('&lt;AuditEntry/&gt;');
+    xml.channel = channelName || '';
+    xml.messageId = String(messageId || '');
+    xml.status = status || 'UNKNOWN';
+    xml.timestamp = DateUtil.getCurrentDate('yyyy-MM-dd HH:mm:ss.SSS');
+    xml.details = details || '';
+    return xml.toXMLString();
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>

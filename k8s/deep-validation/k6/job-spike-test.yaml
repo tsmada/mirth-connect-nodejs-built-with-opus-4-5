@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-dv-spike-test
+  namespace: mirth-k6
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900  # 15 min safety timeout
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: k6
+        image: grafana/k6:latest
+        command: ['k6', 'run', '/scripts/spike-test.js']
+        env:
+        - name: MIRTH_URL
+          value: "http://node-mirth.mirth-cluster.svc.cluster.local"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 1Gi
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: dv-k6-scripts

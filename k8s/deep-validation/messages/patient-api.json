@@ -1,0 +1,12 @@
+{
+  "resourceType": "Patient",
+  "name": {"given": "Jane", "family": "Smith"},
+  "identifiers": [
+    {"type": "MRN", "value": "MRN-00001"},
+    {"type": "SSN", "value": "123-45-6789"}
+  ],
+  "telecom": [{"system": "phone", "value": "555-0100"}],
+  "gender": "female",
+  "age": 35,
+  "address": {"line": "456 Oak Ave", "city": "Springfield", "state": "IL", "zip": "62701"}
+}

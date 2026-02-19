@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel version="3.9.1">
+  <id>dv000002-0002-0002-0002-000000000002</id>
+  <nextMetaDataId>4</nextMetaDataId>
+  <name>DV02 JSON API Gateway</name>
+  <description>Deep Validation DV02: HTTP JSON gateway with age/gender routing to DV03/DV04/DV05 via VM dispatch, E4X XML building, postprocessor response aggregation</description>
+  <revision>1</revision>
+  <sourceConnector version="3.9.1">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="3.9.1">
+      <pluginProperties/>
+      <listenerConnectorProperties version="3.9.1">
+        <host>0.0.0.0</host>
+        <port>8111</port>
+      </listenerConnectorProperties>
+      <sourceConnectorProperties version="3.9.1">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+      <xmlBody>false</xmlBody>
+      <parseMultipart>true</parseMultipart>
+      <includeMetadata>false</includeMetadata>
+      <binaryMimeTypes>application/.*(?!json|xml)</binaryMimeTypes>
+      <binaryMimeTypesRegex>true</binaryMimeTypesRegex>
+      <responseContentType>application/json</responseContentType>
+      <responseDataTypeBinary>false</responseDataTypeBinary>
+      <responseStatusCode></responseStatusCode>
+      <responseHeaders class="linked-hash-map"/>
+      <charset>UTF-8</charset>
+      <contextPath></contextPath>
+      <timeout>30000</timeout>
+      <staticResources/>
+    </properties>
+    <transformer version="3.9.1">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>Parse JSON and Route</name>
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[// Parse JSON input
+var inputStr = connectorMessage.getRawData();
+var input = JSON.parse(inputStr);
+
+// Build XML using E4X-style patterns (via code template)
+var patientXml = buildPatientXml(
+  input.name || {},
+  (input.identifiers && input.identifiers[0]) ? input.identifiers[0].value : '',
+  input.gender || '',
+  input.age || 0
+);
+
+// Extract identifiers using code template
+var ids = extractIdentifiers(input.identifiers || []);
+$c('identifierMap', JSON.stringify(ids));
+$c('patientMRN', ids['MRN'] || '');
+
+// Routing logic based on age and gender
+var routeKey = 'C'; // default
+if (input.gender === 'female' && input.age < 40) {
+  routeKey = 'A';
+} else if (input.gender === 'male') {
+  routeKey = 'B';
+}
+$c('routeKey', routeKey);
+$c('patientName', (input.name && input.name.family) ? input.name.family + ', ' + (input.name.given || '') : 'UNKNOWN');
+$c('patientXml', patientXml.toString());
+
+var total = ($gc('dv02TotalReceived') || 0) + 1;
+$gc('dv02TotalReceived', total);]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+      </elements>
+      <inboundDataType>JSON</inboundDataType>
+      <outboundDataType>RAW</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.json.JSONDataTypeProperties" version="3.9.1">
+        <batchProperties class="com.mirth.connect.plugins.datatypes.json.JSONBatchProperties" version="3.9.1">
+          <splitType>JavaScript</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+      </inboundProperties>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties" version="3.9.1">
+        <batchProperties class="com.mirth.connect.plugins.datatypes.raw.RawBatchProperties" version="3.9.1">
+          <splitType>JavaScript</splitType>
+          <batchScript></batchScript>
+        </batchProperties>
+      </outboundProperties>
+    </transformer>
+    <filter version="3.9.1">
+      <elements/>
+    </filter>
+    <transportName>HTTP Listener</transportName>
+    <mode>SOURCE</mode>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="3.9.1">
+      <metaDataId>1</metaDataId>
+      <name>VM to DV03</name>
+      <properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <channelId>dv000003-0003-0003-0003-000000000003</channelId>
+        <channelTemplate>${message.encodedData}</channelTemplate>
+        <mapVariables>
+          <string>patientName</string>
+          <string>routeKey</string>
+          <string>patientMRN</string>
+        </mapVariables>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </transformer>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </responseTransformer>
+      <filter version="3.9.1">
+        <elements>
+          <com.mirth.connect.plugins.javascriptrule.JavaScriptRule version="3.9.1">
+            <name>Route A Only</name>
+            <sequenceNumber>0</sequenceNumber>
+            <enabled>true</enabled>
+            <script>return $c('routeKey') === 'A';</script>
+            <operator>NONE</operator>
+            <field></field>
+            <values/>
+          </com.mirth.connect.plugins.javascriptrule.JavaScriptRule>
+        </elements>
+      </filter>
+      <transportName>Channel Writer</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+    <connector version="3.9.1">
+      <metaDataId>2</metaDataId>
+      <name>VM to DV04</name>
+      <properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <channelId>dv000004-0004-0004-0004-000000000004</channelId>
+        <channelTemplate>${message.encodedData}</channelTemplate>
+        <mapVariables>
+          <string>patientName</string>
+          <string>routeKey</string>
+          <string>patientMRN</string>
+        </mapVariables>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </transformer>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </responseTransformer>
+      <filter version="3.9.1">
+        <elements>
+          <com.mirth.connect.plugins.javascriptrule.JavaScriptRule version="3.9.1">
+            <name>Route B Only</name>
+            <sequenceNumber>0</sequenceNumber>
+            <enabled>true</enabled>
+            <script>return $c('routeKey') === 'B';</script>
+            <operator>NONE</operator>
+            <field></field>
+            <values/>
+          </com.mirth.connect.plugins.javascriptrule.JavaScriptRule>
+        </elements>
+      </filter>
+      <transportName>Channel Writer</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+    <connector version="3.9.1">
+      <metaDataId>3</metaDataId>
+      <name>VM to DV05</name>
+      <properties class="com.mirth.connect.connectors.vm.VmDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <channelId>dv000005-0005-0005-0005-000000000005</channelId>
+        <channelTemplate>${message.encodedData}</channelTemplate>
+        <mapVariables>
+          <string>patientName</string>
+          <string>routeKey</string>
+          <string>patientMRN</string>
+        </mapVariables>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </transformer>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+      </responseTransformer>
+      <filter version="3.9.1">
+        <elements>
+          <com.mirth.connect.plugins.javascriptrule.JavaScriptRule version="3.9.1">
+            <name>Route C Only</name>
+            <sequenceNumber>0</sequenceNumber>
+            <enabled>true</enabled>
+            <script>return $c('routeKey') === 'C';</script>
+            <operator>NONE</operator>
+            <field></field>
+            <values/>
+          </com.mirth.connect.plugins.javascriptrule.JavaScriptRule>
+        </elements>
+      </filter>
+      <transportName>Channel Writer</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>return message;</preprocessingScript>
+  <postprocessingScript><![CDATA[var results = [];
+if ($r('VM to DV03')) results.push('A:' + $r('VM to DV03').getStatus());
+if ($r('VM to DV04')) results.push('B:' + $r('VM to DV04').getStatus());
+if ($r('VM to DV05')) results.push('C:' + $r('VM to DV05').getStatus());
+return new Response(SENT, JSON.stringify({routed: $c('routeKey'), results: results}));]]></postprocessingScript>
+  <deployScript><![CDATA[$gc('dv02TotalReceived', 0);
+return;]]></deployScript>
+  <undeployScript>return;</undeployScript>
+  <properties version="3.9.1">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>true</storeAttachments>
+    <metaDataColumns/>
+    <archiveEnabled>true</archiveEnabled>
+    <attachmentProperties version="3.9.1">
+      <type>None</type>
+      <properties/>
+    </attachmentProperties>
+    <resourceIds class="linked-hash-map">
+      <entry>
+        <string>Default Resource</string>
+        <string>[Default Resource]</string>
+      </entry>
+    </resourceIds>
+  </properties>
+  <exportData>
+    <metadata>
+      <enabled>true</enabled>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <pruningSettings>
+        <pruneMetaDataDays>-1</pruneMetaDataDays>
+        <pruneContentDays>-1</pruneContentDays>
+        <archiveEnabled>true</archiveEnabled>
+      </pruningSettings>
+    </metadata>
+    <dependentIds/>
+    <dependencyIds/>
+    <channelTags/>
+  </exportData>
+</channel>

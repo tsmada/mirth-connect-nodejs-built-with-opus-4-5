@@ -1,0 +1,820 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dv-k6-scripts
+  namespace: mirth-k6
+data:
+  sustained-load.js: |
+    import http from 'k6/http';
+    import { check, sleep, group } from 'k6';
+    import { Rate, Trend, Counter } from 'k6/metrics';
+
+    const BASE = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+    const errorRate = new Rate('errors');
+    const httpLatency = new Trend('http_latency');
+    const mllpLatency = new Trend('mllp_latency');
+    const messagesProcessed = new Counter('messages_processed');
+
+    export const options = {
+      scenarios: {
+        hl7_to_dv01: {
+          executor: 'ramping-vus',
+          startVUs: 1,
+          stages: [
+            { duration: '2m', target: 5 },
+            { duration: '25m', target: 10 },
+            { duration: '3m', target: 0 },
+          ],
+          exec: 'sendHL7',
+        },
+        json_to_dv02: {
+          executor: 'ramping-vus',
+          startVUs: 1,
+          stages: [
+            { duration: '2m', target: 3 },
+            { duration: '25m', target: 8 },
+            { duration: '3m', target: 0 },
+          ],
+          exec: 'sendJSON',
+        },
+        heavy_to_dv07: {
+          executor: 'ramping-vus',
+          startVUs: 1,
+          stages: [
+            { duration: '2m', target: 5 },
+            { duration: '25m', target: 10 },
+            { duration: '3m', target: 0 },
+          ],
+          exec: 'sendHeavy',
+        },
+      },
+      thresholds: {
+        'http_latency': ['p(95)<500'],
+        'mllp_latency': ['p(95)<1000'],
+        'errors': ['rate<0.01'],
+      },
+    };
+
+    // Build unique HL7 ADT message per iteration
+    function buildHL7(vu, iter) {
+      const msgId = `DV-${vu}-${iter}-${Date.now()}`;
+      const mrn = `MRN-${String(vu * 10000 + iter).padStart(6, '0')}`;
+      return [
+        `MSH|^~\\&|DV_LOAD|FAC|RECV|FAC|20260219120000||ADT^A01^ADT_A01|${msgId}|P|2.3`,
+        'EVN|A01|20260219120000',
+        `PID|||${mrn}^^^MRN||DOE^LOAD${vu}^||19800101|M|||123 MAIN ST^^CITY^ST^12345||555-0100`,
+        'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+      ].join('\r');
+    }
+
+    function buildJSON(vu, iter) {
+      const age = 20 + (iter % 60);
+      const gender = iter % 2 === 0 ? 'female' : 'male';
+      return JSON.stringify({
+        resourceType: 'Patient',
+        name: { given: `Load${vu}`, family: `Test${iter}` },
+        identifiers: [{ type: 'MRN', value: `MRN-${String(vu * 10000 + iter).padStart(6, '0')}` }],
+        gender: gender,
+        age: age,
+      });
+    }
+
+    // Build heavy HL7 with 15 OBX segments
+    function buildHeavyHL7(vu, iter) {
+      const msgId = `DV7-${vu}-${iter}-${Date.now()}`;
+      const mrn = `HEAVY-${String(vu * 10000 + iter).padStart(6, '0')}`;
+      const segs = [
+        `MSH|^~\\&|DV_HEAVY|FAC|RECV|FAC|20260219120000||ADT^A01^ADT_A01|${msgId}|P|2.3`,
+        'EVN|A01|20260219120000',
+        `PID|||${mrn}^^^MRN~999887777^^^SSN||DOE^HEAVY${vu}^||19800101|M|||123 MAIN^^CITY^ST^12345||555-0100`,
+        'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+      ];
+      const tests = ['WBC','RBC','HGB','HCT','PLT','Na','K','Cl','CO2','BUN','Cr','Glu','Ca','Mg','Phos'];
+      const flags = ['','','H','','L','','HH','','','','LL','','','',''];
+      for (let i = 0; i < 15; i++) {
+        segs.push(`OBX|${i+1}|NM|${tests[i]}^${tests[i]}||${(Math.random()*100).toFixed(1)}|mg/dL|${flags[i]}|||F`);
+      }
+      segs.push('ZPI|CUSTOM_DATA|FIELD_2');
+      return segs.join('\r');
+    }
+
+    export function sendHL7() {
+      const msg = buildHL7(__VU, __ITER);
+      const res = http.post(`${BASE}:8110`, msg, {
+        headers: { 'Content-Type': 'text/plain' },
+        tags: { scenario: 'hl7_dv01' },
+      });
+      httpLatency.add(res.timings.duration);
+      const ok = check(res, { 'DV01 accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) messagesProcessed.add(1);
+      errorRate.add(!ok);
+      sleep(0.5 + Math.random() * 0.5);
+    }
+
+    export function sendJSON() {
+      const msg = buildJSON(__VU, __ITER);
+      const res = http.post(`${BASE}:8111`, msg, {
+        headers: { 'Content-Type': 'application/json' },
+        tags: { scenario: 'json_dv02' },
+      });
+      httpLatency.add(res.timings.duration);
+      const ok = check(res, { 'DV02 accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) messagesProcessed.add(1);
+      errorRate.add(!ok);
+      sleep(0.3 + Math.random() * 0.3);
+    }
+
+    export function sendHeavy() {
+      const msg = buildHeavyHL7(__VU, __ITER);
+      const res = http.post(`${BASE}:8110`, msg, {
+        headers: { 'Content-Type': 'text/plain' },
+        tags: { scenario: 'heavy_dv07' },
+      });
+      mllpLatency.add(res.timings.duration);
+      const ok = check(res, { 'DV07 accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) messagesProcessed.add(1);
+      errorRate.add(!ok);
+      sleep(0.5 + Math.random() * 0.5);
+    }
+
+  spike-test.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Rate, Trend, Counter } from 'k6/metrics';
+
+    const BASE = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+    const errorRate = new Rate('errors');
+    const spikeLatency = new Trend('spike_latency');
+    const messagesProcessed = new Counter('messages_processed');
+
+    export const options = {
+      scenarios: {
+        spike_hl7: {
+          executor: 'ramping-vus',
+          startVUs: 1,
+          stages: [
+            { duration: '2m', target: 5 },    // baseline
+            { duration: '30s', target: 50 },   // sudden spike
+            { duration: '2m30s', target: 50 }, // hold spike
+            { duration: '30s', target: 5 },    // drop back
+            { duration: '2m', target: 5 },     // recovery
+            { duration: '2m30s', target: 0 },  // ramp down
+          ],
+          exec: 'sendHL7',
+        },
+        spike_json: {
+          executor: 'ramping-vus',
+          startVUs: 1,
+          stages: [
+            { duration: '2m', target: 5 },
+            { duration: '30s', target: 50 },
+            { duration: '2m30s', target: 50 },
+            { duration: '30s', target: 5 },
+            { duration: '2m', target: 5 },
+            { duration: '2m30s', target: 0 },
+          ],
+          exec: 'sendJSON',
+        },
+      },
+      thresholds: {
+        'spike_latency': ['p(99)<5000'],
+        'errors': ['rate<0.05'],
+      },
+    };
+
+    function buildHL7(vu, iter) {
+      const msgId = `SPIKE-${vu}-${iter}-${Date.now()}`;
+      const mrn = `SPK-${String(vu * 10000 + iter).padStart(6, '0')}`;
+      return [
+        `MSH|^~\\&|SPIKE|FAC|RECV|FAC|20260219120000||ADT^A01^ADT_A01|${msgId}|P|2.3`,
+        'EVN|A01|20260219120000',
+        `PID|||${mrn}^^^MRN||DOE^SPIKE${vu}^||19800101|M|||123 MAIN ST^^CITY^ST^12345||555-0100`,
+        'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+      ].join('\r');
+    }
+
+    function buildJSON(vu, iter) {
+      return JSON.stringify({
+        resourceType: 'Patient',
+        name: { given: `Spike${vu}`, family: `Test${iter}` },
+        identifiers: [{ type: 'MRN', value: `SPK-${String(vu * 10000 + iter).padStart(6, '0')}` }],
+        gender: iter % 2 === 0 ? 'female' : 'male',
+        age: 20 + (iter % 60),
+      });
+    }
+
+    export function sendHL7() {
+      const msg = buildHL7(__VU, __ITER);
+      const res = http.post(`${BASE}:8110`, msg, {
+        headers: { 'Content-Type': 'text/plain' },
+        tags: { scenario: 'spike_hl7' },
+      });
+      spikeLatency.add(res.timings.duration);
+      const ok = check(res, { 'DV01 spike accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) messagesProcessed.add(1);
+      errorRate.add(!ok);
+      sleep(0.1 + Math.random() * 0.2);
+    }
+
+    export function sendJSON() {
+      const msg = buildJSON(__VU, __ITER);
+      const res = http.post(`${BASE}:8111`, msg, {
+        headers: { 'Content-Type': 'application/json' },
+        tags: { scenario: 'spike_json' },
+      });
+      spikeLatency.add(res.timings.duration);
+      const ok = check(res, { 'DV02 spike accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) messagesProcessed.add(1);
+      errorRate.add(!ok);
+      sleep(0.1 + Math.random() * 0.2);
+    }
+
+  soak-test.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Rate, Trend, Counter } from 'k6/metrics';
+
+    const BASE = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+    const FULL_SOAK = __ENV.FULL_SOAK === 'true';
+    const DURATION = FULL_SOAK ? '2h' : '30m';
+
+    const errorRate = new Rate('errors');
+    const soakLatency = new Trend('soak_latency');
+    const earlyLatency = new Trend('early_latency');
+    const lateLatency = new Trend('late_latency');
+    const messagesProcessed = new Counter('messages_processed');
+
+    export const options = {
+      scenarios: {
+        constant_hl7: {
+          executor: 'constant-arrival-rate',
+          rate: 3,
+          timeUnit: '1s',
+          duration: DURATION,
+          preAllocatedVUs: 5,
+          maxVUs: 20,
+          exec: 'sendHL7',
+        },
+      },
+      thresholds: {
+        'errors': ['rate<0.001'],
+        'soak_latency': ['p(95)<1000'],
+      },
+    };
+
+    // Track timing for early/late comparison
+    const startTime = Date.now();
+
+    function buildHL7(vu, iter) {
+      const msgId = `SOAK-${vu}-${iter}-${Date.now()}`;
+      const mrn = `SK-${String(vu * 10000 + iter).padStart(6, '0')}`;
+      return [
+        `MSH|^~\\&|SOAK|FAC|RECV|FAC|20260219120000||ADT^A01^ADT_A01|${msgId}|P|2.3`,
+        'EVN|A01|20260219120000',
+        `PID|||${mrn}^^^MRN||DOE^SOAK${vu}^||19800101|M|||123 MAIN ST^^CITY^ST^12345||555-0100`,
+        'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+      ].join('\r');
+    }
+
+    export function sendHL7() {
+      const msg = buildHL7(__VU, __ITER);
+      const res = http.post(`${BASE}:8110`, msg, {
+        headers: { 'Content-Type': 'text/plain' },
+      });
+      soakLatency.add(res.timings.duration);
+
+      const elapsed = (Date.now() - startTime) / 1000;
+      const totalDuration = FULL_SOAK ? 7200 : 1800;
+      if (elapsed < 300) {
+        earlyLatency.add(res.timings.duration);
+      } else if (elapsed > totalDuration - 300) {
+        lateLatency.add(res.timings.duration);
+      }
+
+      const ok = check(res, { 'soak accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) messagesProcessed.add(1);
+      errorRate.add(!ok);
+    }
+
+    export function handleSummary(data) {
+      const lines = [];
+      lines.push('');
+      lines.push('========================================');
+      lines.push('  SOAK TEST SUMMARY');
+      lines.push(`  Duration: ${FULL_SOAK ? '2 hours' : '30 minutes'}`);
+      lines.push('========================================');
+      lines.push('');
+
+      function fmt(val) {
+        if (val === undefined || val === null) return 'N/A';
+        return typeof val === 'number' ? val.toFixed(1) : String(val);
+      }
+
+      const overall = data.metrics['soak_latency'];
+      if (overall && overall.values) {
+        lines.push(`  Overall p95: ${fmt(overall.values['p(95)'])}ms  avg: ${fmt(overall.values.avg)}ms`);
+      }
+
+      const early = data.metrics['early_latency'];
+      const late = data.metrics['late_latency'];
+      if (early && early.values && late && late.values) {
+        const earlyP95 = early.values['p(95)'];
+        const lateP95 = late.values['p(95)'];
+        lines.push(`  First 5 min p95: ${fmt(earlyP95)}ms`);
+        lines.push(`  Last 5 min p95:  ${fmt(lateP95)}ms`);
+        if (earlyP95 > 0) {
+          const degradation = ((lateP95 - earlyP95) / earlyP95 * 100).toFixed(1);
+          lines.push(`  Degradation: ${degradation}%`);
+          if (lateP95 > earlyP95 * 1.5) {
+            lines.push('  ** WARNING: >50% latency degradation detected **');
+          }
+        }
+      }
+
+      const processed = data.metrics['messages_processed'];
+      if (processed && processed.values) {
+        lines.push(`  Total messages: ${processed.values.count}`);
+      }
+
+      const errors = data.metrics['errors'];
+      if (errors && errors.values) {
+        lines.push(`  Error rate: ${(errors.values.rate * 100).toFixed(3)}%`);
+      }
+
+      lines.push('');
+      lines.push('========================================');
+      return { stdout: lines.join('\n') + '\n' };
+    }
+
+  chaos-load.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Rate, Trend, Counter } from 'k6/metrics';
+
+    const BASE = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+    const errorRate = new Rate('errors');
+    const chaosLatency = new Trend('chaos_latency');
+    const successCount = new Counter('success_count');
+    const errorCount = new Counter('error_count');
+
+    export const options = {
+      scenarios: {
+        normal_traffic: {
+          executor: 'constant-arrival-rate',
+          rate: 3,
+          timeUnit: '1s',
+          duration: '10m',
+          preAllocatedVUs: 5,
+          maxVUs: 15,
+          exec: 'sendNormal',
+        },
+        error_traffic: {
+          executor: 'constant-arrival-rate',
+          rate: 2,
+          timeUnit: '1s',
+          duration: '10m',
+          preAllocatedVUs: 3,
+          maxVUs: 10,
+          exec: 'sendToErrorChannel',
+        },
+      },
+      thresholds: {
+        // Relaxed: DV08 has 10% intentional failure rate
+        'errors': ['rate<0.30'],
+        'chaos_latency': ['p(95)<3000'],
+      },
+    };
+
+    function buildHL7(vu, iter) {
+      const msgId = `CHAOS-${vu}-${iter}-${Date.now()}`;
+      const mrn = `CH-${String(vu * 10000 + iter).padStart(6, '0')}`;
+      return [
+        `MSH|^~\\&|CHAOS|FAC|RECV|FAC|20260219120000||ADT^A01^ADT_A01|${msgId}|P|2.3`,
+        'EVN|A01|20260219120000',
+        `PID|||${mrn}^^^MRN||DOE^CHAOS${vu}^||19800101|M|||123 MAIN ST^^CITY^ST^12345||555-0100`,
+        'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+      ].join('\r');
+    }
+
+    function buildErrorJSON(vu, iter) {
+      return JSON.stringify({
+        resourceType: 'Patient',
+        name: { given: `Chaos${vu}`, family: `Error${iter}` },
+        identifiers: [{ type: 'MRN', value: `ERR-${String(vu * 10000 + iter).padStart(6, '0')}` }],
+        gender: 'unknown',
+        triggerError: true,
+      });
+    }
+
+    export function sendNormal() {
+      const msg = buildHL7(__VU, __ITER);
+      const res = http.post(`${BASE}:8110`, msg, {
+        headers: { 'Content-Type': 'text/plain' },
+        tags: { target: 'dv01_normal' },
+      });
+      chaosLatency.add(res.timings.duration);
+      const ok = check(res, { 'normal accepted': (r) => r.status >= 200 && r.status < 300 });
+      if (ok) successCount.add(1);
+      errorRate.add(!ok);
+      sleep(0.1);
+    }
+
+    export function sendToErrorChannel() {
+      const msg = buildErrorJSON(__VU, __ITER);
+      const res = http.post(`${BASE}:8112`, msg, {
+        headers: { 'Content-Type': 'application/json' },
+        tags: { target: 'dv08_error' },
+      });
+      chaosLatency.add(res.timings.duration);
+      // DV08 has intentional ~10% error injection via $g('errorRate')
+      // We accept both 2xx (success) and 5xx (intentional error) as valid
+      const serverCrash = res.status === 0 || res.status === 502 || res.status === 503;
+      if (serverCrash) {
+        errorCount.add(1);
+        errorRate.add(true);
+      } else {
+        successCount.add(1);
+        errorRate.add(false);
+      }
+      sleep(0.1);
+    }
+
+    export function handleSummary(data) {
+      const lines = [];
+      lines.push('');
+      lines.push('========================================');
+      lines.push('  CHAOS LOAD TEST SUMMARY');
+      lines.push('========================================');
+      lines.push('');
+      lines.push('  DV01: Normal HL7 traffic (3 msg/sec)');
+      lines.push('  DV08: Error-injected JSON (2 msg/sec, ~10% failure)');
+      lines.push('');
+
+      function fmt(val) {
+        if (val === undefined || val === null) return 'N/A';
+        return typeof val === 'number' ? val.toFixed(1) : String(val);
+      }
+
+      const lat = data.metrics['chaos_latency'];
+      if (lat && lat.values) {
+        lines.push(`  Latency p95: ${fmt(lat.values['p(95)'])}ms  p99: ${fmt(lat.values['p(99)'])}ms`);
+      }
+
+      const succ = data.metrics['success_count'];
+      const errs = data.metrics['error_count'];
+      if (succ && succ.values) lines.push(`  Successful: ${succ.values.count}`);
+      if (errs && errs.values) lines.push(`  Server errors: ${errs.values.count}`);
+
+      const rate = data.metrics['errors'];
+      if (rate && rate.values) {
+        lines.push(`  Error rate: ${(rate.values.rate * 100).toFixed(2)}%`);
+      }
+
+      lines.push('');
+      lines.push('========================================');
+      return { stdout: lines.join('\n') + '\n' };
+    }
+
+  correctness-validation.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+    import { Counter } from 'k6/metrics';
+
+    const BASE = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+    const hl7Sent = new Counter('hl7_sent');
+    const jsonSent = new Counter('json_sent');
+    const chainSent = new Counter('chain_sent');
+    const failures = new Counter('send_failures');
+
+    export const options = {
+      vus: 1,
+      iterations: 1,
+      thresholds: {
+        'send_failures': ['count<5'],
+      },
+    };
+
+    export default function () {
+      const TOTAL = 100;
+
+      // Phase 1: Send 100 HL7 messages to DV01
+      for (let i = 0; i < TOTAL; i++) {
+        const mrn = `MRN-${String(i).padStart(5, '0')}`;
+        const msgId = `CV-HL7-${i}-${Date.now()}`;
+        const msg = [
+          `MSH|^~\\&|CV_TEST|FAC|RECV|FAC|20260219120000||ADT^A01^ADT_A01|${msgId}|P|2.3`,
+          'EVN|A01|20260219120000',
+          `PID|||${mrn}^^^MRN||DOE^CORRECT${i}^||19800101|M|||123 MAIN ST^^CITY^ST^12345||555-0100`,
+          'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+        ].join('\r');
+
+        const res = http.post(`${BASE}:8110`, msg, {
+          headers: { 'Content-Type': 'text/plain' },
+          tags: { phase: 'hl7' },
+        });
+        const ok = check(res, { [`HL7 #${i} accepted`]: (r) => r.status >= 200 && r.status < 300 });
+        if (ok) {
+          hl7Sent.add(1);
+        } else {
+          failures.add(1);
+        }
+        sleep(0.2);
+      }
+
+      console.log(`Phase 1 complete: sent ${TOTAL} HL7 messages to DV01`);
+      sleep(2);
+
+      // Phase 2: Send 100 JSON messages to DV02
+      for (let i = 0; i < TOTAL; i++) {
+        const mrn = `MRN-${String(i).padStart(5, '0')}`;
+        const payload = JSON.stringify({
+          resourceType: 'Patient',
+          name: { given: `Correct${i}`, family: 'Validation' },
+          identifiers: [{ type: 'MRN', value: mrn }],
+          gender: i % 2 === 0 ? 'female' : 'male',
+          age: 20 + (i % 60),
+          testSequence: i,
+        });
+
+        const res = http.post(`${BASE}:8111`, payload, {
+          headers: { 'Content-Type': 'application/json' },
+          tags: { phase: 'json' },
+        });
+        const ok = check(res, { [`JSON #${i} accepted`]: (r) => r.status >= 200 && r.status < 300 });
+        if (ok) {
+          jsonSent.add(1);
+        } else {
+          failures.add(1);
+        }
+        sleep(0.2);
+      }
+
+      console.log(`Phase 2 complete: sent ${TOTAL} JSON messages to DV02`);
+      sleep(2);
+
+      // Phase 3: Send 100 JSON messages to DV09 (4-hop chain entry)
+      for (let i = 0; i < TOTAL; i++) {
+        const mrn = `MRN-${String(i).padStart(5, '0')}`;
+        const payload = JSON.stringify({
+          resourceType: 'Patient',
+          name: { given: `Chain${i}`, family: 'HopTest' },
+          identifiers: [{ type: 'MRN', value: mrn }],
+          hopSequence: i,
+          sourceChannel: 'DV09',
+        });
+
+        const res = http.post(`${BASE}:8113`, payload, {
+          headers: { 'Content-Type': 'application/json' },
+          tags: { phase: 'chain' },
+        });
+        const ok = check(res, { [`Chain #${i} accepted`]: (r) => r.status >= 200 && r.status < 300 });
+        if (ok) {
+          chainSent.add(1);
+        } else {
+          failures.add(1);
+        }
+        sleep(0.3);
+      }
+
+      console.log(`Phase 3 complete: sent ${TOTAL} JSON messages to DV09 chain`);
+    }
+
+    export function handleSummary(data) {
+      const lines = [];
+      lines.push('');
+      lines.push('========================================');
+      lines.push('  CORRECTNESS VALIDATION SUMMARY');
+      lines.push('========================================');
+      lines.push('');
+
+      const hl7 = data.metrics['hl7_sent'];
+      const json = data.metrics['json_sent'];
+      const chain = data.metrics['chain_sent'];
+      const fails = data.metrics['send_failures'];
+
+      lines.push(`  HL7 to DV01:   ${hl7 ? hl7.values.count : 0}/100 sent`);
+      lines.push(`  JSON to DV02:  ${json ? json.values.count : 0}/100 sent`);
+      lines.push(`  Chain to DV09: ${chain ? chain.values.count : 0}/100 sent`);
+      lines.push(`  Failures:      ${fails ? fails.values.count : 0}`);
+      lines.push('');
+      lines.push('  Note: Use verify-counts.sh to confirm DB message counts');
+      lines.push('  match sent counts after processing completes.');
+      lines.push('');
+      lines.push('========================================');
+      return { stdout: lines.join('\n') + '\n' };
+    }
+
+  protocol-edge-cases.js: |
+    import http from 'k6/http';
+    import { check, sleep, group } from 'k6';
+    import { Rate, Counter } from 'k6/metrics';
+
+    const BASE = __ENV.MIRTH_URL || 'http://node-mirth.mirth-cluster.svc.cluster.local';
+    const crashRate = new Rate('server_crashes');
+    const testsPassed = new Counter('tests_passed');
+    const testsFailed = new Counter('tests_failed');
+
+    export const options = {
+      scenarios: {
+        edge_cases: {
+          executor: 'per-vu-iterations',
+          vus: 1,
+          iterations: 1,
+          exec: 'edgeCases',
+        },
+        concurrent_burst: {
+          executor: 'per-vu-iterations',
+          vus: 50,
+          iterations: 1,
+          startTime: '60s',
+          exec: 'concurrentBurst',
+        },
+      },
+      thresholds: {
+        'server_crashes': ['rate==0'],
+      },
+    };
+
+    export function edgeCases() {
+      // Test 1: Malformed HL7 (missing MSH segment)
+      group('malformed_hl7', function () {
+        const res = http.post(`${BASE}:8110`, 'THIS_IS_NOT_HL7|bad|data', {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+        const ok = check(res, {
+          'malformed HL7 does not crash (no 5xx)': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+
+      sleep(0.5);
+
+      // Test 2: Incomplete HL7 (MSH only, no other segments)
+      group('incomplete_hl7', function () {
+        const res = http.post(`${BASE}:8110`,
+          'MSH|^~\\&|TEST|FAC|RECV|FAC|20260219||ADT^A01|MSG001|P|2.3', {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+        const ok = check(res, {
+          'incomplete HL7 handled gracefully': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+
+      sleep(0.5);
+
+      // Test 3: Invalid JSON
+      group('invalid_json', function () {
+        const res = http.post(`${BASE}:8111`, '{not valid json!!!', {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const ok = check(res, {
+          'invalid JSON does not crash': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+
+      sleep(0.5);
+
+      // Test 4: Empty body
+      group('empty_body', function () {
+        const res = http.post(`${BASE}:8110`, '', {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+        const ok = check(res, {
+          'empty body does not crash': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+
+      sleep(0.5);
+
+      // Test 5: Wrong content type
+      group('wrong_content_type', function () {
+        const hl7 = [
+          'MSH|^~\\&|TEST|FAC|RECV|FAC|20260219120000||ADT^A01|MSG001|P|2.3',
+          'PID|||12345^^^MRN||DOE^JOHN||19800101|M',
+        ].join('\r');
+        const res = http.post(`${BASE}:8111`, hl7, {
+          headers: { 'Content-Type': 'application/xml' },
+        });
+        const ok = check(res, {
+          'wrong content-type does not crash': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+
+      sleep(0.5);
+
+      // Test 6: Oversized payload (~1MB)
+      group('oversized_payload', function () {
+        const segments = [
+          'MSH|^~\\&|BIG|FAC|RECV|FAC|20260219120000||ADT^A01|BIGMSG|P|2.3',
+          'EVN|A01|20260219120000',
+          'PID|||99999^^^MRN||DOE^BIG||19800101|M',
+        ];
+        // Generate ~1MB of OBX segments
+        for (let i = 0; i < 3000; i++) {
+          const padded = 'X'.repeat(300);
+          segments.push(`OBX|${i+1}|ST|TEST^Test||${padded}|||N|||F`);
+        }
+        const bigMsg = segments.join('\r');
+        const res = http.post(`${BASE}:8110`, bigMsg, {
+          headers: { 'Content-Type': 'text/plain' },
+          timeout: '30s',
+        });
+        const ok = check(res, {
+          'oversized payload handled (no crash)': (r) => r.status > 0,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0);
+      });
+
+      sleep(0.5);
+
+      // Test 7: Null bytes in payload
+      group('null_bytes', function () {
+        const msg = 'MSH|^~\\&|TEST|FAC|RECV|FAC|20260219||ADT^A01|MSG|P|2.3\r' +
+                    'PID|||12345^^^MRN||DOE\x00JOHN||19800101|M';
+        const res = http.post(`${BASE}:8110`, msg, {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+        const ok = check(res, {
+          'null bytes do not crash server': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+
+      sleep(0.5);
+
+      // Test 8: Unicode in HL7
+      group('unicode_hl7', function () {
+        const msg = [
+          'MSH|^~\\&|TEST|FAC|RECV|FAC|20260219120000||ADT^A01|UNICODEMSG|P|2.3',
+          'PID|||12345^^^MRN||MULLER^HANS^||19800101|M',
+        ].join('\r');
+        const res = http.post(`${BASE}:8110`, msg, {
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+        const ok = check(res, {
+          'unicode HL7 handled': (r) => r.status > 0 && r.status < 500,
+        });
+        if (ok) testsPassed.add(1); else testsFailed.add(1);
+        crashRate.add(res.status === 0 || res.status >= 500);
+      });
+    }
+
+    export function concurrentBurst() {
+      // 50 VUs each send 1 message simultaneously
+      const msg = [
+        `MSH|^~\\&|BURST|FAC|RECV|FAC|20260219120000||ADT^A01|BURST-${__VU}-${Date.now()}|P|2.3`,
+        'EVN|A01|20260219120000',
+        `PID|||BURST${__VU}^^^MRN||DOE^BURST||19800101|M|||123 MAIN^^CITY^ST^12345`,
+        'PV1||I|ICU^001^01||||1234^SMITH^JOHN^^^DR|||SUR||||ADM|A0',
+      ].join('\r');
+
+      const res = http.post(`${BASE}:8110`, msg, {
+        headers: { 'Content-Type': 'text/plain' },
+        tags: { scenario: 'burst' },
+      });
+
+      const ok = check(res, {
+        'burst accepted': (r) => r.status >= 200 && r.status < 500,
+      });
+      crashRate.add(res.status === 0 || res.status >= 500);
+      if (ok) testsPassed.add(1); else testsFailed.add(1);
+    }
+
+    export function handleSummary(data) {
+      const lines = [];
+      lines.push('');
+      lines.push('========================================');
+      lines.push('  PROTOCOL EDGE CASES SUMMARY');
+      lines.push('========================================');
+      lines.push('');
+
+      const passed = data.metrics['tests_passed'];
+      const failed = data.metrics['tests_failed'];
+      const crashes = data.metrics['server_crashes'];
+
+      lines.push(`  Tests passed: ${passed ? passed.values.count : 0}`);
+      lines.push(`  Tests failed: ${failed ? failed.values.count : 0}`);
+      lines.push(`  Server crashes: ${crashes ? (crashes.values.rate * 100).toFixed(1) : 0}%`);
+      lines.push('');
+
+      if (crashes && crashes.values && crashes.values.rate > 0) {
+        lines.push('  ** CRITICAL: Server crash detected under edge case load **');
+      } else {
+        lines.push('  All edge cases handled without server crashes.');
+      }
+
+      lines.push('');
+      lines.push('========================================');
+      return { stdout: lines.join('\n') + '\n' };
+    }

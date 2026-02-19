@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-dv-soak-test
+  namespace: mirth-k6
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 8400  # 2h20m safety timeout (covers FULL_SOAK)
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: k6
+        image: grafana/k6:latest
+        command: ['k6', 'run', '/scripts/soak-test.js']
+        env:
+        - name: MIRTH_URL
+          value: "http://node-mirth.mirth-cluster.svc.cluster.local"
+        # Set FULL_SOAK=true for 2-hour soak (default: 30 min)
+        # - name: FULL_SOAK
+        #   value: "true"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: dv-k6-scripts

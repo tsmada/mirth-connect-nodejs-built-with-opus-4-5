@@ -38,6 +38,28 @@ import { getLogger } from '../../logging/index.js';
 
 const logger = getLogger('file-connector');
 
+/**
+ * Normalize Java Mirth charset encoding names to Node.js BufferEncoding.
+ * Java Mirth uses 'DEFAULT_ENCODING' to mean JVM default (UTF-8).
+ */
+function normalizeEncoding(encoding: string): BufferEncoding {
+  if (!encoding || encoding === 'DEFAULT_ENCODING') return 'utf-8';
+  const lower = encoding.toLowerCase().replace(/[_-]/g, '');
+  const map: Record<string, BufferEncoding> = {
+    'utf8': 'utf-8',
+    'utf16le': 'utf16le',
+    'utf16be': 'utf16le', // Node.js doesn't natively support utf16be; best-effort
+    'latin1': 'latin1',
+    'iso88591': 'latin1',
+    'ascii': 'ascii',
+    'usascii': 'ascii',
+    'base64': 'base64',
+    'hex': 'hex',
+    'binary': 'binary',
+  };
+  return map[lower] ?? 'utf-8';
+}
+
 export interface FileDispatcherConfig {
   name?: string;
   metaDataId: number;
@@ -581,13 +603,13 @@ export class FileDispatcher extends DestinationConnector {
       await fs.appendFile(tempPath, dataToWrite, {
         encoding: resolvedProps.binary
           ? undefined
-          : (resolvedProps.charsetEncoding as BufferEncoding),
+          : normalizeEncoding(resolvedProps.charsetEncoding),
       });
     } else {
       await fs.writeFile(tempPath, dataToWrite, {
         encoding: resolvedProps.binary
           ? undefined
-          : (resolvedProps.charsetEncoding as BufferEncoding),
+          : normalizeEncoding(resolvedProps.charsetEncoding),
       });
     }
 

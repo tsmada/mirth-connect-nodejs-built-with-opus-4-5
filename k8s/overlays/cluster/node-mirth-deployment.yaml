@@ -60,6 +60,17 @@ spec:
               name: http-e4x-stress
             - containerPort: 11112
               name: dicom-scp
+            # Deep validation channel ports
+            - containerPort: 8110
+              name: dv-http-adt
+            - containerPort: 8111
+              name: dv-http-json
+            - containerPort: 8112
+              name: dv-http-err
+            - containerPort: 8113
+              name: dv-http-chain
+            - containerPort: 6675
+              name: dv-mllp-heavy
           env:
             - name: MIRTH_MODE
               value: "standalone"

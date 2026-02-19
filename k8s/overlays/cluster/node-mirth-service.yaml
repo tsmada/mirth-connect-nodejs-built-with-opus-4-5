@@ -66,3 +66,19 @@ spec:
     - name: dicom-scp
       port: 11112
       targetPort: 11112
+    # Deep validation channel ports
+    - name: dv-http-adt
+      port: 8110
+      targetPort: 8110
+    - name: dv-http-json
+      port: 8111
+      targetPort: 8111
+    - name: dv-http-err
+      port: 8112
+      targetPort: 8112
+    - name: dv-http-chain
+      port: 8113
+      targetPort: 8113
+    - name: dv-mllp-heavy
+      port: 6675
+      targetPort: 6675

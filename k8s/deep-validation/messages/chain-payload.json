@@ -1,0 +1,6 @@
+{
+  "traceId": "TRACE-001",
+  "timestamp": "2026-02-19T12:00:00Z",
+  "source": "deep-validation",
+  "data": {"key": "value", "nested": {"field": "test"}}
+}

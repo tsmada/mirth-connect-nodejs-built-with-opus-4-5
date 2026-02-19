@@ -53,7 +53,7 @@ Container-native clustering with health probes, block-allocated sequences, and d
 
 ## Kubernetes Deployment
 
-Full container-native testing platform with Kustomize overlays for all 4 operational modes. Validated on Rancher Desktop k3s (Apple Silicon). See the full [Kubernetes Guide](k8s/README.md).
+Full container-native testing platform with Kustomize overlays for all 4 operational modes. Validated on Rancher Desktop k3s (Apple Silicon) with 7-phase deep functional validation (correctness, load, spike, chaos, SQL integrity). See the full [Kubernetes Guide](k8s/README.md).
 
 ```bash
 # Build image + deploy base infra (MySQL, Java Mirth, mock services)
@@ -65,14 +65,17 @@ kubectl apply -k k8s/overlays/takeover/     # Shared DB with Java Mirth
 kubectl apply -k k8s/overlays/shadow/       # Shadow mode (read-only observer)
 kubectl apply -k k8s/overlays/cluster/      # 3 replicas, horizontal scaling
 
-# Deploy Kitchen Sink (34 channels) + run k6 load tests
+# Deploy Kitchen Sink (34 channels) + Deep Validation (12 channels)
 ./k8s/scripts/deploy-kitchen-sink.sh
+./k8s/deep-validation/scripts/deploy-channels.sh
+
+# Run k6 load tests or deep validation suite
 ./k8s/scripts/run-k6.sh api-load
 ```
 
 ## Production Readiness
 
-Comprehensive audit performed 2026-02-19. **Verdict: Production Ready.**
+Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase deep functional validation on Kubernetes. **Verdict: Production Ready.**
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
@@ -83,6 +86,22 @@ Comprehensive audit performed 2026-02-19. **Verdict: Production Ready.**
 | **Implementation** | PASS | 10/10 connectors, 9/9 data types, 20 servlets (199 routes), complete pipeline |
 | **Operational** | PASS | K8s probes, graceful shutdown, connection pooling, OTEL instrumentation |
 | **Parity** | PASS | Verified by 5 automated connector scans + 3 JS runtime scans |
+| **Deep Validation** | PASS | 7/7 phases — correctness, sustained load, spike, chaos engineering, SQL integrity |
+
+### Deep Functional Validation (K8s)
+
+45 channels deployed simultaneously (12 purpose-built DV channels + 33 Kitchen Sink) on Rancher Desktop k3s. Full report: [`k8s/deep-validation/reports/deep-validation-report-2026-02-19.md`](k8s/deep-validation/reports/deep-validation-report-2026-02-19.md).
+
+| Phase | Result | Key Metric |
+|-------|--------|------------|
+| Correctness (100 msgs) | PASS | 7/7 checks — MRN extraction, route distribution, 4-hop chain integrity |
+| Sustained Load (5 min) | PASS | 1,407 messages, 4.6 msg/s, 0.07% error, <240ms avg latency |
+| Spike Test (10x burst) | PASS | 0% error and baseline latency within 30s of spike end |
+| Chaos: Pod Kill | PASS | 6s recovery, 10/10 post-recovery messages, zero data loss |
+| Chaos: MySQL Restart | PASS | 14s reconnect, connection pool recovery, 10/10 messages persisted |
+| SQL Integrity | PASS | 0 duplicate IDs, 1291/1291 enriched, 175/175 chain integrity |
+
+6 bugs were discovered and fixed during validation (EADDRINUSE on redeploy, HL7 PID.3 field mapping, JDBC variable resolution, MirthMap copy-vs-reference, SMTP encoding, serializer nesting). See `CLAUDE.md` for details.
 
 ### Security
 
@@ -121,9 +140,9 @@ Comprehensive audit performed 2026-02-19. **Verdict: Production Ready.**
 | Log control | Restart + XML edit | Runtime API, per-component debug |
 | CLI | Java GUI only | Full terminal CLI with interactive dashboard |
 
-### Known Deferrals (20 total — non-blocking)
+### Known Deferrals (15 total — non-blocking)
 
-6 connector deferrals (HTTP/WS plugin auth, File FTP/S3/SMB backends, DICOM storage commitment, HTTP Digest edge cases, JDBC parameterized receiver queries) and 14 JS runtime deferrals (E4X delete edge cases, Database Reader resultMap, convenience vars, script timeout). See `CLAUDE.md` for the full inventory. None affect core message processing or API compatibility.
+5 connector deferrals (HTTP/WS plugin auth, DICOM storage commitment, HTTP Digest edge cases, JDBC parameterized receiver queries) and 10 JS runtime deferrals (convenience vars, `Namespace()`/`QName()` constructors, `XML.ignoreWhitespace`, minor edge cases). Several previously-deferred items have been resolved: File FTP/S3/SMB backends, E4X `delete`, Database Reader `resultMap`, script timeout, `AuthenticationResult`/`AuthStatus`. See `CLAUDE.md` for the full inventory. None affect core message processing or API compatibility.
 
 ## Features
 
@@ -326,6 +345,26 @@ See the full [Development Guide](docs/development-guide.md) for project structur
 ## Testing & Validation
 
 **6,092 tests passing** across 307 test suites (2,559 core + 417 artifact + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
+
+### Validation Tiers
+
+| Tier | What | Count | Purpose |
+|------|------|-------|---------|
+| Unit Tests | Jest test suites | 6,092 tests / 307 suites | Component-level correctness |
+| Parity Scans | Automated agents | 5 connector + 3 JS runtime scans | Java-to-Node.js fidelity |
+| Java Comparison | Side-by-side validation | Priority 0-6 scenarios | Behavioral equivalence |
+| K8s Functional | Deep validation suite | 7 phases, 12 DV channels | Production resilience |
+
+### Performance Profile (K8s Deep Validation)
+
+| Protocol | Messages | Avg Latency | Error Rate |
+|----------|----------|-------------|------------|
+| HL7 ADT (DV01) | 1,350 | 239ms | 0.1% |
+| JSON API (DV02) | 869 | 133ms | 0% |
+| 4-hop VM Chain (DV09-12) | 189 | 199ms | 0% |
+| **Overall (sustained)** | **1,407** | **<240ms** | **0.07%** |
+
+Chaos engineering: pod kill → 6s recovery, MySQL restart → 14s reconnect, zero data loss for post-recovery messages. See the full [Deep Validation Report](k8s/deep-validation/reports/deep-validation-report-2026-02-19.md).
 
 ## Version Management
 

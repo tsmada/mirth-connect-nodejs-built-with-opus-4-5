@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<codeTemplateLibrary version="3.9.1">
+  <id>dv-lib-0001-0001-0001-000000000001</id>
+  <name>DV Enrichment Utilities</name>
+  <revision>1</revision>
+  <lastModified>
+    <time>1707141600000</time>
+    <timezone>America/New_York</timezone>
+  </lastModified>
+  <description>Enrichment utility functions for Deep Validation integration test channels</description>
+  <includeNewChannels>true</includeNewChannels>
+  <enabledChannelIds/>
+  <disabledChannelIds/>
+  <codeTemplates>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0001-0001-0001-000000000001</id>
+      <name>lookupPatientByMRN</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Lookup patient by MRN using simulated enrichment.
+ * @param {string} mrn - Medical Record Number
+ * @return {Object} Patient info or null
+ */
+function lookupPatientByMRN(mrn) {
+    // Uses DatabaseConnection for lookup - returns patient info or null
+    // In deep validation, this simulates an enrichment lookup
+    // Returns a mock result based on MRN pattern
+    var result = {
+        found: true,
+        mrn: mrn,
+        facility: 'GENERAL_HOSPITAL',
+        department: 'ADMISSIONS',
+        lookupTimestamp: DateUtil.getCurrentDate('yyyy-MM-dd HH:mm:ss')
+    };
+    return result;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0002-0002-0002-000000000002</id>
+      <name>callExternalVerify</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Simulate external verification callout.
+ * @param {string} patientId
+ * @param {string} channelId
+ * @return {Object} Verification result
+ */
+function callExternalVerify(patientId, channelId) {
+    // Simulates external verification callout
+    // In production this would use HTTPUtil.post()
+    var verified = (patientId !== null &amp;&amp; patientId !== '');
+    return { verified: verified, source: 'dv-enrichment', channelId: channelId };
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0003-0003-0003-000000000003</id>
+      <name>formatMirthDate</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Format an HL7 date string (YYYYMMDD) to ISO-like format.
+ * @param {string} dateStr - HL7 date string
+ * @return {string} Formatted date (YYYY-MM-DD)
+ */
+function formatMirthDate(dateStr) {
+    if (!dateStr || dateStr.length &lt; 8) return '';
+    var year = dateStr.substring(0, 4);
+    var month = dateStr.substring(4, 6);
+    var day = dateStr.substring(6, 8);
+    return year + '-' + month + '-' + day;
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0004-0004-0004-000000000004</id>
+      <name>generateMRN</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Generate a random MRN with prefix.
+ * @return {string} Generated MRN (e.g., MRN-04523)
+ */
+function generateMRN() {
+    return 'MRN-' + String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+}</code>
+      </properties>
+    </codeTemplate>
+    <codeTemplate version="3.9.1">
+      <id>dv-tmpl-0005-0005-0005-000000000005</id>
+      <name>buildEventDescription</name>
+      <revision>1</revision>
+      <lastModified>
+        <time>1707141600000</time>
+        <timezone>America/New_York</timezone>
+      </lastModified>
+      <contextSet>
+        <delegate>
+          <contextType>GLOBAL_DEPLOY</contextType>
+          <contextType>GLOBAL_UNDEPLOY</contextType>
+          <contextType>GLOBAL_PREPROCESSOR</contextType>
+          <contextType>GLOBAL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_DEPLOY</contextType>
+          <contextType>CHANNEL_UNDEPLOY</contextType>
+          <contextType>CHANNEL_PREPROCESSOR</contextType>
+          <contextType>CHANNEL_POSTPROCESSOR</contextType>
+          <contextType>CHANNEL_ATTACHMENT</contextType>
+          <contextType>CHANNEL_BATCH</contextType>
+          <contextType>SOURCE_RECEIVER</contextType>
+          <contextType>SOURCE_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_FILTER_TRANSFORMER</contextType>
+          <contextType>DESTINATION_DISPATCHER</contextType>
+          <contextType>DESTINATION_RESPONSE_TRANSFORMER</contextType>
+        </delegate>
+      </contextSet>
+      <properties class="com.mirth.connect.model.codetemplates.BasicCodeTemplateProperties">
+        <type>FUNCTION</type>
+        <code>/**
+ * Build a human-readable event description from HL7 event type.
+ * @param {string} eventType - HL7 event type code (e.g., A01)
+ * @param {string} patientName - Patient name
+ * @param {string} facility - Facility name
+ * @return {string} Formatted description
+ */
+function buildEventDescription(eventType, patientName, facility) {
+    var descriptions = {
+        'A01': 'Patient Admission',
+        'A04': 'Patient Registration',
+        'A08': 'Patient Information Update',
+        'A03': 'Patient Discharge'
+    };
+    var desc = descriptions[eventType] || 'Unknown Event: ' + eventType;
+    return desc + ' - ' + (patientName || 'Unknown') + ' at ' + (facility || 'Unknown');
+}</code>
+      </properties>
+    </codeTemplate>
+  </codeTemplates>
+</codeTemplateLibrary>
