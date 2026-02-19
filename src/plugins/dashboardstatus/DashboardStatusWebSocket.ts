@@ -21,14 +21,8 @@ import {
   dashboardStatusController,
 } from './DashboardStatusController.js';
 import { isShadowMode, getPromotedChannels } from '../../cluster/ShadowMode.js';
-import {
-  ConnectionLogItem,
-  serializeConnectionLogItem,
-} from './ConnectionLogItem.js';
-import {
-  ConnectionStateItem,
-  serializeConnectionStateItem,
-} from './ConnectionStateItem.js';
+import { ConnectionLogItem, serializeConnectionLogItem } from './ConnectionLogItem.js';
+import { ConnectionStateItem, serializeConnectionStateItem } from './ConnectionStateItem.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
 registerComponent('engine', 'Channel deploy/start/stop');
@@ -169,7 +163,7 @@ export class DashboardStatusWebSocketHandler {
     });
 
     ws.on('error', (error) => {
-      logger.error('Dashboard Status WebSocket error', error as Error);
+      logger.error('Dashboard Status WebSocket error', error);
       this.handleClose(ws);
     });
 

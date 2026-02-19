@@ -384,13 +384,17 @@ export async function deleteCodeTemplate(id: string): Promise<void> {
  * Get all code template libraries
  */
 export async function getCodeTemplateLibraries(): Promise<CodeTemplateLibraryRow[]> {
-  return query<CodeTemplateLibraryRow>('SELECT ID, NAME, REVISION, LIBRARY FROM CODE_TEMPLATE_LIBRARY');
+  return query<CodeTemplateLibraryRow>(
+    'SELECT ID, NAME, REVISION, LIBRARY FROM CODE_TEMPLATE_LIBRARY'
+  );
 }
 
 /**
  * Get code template libraries by IDs
  */
-export async function getCodeTemplateLibrariesByIds(ids: string[]): Promise<CodeTemplateLibraryRow[]> {
+export async function getCodeTemplateLibrariesByIds(
+  ids: string[]
+): Promise<CodeTemplateLibraryRow[]> {
   if (ids.length === 0) {
     return [];
   }
@@ -408,7 +412,9 @@ export async function getCodeTemplateLibrariesByIds(ids: string[]): Promise<Code
 /**
  * Get a code template library by ID
  */
-export async function getCodeTemplateLibraryById(id: string): Promise<CodeTemplateLibraryRow | null> {
+export async function getCodeTemplateLibraryById(
+  id: string
+): Promise<CodeTemplateLibraryRow | null> {
   const rows = await query<CodeTemplateLibraryRow>(
     'SELECT ID, NAME, REVISION, LIBRARY FROM CODE_TEMPLATE_LIBRARY WHERE ID = :id',
     { id }

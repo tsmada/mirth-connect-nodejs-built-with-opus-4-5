@@ -116,26 +116,16 @@ export interface IChannelUtilEngineController {
   haltChannels(channelIds: Set<string>): Promise<IErrorTaskHandler>;
 
   /** Deploy channels */
-  deployChannels(
-    channelIds: Set<string>,
-    context: unknown | null
-  ): Promise<IErrorTaskHandler>;
+  deployChannels(channelIds: Set<string>, context: unknown | null): Promise<IErrorTaskHandler>;
 
   /** Undeploy channels */
-  undeployChannels(
-    channelIds: Set<string>,
-    context: unknown | null
-  ): Promise<IErrorTaskHandler>;
+  undeployChannels(channelIds: Set<string>, context: unknown | null): Promise<IErrorTaskHandler>;
 
   /** Start a connector */
-  startConnector(
-    channelConnectorMap: Map<string, number[]>
-  ): Promise<IErrorTaskHandler>;
+  startConnector(channelConnectorMap: Map<string, number[]>): Promise<IErrorTaskHandler>;
 
   /** Stop a connector */
-  stopConnector(
-    channelConnectorMap: Map<string, number[]>
-  ): Promise<IErrorTaskHandler>;
+  stopConnector(channelConnectorMap: Map<string, number[]>): Promise<IErrorTaskHandler>;
 }
 
 // Singleton controllers
@@ -146,9 +136,7 @@ let engineController: IChannelUtilEngineController | null = null;
  * Set the channel controller for ChannelUtil to use.
  * This should be called during application startup.
  */
-export function setChannelUtilChannelController(
-  controller: IChannelUtilChannelController
-): void {
+export function setChannelUtilChannelController(controller: IChannelUtilChannelController): void {
   channelController = controller;
 }
 
@@ -156,9 +144,7 @@ export function setChannelUtilChannelController(
  * Set the engine controller for ChannelUtil to use.
  * This should be called during application startup.
  */
-export function setChannelUtilEngineController(
-  controller: IChannelUtilEngineController
-): void {
+export function setChannelUtilEngineController(controller: IChannelUtilEngineController): void {
   engineController = controller;
 }
 

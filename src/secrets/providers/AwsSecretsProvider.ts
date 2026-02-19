@@ -8,7 +8,8 @@ export class AwsSecretsProvider implements SecretsProvider {
   private prefix: string;
 
   constructor(region?: string, prefix: string = 'mirth/') {
-    this.region = region ?? process.env['AWS_REGION'] ?? process.env['AWS_DEFAULT_REGION'] ?? 'us-east-1';
+    this.region =
+      region ?? process.env['AWS_REGION'] ?? process.env['AWS_DEFAULT_REGION'] ?? 'us-east-1';
     this.prefix = prefix;
   }
 
@@ -25,25 +26,30 @@ export class AwsSecretsProvider implements SecretsProvider {
         DeleteSecretCommand: sdk.DeleteSecretCommand,
       };
     } catch {
-      throw new Error('AWS Secrets Manager SDK not installed. Run: npm install @aws-sdk/client-secrets-manager');
+      throw new Error(
+        'AWS Secrets Manager SDK not installed. Run: npm install @aws-sdk/client-secrets-manager'
+      );
     }
   }
 
   async get(key: string): Promise<SecretValue | undefined> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
     try {
-      const response = await this.client.send(new this.commands.GetSecretValueCommand({
-        SecretId: this.prefix + key,
-      }));
+      const response = await this.client.send(
+        new this.commands.GetSecretValueCommand({
+          SecretId: this.prefix + key,
+        })
+      );
 
       let value: string;
       if (response.SecretString) {
         // Try to parse as JSON and extract the key
         try {
           const parsed = JSON.parse(response.SecretString);
-          value = typeof parsed === 'object' && parsed[key] !== undefined
-            ? String(parsed[key])
-            : response.SecretString;
+          value =
+            typeof parsed === 'object' && parsed[key] !== undefined
+              ? String(parsed[key])
+              : response.SecretString;
         } catch {
           value = response.SecretString;
         }
@@ -74,10 +80,12 @@ export class AwsSecretsProvider implements SecretsProvider {
     const keys: string[] = [];
     let nextToken: string | undefined;
     do {
-      const response = await this.client.send(new this.commands.ListSecretsCommand({
-        NextToken: nextToken,
-        Filters: [{ Key: 'name', Values: [this.prefix] }],
-      }));
+      const response = await this.client.send(
+        new this.commands.ListSecretsCommand({
+          NextToken: nextToken,
+          Filters: [{ Key: 'name', Values: [this.prefix] }],
+        })
+      );
       for (const secret of response.SecretList ?? []) {
         if (secret.Name?.startsWith(this.prefix)) {
           keys.push(secret.Name.slice(this.prefix.length));
@@ -91,16 +99,20 @@ export class AwsSecretsProvider implements SecretsProvider {
   async set(key: string, value: string): Promise<void> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
     try {
-      await this.client.send(new this.commands.PutSecretValueCommand({
-        SecretId: this.prefix + key,
-        SecretString: value,
-      }));
+      await this.client.send(
+        new this.commands.PutSecretValueCommand({
+          SecretId: this.prefix + key,
+          SecretString: value,
+        })
+      );
     } catch (err: any) {
       if (err.name === 'ResourceNotFoundException') {
-        await this.client.send(new this.commands.CreateSecretCommand({
-          Name: this.prefix + key,
-          SecretString: value,
-        }));
+        await this.client.send(
+          new this.commands.CreateSecretCommand({
+            Name: this.prefix + key,
+            SecretString: value,
+          })
+        );
       } else {
         throw err;
       }
@@ -109,10 +121,12 @@ export class AwsSecretsProvider implements SecretsProvider {
 
   async delete(key: string): Promise<void> {
     if (!this.client) throw new Error('AwsSecretsProvider not initialized');
-    await this.client.send(new this.commands.DeleteSecretCommand({
-      SecretId: this.prefix + key,
-      ForceDeleteWithoutRecovery: true,
-    }));
+    await this.client.send(
+      new this.commands.DeleteSecretCommand({
+        SecretId: this.prefix + key,
+        ForceDeleteWithoutRecovery: true,
+      })
+    );
   }
 
   async shutdown(): Promise<void> {

@@ -238,11 +238,7 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
       React.createElement(
         Box,
         { flexDirection: 'column', marginTop: 1 },
-        React.createElement(
-          Text,
-          { color: 'gray' },
-          'Press [M] to view messages for this channel.'
-        )
+        React.createElement(Text, { color: 'gray' }, 'Press [M] to view messages for this channel.')
       ),
     activeTab === 'connectors' &&
       React.createElement(

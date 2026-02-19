@@ -256,7 +256,7 @@ export class HttpReceiver extends SourceConnector {
               if (i === 0) {
                 res.setHeader(key, values[i]!);
               } else {
-                res.append(key, values[i]!);
+                res.append(key, values[i]);
               }
             }
           }
@@ -612,7 +612,10 @@ export class HttpReceiver extends SourceConnector {
   private getMessageContent(req: Request): string {
     // Determine if content is binary
     const contentTypeHeader = req.headers['content-type'] || 'text/plain';
-    const contentType = typeof contentTypeHeader === 'string' ? contentTypeHeader : contentTypeHeader[0] || 'text/plain';
+    const contentType =
+      typeof contentTypeHeader === 'string'
+        ? contentTypeHeader
+        : contentTypeHeader[0] || 'text/plain';
     const mimeType = (contentType.split(';')[0] || '').trim();
     const isBinary = isBinaryMimeType(
       mimeType,
@@ -699,7 +702,11 @@ export class HttpReceiver extends SourceConnector {
    *
    * CPC-MCE-001: Dispatches SENDING event during response write.
    */
-  private async sendResponse(req: Request, res: Response, dispatchResult: Message | null): Promise<void> {
+  private async sendResponse(
+    req: Request,
+    res: Response,
+    dispatchResult: Message | null
+  ): Promise<void> {
     // CPC-MCE-001: Dispatch SENDING event when writing response
     this.dispatchConnectionEvent(ConnectionStatusEventType.SENDING);
 
@@ -735,13 +742,14 @@ export class HttpReceiver extends SourceConnector {
 
     // Check if client accepts GZIP
     const acceptEncoding = req.headers['accept-encoding'] || '';
-    const acceptsGzip =
-      acceptEncoding.includes('gzip') || acceptEncoding.includes('x-gzip');
+    const acceptsGzip = acceptEncoding.includes('gzip') || acceptEncoding.includes('x-gzip');
 
     // Compress if accepted
     if (acceptsGzip && responseBody.length > 0) {
       res.setHeader('Content-Encoding', 'gzip');
-      const compressed = gzipSync(Buffer.from(responseBody, this.properties.charset as BufferEncoding));
+      const compressed = gzipSync(
+        Buffer.from(responseBody, this.properties.charset as BufferEncoding)
+      );
       res.send(compressed);
     } else {
       res.send(responseBody);
@@ -863,7 +871,7 @@ export class HttpReceiver extends SourceConnector {
       port: this.properties.port,
       host: this.properties.host || '0.0.0.0',
       connectionCount: 0, // Express doesn't track connections the same way
-      maxConnections: 0,  // No limit by default
+      maxConnections: 0, // No limit by default
       transportType: 'HTTP',
       listening: this.server.listening,
     };

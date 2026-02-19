@@ -88,9 +88,7 @@ export class HL7v2ResponseValidator implements ResponseValidator {
    * Parse the MSA segment from an HL7v2 response message.
    * Returns the ACK code (MSA-1) and message control ID (MSA-2), or null if no MSA found.
    */
-  private extractMSAFields(
-    response: string
-  ): { ackCode: string; messageControlId: string } | null {
+  private extractMSAFields(response: string): { ackCode: string; messageControlId: string } | null {
     // Split by segment delimiter (CR). Also handle LF and CRLF for robustness.
     const segments = response.split(/\r\n|\r|\n/);
 
@@ -121,9 +119,10 @@ export class HL7v2ResponseValidator implements ResponseValidator {
 
     // Look up from map variable if configured
     if (this.properties.originalIdMapVariable) {
-      const mapValue = connectorMessage.getConnectorMap().get(this.properties.originalIdMapVariable)
-        ?? connectorMessage.getChannelMap().get(this.properties.originalIdMapVariable)
-        ?? connectorMessage.getSourceMap().get(this.properties.originalIdMapVariable);
+      const mapValue =
+        connectorMessage.getConnectorMap().get(this.properties.originalIdMapVariable) ??
+        connectorMessage.getChannelMap().get(this.properties.originalIdMapVariable) ??
+        connectorMessage.getSourceMap().get(this.properties.originalIdMapVariable);
       if (mapValue != null) {
         return String(mapValue);
       }

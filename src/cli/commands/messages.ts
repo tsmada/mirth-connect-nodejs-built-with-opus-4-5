@@ -131,15 +131,11 @@ export function registerMessageCommands(program: Command): void {
           statuses: parseStatusFilter(options.status),
         };
 
-        const messages = await client.searchMessages(
-          resolveResult.channel.id,
-          filter,
-          {
-            offset: parseInt(options.offset, 10),
-            limit: parseInt(options.limit, 10),
-            includeContent: options.content,
-          }
-        );
+        const messages = await client.searchMessages(resolveResult.channel.id, filter, {
+          offset: parseInt(options.offset, 10),
+          limit: parseInt(options.limit, 10),
+          includeContent: options.content,
+        });
 
         spinner.stop();
 
@@ -171,7 +167,12 @@ export function registerMessageCommands(program: Command): void {
     .alias('msearch')
     .description('Search messages with filters')
     .argument('<channelId>', 'Channel ID or name')
-    .option('-s, --status <status>', 'Filter by status (R,F,T,S,Q,E,P)', (v, prev: string[]) => [...prev, v], [])
+    .option(
+      '-s, --status <status>',
+      'Filter by status (R,F,T,S,Q,E,P)',
+      (v, prev: string[]) => [...prev, v],
+      []
+    )
     .option('--from <datetime>', 'Messages from date/time')
     .option('--to <datetime>', 'Messages to date/time')
     .option('-l, --limit <n>', 'Limit results', '50')
@@ -202,15 +203,11 @@ export function registerMessageCommands(program: Command): void {
           textSearch: options.text,
         };
 
-        const messages = await client.searchMessages(
-          resolveResult.channel.id,
-          filter,
-          {
-            offset: parseInt(options.offset, 10),
-            limit: parseInt(options.limit, 10),
-            includeContent: options.content,
-          }
-        );
+        const messages = await client.searchMessages(resolveResult.channel.id, filter, {
+          offset: parseInt(options.offset, 10),
+          limit: parseInt(options.limit, 10),
+          includeContent: options.content,
+        });
 
         spinner.stop();
 
@@ -281,9 +278,7 @@ export function registerMessageCommands(program: Command): void {
               if (connector.content) {
                 for (const [contentType, content] of Object.entries(connector.content)) {
                   console.log();
-                  console.log(
-                    chalk.cyan(`  [${connector.connectorName}] ${contentType}:`)
-                  );
+                  console.log(chalk.cyan(`  [${connector.connectorName}] ${contentType}:`));
                   // Truncate long content
                   const contentStr = content.content;
                   if (contentStr.length > 1000) {
@@ -391,20 +386,14 @@ export function registerMessageCommands(program: Command): void {
           endDate: parseDate(options.to),
         };
 
-        const messages = await client.exportMessages(
-          resolveResult.channel.id,
-          filter,
-          {
-            pageSize: parseInt(options.limit, 10),
-            format: options.format.toUpperCase() as 'JSON' | 'XML',
-          }
-        );
+        const messages = await client.exportMessages(resolveResult.channel.id, filter, {
+          pageSize: parseInt(options.limit, 10),
+          format: options.format.toUpperCase() as 'JSON' | 'XML',
+        });
 
         spinner.stop();
 
-        const output = typeof messages === 'string'
-          ? messages
-          : JSON.stringify(messages, null, 2);
+        const output = typeof messages === 'string' ? messages : JSON.stringify(messages, null, 2);
 
         if (options.output) {
           fs.writeFileSync(options.output, output);

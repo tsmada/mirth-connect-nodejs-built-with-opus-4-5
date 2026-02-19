@@ -43,10 +43,13 @@ export interface DecomposedChannelFlat {
   scripts: Record<string, string>;
   sourceConnector: Record<string, unknown>;
   sourceScripts: Record<string, string>;
-  destinations: Record<string, {
-    connector: Record<string, unknown>;
-    scripts: Record<string, string>;
-  }>;
+  destinations: Record<
+    string,
+    {
+      connector: Record<string, unknown>;
+      scripts: Record<string, string>;
+    }
+  >;
 }
 
 export interface DiffOptions {
@@ -84,7 +87,7 @@ function valuesEqual(a: unknown, b: unknown, ignoreWs: boolean): boolean {
     const keysA = Object.keys(a);
     const keysB = Object.keys(b);
     if (keysA.length !== keysB.length) return false;
-    return keysA.every(k => valuesEqual(a[k], b[k], ignoreWs));
+    return keysA.every((k) => valuesEqual(a[k], b[k], ignoreWs));
   }
 
   return false;
@@ -97,8 +100,8 @@ function valuesEqual(a: unknown, b: unknown, ignoreWs: boolean): boolean {
 interface DiffLine {
   type: 'context' | 'add' | 'remove';
   content: string;
-  oldLineNo: number;  // 1-based, 0 if N/A
-  newLineNo: number;  // 1-based, 0 if N/A
+  oldLineNo: number; // 1-based, 0 if N/A
+  newLineNo: number; // 1-based, 0 if N/A
 }
 
 interface Hunk {
@@ -248,11 +251,14 @@ function buildHunks(lines: DiffLine[], contextLines: number): Hunk[] {
 
 function formatHunk(hunk: Hunk): string {
   const header = `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
-  const body = hunk.lines.map(line => {
+  const body = hunk.lines.map((line) => {
     switch (line.type) {
-      case 'add': return `+${line.content}`;
-      case 'remove': return `-${line.content}`;
-      case 'context': return ` ${line.content}`;
+      case 'add':
+        return `+${line.content}`;
+      case 'remove':
+        return `-${line.content}`;
+      case 'context':
+        return ` ${line.content}`;
     }
   });
   return [header, ...body].join('\n');
@@ -393,9 +399,8 @@ export class ChannelDiff {
     if (scriptChanges.length > 0) {
       parts.push(`${scriptChanges.length} script change${scriptChanges.length === 1 ? '' : 's'}`);
     }
-    const summary = parts.length > 0
-      ? `${channelName}: ${parts.join(', ')}`
-      : `${channelName}: no changes`;
+    const summary =
+      parts.length > 0 ? `${channelName}: ${parts.join(', ')}` : `${channelName}: no changes`;
 
     return { channelName, changeCount, configChanges, scriptChanges, summary };
   }
@@ -444,14 +449,14 @@ export class ChannelDiff {
             } else if (oldElemExists && !newElemExists) {
               changes.push({ path: elemPath, type: 'removed', oldValue: oldElem });
             } else if (isPlainObject(oldElem) && isPlainObject(newElem)) {
-              changes.push(...ChannelDiff.diffObjects(
-                oldElem as Record<string, unknown>,
-                newElem as Record<string, unknown>,
-                elemPath,
-                ws
-              ));
+              changes.push(...ChannelDiff.diffObjects(oldElem, newElem, elemPath, ws));
             } else if (!valuesEqual(oldElem, newElem, ws)) {
-              changes.push({ path: elemPath, type: 'changed', oldValue: oldElem, newValue: newElem });
+              changes.push({
+                path: elemPath,
+                type: 'changed',
+                oldValue: oldElem,
+                newValue: newElem,
+              });
             }
           }
         } else if (!valuesEqual(oldVal, newVal, ws)) {
@@ -491,7 +496,7 @@ export class ChannelDiff {
     // Format output
     const oldHeader = header ? `--- old/${header}` : '--- a';
     const newHeader = header ? `+++ new/${header}` : '+++ b';
-    const hunkStrings = hunks.map(h => formatHunk(h));
+    const hunkStrings = hunks.map((h) => formatHunk(h));
 
     return [oldHeader, newHeader, ...hunkStrings].join('\n');
   }
@@ -505,7 +510,9 @@ export class ChannelDiff {
     }
 
     const lines: string[] = [];
-    lines.push(`Channel: ${result.channelName} (${result.changeCount} change${result.changeCount === 1 ? '' : 's'})`);
+    lines.push(
+      `Channel: ${result.channelName} (${result.changeCount} change${result.changeCount === 1 ? '' : 's'})`
+    );
     lines.push('');
 
     // Group config changes by their top-level section
@@ -515,7 +522,7 @@ export class ChannelDiff {
       for (const change of result.configChanges) {
         // Use the path up to the second dot as group key, or full path if no second dot
         const parts = change.path.split('.');
-        const groupKey = parts.length >= 2 ? `${parts[0]}.${parts[1]}` : parts[0] ?? change.path;
+        const groupKey = parts.length >= 2 ? `${parts[0]}.${parts[1]}` : (parts[0] ?? change.path);
         const existing = grouped.get(groupKey);
         if (existing) {
           existing.push(change);
@@ -528,7 +535,9 @@ export class ChannelDiff {
         for (const change of changes) {
           switch (change.type) {
             case 'changed':
-              lines.push(`  ${change.path}: ${formatValue(change.oldValue)} -> ${formatValue(change.newValue)}`);
+              lines.push(
+                `  ${change.path}: ${formatValue(change.oldValue)} -> ${formatValue(change.newValue)}`
+              );
               break;
             case 'added':
               lines.push(`  + ${change.path}: ${formatValue(change.newValue)}`);
@@ -555,7 +564,7 @@ export class ChannelDiff {
       if (change.unifiedDiff) {
         // Skip the file headers (--- and +++) since we already printed the path
         const diffLines = change.unifiedDiff.split('\n');
-        const hunkStart = diffLines.findIndex(l => l.startsWith('@@'));
+        const hunkStart = diffLines.findIndex((l) => l.startsWith('@@'));
         if (hunkStart >= 0) {
           lines.push(...diffLines.slice(hunkStart));
         }
@@ -577,10 +586,7 @@ export class ChannelDiff {
     ignoreWs: boolean,
     out: ScriptChange[]
   ): void {
-    const allScriptKeys = new Set([
-      ...Object.keys(oldScripts),
-      ...Object.keys(newScripts),
-    ]);
+    const allScriptKeys = new Set([...Object.keys(oldScripts), ...Object.keys(newScripts)]);
 
     for (const scriptKey of allScriptKeys) {
       const oldContent = oldScripts[scriptKey];

@@ -29,9 +29,7 @@ export class PropertiesFileProvider implements SecretsProvider {
       const content = await readFile(this.filePath, 'utf-8');
       this.properties = PropertiesFileProvider.parse(content);
     } catch (err) {
-      logger.warn(
-        `Failed to read ${this.filePath}: ${(err as Error).message}`
-      );
+      logger.warn(`Failed to read ${this.filePath}: ${(err as Error).message}`);
     }
   }
 

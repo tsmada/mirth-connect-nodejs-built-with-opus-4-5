@@ -203,7 +203,7 @@ async function fetchNodeContent(
   options: TraceOptions
 ): Promise<TraceNodeContent | undefined> {
   if (!options.includeContent) return undefined;
-  if (!await tablesExist(channelId)) return undefined;
+  if (!(await tablesExist(channelId))) return undefined;
 
   const pool = getPool();
   const result: TraceNodeContent = {};
@@ -255,7 +255,11 @@ async function fetchNodeContent(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function makeSnapshot(content: string | null, dataType: string, maxLength: number): ContentSnapshot {
+function makeSnapshot(
+  content: string | null,
+  dataType: string,
+  maxLength: number
+): ContentSnapshot {
   const fullContent = content || '';
   const truncated = fullContent.length > maxLength;
 
@@ -305,7 +309,7 @@ async function traceBackward(
     visited.add(key);
 
     // Fetch source map for this message
-    if (!await tablesExist(currentChannelId)) break;
+    if (!(await tablesExist(currentChannelId))) break;
 
     const pool = getPool();
     const [rows] = await pool.query<SourceMapRow[]>(
@@ -327,14 +331,21 @@ async function traceBackward(
     }
 
     // Extract parent channel and message from source map
-    const parentChannelIds = (sourceMap[SOURCE_CHANNEL_IDS] as string[] | undefined) || (
-      sourceMap[SOURCE_CHANNEL_ID] ? [sourceMap[SOURCE_CHANNEL_ID] as string] : undefined
-    );
-    const parentMessageIds = (sourceMap[SOURCE_MESSAGE_IDS] as number[] | undefined) || (
-      sourceMap[SOURCE_MESSAGE_ID] !== undefined ? [sourceMap[SOURCE_MESSAGE_ID] as number] : undefined
-    );
+    const parentChannelIds =
+      (sourceMap[SOURCE_CHANNEL_IDS] as string[] | undefined) ||
+      (sourceMap[SOURCE_CHANNEL_ID] ? [sourceMap[SOURCE_CHANNEL_ID] as string] : undefined);
+    const parentMessageIds =
+      (sourceMap[SOURCE_MESSAGE_IDS] as number[] | undefined) ||
+      (sourceMap[SOURCE_MESSAGE_ID] !== undefined
+        ? [sourceMap[SOURCE_MESSAGE_ID] as number]
+        : undefined);
 
-    if (!parentChannelIds || !parentMessageIds || parentChannelIds.length === 0 || parentMessageIds.length === 0) {
+    if (
+      !parentChannelIds ||
+      !parentMessageIds ||
+      parentChannelIds.length === 0 ||
+      parentMessageIds.length === 0
+    ) {
       // No parent reference = this is the root
       chain.unshift({ channelId: currentChannelId, messageId: currentMessageId });
       break;
@@ -354,7 +365,11 @@ async function traceBackward(
   }
 
   // If we exited the loop without adding the root, prepend it
-  if (chain.length === 0 || chain[0]!.channelId !== currentChannelId || chain[0]!.messageId !== currentMessageId) {
+  if (
+    chain.length === 0 ||
+    chain[0]!.channelId !== currentChannelId ||
+    chain[0]!.messageId !== currentMessageId
+  ) {
     chain.unshift({ channelId: currentChannelId, messageId: currentMessageId });
   }
 
@@ -374,7 +389,7 @@ async function findDownstreamMessages(
   targetChannelId: string,
   maxChildren: number
 ): Promise<Array<{ messageId: number }>> {
-  if (!await tablesExist(targetChannelId)) return [];
+  if (!(await tablesExist(targetChannelId))) return [];
 
   const pool = getPool();
 
@@ -413,7 +428,7 @@ async function findDownstreamMessages(
       const lastIdx = srcIds.length - 1;
       if (srcIds[lastIdx] === sourceChannelId && msgIds[lastIdx] === sourceMessageId) {
         // Avoid duplicates
-        if (!results.some(r => r.messageId === row.MESSAGE_ID)) {
+        if (!results.some((r) => r.messageId === row.MESSAGE_ID)) {
           results.push({ messageId: row.MESSAGE_ID });
         }
       }
@@ -441,7 +456,7 @@ async function buildTraceNode(
   if (visited.has(key)) return null; // circular reference guard
   visited.add(key);
 
-  if (!await tablesExist(channelId)) {
+  if (!(await tablesExist(channelId))) {
     return {
       channelId,
       channelName: getChannelName(channelNames, channelId),
@@ -488,7 +503,7 @@ async function buildTraceNode(
     [messageId]
   );
 
-  const sourceConnectorMsg = cmRows.find(r => r.METADATA_ID === 0);
+  const sourceConnectorMsg = cmRows.find((r) => r.METADATA_ID === 0);
   const statusCode = sourceConnectorMsg?.STATUS || 'R';
 
   // Compute latency from root
@@ -502,7 +517,7 @@ async function buildTraceNode(
   const nodeContent = await fetchNodeContent(channelId, messageId, options);
 
   // Check for errors in any connector
-  const hasError = cmRows.some(r => r.STATUS === 'E');
+  const hasError = cmRows.some((r) => r.STATUS === 'E');
   let errorMsg: string | undefined;
   if (hasError && nodeContent?.processingError) {
     errorMsg = nodeContent.processingError;
@@ -539,14 +554,23 @@ async function buildTraceNode(
   const forwardPromises = targets.map(async (targetChannelId) => {
     try {
       const downstreamMessages = await findDownstreamMessages(
-        channelId, messageId, targetChannelId, options.maxChildren
+        channelId,
+        messageId,
+        targetChannelId,
+        options.maxChildren
       );
 
       const childPromises = downstreamMessages.map(async (dm) => {
         try {
           return await buildTraceNode(
-            targetChannelId, dm.messageId, depGraph, channelNames,
-            rootReceivedDate || receivedDate, depth + 1, options, visited,
+            targetChannelId,
+            dm.messageId,
+            depGraph,
+            channelNames,
+            rootReceivedDate || receivedDate,
+            depth + 1,
+            options,
+            visited,
             destConnectorNames.get(targetChannelId)
           );
         } catch (err) {
@@ -654,8 +678,14 @@ export async function traceMessage(
   // Build the trace tree from root
   const visited = new Set<string>();
   const root = await buildTraceNode(
-    rootChannelId, rootMessageId, depGraph, channelNames,
-    null, 0, options, visited
+    rootChannelId,
+    rootMessageId,
+    depGraph,
+    channelNames,
+    null,
+    0,
+    options,
+    visited
   );
 
   if (!root) {

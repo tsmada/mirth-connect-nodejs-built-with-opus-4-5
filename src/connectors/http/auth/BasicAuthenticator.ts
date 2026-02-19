@@ -27,7 +27,10 @@ export class BasicAuthenticator implements HttpAuthenticator {
     this.properties = properties;
   }
 
-  async authenticate(request: RequestInfo, credentialsResolver?: CredentialsResolver): Promise<AuthenticationResult> {
+  async authenticate(
+    request: RequestInfo,
+    credentialsResolver?: CredentialsResolver
+  ): Promise<AuthenticationResult> {
     const authHeaderList = request.headers.get('authorization');
 
     if (authHeaderList && authHeaderList.length > 0) {
@@ -62,9 +65,7 @@ export class BasicAuthenticator implements HttpAuthenticator {
     }
 
     // Return authentication challenge
-    return AuthenticationResult.Challenged(
-      `Basic realm="${this.properties.realm}"`
-    );
+    return AuthenticationResult.Challenged(`Basic realm="${this.properties.realm}"`);
   }
 
   /**

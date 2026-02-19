@@ -70,14 +70,69 @@ kubectl apply -k k8s/overlays/cluster/      # 3 replicas, horizontal scaling
 ./k8s/scripts/run-k6.sh api-load
 ```
 
+## Production Readiness
+
+Comprehensive audit performed 2026-02-19. **Verdict: Production Ready.**
+
+| Dimension | Rating | Evidence |
+|-----------|--------|----------|
+| **Test Suite** | PASS | 6,092 tests / 307 suites / 0 failures |
+| **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
+| **Dependencies** | PASS | Zero production dependency vulnerabilities |
+| **Security** | PASS | Parameterized SQL, auth on all routes, VM sandbox, rate limiting |
+| **Implementation** | PASS | 10/10 connectors, 9/9 data types, 20 servlets (199 routes), complete pipeline |
+| **Operational** | PASS | K8s probes, graceful shutdown, connection pooling, OTEL instrumentation |
+| **Parity** | PASS | Verified by 5 automated connector scans + 3 JS runtime scans |
+
+### Security
+
+- All database queries use parameterized placeholders (dynamic table names validated via UUID regex whitelist)
+- All API routes protected by `authMiddleware` (public exceptions: health probes, login, version)
+- Zero `eval()` usage — user scripts execute in `vm.createContext()` sandbox with timer functions disabled
+- Global API rate limit (100 req/min/IP, configurable) + login-specific limit (10 req/min/IP)
+- Request body size limits (10MB API, 50MB connectors)
+
+### Implementation Coverage
+
+- **10 connector types** (HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, SMTP, JMS, WebService/SOAP, DICOM, JavaScript) — all with `replaceConnectorProperties()` for per-message `${variable}` resolution and dashboard event dispatching
+- **9 data types** (HL7v2, XML, JSON, Raw, Delimited, EDI/X12, HL7v3/CDA, NCPDP, DICOM)
+- **20 API servlets** with 199 registered routes — zero skeleton implementations
+- **Complete 4-transaction message pipeline** with preprocessor, filter, transformer, destinations, response transformers, postprocessor, source queue mode, crash-recovery PENDING checkpoints
+- **34 userutil classes** injected into script scope matching Java Mirth's `importPackage()` behavior
+
+### Operational Maturity
+
+- **Health probes**: `/api/health` (readiness), `/api/health/live` (liveness), `/api/health/startup` (startup), `/api/health/channels/:id` (per-channel)
+- **Graceful shutdown**: SIGTERM → 503 health → drain in-flight → deregister → pool close → exit (5s safety timeout)
+- **Process safety**: `uncaughtException` and `unhandledRejection` handlers with graceful shutdown
+- **Observability**: OpenTelemetry auto-instrumentation (Express, MySQL2, HTTP, Net, DNS, WebSocket) + 10 custom Mirth metrics + OTLP push + Prometheus scrape
+- **Database resilience**: Connection pooling with configurable limits + deadlock retry with exponential backoff
+
+### Node.js Advantages Over Java Mirth
+
+| Capability | Java Mirth | Node.js Mirth |
+|------------|-----------|---------------|
+| Deployment | WAR file + Jetty | Container-native, 12-factor |
+| Health probes | None | K8s readiness/liveness/startup |
+| Observability | Log4j files | OTEL traces + metrics + Prometheus |
+| Config management | Database blobs | Git-backed with env promotion + delta deploys |
+| Migration path | Big-bang only | Shadow mode with per-channel promote |
+| Clustering | Commercial plugin (JGroups) | Built-in, free (DB polling or Redis) |
+| Log control | Restart + XML edit | Runtime API, per-component debug |
+| CLI | Java GUI only | Full terminal CLI with interactive dashboard |
+
+### Known Deferrals (20 total — non-blocking)
+
+6 connector deferrals (HTTP/WS plugin auth, File FTP/S3/SMB backends, DICOM storage commitment, HTTP Digest edge cases, JDBC parameterized receiver queries) and 14 JS runtime deferrals (E4X delete edge cases, Database Reader resultMap, convenience vars, script timeout). See `CLAUDE.md` for the full inventory. None affect core message processing or API compatibility.
+
 ## Features
 
 | Category | Features |
 |----------|----------|
 | **Connectors** | HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, SMTP, JMS, WebService (SOAP), DICOM |
 | **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, HL7v3 (CDA), NCPDP, DICOM |
-| **JavaScript** | E4X transpilation (incl. attribute write, XML append), Mirth scope variables ($c, $s, $g, $r, etc.), ScriptBuilder helpers (type coercion, auto-serialization), VMRouter, DestinationSet, FileUtil, HTTPUtil, DICOMUtil, XmlUtil, JsonUtil |
-| **API** | Full REST API compatible with Mirth Administrator (14 servlets) with message import/export and attachments |
+| **JavaScript** | E4X transpilation (incl. attribute write, XML append, filter predicates, wildcards), Mirth scope variables ($c, $s, $g, $r, etc.), ScriptBuilder helpers (type coercion, auto-serialization), VMRouter, DestinationSet, FileUtil, HTTPUtil, DICOMUtil, XmlUtil, JsonUtil, MessageHeaders, MessageParameters |
+| **API** | Full REST API compatible with Mirth Administrator (20 servlets, 199 routes) with message import/export and attachments |
 | **Logging** | Centralized Winston-based logging with per-component debug control, runtime log level API, text/JSON output, file rotation |
 | **Plugins** | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
 | **CLI Tool** | Terminal-based monitor and management utility |
@@ -216,7 +271,7 @@ See the full [CLI Reference](docs/cli-reference.md) for all commands, options, k
 │  Connectors        │  Data Types      │  JavaScript Runtime    │
 │  HTTP, MLLP, TCP   │  HL7v2, XML      │  E4X Transpiler        │
 │  JDBC, File, SFTP  │  JSON, Raw       │  Scope Builder         │
-│  SMTP, JMS, SOAP   │  EDI, HL7v3      │  32 Userutil Classes   │
+│  SMTP, JMS, SOAP   │  EDI, HL7v3      │  34 Userutil Classes   │
 │  DICOM             │  NCPDP, DICOM    │  Script Builder        │
 ├─────────────────────────────────────────────────────────────────┤
 │  Artifact Management (Git-Backed Config-as-Code)               │
@@ -236,9 +291,9 @@ See the full [CLI Reference](docs/cli-reference.md) for all commands, options, k
 |-----------|----------|-------------|
 | **Donkey Engine** | `src/donkey/` | Message processing pipeline (Statistics, Queues, DestinationChain, ResponseSelector) |
 | **Connectors** | `src/connectors/` | 11 protocol implementations (HTTP, TCP, JDBC, File, VM, SMTP, JMS, WebService, DICOM) |
-| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 32 userutil classes, ScriptBuilder with Java-parity helpers |
+| **JavaScript Runtime** | `src/javascript/` | E4X transpilation, script execution, 34 userutil classes, ScriptBuilder with Java-parity helpers |
 | **Data Types** | `src/datatypes/` | 9 types: HL7v2, XML, JSON, Raw, Delimited, EDI/X12, HL7v3, NCPDP, DICOM |
-| **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (14 servlets) |
+| **REST API** | `src/api/` | Express-based API compatible with Mirth Administrator (20 servlets, 199 routes) |
 | **CLI Tool** | `src/cli/` | Terminal-based monitor and management utility |
 | **Plugins** | `src/plugins/` | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
 | **Cluster** | `src/cluster/` | Horizontal scaling: ClusterIdentity, ServerRegistry, SequenceAllocator, HealthCheck, EventBus, MapBackend |
@@ -248,11 +303,11 @@ See the full [CLI Reference](docs/cli-reference.md) for all commands, options, k
 
 ## API Endpoints
 
-The REST API mirrors the Mirth Connect Server API with 14 fully-implemented servlets plus Node.js-only extensions for clustering, logging, shadow mode, and artifact management. See the full [API Reference](docs/api-reference.md).
+The REST API mirrors the Mirth Connect Server API with 20 fully-implemented servlets (199 routes) including Node.js-only extensions for clustering, logging, shadow mode, tracing, and artifact management. See the full [API Reference](docs/api-reference.md).
 
 ## JavaScript Runtime
 
-Full E4X transpilation (including attribute write, XML append, named property deletion), Mirth scope variables ($c, $s, $g, $r, $cfg, etc.), ScriptBuilder with Java-parity helper functions (type coercion, auto-serialization, validate replacement), and 32 userutil classes injected into script scope. See the full [JavaScript Runtime Reference](docs/javascript-runtime.md).
+Full E4X transpilation (including attribute write, XML append, filter predicates, wildcards, named property deletion), Mirth scope variables ($c, $s, $g, $r, $cfg, etc.), ScriptBuilder with Java-parity helper functions (type coercion, auto-serialization, validate replacement), and 34 userutil classes injected into script scope. Verified via 3 automated js-runtime-checker scans across 10 bug categories. See the full [JavaScript Runtime Reference](docs/javascript-runtime.md).
 
 ## Development
 
@@ -261,7 +316,7 @@ Full E4X transpilation (including attribute write, XML append, named property de
 | `npm run build` | Compile TypeScript |
 | `npm run dev` | Development server with hot reload |
 | `npm start` | Production server |
-| `npm test` | Run test suite (5,289 tests) |
+| `npm test` | Run test suite (6,092 tests) |
 | `npm run test:coverage` | Generate coverage report |
 | `npm run lint` | Check code style |
 | `npm run typecheck` | Type check without compiling |
@@ -270,7 +325,7 @@ See the full [Development Guide](docs/development-guide.md) for project structur
 
 ## Testing & Validation
 
-**5,289 tests passing** (2,559 core + 417 artifact + 2,313 parity/unit). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
+**6,092 tests passing** across 307 test suites (2,559 core + 417 artifact + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
 
 ## Version Management
 

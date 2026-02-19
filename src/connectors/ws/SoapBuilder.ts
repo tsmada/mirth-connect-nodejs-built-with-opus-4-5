@@ -81,10 +81,7 @@ export interface SoapFault {
 /**
  * Build a SOAP envelope around body content
  */
-export function buildSoapEnvelope(
-  bodyContent: string,
-  options: SoapEnvelopeOptions = {}
-): string {
+export function buildSoapEnvelope(bodyContent: string, options: SoapEnvelopeOptions = {}): string {
   const version = options.version ?? SoapVersion.SOAP_1_1;
   const envelopeNs =
     version === SoapVersion.SOAP_1_1
@@ -103,9 +100,7 @@ export function buildSoapEnvelope(
   }
 
   if (options.encodingStyle) {
-    namespaces.push(
-      `${nsPrefix}:encodingStyle="${options.encodingStyle}"`
-    );
+    namespaces.push(`${nsPrefix}:encodingStyle="${options.encodingStyle}"`);
   }
 
   const nsDecl = namespaces.join(' ');
@@ -145,13 +140,17 @@ function buildHeaderElement(
   const attrs: string[] = [];
 
   if (header.mustUnderstand !== undefined) {
-    const value = version === SoapVersion.SOAP_1_1 ? (header.mustUnderstand ? '1' : '0') : header.mustUnderstand;
+    const value =
+      version === SoapVersion.SOAP_1_1
+        ? header.mustUnderstand
+          ? '1'
+          : '0'
+        : header.mustUnderstand;
     attrs.push(`${envelopePrefix}:mustUnderstand="${value}"`);
   }
 
   if (header.actor) {
-    const actorAttr =
-      version === SoapVersion.SOAP_1_1 ? 'actor' : 'role';
+    const actorAttr = version === SoapVersion.SOAP_1_1 ? 'actor' : 'role';
     attrs.push(`${envelopePrefix}:${actorAttr}="${header.actor}"`);
   }
 
@@ -159,9 +158,7 @@ function buildHeaderElement(
   const tagName = header.namespace ? `${prefix}:${header.localName}` : header.localName;
 
   const content =
-    typeof header.content === 'string'
-      ? header.content
-      : JSON.stringify(header.content);
+    typeof header.content === 'string' ? header.content : JSON.stringify(header.content);
 
   return `<${tagName}${nsAttr}${attrStr}>${content}</${tagName}>`;
 }
@@ -230,9 +227,7 @@ export function parseSoapEnvelope(envelope: string): {
       envelopeObj = parsed[key] as Record<string, unknown>;
 
       // Detect version from namespace
-      const nsAttr = Object.keys(envelopeObj).find((k) =>
-        k.startsWith('@_xmlns')
-      );
+      const nsAttr = Object.keys(envelopeObj).find((k) => k.startsWith('@_xmlns'));
       if (nsAttr) {
         const nsValue = envelopeObj[nsAttr] as string;
         if (nsValue?.includes('2003/05/soap-envelope')) {
@@ -315,17 +310,12 @@ export function parseSoapEnvelope(envelope: string): {
 /**
  * Parse SOAP fault from object
  */
-function parseFault(
-  faultObj: Record<string, unknown>,
-  version: SoapVersion
-): SoapFault {
+function parseFault(faultObj: Record<string, unknown>, version: SoapVersion): SoapFault {
   if (version === SoapVersion.SOAP_1_1) {
     return {
       faultCode: String(faultObj['faultcode'] || ''),
       faultString: String(faultObj['faultstring'] || ''),
-      faultActor: faultObj['faultactor']
-        ? String(faultObj['faultactor'])
-        : undefined,
+      faultActor: faultObj['faultactor'] ? String(faultObj['faultactor']) : undefined,
       detail: faultObj['detail'] ? JSON.stringify(faultObj['detail']) : undefined,
     };
   } else {
@@ -335,12 +325,8 @@ function parseFault(
     const detail = faultObj['soap:Detail'];
 
     return {
-      faultCode: code?.['soap:Value']
-        ? String(code['soap:Value'])
-        : '',
-      faultString: reason?.['soap:Text']
-        ? String(reason['soap:Text'])
-        : '',
+      faultCode: code?.['soap:Value'] ? String(code['soap:Value']) : '',
+      faultString: reason?.['soap:Text'] ? String(reason['soap:Text']) : '',
       detail: detail ? JSON.stringify(detail) : undefined,
     };
   }
@@ -379,10 +365,7 @@ function escapeXml(str: string): string {
 /**
  * Get SOAP content type for version
  */
-export function getSoapContentType(
-  version: SoapVersion,
-  soapAction?: string
-): string {
+export function getSoapContentType(version: SoapVersion, soapAction?: string): string {
   if (version === SoapVersion.SOAP_1_1) {
     // SOAP 1.1 uses text/xml
     return 'text/xml; charset=utf-8';

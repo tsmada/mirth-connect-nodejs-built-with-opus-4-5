@@ -183,9 +183,7 @@ export class Statistics {
   /**
    * Update statistics from a map structure
    */
-  updateFromMap(
-    statsMap: Map<string, Map<number | null, Map<Status, number>>>
-  ): void {
+  updateFromMap(statsMap: Map<string, Map<number | null, Map<Status, number>>>): void {
     for (const [channelId, channelEntry] of statsMap) {
       for (const [metaDataId, statusEntry] of channelEntry) {
         if (metaDataId !== null) {
@@ -222,11 +220,7 @@ export class Statistics {
   /**
    * Update statistics for a connector
    */
-  updateConnector(
-    channelId: string,
-    metaDataId: number,
-    statsDiff: Map<Status, number>
-  ): void {
+  updateConnector(channelId: string, metaDataId: number, statsDiff: Map<Status, number>): void {
     const channelStats = this.getChannelStatsMap(channelId);
     const aggregateStats = this.getConnectorStatsMap(channelStats, null);
     const connectorStats = this.getConnectorStatsMap(channelStats, metaDataId);
@@ -281,11 +275,7 @@ export class Statistics {
   /**
    * Update a single stat value
    */
-  private updateStat(
-    statsMap: Map<Status, number>,
-    status: Status,
-    diff: number
-  ): number {
+  private updateStat(statsMap: Map<Status, number>, status: Status, diff: number): number {
     const currentValue = statsMap.get(status) ?? 0;
 
     // Stats values cannot go below zero unless allowNegatives is true
@@ -303,11 +293,7 @@ export class Statistics {
   /**
    * Overwrite statistics for a connector
    */
-  overwrite(
-    channelId: string,
-    metaDataId: number | null,
-    stats: Map<Status, number>
-  ): void {
+  overwrite(channelId: string, metaDataId: number | null, stats: Map<Status, number>): void {
     const connectorStats = this.getConnectorStatsMap(
       this.getChannelStatsMap(channelId),
       metaDataId
@@ -328,11 +314,7 @@ export class Statistics {
   /**
    * Reset specific statuses for a connector
    */
-  resetStats(
-    channelId: string,
-    metaDataId: number | null,
-    statuses: Set<Status>
-  ): void {
+  resetStats(channelId: string, metaDataId: number | null, statuses: Set<Status>): void {
     for (const status of statuses) {
       if (TRACKED_STATUSES.includes(status)) {
         const connectorStats = this.getConnectorStatsMap(
@@ -375,9 +357,7 @@ export class Statistics {
   /**
    * Get or create channel stats map
    */
-  private getChannelStatsMap(
-    channelId: string
-  ): Map<number | null, Map<Status, number>> {
+  private getChannelStatsMap(channelId: string): Map<number | null, Map<Status, number>> {
     let channelStats = this.stats.get(channelId);
 
     if (!channelStats) {

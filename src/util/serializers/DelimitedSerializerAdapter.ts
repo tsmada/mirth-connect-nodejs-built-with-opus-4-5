@@ -48,12 +48,12 @@ export class DelimitedSerializerAdapter extends BaseSerializer {
       return (
         (p.columnDelimiter !== undefined && p.columnDelimiter !== ',') ||
         (p.recordDelimiter !== undefined && p.recordDelimiter !== '\\n') ||
-        (p.columnWidths != null) ||
+        p.columnWidths != null ||
         (p.quoteToken !== undefined && p.quoteToken !== '"') ||
         (p.escapeWithDoubleQuote !== undefined && p.escapeWithDoubleQuote !== true) ||
         (p.quoteEscapeToken !== undefined && p.quoteEscapeToken !== '\\\\') ||
-        (p.columnNames != null) ||
-        (p.numberedRows === true) ||
+        p.columnNames != null ||
+        p.numberedRows === true ||
         (p.ignoreCR !== undefined && p.ignoreCR !== true)
       );
     } else {
@@ -61,7 +61,7 @@ export class DelimitedSerializerAdapter extends BaseSerializer {
       return (
         (p.columnDelimiter !== undefined && p.columnDelimiter !== ',') ||
         (p.recordDelimiter !== undefined && p.recordDelimiter !== '\\n') ||
-        (p.columnWidths != null) ||
+        p.columnWidths != null ||
         (p.quoteToken !== undefined && p.quoteToken !== '"') ||
         (p.escapeWithDoubleQuote !== undefined && p.escapeWithDoubleQuote !== true) ||
         (p.quoteEscapeToken !== undefined && p.quoteEscapeToken !== '\\\\')

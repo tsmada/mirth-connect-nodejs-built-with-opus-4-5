@@ -18,17 +18,9 @@ import * as P from './permissions.js';
 // Channel Operations
 // ============================================================================
 
-export const CHANNEL_GET_CHANNELS = createOperation(
-  'getChannels',
-  'Get channels',
-  P.CHANNELS_VIEW
-);
+export const CHANNEL_GET_CHANNELS = createOperation('getChannels', 'Get channels', P.CHANNELS_VIEW);
 
-export const CHANNEL_GET_CHANNEL = createOperation(
-  'getChannel',
-  'Get channel',
-  P.CHANNELS_VIEW
-);
+export const CHANNEL_GET_CHANNEL = createOperation('getChannel', 'Get channel', P.CHANNELS_VIEW);
 
 export const CHANNEL_GET_CHANNEL_SUMMARY = createOperation(
   'getChannelSummary',
@@ -36,23 +28,11 @@ export const CHANNEL_GET_CHANNEL_SUMMARY = createOperation(
   P.CHANNELS_VIEW
 );
 
-export const CHANNEL_CREATE = createOperation(
-  'createChannel',
-  'Create channel',
-  P.CHANNELS_MANAGE
-);
+export const CHANNEL_CREATE = createOperation('createChannel', 'Create channel', P.CHANNELS_MANAGE);
 
-export const CHANNEL_UPDATE = createOperation(
-  'updateChannel',
-  'Update channel',
-  P.CHANNELS_MANAGE
-);
+export const CHANNEL_UPDATE = createOperation('updateChannel', 'Update channel', P.CHANNELS_MANAGE);
 
-export const CHANNEL_REMOVE = createOperation(
-  'removeChannel',
-  'Remove channel',
-  P.CHANNELS_MANAGE
-);
+export const CHANNEL_REMOVE = createOperation('removeChannel', 'Remove channel', P.CHANNELS_MANAGE);
 
 export const CHANNEL_GET_IDS_AND_NAMES = createOperation(
   'getChannelIdsAndNames',
@@ -88,11 +68,7 @@ export const CHANNEL_START = createOperation(
   P.CHANNELS_START_STOP
 );
 
-export const CHANNEL_STOP = createOperation(
-  'stopChannel',
-  'Stop channel',
-  P.CHANNELS_START_STOP
-);
+export const CHANNEL_STOP = createOperation('stopChannel', 'Stop channel', P.CHANNELS_START_STOP);
 
 export const CHANNEL_PAUSE = createOperation(
   'pauseChannel',
@@ -106,11 +82,7 @@ export const CHANNEL_RESUME = createOperation(
   P.CHANNELS_START_STOP
 );
 
-export const CHANNEL_HALT = createOperation(
-  'haltChannel',
-  'Halt channel',
-  P.CHANNELS_START_STOP
-);
+export const CHANNEL_HALT = createOperation('haltChannel', 'Halt channel', P.CHANNELS_START_STOP);
 
 // ============================================================================
 // Channel Statistics Operations
@@ -194,11 +166,7 @@ export const MESSAGE_GET_COUNT = createOperation(
   P.MESSAGES_VIEW
 );
 
-export const MESSAGE_SEARCH = createOperation(
-  'searchMessages',
-  'Search messages',
-  P.MESSAGES_VIEW
-);
+export const MESSAGE_SEARCH = createOperation('searchMessages', 'Search messages', P.MESSAGES_VIEW);
 
 export const MESSAGE_GET_MAX_ID = createOperation(
   'getMaxMessageId',
@@ -230,11 +198,7 @@ export const MESSAGE_REPROCESS = createOperation(
   P.MESSAGES_REPROCESS
 );
 
-export const MESSAGE_IMPORT = createOperation(
-  'importMessage',
-  'Import message',
-  P.MESSAGES_IMPORT
-);
+export const MESSAGE_IMPORT = createOperation('importMessage', 'Import message', P.MESSAGES_IMPORT);
 
 export const MESSAGE_EXPORT = createOperation(
   'exportMessage',
@@ -308,25 +272,13 @@ export const MESSAGE_TRACE = createOperation(
 
 export const EVENT_GET = createOperation('getEvent', 'Get event', P.EVENTS_VIEW);
 
-export const EVENT_GET_MAX_ID = createOperation(
-  'getMaxEventId',
-  'Get max event ID',
-  P.EVENTS_VIEW
-);
+export const EVENT_GET_MAX_ID = createOperation('getMaxEventId', 'Get max event ID', P.EVENTS_VIEW);
 
-export const EVENT_GET_COUNT = createOperation(
-  'getEventCount',
-  'Get event count',
-  P.EVENTS_VIEW
-);
+export const EVENT_GET_COUNT = createOperation('getEventCount', 'Get event count', P.EVENTS_VIEW);
 
 export const EVENT_SEARCH = createOperation('getEvents', 'Get events', P.EVENTS_VIEW);
 
-export const EVENT_EXPORT = createOperation(
-  'exportAllEvents',
-  'Export all events',
-  P.EVENTS_VIEW
-);
+export const EVENT_EXPORT = createOperation('exportAllEvents', 'Export all events', P.EVENTS_VIEW);
 
 export const EVENT_REMOVE = createOperation(
   'removeAllEvents',
@@ -348,11 +300,7 @@ export const ALERT_GET_STATUS = createOperation(
   P.ALERTS_VIEW
 );
 
-export const ALERT_GET_INFO = createOperation(
-  'getAlertInfo',
-  'Get alert info',
-  P.ALERTS_VIEW
-);
+export const ALERT_GET_INFO = createOperation('getAlertInfo', 'Get alert info', P.ALERTS_VIEW);
 
 export const ALERT_GET_OPTIONS = createOperation(
   'getAlertProtocolOptions',
@@ -366,11 +314,7 @@ export const ALERT_UPDATE = createOperation('updateAlert', 'Update alert', P.ALE
 
 export const ALERT_ENABLE = createOperation('enableAlert', 'Enable alert', P.ALERTS_MANAGE);
 
-export const ALERT_DISABLE = createOperation(
-  'disableAlert',
-  'Disable alert',
-  P.ALERTS_MANAGE
-);
+export const ALERT_DISABLE = createOperation('disableAlert', 'Disable alert', P.ALERTS_MANAGE);
 
 export const ALERT_REMOVE = createOperation('removeAlert', 'Remove alert', P.ALERTS_MANAGE);
 

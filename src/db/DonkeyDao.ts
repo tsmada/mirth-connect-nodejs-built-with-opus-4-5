@@ -31,14 +31,22 @@ export type DbConnection = Pool | PoolConnection;
  */
 function statusToColumn(status: Status): string {
   switch (status) {
-    case Status.RECEIVED:    return 'RECEIVED';
-    case Status.FILTERED:    return 'FILTERED';
-    case Status.TRANSFORMED: return 'TRANSFORMED';
-    case Status.SENT:        return 'SENT';
-    case Status.QUEUED:      return 'SENT';
-    case Status.ERROR:       return 'ERROR';
-    case Status.PENDING:     return 'PENDING';
-    default:                 throw new Error(`Unknown status for statistics: ${status}`);
+    case Status.RECEIVED:
+      return 'RECEIVED';
+    case Status.FILTERED:
+      return 'FILTERED';
+    case Status.TRANSFORMED:
+      return 'TRANSFORMED';
+    case Status.SENT:
+      return 'SENT';
+    case Status.QUEUED:
+      return 'SENT';
+    case Status.ERROR:
+      return 'ERROR';
+    case Status.PENDING:
+      return 'PENDING';
+    default:
+      throw new Error(`Unknown status for statistics: ${status}`);
   }
 }
 
@@ -385,7 +393,12 @@ export async function insertConnectorMessage(
   status: Status,
   chainId: number = 0,
   options?: {
-    storeMaps?: { sourceMap?: Map<string, unknown>; connectorMap?: Map<string, unknown>; channelMap?: Map<string, unknown>; responseMap?: Map<string, unknown> };
+    storeMaps?: {
+      sourceMap?: Map<string, unknown>;
+      connectorMap?: Map<string, unknown>;
+      channelMap?: Map<string, unknown>;
+      responseMap?: Map<string, unknown>;
+    };
     updateStats?: boolean;
     serverId?: string;
   },
@@ -403,20 +416,52 @@ export async function insertConnectorMessage(
   if (options?.storeMaps) {
     const { sourceMap, connectorMap, channelMap, responseMap } = options.storeMaps;
     if (sourceMap && sourceMap.size > 0) {
-      await storeContent(channelId, messageId, metaDataId, ContentType.SOURCE_MAP,
-        JSON.stringify(Object.fromEntries(sourceMap)), 'JSON', false, conn);
+      await storeContent(
+        channelId,
+        messageId,
+        metaDataId,
+        ContentType.SOURCE_MAP,
+        JSON.stringify(Object.fromEntries(sourceMap)),
+        'JSON',
+        false,
+        conn
+      );
     }
     if (connectorMap && connectorMap.size > 0) {
-      await storeContent(channelId, messageId, metaDataId, ContentType.CONNECTOR_MAP,
-        JSON.stringify(Object.fromEntries(connectorMap)), 'JSON', false, conn);
+      await storeContent(
+        channelId,
+        messageId,
+        metaDataId,
+        ContentType.CONNECTOR_MAP,
+        JSON.stringify(Object.fromEntries(connectorMap)),
+        'JSON',
+        false,
+        conn
+      );
     }
     if (channelMap && channelMap.size > 0) {
-      await storeContent(channelId, messageId, metaDataId, ContentType.CHANNEL_MAP,
-        JSON.stringify(Object.fromEntries(channelMap)), 'JSON', false, conn);
+      await storeContent(
+        channelId,
+        messageId,
+        metaDataId,
+        ContentType.CHANNEL_MAP,
+        JSON.stringify(Object.fromEntries(channelMap)),
+        'JSON',
+        false,
+        conn
+      );
     }
     if (responseMap && responseMap.size > 0) {
-      await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
-        JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false, conn);
+      await storeContent(
+        channelId,
+        messageId,
+        metaDataId,
+        ContentType.RESPONSE_MAP,
+        JSON.stringify(Object.fromEntries(responseMap)),
+        'JSON',
+        false,
+        conn
+      );
     }
   }
 
@@ -527,13 +572,27 @@ export async function storeContent(
  */
 export async function batchInsertContent(
   channelId: string,
-  rows: Array<{ messageId: number; metaDataId: number; contentType: ContentType; content: string; dataType: string; encrypted: boolean }>,
+  rows: Array<{
+    messageId: number;
+    metaDataId: number;
+    contentType: ContentType;
+    content: string;
+    dataType: string;
+    encrypted: boolean;
+  }>,
   conn?: DbConnection
 ): Promise<void> {
   if (rows.length === 0) return;
   const db = conn ?? getPool();
   const placeholders = rows.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-  const values = rows.flatMap(r => [r.messageId, r.metaDataId, r.contentType, r.content, r.dataType, r.encrypted ? 1 : 0]);
+  const values = rows.flatMap((r) => [
+    r.messageId,
+    r.metaDataId,
+    r.contentType,
+    r.content,
+    r.dataType,
+    r.encrypted ? 1 : 0,
+  ]);
   await db.execute(
     `INSERT INTO ${contentTable(channelId)} (MESSAGE_ID, METADATA_ID, CONTENT_TYPE, CONTENT, DATA_TYPE, IS_ENCRYPTED) VALUES ${placeholders}`,
     values
@@ -557,16 +616,40 @@ export async function updateErrors(
   conn?: DbConnection
 ): Promise<void> {
   if (processingError) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.PROCESSING_ERROR,
-      processingError, 'text/plain', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.PROCESSING_ERROR,
+      processingError,
+      'text/plain',
+      false,
+      conn
+    );
   }
   if (postProcessorError) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.POSTPROCESSOR_ERROR,
-      postProcessorError, 'text/plain', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.POSTPROCESSOR_ERROR,
+      postProcessorError,
+      'text/plain',
+      false,
+      conn
+    );
   }
   if (responseError) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_ERROR,
-      responseError, 'text/plain', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.RESPONSE_ERROR,
+      responseError,
+      'text/plain',
+      false,
+      conn
+    );
   }
   if (errorCode !== undefined) {
     const db = conn ?? getPool();
@@ -593,16 +676,40 @@ export async function updateMaps(
   conn?: DbConnection
 ): Promise<void> {
   if (connectorMap && connectorMap.size > 0) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.CONNECTOR_MAP,
-      JSON.stringify(Object.fromEntries(connectorMap)), 'JSON', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.CONNECTOR_MAP,
+      JSON.stringify(Object.fromEntries(connectorMap)),
+      'JSON',
+      false,
+      conn
+    );
   }
   if (channelMap && channelMap.size > 0) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.CHANNEL_MAP,
-      JSON.stringify(Object.fromEntries(channelMap)), 'JSON', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.CHANNEL_MAP,
+      JSON.stringify(Object.fromEntries(channelMap)),
+      'JSON',
+      false,
+      conn
+    );
   }
   if (responseMap && responseMap.size > 0) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
-      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.RESPONSE_MAP,
+      JSON.stringify(Object.fromEntries(responseMap)),
+      'JSON',
+      false,
+      conn
+    );
   }
 }
 
@@ -618,8 +725,16 @@ export async function updateResponseMap(
   conn?: DbConnection
 ): Promise<void> {
   if (responseMap.size > 0) {
-    await storeContent(channelId, messageId, metaDataId, ContentType.RESPONSE_MAP,
-      JSON.stringify(Object.fromEntries(responseMap)), 'JSON', false, conn);
+    await storeContent(
+      channelId,
+      messageId,
+      metaDataId,
+      ContentType.RESPONSE_MAP,
+      JSON.stringify(Object.fromEntries(responseMap)),
+      'JSON',
+      false,
+      conn
+    );
   }
 }
 
@@ -668,7 +783,9 @@ export async function getContent(
       row.CONTENT = getEncryptor().decrypt(row.CONTENT);
       row.IS_ENCRYPTED = 0;
     } catch (err) {
-      logger.error(`[DonkeyDao] Failed to decrypt content (messageId=${messageId}, metaDataId=${metaDataId}, contentType=${contentType}): ${err}`);
+      logger.error(
+        `[DonkeyDao] Failed to decrypt content (messageId=${messageId}, metaDataId=${metaDataId}, contentType=${contentType}): ${err}`
+      );
     }
   }
 
@@ -714,7 +831,7 @@ export async function getConnectorMessagesByStatus(
   conn?: DbConnection
 ): Promise<ConnectorMessageRow[]> {
   const db = conn ?? getPool();
-  const statusChars = statuses.map(s => s as string);
+  const statusChars = statuses.map((s) => s as string);
   const placeholders = statusChars.map(() => '?').join(', ');
   let sql = `SELECT * FROM ${connectorMessageTable(channelId)} WHERE STATUS IN (${placeholders})`;
   const params: (string | number)[] = [...statusChars];
@@ -734,7 +851,12 @@ export async function getPendingConnectorMessages(
   channelId: string,
   conn?: DbConnection
 ): Promise<ConnectorMessageRow[]> {
-  return getConnectorMessagesByStatus(channelId, [Status.RECEIVED, Status.PENDING], undefined, conn);
+  return getConnectorMessagesByStatus(
+    channelId,
+    [Status.RECEIVED, Status.PENDING],
+    undefined,
+    conn
+  );
 }
 
 /**
@@ -1036,37 +1158,39 @@ export async function pruneMessages(channelId: string, messageIds: number[]): Pr
     return 0;
   }
 
-  return await withRetry(() => transaction(async (connection) => {
-    const placeholders = messageIds.map(() => '?').join(', ');
+  return await withRetry(() =>
+    transaction(async (connection) => {
+      const placeholders = messageIds.map(() => '?').join(', ');
 
-    // Delete in order: content, attachments, custom metadata, connector messages, messages
-    await connection.execute(
-      `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
-      messageIds
-    );
+      // Delete in order: content, attachments, custom metadata, connector messages, messages
+      await connection.execute(
+        `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
+        messageIds
+      );
 
-    await connection.execute(
-      `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
-      messageIds
-    );
+      await connection.execute(
+        `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
+        messageIds
+      );
 
-    await connection.execute(
-      `DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
-      messageIds
-    );
+      await connection.execute(
+        `DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
+        messageIds
+      );
 
-    await connection.execute(
-      `DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
-      messageIds
-    );
+      await connection.execute(
+        `DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID IN (${placeholders})`,
+        messageIds
+      );
 
-    const [result] = await connection.execute(
-      `DELETE FROM ${messageTable(channelId)} WHERE ID IN (${placeholders})`,
-      messageIds
-    );
+      const [result] = await connection.execute(
+        `DELETE FROM ${messageTable(channelId)} WHERE ID IN (${placeholders})`,
+        messageIds
+      );
 
-    return (result as { affectedRows: number }).affectedRows;
-  }));
+      return (result as { affectedRows: number }).affectedRows;
+    })
+  );
 }
 
 /**
@@ -1111,10 +1235,7 @@ export interface AttachmentRow extends RowDataPacket {
 /**
  * Get all attachment IDs for a message
  */
-export async function getAttachmentIds(
-  channelId: string,
-  messageId: number
-): Promise<string[]> {
+export async function getAttachmentIds(channelId: string, messageId: number): Promise<string[]> {
   const pool = getPool();
   const [rows] = await pool.query<AttachmentIdRow[]>(
     `SELECT DISTINCT ID FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? ORDER BY ID`,
@@ -1195,10 +1316,10 @@ export async function updateAttachment(
   const pool = getPool();
 
   // Delete existing segments and insert new one
-  await pool.execute(
-    `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? AND ID = ?`,
-    [messageId, attachmentId]
-  );
+  await pool.execute(`DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ? AND ID = ?`, [
+    messageId,
+    attachmentId,
+  ]);
 
   await insertAttachment(channelId, messageId, attachmentId, type, content);
 }
@@ -1257,15 +1378,11 @@ export async function resetStatistics(
  * Sets PROCESSED=0 on the message, and resets all destination connector messages
  * (METADATA_ID > 0) to PENDING status with zero send attempts.
  */
-export async function resetMessage(
-  channelId: string,
-  messageId: number
-): Promise<void> {
+export async function resetMessage(channelId: string, messageId: number): Promise<void> {
   const pool = getPool();
-  await pool.execute(
-    `UPDATE ${messageTable(channelId)} SET PROCESSED = 0 WHERE ID = ?`,
-    [messageId]
-  );
+  await pool.execute(`UPDATE ${messageTable(channelId)} SET PROCESSED = 0 WHERE ID = ?`, [
+    messageId,
+  ]);
   await pool.execute(
     `UPDATE ${connectorMessageTable(channelId)} SET STATUS = 'P', SEND_ATTEMPTS = 0, SEND_DATE = NULL, RESPONSE_DATE = NULL, ERROR_CODE = NULL WHERE MESSAGE_ID = ? AND METADATA_ID > 0`,
     [messageId]
@@ -1323,20 +1440,16 @@ export async function deleteMessageStatistics(
   metaDataId: number
 ): Promise<void> {
   const pool = getPool();
-  await pool.execute(
-    `DELETE FROM ${statisticsTable(channelId)} WHERE METADATA_ID = ?`,
-    [metaDataId]
-  );
+  await pool.execute(`DELETE FROM ${statisticsTable(channelId)} WHERE METADATA_ID = ?`, [
+    metaDataId,
+  ]);
 }
 
 /**
  * Delete all content for a single message.
  * Ported from JdbcDao.deleteMessageContent() (single message variant).
  */
-export async function deleteMessageContent(
-  channelId: string,
-  messageId: number
-): Promise<number> {
+export async function deleteMessageContent(channelId: string, messageId: number): Promise<number> {
   const pool = getPool();
   const [result] = await pool.execute(
     `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`,
@@ -1366,13 +1479,23 @@ export async function deleteMessageAttachments(
  * Ported from JdbcDao.deleteMessage() (single message variant).
  */
 export async function deleteMessage(channelId: string, messageId: number): Promise<void> {
-  await withRetry(() => transaction(async (conn) => {
-    await conn.execute(`DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
-    await conn.execute(`DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
-    await conn.execute(`DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
-    await conn.execute(`DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
-    await conn.execute(`DELETE FROM ${messageTable(channelId)} WHERE ID = ?`, [messageId]);
-  }));
+  await withRetry(() =>
+    transaction(async (conn) => {
+      await conn.execute(`DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`, [
+        messageId,
+      ]);
+      await conn.execute(`DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`, [
+        messageId,
+      ]);
+      await conn.execute(`DELETE FROM ${customMetadataTable(channelId)} WHERE MESSAGE_ID = ?`, [
+        messageId,
+      ]);
+      await conn.execute(`DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`, [
+        messageId,
+      ]);
+      await conn.execute(`DELETE FROM ${messageTable(channelId)} WHERE ID = ?`, [messageId]);
+    })
+  );
 }
 
 /**
@@ -1473,13 +1596,13 @@ export async function insertCustomMetaData(
   const columns = Object.keys(data);
   if (columns.length === 0) return;
 
-  const colNames = columns.map(c => `\`${c}\``).join(', ');
+  const colNames = columns.map((c) => `\`${c}\``).join(', ');
   const placeholders = columns.map(() => '?').join(', ');
-  const values = columns.map(c => data[c]);
+  const values = columns.map((c) => data[c]);
 
   await db.execute(
     `INSERT INTO ${customMetadataTable(channelId)} (MESSAGE_ID, METADATA_ID, ${colNames}) VALUES (?, ?, ${placeholders})
-     ON DUPLICATE KEY UPDATE ${columns.map(c => `\`${c}\` = VALUES(\`${c}\`)`).join(', ')}`,
+     ON DUPLICATE KEY UPDATE ${columns.map((c) => `\`${c}\` = VALUES(\`${c}\`)`).join(', ')}`,
     [messageId, metaDataId, ...values]
   );
 }
@@ -1502,7 +1625,12 @@ export async function addMetaDataColumn(
     );
   } catch (err: unknown) {
     // Column may already exist — ignore duplicate column errors
-    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ER_DUP_FIELDNAME') {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: string }).code === 'ER_DUP_FIELDNAME'
+    ) {
       return;
     }
     throw err;
@@ -1599,17 +1727,19 @@ export async function getMaxConnectorMessageId(channelId: string): Promise<numbe
  *
  * Silently ignores ER_CANT_DROP_FIELD_OR_KEY if the column doesn't exist.
  */
-export async function removeMetaDataColumn(
-  channelId: string,
-  columnName: string
-): Promise<void> {
+export async function removeMetaDataColumn(channelId: string, columnName: string): Promise<void> {
   const pool = getPool();
   try {
     await pool.execute(
       `ALTER TABLE ${customMetadataTable(channelId)} DROP COLUMN \`${columnName}\``
     );
   } catch (err: unknown) {
-    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ER_CANT_DROP_FIELD_OR_KEY') {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: string }).code === 'ER_CANT_DROP_FIELD_OR_KEY'
+    ) {
       return;
     }
     throw err;

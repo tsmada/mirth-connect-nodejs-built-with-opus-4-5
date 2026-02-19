@@ -27,10 +27,7 @@ import {
   getDefaultDatabaseDispatcherProperties,
   parseJdbcUrl,
 } from './DatabaseConnectorProperties.js';
-import {
-  buildMessageDispatcherScope,
-  Scope,
-} from '../../javascript/runtime/ScopeBuilder.js';
+import { buildMessageDispatcherScope, Scope } from '../../javascript/runtime/ScopeBuilder.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 
 export interface DatabaseDispatcherConfig {
@@ -156,9 +153,7 @@ export class DatabaseDispatcher extends DestinationConnector {
         filename: 'db-dispatcher-script.js',
       });
     } catch (e) {
-      throw new Error(
-        `Error compiling script: ${e instanceof Error ? e.message : String(e)}`
-      );
+      throw new Error(`Error compiling script: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -221,13 +216,18 @@ export class DatabaseDispatcher extends DestinationConnector {
         // Check for getStatus/getMessage methods (Response API) instead.
         if (
           typeof result === 'object' &&
-          typeof (result as any).getStatus === 'function' &&
-          typeof (result as any).getMessage === 'function'
+          typeof result.getStatus === 'function' &&
+          typeof result.getMessage === 'function'
         ) {
           // Java: if result is Response → return as-is
           // Wrap in a new Response to ensure it's from our realm
           const r = result as Response;
-          return new Response(r.getStatus(), r.getMessage(), r.getStatusMessage?.() ?? '', r.getError?.() ?? '');
+          return new Response(
+            r.getStatus(),
+            r.getMessage(),
+            r.getStatusMessage?.() ?? '',
+            r.getError?.() ?? ''
+          );
         } else if (typeof result === 'string' && Object.values(Status).includes(result as Status)) {
           // Java: if result is a Status enum → update status only
           responseStatus = result as Status;
@@ -336,10 +336,7 @@ export class DatabaseDispatcher extends DestinationConnector {
    * 3. connectorMap
    * 4. message.encodedData / message.rawData (built-in variables)
    */
-  static resolveParameters(
-    paramNames: string[],
-    connectorMessage: ConnectorMessage
-  ): unknown[] {
+  static resolveParameters(paramNames: string[], connectorMessage: ConnectorMessage): unknown[] {
     return paramNames.map((paramName) => {
       // Strip ${...} wrapper to get the key (Java: substring(2, length-1))
       const key = paramName.substring(2, paramName.length - 1);
@@ -458,7 +455,7 @@ export class DatabaseDispatcher extends DestinationConnector {
         });
 
         if (response.getError()) {
-          connectorMessage.setProcessingError(response.getError()!);
+          connectorMessage.setProcessingError(response.getError());
         }
       } else {
         // SQL query mode — execute parameterized query

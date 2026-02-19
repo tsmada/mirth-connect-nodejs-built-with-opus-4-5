@@ -163,18 +163,18 @@ export const ChannelList: FC<ChannelListProps> = ({
   const nameWidth = calculateNameWidth(width, headerIndent);
 
   // Build header string matching row layout exactly
-  const selectorPad = ' '.repeat(COLUMN_WIDTHS.selector + (COLUMN_WIDTHS.indentPer * headerIndent));
+  const selectorPad = ' '.repeat(COLUMN_WIDTHS.selector + COLUMN_WIDTHS.indentPer * headerIndent);
   const nameHeader = 'NAME'.padEnd(nameWidth);
   const statusHeader = 'STATUS'.padEnd(COLUMN_WIDTHS.status);
   const portHeader = 'PORT'.padStart(COLUMN_WIDTHS.port);
   // Stats header: matches row format "  R:" + 5 + " F:" + 4 + " Q:" + 4 + " S:" + 5 + " E:" + 4
   // Each column: label chars + digit chars, right-aligned headers
   const statsHeader =
-    'RECV'.padStart(9) +  // "  R:" (4) + 5 digits
-    'FILT'.padStart(7) +  // " F:" (3) + 4 digits
-    'QUE'.padStart(7) +   // " Q:" (3) + 4 digits
-    'SENT'.padStart(8) +  // " S:" (3) + 5 digits
-    'ERR'.padStart(7);    // " E:" (3) + 4 digits
+    'RECV'.padStart(9) + // "  R:" (4) + 5 digits
+    'FILT'.padStart(7) + // " F:" (3) + 4 digits
+    'QUE'.padStart(7) + // " Q:" (3) + 4 digits
+    'SENT'.padStart(8) + // " S:" (3) + 5 digits
+    'ERR'.padStart(7); // " E:" (3) + 4 digits
 
   return React.createElement(
     Box,

@@ -108,10 +108,10 @@ export class PromotionPipeline {
     let channelsToPromote = channels;
     if (request.channelIds && request.channelIds.length > 0) {
       const requestedIds = new Set(request.channelIds);
-      channelsToPromote = channels.filter(c => requestedIds.has(c.id));
+      channelsToPromote = channels.filter((c) => requestedIds.has(c.id));
 
       // Check for missing channels
-      const foundIds = new Set(channelsToPromote.map(c => c.id));
+      const foundIds = new Set(channelsToPromote.map((c) => c.id));
       for (const id of request.channelIds) {
         if (!foundIds.has(id)) {
           result.errors.push(`Channel '${id}' not found`);
@@ -148,15 +148,15 @@ export class PromotionPipeline {
     }
 
     // Check for blocks (unless force is set)
-    const blocks = result.warnings.filter(w => w.severity === 'block');
+    const blocks = result.warnings.filter((w) => w.severity === 'block');
     if (blocks.length > 0 && !request.force) {
       result.blocked = true;
-      result.blockReasons = blocks.map(b => b.message);
+      result.blockReasons = blocks.map((b) => b.message);
       return result;
     }
 
     // 4. Sort by dependencies
-    let sortedIds = channelsToPromote.map(c => c.id);
+    let sortedIds = channelsToPromote.map((c) => c.id);
     if (dependencyGraph) {
       const sortResult = DependencySort.sort(dependencyGraph);
       if (sortResult.hasCycles) {
@@ -169,9 +169,9 @@ export class PromotionPipeline {
       }
       // Reorder to match topological sort (only channels in our set)
       const promoteSet = new Set(sortedIds);
-      sortedIds = sortResult.sorted.filter(id => promoteSet.has(id));
+      sortedIds = sortResult.sorted.filter((id) => promoteSet.has(id));
       // Add any channels not in the graph at the end
-      for (const id of channelsToPromote.map(c => c.id)) {
+      for (const id of channelsToPromote.map((c) => c.id)) {
         if (!sortResult.sorted.includes(id)) {
           sortedIds.push(id);
         }
@@ -228,9 +228,7 @@ export class PromotionPipeline {
   /**
    * Extract version metadata from channel info for compatibility checking.
    */
-  private static extractVersionMetadata(
-    channel: ChannelInfo
-  ): ChannelVersionMetadata | null {
+  private static extractVersionMetadata(channel: ChannelInfo): ChannelVersionMetadata | null {
     const meta = channel.metadata;
     const version = meta['version'] as string | undefined;
     if (!version) return null;

@@ -123,10 +123,7 @@ async function getChannelGroups(ids?: string[]): Promise<ChannelGroup[]> {
 export async function getChannelGroupById(id: string): Promise<ChannelGroup | null> {
   await ensureChannelGroupTable();
 
-  const rows = await query<ChannelGroupRow>(
-    'SELECT * FROM CHANNEL_GROUP WHERE ID = :id',
-    { id }
-  );
+  const rows = await query<ChannelGroupRow>('SELECT * FROM CHANNEL_GROUP WHERE ID = :id', { id });
 
   if (rows.length === 0) {
     return null;
@@ -167,10 +164,7 @@ async function upsertChannelGroup(group: ChannelGroup): Promise<void> {
 async function deleteChannelGroup(id: string): Promise<boolean> {
   await ensureChannelGroupTable();
 
-  const result = await execute(
-    'DELETE FROM CHANNEL_GROUP WHERE ID = :id',
-    { id }
-  );
+  const result = await execute('DELETE FROM CHANNEL_GROUP WHERE ID = :id', { id });
 
   return (result as { affectedRows: number }).affectedRows > 0;
 }

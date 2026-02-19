@@ -7,7 +7,15 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { ChannelStatus, ChannelGroup } from '../../types/index.js';
 
-export type ViewMode = 'list' | 'details' | 'messages' | 'messageDetail' | 'help' | 'search' | 'traceInput' | 'trace';
+export type ViewMode =
+  | 'list'
+  | 'details'
+  | 'messages'
+  | 'messageDetail'
+  | 'help'
+  | 'search'
+  | 'traceInput'
+  | 'trace';
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'polling';
 
 export interface DashboardMessage {
@@ -115,9 +123,7 @@ export const DashboardProvider: React.FC<DashboardProviderProps> = ({ children }
     setState((prev) => ({
       ...prev,
       channels: prev.channels.map((ch) =>
-        ch.channelId === channelId
-          ? { ...ch, state: newState as ChannelStatus['state'] }
-          : ch
+        ch.channelId === channelId ? { ...ch, state: newState as ChannelStatus['state'] } : ch
       ),
     }));
   }, []);
@@ -227,11 +233,7 @@ export const DashboardProvider: React.FC<DashboardProviderProps> = ({ children }
     clearMessage,
   };
 
-  return React.createElement(
-    DashboardContext.Provider,
-    { value: { state, actions } },
-    children
-  );
+  return React.createElement(DashboardContext.Provider, { value: { state, actions } }, children);
 };
 
 /**

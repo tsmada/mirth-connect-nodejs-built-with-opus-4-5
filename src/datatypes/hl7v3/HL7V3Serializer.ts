@@ -221,11 +221,7 @@ export class HL7V3Serializer {
 
       if (!found && c === '<') {
         // Check if this is the start of an element (not a comment, PI, or declaration)
-        if (
-          (next >= 'A' && next <= 'Z') ||
-          (next >= 'a' && next <= 'z') ||
-          next === '_'
-        ) {
+        if ((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next === '_') {
           found = true;
         }
       } else if (found) {

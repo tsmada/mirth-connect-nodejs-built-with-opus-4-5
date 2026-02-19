@@ -126,10 +126,7 @@ export class FileUtil {
    *                                will be replaced with this string.
    * @returns The converted plain text message.
    */
-  static rtfToPlainText(
-    message: string,
-    replaceLinebreaksWith: string | null = null
-  ): string {
+  static rtfToPlainText(message: string, replaceLinebreaksWith: string | null = null): string {
     // Simple RTF to plain text conversion
     // This matches the basic behavior of Java's RTFEditorKit for common cases
 

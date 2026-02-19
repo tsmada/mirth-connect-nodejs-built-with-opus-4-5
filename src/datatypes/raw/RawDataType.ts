@@ -10,10 +10,7 @@
  * - Pass-through without any modification
  */
 
-import {
-  RawDataTypeProperties,
-  getDefaultRawDataTypeProperties,
-} from './RawProperties.js';
+import { RawDataTypeProperties, getDefaultRawDataTypeProperties } from './RawProperties.js';
 
 /**
  * Raw metadata (minimal - raw type has no intrinsic metadata)

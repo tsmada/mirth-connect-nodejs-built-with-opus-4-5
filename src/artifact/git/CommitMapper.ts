@@ -14,19 +14,14 @@ export class CommitMapper {
   /**
    * Record a sync operation (push or pull) for an artifact.
    */
-  async recordSync(
-    record: Omit<SyncRecord, 'id' | 'syncedAt'>
-  ): Promise<void> {
+  async recordSync(record: Omit<SyncRecord, 'id' | 'syncedAt'>): Promise<void> {
     await ArtifactDao.insertSync(record);
   }
 
   /**
    * Get the last sync record for an artifact.
    */
-  async getLastSync(
-    artifactType: string,
-    artifactId: string
-  ): Promise<SyncRecord | null> {
+  async getLastSync(artifactType: string, artifactId: string): Promise<SyncRecord | null> {
     return ArtifactDao.getLastSync(artifactType, artifactId);
   }
 

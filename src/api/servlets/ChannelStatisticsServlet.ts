@@ -113,9 +113,7 @@ async function getChannelStatistics(channelId: string): Promise<ChannelStatistic
   }
 
   const pool = getPool();
-  const [rows] = await pool.query<StatisticsRow[]>(
-    `SELECT * FROM ${statisticsTable(channelId)}`
-  );
+  const [rows] = await pool.query<StatisticsRow[]>(`SELECT * FROM ${statisticsTable(channelId)}`);
 
   if (rows.length === 0) {
     return {

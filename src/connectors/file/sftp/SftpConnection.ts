@@ -317,10 +317,7 @@ export class SftpConnection {
   /**
    * Read file content as Buffer
    */
-  async readFile(
-    filename: string,
-    fromDir: string
-  ): Promise<Buffer> {
+  async readFile(filename: string, fromDir: string): Promise<Buffer> {
     this.lastDir = fromDir;
     const fullPath = `${fromDir}/${filename}`.replace(/\/+/g, '/');
 
@@ -384,8 +381,10 @@ export class SftpConnection {
         await this.client.put(combined, fullPath);
       } catch (error) {
         // File doesn't exist, just write new content
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT' ||
-            (error as Error).message?.includes('No such file')) {
+        if (
+          (error as NodeJS.ErrnoException).code === 'ENOENT' ||
+          (error as Error).message?.includes('No such file')
+        ) {
           await this.client.put(buffer, fullPath);
         } else {
           throw error;
@@ -402,11 +401,7 @@ export class SftpConnection {
    * @param fromDir Directory containing the file
    * @param mayNotExist If true, don't throw error if file doesn't exist
    */
-  async delete(
-    filename: string,
-    fromDir: string,
-    mayNotExist = false
-  ): Promise<void> {
+  async delete(filename: string, fromDir: string, mayNotExist = false): Promise<void> {
     const fullPath = `${fromDir}/${filename}`.replace(/\/+/g, '/');
 
     try {
@@ -426,12 +421,7 @@ export class SftpConnection {
    * @param toName Destination filename
    * @param toDir Destination directory
    */
-  async move(
-    fromName: string,
-    fromDir: string,
-    toName: string,
-    toDir: string
-  ): Promise<void> {
+  async move(fromName: string, fromDir: string, toName: string, toDir: string): Promise<void> {
     // Ensure destination directory exists
     await this.ensureDirectory(toDir);
 

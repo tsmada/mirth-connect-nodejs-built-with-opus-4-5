@@ -60,16 +60,16 @@ export const DicomTag = {
   PATIENT_SEX: { group: 0x0010, element: 0x0040 },
 
   // Study Module
-  STUDY_INSTANCE_UID: { group: 0x0020, element: 0x000D },
+  STUDY_INSTANCE_UID: { group: 0x0020, element: 0x000d },
   STUDY_DATE: { group: 0x0008, element: 0x0020 },
   STUDY_TIME: { group: 0x0008, element: 0x0030 },
   STUDY_DESCRIPTION: { group: 0x0008, element: 0x1030 },
   ACCESSION_NUMBER: { group: 0x0008, element: 0x0050 },
 
   // Series Module
-  SERIES_INSTANCE_UID: { group: 0x0020, element: 0x000E },
+  SERIES_INSTANCE_UID: { group: 0x0020, element: 0x000e },
   SERIES_NUMBER: { group: 0x0020, element: 0x0011 },
-  SERIES_DESCRIPTION: { group: 0x0008, element: 0x103E },
+  SERIES_DESCRIPTION: { group: 0x0008, element: 0x103e },
   MODALITY: { group: 0x0008, element: 0x0060 },
 
   // Instance Module
@@ -82,7 +82,7 @@ export const DicomTag = {
   COLUMNS: { group: 0x0028, element: 0x0011 },
   BITS_ALLOCATED: { group: 0x0028, element: 0x0100 },
   BITS_STORED: { group: 0x0028, element: 0x0101 },
-  PIXEL_DATA: { group: 0x7FE0, element: 0x0010 },
+  PIXEL_DATA: { group: 0x7fe0, element: 0x0010 },
 
   // Transfer Syntax
   TRANSFER_SYNTAX_UID: { group: 0x0002, element: 0x0010 },
@@ -95,8 +95,7 @@ export const DicomTag = {
  */
 export function formatTag(group: number, element: number): string {
   return (
-    group.toString(16).padStart(4, '0') +
-    element.toString(16).padStart(4, '0')
+    group.toString(16).padStart(4, '0') + element.toString(16).padStart(4, '0')
   ).toUpperCase();
 }
 

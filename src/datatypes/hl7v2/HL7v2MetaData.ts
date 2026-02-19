@@ -81,9 +81,7 @@ export function extractMetaData(
     }
 
     // Extract encoding characters
-    const encoding = extractEncodingCharacters(
-      message.substring(index - 3)
-    );
+    const encoding = extractEncodingCharacters(message.substring(index - 3));
     const fieldSeparator = encoding.fieldSeparator.charCodeAt(0);
     const componentSeparator = encoding.componentSeparator.charCodeAt(0);
     const repetitionSeparator = encoding.repetitionSeparator.charCodeAt(0);

@@ -218,11 +218,11 @@ export function getDefaultTcpDispatcherProperties(): TcpDispatcherProperties {
     port: 6660,
     transmissionMode: TransmissionMode.MLLP,
     charsetEncoding: 'UTF-8',
-    sendTimeout: 5000,          // Java default: "5000"
-    responseTimeout: 5000,      // Java default: "5000"
-    keepConnectionOpen: false,   // Java default: false
-    checkRemoteHost: false,      // Java default: false
-    ignoreResponse: false,       // Java default: false
+    sendTimeout: 5000, // Java default: "5000"
+    responseTimeout: 5000, // Java default: "5000"
+    keepConnectionOpen: false, // Java default: false
+    checkRemoteHost: false, // Java default: false
+    ignoreResponse: false, // Java default: false
     queueOnResponseTimeout: true, // Java default: true
     startOfMessageBytes: [MLLP_FRAME.START_BLOCK],
     endOfMessageBytes: [MLLP_FRAME.END_BLOCK, MLLP_FRAME.CARRIAGE_RETURN],
@@ -255,11 +255,7 @@ export function frameMessage(
       ]);
 
     case TransmissionMode.FRAME:
-      return Buffer.concat([
-        Buffer.from(startBytes),
-        messageBuffer,
-        Buffer.from(endBytes),
-      ]);
+      return Buffer.concat([Buffer.from(startBytes), messageBuffer, Buffer.from(endBytes)]);
 
     case TransmissionMode.RAW:
     default:
@@ -300,9 +296,7 @@ export function unframeMessage(
         return null;
       }
 
-      return data
-        .subarray(frameStart + startMarker.length, frameEnd)
-        .toString('utf-8');
+      return data.subarray(frameStart + startMarker.length, frameEnd).toString('utf-8');
 
     case TransmissionMode.RAW:
     default:
@@ -323,10 +317,7 @@ export function hasCompleteMessage(
       // Look for end block followed by carriage return
       const endBlock = buffer.indexOf(MLLP_FRAME.END_BLOCK);
       if (endBlock === -1) return false;
-      return (
-        endBlock + 1 < buffer.length &&
-        buffer[endBlock + 1] === MLLP_FRAME.CARRIAGE_RETURN
-      );
+      return endBlock + 1 < buffer.length && buffer[endBlock + 1] === MLLP_FRAME.CARRIAGE_RETURN;
 
     case TransmissionMode.FRAME:
       const endMarker = Buffer.from(endBytes);
@@ -342,10 +333,7 @@ export function hasCompleteMessage(
 /**
  * Generate a simple HL7 ACK response
  */
-export function generateAck(
-  controlId: string,
-  ackCode: string = 'AA'
-): string {
+export function generateAck(controlId: string, ackCode: string = 'AA'): string {
   const timestamp = formatHl7Timestamp(new Date());
   return (
     `MSH|^~\\&|MIRTH|MIRTH|MIRTH|MIRTH|${timestamp}||ACK|${controlId}|P|2.5\r` +

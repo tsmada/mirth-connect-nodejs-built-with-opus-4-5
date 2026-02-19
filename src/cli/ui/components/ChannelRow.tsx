@@ -29,9 +29,7 @@ function formatListenerInfo(channel: ChannelStatus): string {
 
   // Format: "6661(3)" or just "6661" if no active connections
   const portStr = String(info.port);
-  const display = info.connectionCount > 0
-    ? `${portStr}(${info.connectionCount})`
-    : portStr;
+  const display = info.connectionCount > 0 ? `${portStr}(${info.connectionCount})` : portStr;
 
   return display.padStart(10);
 }
@@ -40,20 +38,21 @@ function formatListenerInfo(channel: ChannelStatus): string {
  * Column widths for consistent layout
  */
 export const COLUMN_WIDTHS = {
-  selector: 2,      // "✓ " or "▶ " or "  "
-  indentPer: 2,     // 2 chars per indent level
-  nameSpace: 1,     // space after name
-  status: 12,       // StatusIndicator fixed width
-  port: 10,         // listenerDisplay padStart
-  stats: 38,        // R:+5 + F:+4 + Q:+4 + S:+5 + E:+4 with labels
+  selector: 2, // "✓ " or "▶ " or "  "
+  indentPer: 2, // 2 chars per indent level
+  nameSpace: 1, // space after name
+  status: 12, // StatusIndicator fixed width
+  port: 10, // listenerDisplay padStart
+  stats: 38, // R:+5 + F:+4 + Q:+4 + S:+5 + E:+4 with labels
 };
 
 /**
  * Calculate name width based on terminal width
  */
 export function calculateNameWidth(terminalWidth: number, indent: number = 0): number {
-  const baseWidth = COLUMN_WIDTHS.selector +
-    (COLUMN_WIDTHS.indentPer * indent) +
+  const baseWidth =
+    COLUMN_WIDTHS.selector +
+    COLUMN_WIDTHS.indentPer * indent +
     COLUMN_WIDTHS.nameSpace +
     COLUMN_WIDTHS.status +
     COLUMN_WIDTHS.port +

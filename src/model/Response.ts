@@ -54,9 +54,14 @@ export class Response {
       this.message = first.getMessage();
       this.statusMessage = first.getStatusMessage();
       this.error = first.getError();
-    } else if (typeof first === 'object' && first !== null && 'status' in first && !(first instanceof Response)) {
+    } else if (
+      typeof first === 'object' &&
+      first !== null &&
+      'status' in first &&
+      !(first instanceof Response)
+    ) {
       // Object form: new Response({ status, message, ... }) — existing Node.js internal callers
-      const data = first as ResponseData;
+      const data = first;
       this.status = data.status;
       this.message = data.message ?? '';
       this.statusMessage = data.statusMessage ?? '';

@@ -93,30 +93,27 @@ export class NCPDPSerializer {
    * Transform NCPDP message without full serialization
    * Just replaces delimiters if they differ
    */
-  transformWithoutSerializing(
-    message: string,
-    outputDelimiters: NCPDPDelimiters
-  ): string | null {
+  transformWithoutSerializing(message: string, outputDelimiters: NCPDPDelimiters): string | null {
     let transformed = false;
 
     if (this.serializationSegmentDelimiter !== outputDelimiters.segmentDelimiter) {
-      message = message.split(this.serializationSegmentDelimiter).join(
-        outputDelimiters.segmentDelimiter
-      );
+      message = message
+        .split(this.serializationSegmentDelimiter)
+        .join(outputDelimiters.segmentDelimiter);
       transformed = true;
     }
 
     if (this.serializationGroupDelimiter !== outputDelimiters.groupDelimiter) {
-      message = message.split(this.serializationGroupDelimiter).join(
-        outputDelimiters.groupDelimiter
-      );
+      message = message
+        .split(this.serializationGroupDelimiter)
+        .join(outputDelimiters.groupDelimiter);
       transformed = true;
     }
 
     if (this.serializationFieldDelimiter !== outputDelimiters.fieldDelimiter) {
-      message = message.split(this.serializationFieldDelimiter).join(
-        outputDelimiters.fieldDelimiter
-      );
+      message = message
+        .split(this.serializationFieldDelimiter)
+        .join(outputDelimiters.fieldDelimiter);
       transformed = true;
     }
 
@@ -158,10 +155,7 @@ export class NCPDPSerializer {
 
     // Find root element
     const rootKey = Object.keys(parsed).find(
-      (key) =>
-        key.startsWith('NCPDP_') ||
-        key === 'NCPDPMessage' ||
-        key === '?xml'
+      (key) => key.startsWith('NCPDP_') || key === 'NCPDPMessage' || key === '?xml'
     );
 
     if (!rootKey || rootKey === '?xml') {
@@ -293,7 +287,8 @@ export class NCPDPSerializer {
 
         // Get counter/count value from attribute
         if (typeof fieldValue === 'object' && fieldValue !== null) {
-          const attr = (fieldValue as Record<string, unknown>)[`@_${fieldName}`] ??
+          const attr =
+            (fieldValue as Record<string, unknown>)[`@_${fieldName}`] ??
             (fieldValue as Record<string, unknown>)['@_counter'];
           if (attr) {
             output.push(String(attr));
@@ -430,9 +425,7 @@ export class NCPDPSerializer {
       }
 
       if (typePos + 2 <= message.length) {
-        map.type = this.reference.getTransactionName(
-          message.substring(typePos, typePos + 2)
-        );
+        map.type = this.reference.getTransactionName(message.substring(typePos, typePos + 2));
       }
 
       if (sourcePos + 15 <= message.length) {
@@ -447,10 +440,7 @@ export class NCPDPSerializer {
 /**
  * Convert NCPDP to XML (convenience function)
  */
-export function convertNCPDPToXML(
-  message: string,
-  delimiters?: Partial<NCPDPDelimiters>
-): string {
+export function convertNCPDPToXML(message: string, delimiters?: Partial<NCPDPDelimiters>): string {
   const serializer = new NCPDPSerializer(delimiters);
   return serializer.toXML(message);
 }
@@ -458,10 +448,7 @@ export function convertNCPDPToXML(
 /**
  * Convert XML to NCPDP (convenience function)
  */
-export function convertXMLToNCPDP(
-  xml: string,
-  delimiters?: Partial<NCPDPDelimiters>
-): string {
+export function convertXMLToNCPDP(xml: string, delimiters?: Partial<NCPDPDelimiters>): string {
   const serializer = new NCPDPSerializer(undefined, delimiters);
   return serializer.fromXML(xml);
 }

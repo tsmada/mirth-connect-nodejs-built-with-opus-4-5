@@ -109,17 +109,20 @@ export class FileDispatcher extends DestinationConnector {
       resolved.sftpSchemeProperties = { ...resolved.sftpSchemeProperties };
       if (resolved.sftpSchemeProperties.keyFile) {
         resolved.sftpSchemeProperties.keyFile = this.resolveVariables(
-          resolved.sftpSchemeProperties.keyFile, connectorMessage
+          resolved.sftpSchemeProperties.keyFile,
+          connectorMessage
         );
       }
       if (resolved.sftpSchemeProperties.passPhrase) {
         resolved.sftpSchemeProperties.passPhrase = this.resolveVariables(
-          resolved.sftpSchemeProperties.passPhrase, connectorMessage
+          resolved.sftpSchemeProperties.passPhrase,
+          connectorMessage
         );
       }
       if (resolved.sftpSchemeProperties.knownHostsFile) {
         resolved.sftpSchemeProperties.knownHostsFile = this.resolveVariables(
-          resolved.sftpSchemeProperties.knownHostsFile, connectorMessage
+          resolved.sftpSchemeProperties.knownHostsFile,
+          connectorMessage
         );
       }
     }
@@ -279,10 +282,7 @@ export class FileDispatcher extends DestinationConnector {
     const info = `${resolvedProps.host || resolvedProps.directory}/${filename}`;
 
     // Java: dispatches WRITING with info before write
-    this.dispatchConnectionEvent(
-      ConnectionStatusEventType.WRITING,
-      `Writing file to: ${info}`
-    );
+    this.dispatchConnectionEvent(ConnectionStatusEventType.WRITING, `Writing file to: ${info}`);
 
     try {
       // Get content to write
@@ -330,8 +330,7 @@ export class FileDispatcher extends DestinationConnector {
       connectorMessage.getConnectorMap().set('filename', filename);
       connectorMessage.getConnectorMap().set('filePath', filePath);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       connectorMessage.setStatus(Status.ERROR);
       connectorMessage.setProcessingError(errorMessage);
       throw error;
@@ -347,7 +346,11 @@ export class FileDispatcher extends DestinationConnector {
           this.sftpConnection = null;
         }
         if (this.backendClient) {
-          try { await this.backendClient.disconnect(); } catch { /* ignore */ }
+          try {
+            await this.backendClient.disconnect();
+          } catch {
+            /* ignore */
+          }
           this.backendClient = null;
         }
       }
@@ -412,7 +415,9 @@ export class FileDispatcher extends DestinationConnector {
       throw new Error(`Host is required for ${this.properties.scheme} connections`);
     }
 
-    logger.info(`Initializing ${this.properties.scheme} connection to ${this.properties.host || 'S3'}...`);
+    logger.info(
+      `Initializing ${this.properties.scheme} connection to ${this.properties.host || 'S3'}...`
+    );
 
     this.backendClient = createFileSystemClient(this.properties.scheme, this.properties);
     await this.backendClient.connect();
@@ -420,7 +425,9 @@ export class FileDispatcher extends DestinationConnector {
     // Verify we can write to the directory
     const canWrite = await this.backendClient.canWrite(this.properties.directory);
     if (!canWrite) {
-      throw new Error(`Cannot write to ${this.properties.scheme} directory: ${this.properties.directory}`);
+      throw new Error(
+        `Cannot write to ${this.properties.scheme} directory: ${this.properties.directory}`
+      );
     }
 
     this.lastRemoteActivityTime = Date.now();
@@ -497,7 +504,10 @@ export class FileDispatcher extends DestinationConnector {
   /**
    * Get content to write from connector message
    */
-  private getContent(connectorMessage: ConnectorMessage, resolvedProps: FileDispatcherProperties): string | Buffer {
+  private getContent(
+    connectorMessage: ConnectorMessage,
+    resolvedProps: FileDispatcherProperties
+  ): string | Buffer {
     // Use template if provided, otherwise use encoded data
     if (resolvedProps.template) {
       return resolvedProps.template;
@@ -515,7 +525,10 @@ export class FileDispatcher extends DestinationConnector {
   /**
    * Generate output filename
    */
-  private generateFilename(connectorMessage: ConnectorMessage, resolvedProps: FileDispatcherProperties): string {
+  private generateFilename(
+    connectorMessage: ConnectorMessage,
+    resolvedProps: FileDispatcherProperties
+  ): string {
     // Build variables from connector message
     const variables: Record<string, string> = {
       messageId: String(connectorMessage.getMessageId() ?? ''),
@@ -552,9 +565,7 @@ export class FileDispatcher extends DestinationConnector {
     // Java: temporary flag OR explicit tempFilename — either triggers temp-then-rename
     const useTempFile = resolvedProps.temporary || !!resolvedProps.tempFilename;
     const tempSuffix = resolvedProps.tempFilename || '.tmp';
-    const tempPath = useTempFile
-      ? `${filePath}${tempSuffix}`
-      : filePath;
+    const tempPath = useTempFile ? `${filePath}${tempSuffix}` : filePath;
 
     // Convert content to buffer if binary mode
     let dataToWrite: string | Buffer;
@@ -634,12 +645,7 @@ export class FileDispatcher extends DestinationConnector {
       );
 
       // Rename temp file to final name
-      await sftp.move(
-        tempFilename,
-        resolvedProps.directory,
-        filename,
-        resolvedProps.directory
-      );
+      await sftp.move(tempFilename, resolvedProps.directory, filename, resolvedProps.directory);
     } else {
       // Direct write (with append support)
       await sftp.writeFile(
@@ -691,31 +697,16 @@ export class FileDispatcher extends DestinationConnector {
       const tempFilename = `${filename}${tempSuffix}`;
 
       // Write to temp file (no append for temp files)
-      await client.writeFile(
-        tempFilename,
-        resolvedProps.directory,
-        dataToWrite,
-        false
-      );
+      await client.writeFile(tempFilename, resolvedProps.directory, dataToWrite, false);
 
       // Rename temp file to final name
-      await client.move(
-        tempFilename,
-        resolvedProps.directory,
-        filename,
-        resolvedProps.directory
-      );
+      await client.move(tempFilename, resolvedProps.directory, filename, resolvedProps.directory);
     } else {
       // Direct write with append support
       // Note: S3 canAppend() returns false; writeFile with append=true
       // on S3 will download-concat-reupload (handled by S3Client)
       const shouldAppend = resolvedProps.outputAppend && client.canAppend();
-      await client.writeFile(
-        filename,
-        resolvedProps.directory,
-        dataToWrite,
-        shouldAppend
-      );
+      await client.writeFile(filename, resolvedProps.directory, dataToWrite, shouldAppend);
     }
 
     return remotePath;

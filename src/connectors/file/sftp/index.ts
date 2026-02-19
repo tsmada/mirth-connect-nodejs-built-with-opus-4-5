@@ -5,11 +5,7 @@
  * by FileReceiver and FileDispatcher.
  */
 
-export {
-  SftpConnection,
-  SftpConnectionOptions,
-  SftpFileInfo,
-} from './SftpConnection.js';
+export { SftpConnection, SftpConnectionOptions, SftpFileInfo } from './SftpConnection.js';
 
 export {
   SftpSchemeProperties,

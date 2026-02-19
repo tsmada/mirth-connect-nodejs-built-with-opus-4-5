@@ -13,10 +13,7 @@
 import { SourceConnector } from '../../donkey/channel/SourceConnector.js';
 import { RawMessage } from '../../model/RawMessage.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
-import {
-  VmReceiverProperties,
-  getDefaultVmReceiverProperties,
-} from './VmConnectorProperties.js';
+import { VmReceiverProperties, getDefaultVmReceiverProperties } from './VmConnectorProperties.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
 registerComponent('vm-connector', 'Channel Writer/Reader');
@@ -181,7 +178,7 @@ export class VmReceiver extends SourceConnector {
     try {
       // Get the raw data - either string or convert from bytes
       const rawData = rawMessage.isBinary()
-        ? rawMessage.getRawBytes()?.toString('utf-8') ?? rawMessage.getRawData()
+        ? (rawMessage.getRawBytes()?.toString('utf-8') ?? rawMessage.getRawData())
         : rawMessage.getRawData();
 
       // Dispatch to the channel

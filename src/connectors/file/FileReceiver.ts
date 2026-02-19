@@ -167,9 +167,7 @@ export class FileReceiver extends SourceConnector {
     try {
       const stats = await fs.stat(this.properties.directory);
       if (!stats.isDirectory()) {
-        throw new Error(
-          `Path is not a directory: ${this.properties.directory}`
-        );
+        throw new Error(`Path is not a directory: ${this.properties.directory}`);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -203,7 +201,7 @@ export class FileReceiver extends SourceConnector {
         if (attempt < maxRetries) {
           // Wait before retrying with linear backoff
           const delay = retryDelay * (attempt + 1);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
@@ -269,19 +267,25 @@ export class FileReceiver extends SourceConnector {
         // Verify we can read the directory
         const canRead = await this.backendClient.canRead(this.properties.directory);
         if (!canRead) {
-          throw new Error(`Cannot read ${this.properties.scheme} directory: ${this.properties.directory}`);
+          throw new Error(
+            `Cannot read ${this.properties.scheme} directory: ${this.properties.directory}`
+          );
         }
         return; // Success
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (this.backendClient) {
-          try { await this.backendClient.disconnect(); } catch { /* ignore */ }
+          try {
+            await this.backendClient.disconnect();
+          } catch {
+            /* ignore */
+          }
           this.backendClient = null;
         }
 
         if (attempt < maxRetries) {
           const delay = retryDelay * (attempt + 1);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
@@ -515,13 +519,7 @@ export class FileReceiver extends SourceConnector {
       // For SFTP and backend clients, filename filtering is done in listFiles
       // For local files, check pattern match
       if (this.properties.scheme === FileScheme.FILE) {
-        if (
-          !matchesFilter(
-            file.name,
-            this.properties.fileFilter,
-            this.properties.regex
-          )
-        ) {
+        if (!matchesFilter(file.name, this.properties.fileFilter, this.properties.regex)) {
           return false;
         }
       }
@@ -614,7 +612,10 @@ export class FileReceiver extends SourceConnector {
       await this.dispatchRawMessage(content, sourceMapData);
     } catch (error) {
       readError = true;
-      logger.error(`Error processing file ${file.path}:`, error instanceof Error ? error : undefined);
+      logger.error(
+        `Error processing file ${file.path}:`,
+        error instanceof Error ? error : undefined
+      );
     }
 
     // Three-path action selection matching Java FileReceiver.java:440-450
@@ -781,7 +782,11 @@ export class FileReceiver extends SourceConnector {
    * When moveToFileName is provided and non-empty, it is used as the destination filename.
    * Otherwise, the original filename is preserved.
    */
-  private async moveFile(file: FileInfo, toDirectory: string, moveToFileName?: string): Promise<void> {
+  private async moveFile(
+    file: FileInfo,
+    toDirectory: string,
+    moveToFileName?: string
+  ): Promise<void> {
     const destName = moveToFileName || file.name;
 
     switch (this.properties.scheme) {

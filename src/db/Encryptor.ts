@@ -16,8 +16,12 @@ export interface Encryptor {
  * No-op encryptor — content stored/retrieved as plaintext.
  */
 export class NoOpEncryptor implements Encryptor {
-  encrypt(plaintext: string): string { return plaintext; }
-  decrypt(ciphertext: string): string { return ciphertext; }
+  encrypt(plaintext: string): string {
+    return plaintext;
+  }
+  decrypt(ciphertext: string): string {
+    return ciphertext;
+  }
 }
 
 /**

@@ -10,8 +10,16 @@ import * as path from 'path';
 
 const SERVLET_DIR = path.join(process.cwd(), 'src/api/servlets');
 
+/** Read source and normalize whitespace so tests are formatting-independent */
+function readSource(filePath: string): string {
+  return fs.readFileSync(filePath, 'utf8')
+    .replace(/\s+/g, ' ')   // collapse all whitespace to single space
+    .replace(/\( /g, '(')   // remove space after open paren
+    .replace(/ \)/g, ')');   // remove space before close paren
+}
+
 describe('ChannelServlet authorization', () => {
-  const source = fs.readFileSync(path.join(SERVLET_DIR, 'ChannelServlet.ts'), 'utf8');
+  const source = readSource(path.join(SERVLET_DIR, 'ChannelServlet.ts'));
 
   it('imports authorize middleware', () => {
     expect(source).toContain("import { authorize }");
@@ -104,7 +112,7 @@ describe('ChannelServlet authorization', () => {
 });
 
 describe('ChannelStatusServlet authorization', () => {
-  const source = fs.readFileSync(path.join(SERVLET_DIR, 'ChannelStatusServlet.ts'), 'utf8');
+  const source = readSource(path.join(SERVLET_DIR, 'ChannelStatusServlet.ts'));
 
   it('imports authorize middleware', () => {
     expect(source).toContain("import { authorize }");
@@ -211,7 +219,7 @@ describe('ChannelStatusServlet authorization', () => {
 });
 
 describe('EngineServlet authorization', () => {
-  const source = fs.readFileSync(path.join(SERVLET_DIR, 'EngineServlet.ts'), 'utf8');
+  const source = readSource(path.join(SERVLET_DIR, 'EngineServlet.ts'));
 
   it('imports authorize middleware', () => {
     expect(source).toContain("import { authorize }");
@@ -259,7 +267,7 @@ describe('EngineServlet authorization', () => {
 // ============================================================================
 
 describe('ConfigurationServlet authorization', () => {
-  const source = fs.readFileSync(path.join(SERVLET_DIR, 'ConfigurationServlet.ts'), 'utf8');
+  const source = readSource(path.join(SERVLET_DIR, 'ConfigurationServlet.ts'));
 
   it('imports authorize middleware', () => {
     expect(source).toContain("import { authorize }");
@@ -434,7 +442,7 @@ describe('ConfigurationServlet authorization', () => {
 // ============================================================================
 
 describe('UserServlet authorization', () => {
-  const source = fs.readFileSync(path.join(SERVLET_DIR, 'UserServlet.ts'), 'utf8');
+  const source = readSource(path.join(SERVLET_DIR, 'UserServlet.ts'));
 
   it('imports authorize middleware', () => {
     expect(source).toContain("import { authorize }");
@@ -454,13 +462,13 @@ describe('UserServlet authorization', () => {
   it('does NOT add authorize to login route', () => {
     // Login route has rate limiter but should NOT have authorize middleware
     expect(source).toContain("userRouter.post('/_login', loginLimiter, async");
-    expect(source).not.toMatch(/userRouter\.post\('\/_login',\s*authorize/);
+    expect(source).not.toContain("userRouter.post('/_login', authorize");
   });
 
   it('does NOT add authorize to logout route', () => {
     expect(source).toContain("userRouter.post('/_logout', authMiddleware");
     // logout should NOT have authorize middleware
-    expect(source).not.toMatch(/userRouter\.post\('\/_logout',.*authorize/);
+    expect(source).not.toContain("userRouter.post('/_logout', authorize");
   });
 
   it('has authorize on GET / (get all users)', () => {
@@ -521,7 +529,7 @@ describe('UserServlet authorization', () => {
 
 describe('CodeTemplateServlet authorization', () => {
   const PLUGIN_DIR = path.join(process.cwd(), 'src/plugins/codetemplates');
-  const source = fs.readFileSync(path.join(PLUGIN_DIR, 'CodeTemplateServlet.ts'), 'utf8');
+  const source = readSource(path.join(PLUGIN_DIR, 'CodeTemplateServlet.ts'));
 
   it('imports authorize middleware', () => {
     expect(source).toContain("import { authorize }");

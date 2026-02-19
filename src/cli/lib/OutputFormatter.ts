@@ -243,9 +243,7 @@ export function formatChannelStatusTable(statuses: ChannelStatus[]): string {
       stateColor(status.state),
       formatNumber(status.statistics?.received || 0),
       formatNumber(status.statistics?.sent || 0),
-      status.statistics?.error
-        ? chalk.red(formatNumber(status.statistics.error))
-        : '0',
+      status.statistics?.error ? chalk.red(formatNumber(status.statistics.error)) : '0',
     ];
   });
 

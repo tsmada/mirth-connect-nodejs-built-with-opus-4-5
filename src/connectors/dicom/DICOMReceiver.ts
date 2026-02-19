@@ -24,12 +24,7 @@ import {
   SopClass,
   DicomTlsMode,
 } from './DICOMReceiverProperties.js';
-import {
-  PduType,
-  DimseCommandType,
-  DicomStatus,
-  AssociationState,
-} from './DicomConnection.js';
+import { PduType, DimseCommandType, DicomStatus, AssociationState } from './DicomConnection.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
 registerComponent('dicom-connector', 'DICOM C-STORE/C-ECHO receiver');
@@ -208,7 +203,7 @@ export class DICOMReceiver extends SourceConnector {
         if (!this.running) {
           reject(error);
         } else {
-          logger.error('DICOM Server error', error as Error);
+          logger.error('DICOM Server error', error);
         }
       });
 
@@ -412,7 +407,8 @@ export class DICOMReceiver extends SourceConnector {
     offset += 32;
 
     // Parse variable items
-    const proposedContexts: Map<number, { abstractSyntax: string; transferSyntaxes: string[] }> = new Map();
+    const proposedContexts: Map<number, { abstractSyntax: string; transferSyntaxes: string[] }> =
+      new Map();
     let remoteMaxPduLength = 16384;
 
     while (offset < pduData.length) {
@@ -422,11 +418,15 @@ export class DICOMReceiver extends SourceConnector {
       if (itemType === 0x20) {
         // Presentation Context Item (proposed)
         const contextId = pduData[offset + 4]!;
-        const context = this.parsePresentationContext(pduData.subarray(offset + 8, offset + 4 + itemLength));
+        const context = this.parsePresentationContext(
+          pduData.subarray(offset + 8, offset + 4 + itemLength)
+        );
         proposedContexts.set(contextId, context);
       } else if (itemType === 0x50) {
         // User Information Item
-        const userInfo = this.parseUserInformation(pduData.subarray(offset + 4, offset + 4 + itemLength));
+        const userInfo = this.parseUserInformation(
+          pduData.subarray(offset + 4, offset + 4 + itemLength)
+        );
         if (userInfo.maxPduLength) {
           remoteMaxPduLength = userInfo.maxPduLength;
         }
@@ -456,23 +456,26 @@ export class DICOMReceiver extends SourceConnector {
     }
 
     // Update max PDU length (use smaller of local and remote)
-    association.maxPduLength = Math.min(
-      association.maxPduLength,
-      remoteMaxPduLength
-    );
+    association.maxPduLength = Math.min(association.maxPduLength, remoteMaxPduLength);
 
     // Send Association Accept
     await this.sendAssociateAc(socket, association, acceptedContexts);
     association.state = AssociationState.ASSOCIATED;
 
     // Java: eventController.dispatchEvent(new ConnectionStatusEvent(..., ConnectionStatusEventType.CONNECTED))
-    this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTED, `Association from ${association.callingAE}`);
+    this.dispatchConnectionEvent(
+      ConnectionStatusEventType.CONNECTED,
+      `Association from ${association.callingAE}`
+    );
   }
 
   /**
    * Parse Presentation Context Item from A-ASSOCIATE-RQ
    */
-  private parsePresentationContext(data: Buffer): { abstractSyntax: string; transferSyntaxes: string[] } {
+  private parsePresentationContext(data: Buffer): {
+    abstractSyntax: string;
+    transferSyntaxes: string[];
+  } {
     let offset = 0;
     let abstractSyntax = '';
     const transferSyntaxes: string[] = [];
@@ -498,7 +501,10 @@ export class DICOMReceiver extends SourceConnector {
   /**
    * Parse User Information Item
    */
-  private parseUserInformation(data: Buffer): { maxPduLength?: number; implementationUid?: string } {
+  private parseUserInformation(data: Buffer): {
+    maxPduLength?: number;
+    implementationUid?: string;
+  } {
     const result: { maxPduLength?: number; implementationUid?: string } = {};
     let offset = 0;
 
@@ -764,10 +770,16 @@ export class DICOMReceiver extends SourceConnector {
         state.messageId = command.readUInt16LE(offset + 8);
       } else if (group === 0x0008 && element === 0x0016) {
         // Affected SOP Class UID
-        state.affectedSopClassUid = command.toString('ascii', offset + 8, offset + 8 + length).replace(/\0/g, '').trim();
+        state.affectedSopClassUid = command
+          .toString('ascii', offset + 8, offset + 8 + length)
+          .replace(/\0/g, '')
+          .trim();
       } else if (group === 0x0008 && element === 0x0018) {
         // Affected SOP Instance UID
-        state.affectedSopInstanceUid = command.toString('ascii', offset + 8, offset + 8 + length).replace(/\0/g, '').trim();
+        state.affectedSopInstanceUid = command
+          .toString('ascii', offset + 8, offset + 8 + length)
+          .replace(/\0/g, '')
+          .trim();
       }
 
       offset += 8 + length;
@@ -875,7 +887,7 @@ export class DICOMReceiver extends SourceConnector {
       // CPC-W19-006: Apply rspDelay before sending response (Java: dcmRcv rspDelay)
       const rspDelay = parseInt(this.properties.rspDelay, 10);
       if (rspDelay > 0) {
-        await new Promise<void>(resolve => setTimeout(resolve, rspDelay));
+        await new Promise<void>((resolve) => setTimeout(resolve, rspDelay));
       }
 
       // Send success response
@@ -1003,7 +1015,7 @@ export class DICOMReceiver extends SourceConnector {
    * Handle socket error
    */
   private handleError(socket: net.Socket, error: Error): void {
-    logger.error('DICOM socket error', error as Error);
+    logger.error('DICOM socket error', error);
     this.associations.delete(socket);
   }
 
@@ -1159,7 +1171,7 @@ export class DICOMReceiver extends SourceConnector {
       port,
       host: host || '0.0.0.0',
       connectionCount: this.associations.size,
-      maxConnections: 0,  // DICOM doesn't limit associations the same way
+      maxConnections: 0, // DICOM doesn't limit associations the same way
       transportType: 'DICOM',
       listening: this.server.listening,
     };

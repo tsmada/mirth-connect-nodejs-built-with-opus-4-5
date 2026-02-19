@@ -33,9 +33,7 @@ function createClient(globalOpts: GlobalOptions): ApiClient {
  * Register channel commands
  */
 export function registerChannelCommands(program: Command): void {
-  const channelsCmd = program
-    .command('channels')
-    .description('List and manage channels');
+  const channelsCmd = program.command('channels').description('List and manage channels');
 
   // ==========================================================================
   // channels (list all)
@@ -57,9 +55,7 @@ export function registerChannelCommands(program: Command): void {
         let filteredStatuses = statuses;
         if (options.filter) {
           const filterLower = options.filter.toLowerCase();
-          filteredStatuses = statuses.filter(
-            (s) => s.name.toLowerCase().includes(filterLower)
-          );
+          filteredStatuses = statuses.filter((s) => s.name.toLowerCase().includes(filterLower));
         }
 
         spinner.stop();
@@ -180,7 +176,9 @@ export function registerChannelCommands(program: Command): void {
             console.log(`  ${chalk.gray('Filtered:')}  ${formatNumber(stats.filtered)}`);
             console.log(`  ${chalk.gray('Queued:')}    ${formatNumber(stats.queued)}`);
             console.log(`  ${chalk.gray('Sent:')}      ${formatNumber(stats.sent)}`);
-            console.log(`  ${chalk.gray('Errored:')}   ${stats.error ? chalk.red(formatNumber(stats.error)) : '0'}`);
+            console.log(
+              `  ${chalk.gray('Errored:')}   ${stats.error ? chalk.red(formatNumber(stats.error)) : '0'}`
+            );
           }
         } else {
           // Get all channel stats
@@ -263,7 +261,9 @@ export function registerChannelCommands(program: Command): void {
           }
 
           const { id, name: channelName } = resolveResult.channel;
-          const spinner = ora(`${name.charAt(0).toUpperCase() + name.slice(1)}ing ${channelName}...`).start();
+          const spinner = ora(
+            `${name.charAt(0).toUpperCase() + name.slice(1)}ing ${channelName}...`
+          ).start();
 
           await action(client, id);
 
@@ -302,12 +302,7 @@ export function registerChannelCommands(program: Command): void {
     'started'
   );
 
-  createControlCommand(
-    'stop',
-    'Stop a channel',
-    (client, id) => client.stopChannel(id),
-    'stopped'
-  );
+  createControlCommand('stop', 'Stop a channel', (client, id) => client.stopChannel(id), 'stopped');
 
   createControlCommand(
     'pause',

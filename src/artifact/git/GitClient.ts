@@ -86,8 +86,8 @@ export class GitClient {
 
     for (const line of output.split('\n')) {
       if (!line) continue;
-      const x = line[0]!;  // index (staging area) status
-      const y = line[1]!;  // worktree status
+      const x = line[0]!; // index (staging area) status
+      const y = line[1]!; // worktree status
       const file = line.slice(3);
 
       if (x === '?' && y === '?') {
@@ -155,7 +155,7 @@ export class GitClient {
     const output = await this.exec(['branch', '--list']);
     return output
       .split('\n')
-      .map(line => line.replace(/^\*?\s+/, '').trim())
+      .map((line) => line.replace(/^\*?\s+/, '').trim())
       .filter(Boolean);
   }
 
@@ -242,7 +242,7 @@ export class GitClient {
     return output
       .split('\n')
       .filter(Boolean)
-      .map(line => {
+      .map((line) => {
         const parts = line.split(SEP);
         return {
           hash: parts[0]!,

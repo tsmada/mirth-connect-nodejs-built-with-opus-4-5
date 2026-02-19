@@ -76,8 +76,6 @@ export class StatisticsAccumulator {
    * Get the raw stats map (for testing/inspection).
    */
   getStats(): Map<number, Map<Status, number>> {
-    return new Map(
-      [...this.stats.entries()].map(([id, statusMap]) => [id, new Map(statusMap)])
-    );
+    return new Map([...this.stats.entries()].map(([id, statusMap]) => [id, new Map(statusMap)]));
   }
 }

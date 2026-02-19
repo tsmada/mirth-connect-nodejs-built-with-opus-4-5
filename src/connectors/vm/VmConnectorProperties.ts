@@ -98,9 +98,7 @@ export function getDefaultVmDispatcherProperties(): VmDispatcherProperties {
  * @param sourceMap The source map from the incoming message
  * @returns Array of channel IDs in the chain, or null if this is the first channel
  */
-export function getSourceChannelIds(
-  sourceMap: Map<string, unknown>
-): string[] | null {
+export function getSourceChannelIds(sourceMap: Map<string, unknown>): string[] | null {
   const sourceChannelId = sourceMap.get(SOURCE_CHANNEL_ID);
 
   // If no source channel id exists, this is the start of the chain
@@ -134,9 +132,7 @@ export function getSourceChannelIds(
  * @param sourceMap The source map from the incoming message
  * @returns Array of message IDs in the chain, or null if this is the first channel
  */
-export function getSourceMessageIds(
-  sourceMap: Map<string, unknown>
-): number[] | null {
+export function getSourceMessageIds(sourceMap: Map<string, unknown>): number[] | null {
   const sourceMessageId = sourceMap.get(SOURCE_MESSAGE_ID);
 
   // If no source message id exists, this is the start of the chain
@@ -166,9 +162,7 @@ export function getSourceMessageIds(
 /**
  * Format VM dispatcher properties as a human-readable string
  */
-export function formatVmDispatcherProperties(
-  props: VmDispatcherProperties
-): string {
+export function formatVmDispatcherProperties(props: VmDispatcherProperties): string {
   const lines: string[] = [];
   const newLine = '\n';
 

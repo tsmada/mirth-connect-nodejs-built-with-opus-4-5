@@ -19,13 +19,28 @@ import {
 } from '../../javascript/runtime/ScriptBuilder.js';
 import { TcpReceiver } from '../../connectors/tcp/TcpReceiver.js';
 import { TcpDispatcher } from '../../connectors/tcp/TcpDispatcher.js';
-import { TcpReceiverProperties, TcpDispatcherProperties, ServerMode, TransmissionMode, ResponseMode } from '../../connectors/tcp/TcpConnectorProperties.js';
+import {
+  TcpReceiverProperties,
+  TcpDispatcherProperties,
+  ServerMode,
+  TransmissionMode,
+  ResponseMode,
+} from '../../connectors/tcp/TcpConnectorProperties.js';
 import { HttpReceiver } from '../../connectors/http/HttpReceiver.js';
 import { HttpDispatcher } from '../../connectors/http/HttpDispatcher.js';
-import { HttpReceiverProperties, HttpDispatcherProperties } from '../../connectors/http/HttpConnectorProperties.js';
+import {
+  HttpReceiverProperties,
+  HttpDispatcherProperties,
+} from '../../connectors/http/HttpConnectorProperties.js';
 import { FileReceiver } from '../../connectors/file/FileReceiver.js';
 import { FileDispatcher } from '../../connectors/file/FileDispatcher.js';
-import { FileReceiverProperties, FileDispatcherProperties, FileScheme, AfterProcessingAction, FileSortBy } from '../../connectors/file/FileConnectorProperties.js';
+import {
+  FileReceiverProperties,
+  FileDispatcherProperties,
+  FileScheme,
+  AfterProcessingAction,
+  FileSortBy,
+} from '../../connectors/file/FileConnectorProperties.js';
 import { DatabaseDispatcher } from '../../connectors/jdbc/DatabaseDispatcher.js';
 import { DatabaseReceiver } from '../../connectors/jdbc/DatabaseReceiver.js';
 import { UpdateMode } from '../../connectors/jdbc/DatabaseConnectorProperties.js';
@@ -58,15 +73,17 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
   });
 
   // Extract custom metadata column definitions
-  const metaDataColumns = (Array.isArray(channelProps?.metaDataColumns) ? channelProps.metaDataColumns : []).map((col) => ({
+  const metaDataColumns = (
+    Array.isArray(channelProps?.metaDataColumns) ? channelProps.metaDataColumns : []
+  ).map((col) => ({
     name: col.name,
     type: col.type as MetaDataColumnType,
     mappingName: col.mappingName,
   }));
 
   // Extract encryptData from channel properties
-  const encryptData = channelProps?.encryptData === true ||
-    String(channelProps?.encryptData) === 'true';
+  const encryptData =
+    channelProps?.encryptData === true || String(channelProps?.encryptData) === 'true';
 
   // Create channel with basic config
   const config: ChannelConfig = {
@@ -93,10 +110,13 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     // Wire respondAfterProcessing from source connector properties.
     // In channel XML, this lives inside <sourceConnectorProperties>, NOT at the top level:
     //   <properties><sourceConnectorProperties><respondAfterProcessing>true</respondAfterProcessing>
-    const sourceProps = channelConfig.sourceConnector?.properties as Record<string, unknown>;
-    const sourceConnProps = (sourceProps?.sourceConnectorProperties as Record<string, unknown>) ?? sourceProps;
-    if (sourceConnProps?.respondAfterProcessing === false ||
-        String(sourceConnProps?.respondAfterProcessing) === 'false') {
+    const sourceProps = channelConfig.sourceConnector?.properties;
+    const sourceConnProps =
+      (sourceProps?.sourceConnectorProperties as Record<string, unknown>) ?? sourceProps;
+    if (
+      sourceConnProps?.respondAfterProcessing === false ||
+      String(sourceConnProps?.respondAfterProcessing) === 'false'
+    ) {
       sourceConnector.setRespondAfterProcessing(false);
     }
 
@@ -136,8 +156,11 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
             destResponseTransformer
           );
         }
-        if (destScripts.filterRules?.length || destScripts.transformerSteps?.length ||
-            destScripts.responseTransformerScripts) {
+        if (
+          destScripts.filterRules?.length ||
+          destScripts.transformerSteps?.length ||
+          destScripts.responseTransformerScripts
+        ) {
           dest.setFilterTransformer(destScripts);
         }
       }
@@ -337,7 +360,7 @@ function buildDestinationConnector(destConfig: Connector): DestinationConnector 
  * Build TCP/MLLP dispatcher from configuration
  */
 function buildTcpDispatcher(destConfig: Connector): TcpDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
   const transmissionProps = props?.transmissionModeProperties as Record<string, unknown>;
 
   // Parse host and port
@@ -392,7 +415,10 @@ function buildTcpDispatcher(destConfig: Connector): TcpDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: tcpProperties,
   });
 }
@@ -401,7 +427,7 @@ function buildTcpDispatcher(destConfig: Connector): TcpDispatcher {
  * Build HTTP dispatcher from configuration
  */
 function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   // Parse URL
   let url = String(props?.host || props?.url || 'http://localhost');
@@ -443,7 +469,12 @@ function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
 
   const httpProperties: Partial<HttpDispatcherProperties> = {
     host: url,
-    method: String(props?.method || 'POST').toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+    method: String(props?.method || 'POST').toUpperCase() as
+      | 'GET'
+      | 'POST'
+      | 'PUT'
+      | 'DELETE'
+      | 'PATCH',
     headers,
     parameters,
     content: String(props?.content || ''),
@@ -464,7 +495,10 @@ function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: httpProperties,
   });
 }
@@ -476,12 +510,13 @@ function buildHttpDispatcher(destConfig: Connector): HttpDispatcher {
  * When scheme is SFTP, parses host/port/credentials and sftpSchemeProperties.
  */
 function buildFileDispatcher(destConfig: Connector): FileDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
   const schemeProps = props?.schemeProperties as Record<string, unknown>;
 
   // Parse scheme
   const schemeStr = String(schemeProps?.scheme || props?.scheme || 'FILE').toUpperCase();
-  const scheme = (FileScheme as Record<string, string>)[schemeStr] as FileScheme || FileScheme.FILE;
+  const scheme =
+    ((FileScheme as Record<string, string>)[schemeStr] as FileScheme) || FileScheme.FILE;
 
   // Parse directory — for SFTP, remote path is in schemeProperties.host
   let directory = String(schemeProps?.host || props?.host || '/tmp');
@@ -518,8 +553,9 @@ function buildFileDispatcher(destConfig: Connector): FileDispatcher {
   // Parse SFTP-specific scheme properties
   let sftpSchemeProperties: Record<string, unknown> | undefined;
   if (scheme === FileScheme.SFTP) {
-    const sftpProps = schemeProps?.sftpSchemeProperties as Record<string, unknown> ||
-                      props?.sftpSchemeProperties as Record<string, unknown>;
+    const sftpProps =
+      (schemeProps?.sftpSchemeProperties as Record<string, unknown>) ||
+      (props?.sftpSchemeProperties as Record<string, unknown>);
     if (sftpProps) {
       sftpSchemeProperties = {
         passwordAuth: String(sftpProps.passwordAuth) !== 'false',
@@ -554,7 +590,10 @@ function buildFileDispatcher(destConfig: Connector): FileDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: fileProperties,
   });
 }
@@ -563,7 +602,7 @@ function buildFileDispatcher(destConfig: Connector): FileDispatcher {
  * Build Database dispatcher from configuration
  */
 function buildDatabaseDispatcher(destConfig: Connector): DatabaseDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   // Parse JDBC URL
   let url = String(props?.url || 'jdbc:mysql://localhost:3306/test');
@@ -581,7 +620,10 @@ function buildDatabaseDispatcher(destConfig: Connector): DatabaseDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: {
       url,
       driver: String(props?.driver || 'com.mysql.cj.jdbc.Driver'),
@@ -641,7 +683,8 @@ function buildFileReceiver(properties: unknown): FileReceiver {
 
   // Parse scheme — may be at top level or inside schemeProperties
   const schemeStr = String(schemeProps?.scheme || props?.scheme || 'FILE').toUpperCase();
-  const scheme = (FileScheme as Record<string, string>)[schemeStr] as FileScheme || FileScheme.FILE;
+  const scheme =
+    ((FileScheme as Record<string, string>)[schemeStr] as FileScheme) || FileScheme.FILE;
 
   // For SFTP: the remote directory is in schemeProperties.host (Mirth convention)
   // For FILE: directory is in schemeProperties.host or props.host
@@ -675,23 +718,35 @@ function buildFileReceiver(properties: unknown): FileReceiver {
   const fileFilter = String(props?.fileFilter || schemeProps?.fileFilter || '*');
   const regex = String(props?.regex || schemeProps?.regex) === 'true';
   const pollConnProps = props?.pollConnectorProperties as Record<string, unknown> | undefined;
-  const pollInterval = parseInt(String(pollConnProps?.pollingFrequency || pollConnProps?.pollFrequency || props?.pollInterval || '5000'), 10);
+  const pollInterval = parseInt(
+    String(
+      pollConnProps?.pollingFrequency ||
+        pollConnProps?.pollFrequency ||
+        props?.pollInterval ||
+        '5000'
+    ),
+    10
+  );
 
   // Parse after-processing action
   const afterProcStr = String(props?.afterProcessingAction || 'NONE').toUpperCase();
-  const afterProcessingAction = (AfterProcessingAction as Record<string, string>)[afterProcStr] as AfterProcessingAction || AfterProcessingAction.NONE;
+  const afterProcessingAction =
+    ((AfterProcessingAction as Record<string, string>)[afterProcStr] as AfterProcessingAction) ||
+    AfterProcessingAction.NONE;
 
   const moveToDirectory = String(props?.moveToDirectory || '');
 
   // Parse sort options
   const sortByStr = String(props?.sortBy || 'DATE').toUpperCase();
-  const sortBy = (FileSortBy as Record<string, string>)[sortByStr] as FileSortBy || FileSortBy.DATE;
+  const sortBy =
+    ((FileSortBy as Record<string, string>)[sortByStr] as FileSortBy) || FileSortBy.DATE;
 
   // Parse SFTP-specific scheme properties
   let sftpSchemeProperties: Record<string, unknown> | undefined;
   if (scheme === FileScheme.SFTP) {
-    const sftpProps = schemeProps?.sftpSchemeProperties as Record<string, unknown> ||
-                      props?.sftpSchemeProperties as Record<string, unknown>;
+    const sftpProps =
+      (schemeProps?.sftpSchemeProperties as Record<string, unknown>) ||
+      (props?.sftpSchemeProperties as Record<string, unknown>);
     if (sftpProps) {
       sftpSchemeProperties = {
         passwordAuth: String(sftpProps.passwordAuth) !== 'false',
@@ -739,7 +794,7 @@ function buildFileReceiver(properties: unknown): FileReceiver {
  * Build VM dispatcher (Channel Writer) from configuration
  */
 function buildVmDispatcher(destConfig: Connector): VmDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   return new VmDispatcher({
     name: destConfig.name,
@@ -749,10 +804,15 @@ function buildVmDispatcher(destConfig: Connector): VmDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: {
       channelId: String(props?.channelId || ''),
-      channelTemplate: String(props?.channelTemplate || props?.template || '${message.encodedData}'),
+      channelTemplate: String(
+        props?.channelTemplate || props?.template || '${message.encodedData}'
+      ),
       mapVariables: parseMapVariables(props?.mapVariables),
     },
   });
@@ -777,7 +837,15 @@ function buildVmReceiver(properties: unknown): VmReceiver {
 function buildDatabaseReceiver(properties: unknown): DatabaseReceiver {
   const props = properties as Record<string, unknown>;
   const pollConnProps = props?.pollConnectorProperties as Record<string, unknown> | undefined;
-  const pollInterval = parseInt(String(pollConnProps?.pollingFrequency || pollConnProps?.pollFrequency || props?.pollInterval || '5000'), 10);
+  const pollInterval = parseInt(
+    String(
+      pollConnProps?.pollingFrequency ||
+        pollConnProps?.pollFrequency ||
+        props?.pollInterval ||
+        '5000'
+    ),
+    10
+  );
 
   let url = String(props?.url || 'jdbc:mysql://localhost:3306/test');
   if (url.startsWith('${')) {
@@ -848,7 +916,7 @@ function buildJmsReceiver(properties: unknown): JmsReceiver {
  * Build JMS Dispatcher (JMS Sender) from configuration
  */
 function buildJmsDispatcher(destConfig: Connector): JmsDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   let host = String(props?.host || 'localhost');
   let port = parseInt(String(props?.port || '61613'), 10);
@@ -863,7 +931,10 @@ function buildJmsDispatcher(destConfig: Connector): JmsDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: {
       host,
       port,
@@ -887,7 +958,7 @@ function buildJmsDispatcher(destConfig: Connector): JmsDispatcher {
  * Build SMTP Dispatcher (SMTP Sender) from configuration
  */
 function buildSmtpDispatcher(destConfig: Connector): SmtpDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   // Parse headers map from Mirth XML format
   const headers = new Map<string, string>();
@@ -929,7 +1000,10 @@ function buildSmtpDispatcher(destConfig: Connector): SmtpDispatcher {
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: {
       smtpHost: String(props?.smtpHost || 'localhost'),
       smtpPort: String(props?.smtpPort || '25'),
@@ -990,7 +1064,7 @@ function buildWebServiceReceiver(properties: unknown): WebServiceReceiver {
  * Build Web Service Dispatcher (Web Service Sender) from configuration
  */
 function buildWebServiceDispatcher(destConfig: Connector): WebServiceDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   // Parse headers from Mirth XML format
   const headers = new Map<string, string[]>();
@@ -1016,7 +1090,10 @@ function buildWebServiceDispatcher(destConfig: Connector): WebServiceDispatcher 
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: {
       wsdlUrl: String(props?.wsdlUrl || ''),
       service: String(props?.service || ''),
@@ -1033,9 +1110,15 @@ function buildWebServiceDispatcher(destConfig: Connector): WebServiceDispatcher 
       useHeadersVariable: String(props?.useHeadersVariable) === 'true',
       headersVariable: String(props?.headersVariable || ''),
       useMtom: String(props?.useMtom) === 'true',
-      attachmentNames: Array.isArray(props?.attachmentNames) ? (props.attachmentNames as string[]) : [],
-      attachmentContents: Array.isArray(props?.attachmentContents) ? (props.attachmentContents as string[]) : [],
-      attachmentTypes: Array.isArray(props?.attachmentTypes) ? (props.attachmentTypes as string[]) : [],
+      attachmentNames: Array.isArray(props?.attachmentNames)
+        ? (props.attachmentNames as string[])
+        : [],
+      attachmentContents: Array.isArray(props?.attachmentContents)
+        ? (props.attachmentContents as string[])
+        : [],
+      attachmentTypes: Array.isArray(props?.attachmentTypes)
+        ? (props.attachmentTypes as string[])
+        : [],
       useAttachmentsVariable: String(props?.useAttachmentsVariable) === 'true',
       attachmentsVariable: String(props?.attachmentsVariable || ''),
       soapAction: String(props?.soapAction || ''),
@@ -1072,7 +1155,7 @@ function buildDicomReceiver(properties: unknown): DICOMReceiver {
  * Build DICOM Dispatcher (DICOM Sender) from configuration
  */
 function buildDicomDispatcher(destConfig: Connector): DICOMDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   let host = String(props?.host || 'localhost');
   let port = String(props?.port || '104');
@@ -1102,8 +1185,17 @@ function buildJavaScriptReceiver(properties: unknown): JavaScriptReceiver {
   const props = properties as Record<string, unknown>;
   // processBatch lives inside sourceConnectorProperties in channel XML
   const srcConnProps = (props?.sourceConnectorProperties as Record<string, unknown>) ?? props;
-  const pollConnProps = (props?.pollConnectorProperties ?? srcConnProps?.pollConnectorProperties) as Record<string, unknown> | undefined;
-  const pollInterval = parseInt(String(pollConnProps?.pollingFrequency || pollConnProps?.pollFrequency || props?.pollInterval || '5000'), 10);
+  const pollConnProps = (props?.pollConnectorProperties ??
+    srcConnProps?.pollConnectorProperties) as Record<string, unknown> | undefined;
+  const pollInterval = parseInt(
+    String(
+      pollConnProps?.pollingFrequency ||
+        pollConnProps?.pollFrequency ||
+        props?.pollInterval ||
+        '5000'
+    ),
+    10
+  );
 
   return new JavaScriptReceiver({
     name: 'sourceConnector',
@@ -1119,7 +1211,7 @@ function buildJavaScriptReceiver(properties: unknown): JavaScriptReceiver {
  * Build JavaScript Dispatcher (JavaScript Writer) from configuration
  */
 function buildJavaScriptDispatcher(destConfig: Connector): JavaScriptDispatcher {
-  const props = destConfig.properties as Record<string, unknown>;
+  const props = destConfig.properties;
 
   return new JavaScriptDispatcher({
     name: destConfig.name,
@@ -1129,7 +1221,10 @@ function buildJavaScriptDispatcher(destConfig: Connector): JavaScriptDispatcher 
     queueEnabled: destConfig.queueEnabled,
     queueSendFirst: String(props?.queueSendFirst) === 'true',
     retryCount: parseInt(String(props?.retryCount ?? '0'), 10),
-    retryIntervalMillis: parseInt(String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'), 10),
+    retryIntervalMillis: parseInt(
+      String(props?.retryIntervalMillis ?? props?.retryInterval ?? '10000'),
+      10
+    ),
     properties: {
       script: String(props?.script || ''),
     },
@@ -1149,7 +1244,7 @@ function parseMapVariables(raw: unknown): string[] {
   if (typeof raw === 'object') {
     const obj = raw as Record<string, unknown>;
     if (obj.string) {
-      return Array.isArray(obj.string) ? obj.string as string[] : [String(obj.string)];
+      return Array.isArray(obj.string) ? (obj.string as string[]) : [String(obj.string)];
     }
   }
   return [];
@@ -1197,8 +1292,8 @@ function extractFilterRules(filter: unknown): ScriptFilterRule[] {
   // Shape 1: TypeScript interface { rules: FilterRule[] }
   if (Array.isArray(filterObj.rules)) {
     return (filterObj.rules as Array<Record<string, unknown>>)
-      .filter(r => r.enabled !== false && r.script)
-      .map(r => ({
+      .filter((r) => r.enabled !== false && r.script)
+      .map((r) => ({
         name: String(r.name || ''),
         script: String(r.script),
         operator: (String(r.operator) === 'OR' ? 'OR' : 'AND') as 'AND' | 'OR',
@@ -1249,8 +1344,8 @@ function extractTransformerSteps(transformer: unknown): ScriptTransformerStep[] 
   // Shape 1: TypeScript interface { steps: TransformerStep[] }
   if (Array.isArray(transformerObj.steps)) {
     return (transformerObj.steps as Array<Record<string, unknown>>)
-      .filter(s => s.enabled !== false && s.script)
-      .map(s => ({
+      .filter((s) => s.enabled !== false && s.script)
+      .map((s) => ({
         name: String(s.name || ''),
         script: String(s.script),
         enabled: true,

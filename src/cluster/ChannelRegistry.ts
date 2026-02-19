@@ -43,10 +43,7 @@ export async function unregisterDeployment(serverId: string, channelId: string):
  * Remove all deployment records for a server (used during shutdown/deregistration).
  */
 export async function unregisterAllDeployments(serverId: string): Promise<void> {
-  await execute(
-    `DELETE FROM D_CHANNEL_DEPLOYMENTS WHERE SERVER_ID = :serverId`,
-    { serverId }
-  );
+  await execute(`DELETE FROM D_CHANNEL_DEPLOYMENTS WHERE SERVER_ID = :serverId`, { serverId });
 }
 
 /**

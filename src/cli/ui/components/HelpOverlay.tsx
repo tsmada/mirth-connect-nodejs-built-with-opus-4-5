@@ -132,11 +132,7 @@ export const HelpOverlay: FC<HelpOverlayProps> = ({ onClose }) => {
           React.createElement(
             Box,
             { key: shortcut.key, flexDirection: 'row' },
-            React.createElement(
-              Text,
-              { color: 'yellow' },
-              shortcut.key.padEnd(12)
-            ),
+            React.createElement(Text, { color: 'yellow' }, shortcut.key.padEnd(12)),
             React.createElement(Text, { color: 'gray' }, shortcut.description)
           )
         )

@@ -141,11 +141,26 @@ export const STANDARD_SHORTCUTS = {
 export function formatShortcutsForHelp(): string[][] {
   const sections: string[][] = [];
 
-  sections.push(['Navigation', ...STANDARD_SHORTCUTS.navigation.map((s) => `${s.key}: ${s.description}`)]);
-  sections.push(['Channel Actions', ...STANDARD_SHORTCUTS.channelActions.map((s) => `${s.key}: ${s.description}`)]);
-  sections.push(['View Actions', ...STANDARD_SHORTCUTS.viewActions.map((s) => `${s.key}: ${s.description}`)]);
-  sections.push(['Selection', ...STANDARD_SHORTCUTS.selection.map((s) => `${s.key}: ${s.description}`)]);
-  sections.push(['Groups', ...STANDARD_SHORTCUTS.groupActions.map((s) => `${s.key}: ${s.description}`)]);
+  sections.push([
+    'Navigation',
+    ...STANDARD_SHORTCUTS.navigation.map((s) => `${s.key}: ${s.description}`),
+  ]);
+  sections.push([
+    'Channel Actions',
+    ...STANDARD_SHORTCUTS.channelActions.map((s) => `${s.key}: ${s.description}`),
+  ]);
+  sections.push([
+    'View Actions',
+    ...STANDARD_SHORTCUTS.viewActions.map((s) => `${s.key}: ${s.description}`),
+  ]);
+  sections.push([
+    'Selection',
+    ...STANDARD_SHORTCUTS.selection.map((s) => `${s.key}: ${s.description}`),
+  ]);
+  sections.push([
+    'Groups',
+    ...STANDARD_SHORTCUTS.groupActions.map((s) => `${s.key}: ${s.description}`),
+  ]);
 
   return sections;
 }

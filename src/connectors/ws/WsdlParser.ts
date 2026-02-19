@@ -114,24 +114,16 @@ export async function parseWsdlFromUrl(
 /**
  * Fetch WSDL content from URL
  */
-async function fetchWsdl(
-  url: string,
-  options: WsdlFetchOptions
-): Promise<string> {
+async function fetchWsdl(url: string, options: WsdlFetchOptions): Promise<string> {
   const headers: Record<string, string> = {};
 
   if (options.username && options.password) {
-    const credentials = Buffer.from(
-      `${options.username}:${options.password}`
-    ).toString('base64');
+    const credentials = Buffer.from(`${options.username}:${options.password}`).toString('base64');
     headers['Authorization'] = `Basic ${credentials}`;
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    options.timeout ?? 30000
-  );
+  const timeoutId = setTimeout(() => controller.abort(), options.timeout ?? 30000);
 
   try {
     const response = await fetch(url, {
@@ -142,9 +134,7 @@ async function fetchWsdl(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to fetch WSDL: ${response.status} ${response.statusText}`
-      );
+      throw new Error(`Failed to fetch WSDL: ${response.status} ${response.statusText}`);
     }
 
     return await response.text();
@@ -188,8 +178,7 @@ export function parseWsdlContent(
     throw new Error('Invalid WSDL: definitions element not found');
   }
 
-  const targetNamespace =
-    (definitions['@_targetNamespace'] as string) || '';
+  const targetNamespace = (definitions['@_targetNamespace'] as string) || '';
 
   // Parse bindings
   const bindings = parseBindings(definitions);
@@ -211,9 +200,7 @@ export function parseWsdlContent(
 /**
  * Parse bindings from WSDL definitions
  */
-function parseBindings(
-  definitions: Record<string, unknown>
-): WsdlBinding[] {
+function parseBindings(definitions: Record<string, unknown>): WsdlBinding[] {
   const bindings: WsdlBinding[] = [];
 
   // Find binding elements (could have wsdl: prefix like wsdl:binding or just binding)
@@ -228,9 +215,7 @@ function parseBindings(
     }
 
     const bindingData = definitions[key];
-    const bindingList = Array.isArray(bindingData)
-      ? bindingData
-      : [bindingData];
+    const bindingList = Array.isArray(bindingData) ? bindingData : [bindingData];
 
     for (const binding of bindingList) {
       if (!binding || typeof binding !== 'object') continue;
@@ -254,10 +239,7 @@ function parseBindings(
           bindingKey !== '@_name' &&
           bindingKey !== '@_type'
         ) {
-          const soapBinding = bindingObj[bindingKey] as Record<
-            string,
-            unknown
-          >;
+          const soapBinding = bindingObj[bindingKey] as Record<string, unknown>;
           style = soapBinding['@_style'] as string | undefined;
           transport = soapBinding['@_transport'] as string | undefined;
         }
@@ -282,9 +264,7 @@ function parseBindings(
 /**
  * Parse operations from binding element
  */
-function parseBindingOperations(
-  binding: Record<string, unknown>
-): WsdlOperation[] {
+function parseBindingOperations(binding: Record<string, unknown>): WsdlOperation[] {
   const operations: WsdlOperation[] = [];
 
   // Find operation elements (could be 'operation' or 'wsdl:operation' etc.)
@@ -311,10 +291,7 @@ function parseBindingOperations(
       let soapAction: string | undefined;
 
       for (const opKey of Object.keys(opObj)) {
-        if (
-          opKey.toLowerCase().includes('operation') &&
-          !opKey.startsWith('@_')
-        ) {
+        if (opKey.toLowerCase().includes('operation') && !opKey.startsWith('@_')) {
           const soapOp = opObj[opKey] as Record<string, unknown>;
           soapAction = soapOp['@_soapAction'] as string | undefined;
         }
@@ -333,9 +310,7 @@ function parseBindingOperations(
 /**
  * Parse services from WSDL definitions
  */
-function parseServices(
-  definitions: Record<string, unknown>
-): WsdlService[] {
+function parseServices(definitions: Record<string, unknown>): WsdlService[] {
   const services: WsdlService[] = [];
 
   // Find service elements (could be 'service' or 'wsdl:service' etc.)
@@ -348,9 +323,7 @@ function parseServices(
     if (keyLower !== 'service' && !keyLower.endsWith(':service')) continue;
 
     const serviceData = definitions[key];
-    const serviceList = Array.isArray(serviceData)
-      ? serviceData
-      : [serviceData];
+    const serviceList = Array.isArray(serviceData) ? serviceData : [serviceData];
 
     for (const service of serviceList) {
       if (!service || typeof service !== 'object') continue;
@@ -376,9 +349,7 @@ function parseServices(
 /**
  * Parse ports from service element
  */
-function parseServicePorts(
-  service: Record<string, unknown>
-): WsdlPort[] {
+function parseServicePorts(service: Record<string, unknown>): WsdlPort[] {
   const ports: WsdlPort[] = [];
 
   // Find port elements (could be 'port' or 'wsdl:port' etc.)
@@ -406,19 +377,14 @@ function parseServicePorts(
       let location = '';
 
       for (const portKey of Object.keys(portObj)) {
-        if (
-          portKey.toLowerCase().includes('address') &&
-          !portKey.startsWith('@_')
-        ) {
+        if (portKey.toLowerCase().includes('address') && !portKey.startsWith('@_')) {
           const address = portObj[portKey] as Record<string, unknown>;
           location = (address['@_location'] as string) || '';
         }
       }
 
       // Remove namespace prefix from binding
-      const bindingName = binding?.includes(':')
-        ? binding.split(':')[1]!
-        : binding;
+      const bindingName = binding?.includes(':') ? binding.split(':')[1]! : binding;
 
       ports.push({
         name,
@@ -525,19 +491,14 @@ export function getEndpointLocation(
 /**
  * Get list of service names from definition map
  */
-export function getServiceNames(
-  definitionMap: DefinitionServiceMap
-): string[] {
+export function getServiceNames(definitionMap: DefinitionServiceMap): string[] {
   return Array.from(definitionMap.map.keys());
 }
 
 /**
  * Get list of port names for a service
  */
-export function getPortNames(
-  definitionMap: DefinitionServiceMap,
-  serviceName: string
-): string[] {
+export function getPortNames(definitionMap: DefinitionServiceMap, serviceName: string): string[] {
   const serviceMap = definitionMap.map.get(serviceName);
   if (!serviceMap) return [];
 

@@ -251,9 +251,7 @@ export function eventLoggingMiddleware() {
 
       // Determine outcome from response status
       const outcome =
-        res.statusCode >= 200 && res.statusCode < 400
-          ? EventOutcome.SUCCESS
-          : EventOutcome.FAILURE;
+        res.statusCode >= 200 && res.statusCode < 400 ? EventOutcome.SUCCESS : EventOutcome.FAILURE;
 
       logOperation(operation, userId, ipAddress, outcome, req.authContext.parameterMap);
     });

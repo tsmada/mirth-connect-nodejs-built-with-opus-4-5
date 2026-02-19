@@ -2,10 +2,7 @@
  * CLI Dashboard Context
  */
 
-export {
-  DashboardProvider,
-  useDashboard,
-} from './DashboardContext.js';
+export { DashboardProvider, useDashboard } from './DashboardContext.js';
 
 export type {
   DashboardState,

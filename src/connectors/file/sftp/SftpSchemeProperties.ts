@@ -67,14 +67,10 @@ export function getDefaultSftpSchemeProperties(): SftpSchemeProperties {
  * Validates SFTP scheme properties
  * @throws Error if properties are invalid
  */
-export function validateSftpSchemeProperties(
-  props: SftpSchemeProperties
-): void {
+export function validateSftpSchemeProperties(props: SftpSchemeProperties): void {
   // At least one authentication method must be enabled
   if (!props.passwordAuth && !props.keyAuth) {
-    throw new Error(
-      'At least one authentication method (password or key) must be enabled'
-    );
+    throw new Error('At least one authentication method (password or key) must be enabled');
   }
 
   // If key auth is enabled, key file must be specified

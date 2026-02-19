@@ -32,9 +32,7 @@ serverLogRouter.use(authMiddleware({ required: true }));
 serverLogRouter.get('/', async (req: Request, res: Response) => {
   try {
     const fetchSize = parseInt(req.query.fetchSize as string) || 100;
-    const lastLogId = req.query.lastLogId
-      ? parseInt(req.query.lastLogId as string)
-      : undefined;
+    const lastLogId = req.query.lastLogId ? parseInt(req.query.lastLogId as string) : undefined;
     const levelStr = req.query.level as string | undefined;
     const category = req.query.category as string | undefined;
 

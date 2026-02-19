@@ -21,7 +21,12 @@ import {
   GlobalChannelMapStore,
   ConfigurationMap,
 } from '../userutil/MirthMap.js';
-import { XMLProxy, createXML, setDefaultXmlNamespace, getDefaultXmlNamespace } from '../e4x/XMLProxy.js';
+import {
+  XMLProxy,
+  createXML,
+  setDefaultXmlNamespace,
+  getDefaultXmlNamespace,
+} from '../e4x/XMLProxy.js';
 import { transpileE4X } from '../e4x/E4XTranspiler.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Message } from '../../model/Message.js';
@@ -157,7 +162,9 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     $cfg: ConfigurationMap.getInstance(),
 
     // Secrets map (if secrets manager is initialized)
-    ...(secretsFn ? { secretsMap: { get: secretsFn, containsKey: (k: string) => secretsFn!(k) !== undefined } } : {}),
+    ...(secretsFn
+      ? { secretsMap: { get: secretsFn, containsKey: (k: string) => secretsFn!(k) !== undefined } }
+      : {}),
 
     // XML utilities
     XMLProxy,
@@ -341,7 +348,7 @@ export function buildFilterTransformerScope(
 
   // Template and phase
   scope.template = template;
-  scope.phase = [phase];  // Array with one element, matching Java's String[] phase
+  scope.phase = [phase]; // Array with one element, matching Java's String[] phase
 
   // Inject destinationSet for source connector scripts
   if (context.metaDataId === 0 || context.metaDataId === undefined) {
@@ -437,9 +444,14 @@ export function buildResponseTransformerScope(
 
   // JRC-SBD-014: Wrap response in ImmutableResponse (Java: addResponse wraps in ImmutableResponse)
   // Scripts expect response.getNewMessageStatus() not response.getStatus()
-  const responseObj = response instanceof Response
-    ? response
-    : new Response({ status: response.status, statusMessage: response.statusMessage, error: response.error });
+  const responseObj =
+    response instanceof Response
+      ? response
+      : new Response({
+          status: response.status,
+          statusMessage: response.statusMessage,
+          error: response.error,
+        });
   scope.response = new ImmutableResponse(responseObj);
   scope.responseStatus = responseObj.getStatus();
   scope.responseStatusMessage = responseObj.getStatusMessage();
@@ -500,10 +512,7 @@ export function buildAttachmentScope(
  * modifications are automatically reflected. This function exists for
  * explicit sync operations or to copy from different map instances.
  */
-export function syncMapsToConnectorMessage(
-  scope: Scope,
-  connectorMessage: ConnectorMessage
-): void {
+export function syncMapsToConnectorMessage(scope: Scope, connectorMessage: ConnectorMessage): void {
   // Sync channel map
   const channelMap = scope.channelMap as ChannelMap | undefined;
   if (channelMap) {
@@ -598,11 +607,7 @@ export class ScopeBuilder {
    * Add connector message context
    */
   withConnectorMessage(connectorMessage: ConnectorMessage, rawContent?: string): this {
-    const connectorScope = buildConnectorMessageScope(
-      this.context,
-      connectorMessage,
-      rawContent
-    );
+    const connectorScope = buildConnectorMessageScope(this.context, connectorMessage, rawContent);
     this.scope = { ...this.scope, ...connectorScope };
     return this;
   }

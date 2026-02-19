@@ -187,17 +187,14 @@ export const Dashboard: FC<DashboardProps> = ({
 
   // Channel operations
   const handleChannelAction = useCallback(
-    async (
-      action: 'start' | 'stop' | 'pause' | 'deploy' | 'undeploy',
-      channelId?: string
-    ) => {
+    async (action: 'start' | 'stop' | 'pause' | 'deploy' | 'undeploy', channelId?: string) => {
       const targetIds = channelId
         ? [channelId]
         : selectedChannelIds.size > 0
-        ? Array.from(selectedChannelIds)
-        : selectedChannel
-        ? [selectedChannel.channelId]
-        : [];
+          ? Array.from(selectedChannelIds)
+          : selectedChannel
+            ? [selectedChannel.channelId]
+            : [];
 
       if (targetIds.length === 0) {
         showMessage('No channel selected', 'warning');
@@ -264,7 +261,15 @@ export const Dashboard: FC<DashboardProps> = ({
   useInput(
     (input, key) => {
       // Skip if in overlay mode
-      if (viewMode === 'help' || viewMode === 'details' || viewMode === 'search' || viewMode === 'traceInput' || viewMode === 'trace' || viewMode === 'messages' || viewMode === 'messageDetail') {
+      if (
+        viewMode === 'help' ||
+        viewMode === 'details' ||
+        viewMode === 'search' ||
+        viewMode === 'traceInput' ||
+        viewMode === 'trace' ||
+        viewMode === 'messages' ||
+        viewMode === 'messageDetail'
+      ) {
         return;
       }
 
@@ -311,7 +316,8 @@ export const Dashboard: FC<DashboardProps> = ({
       // Refresh
       else if (input === 'r' || input === 'R') {
         showMessage('Refreshing...', 'info');
-        channels.refresh()
+        channels
+          .refresh()
           .then(() => showMessage('Refreshed', 'success'))
           .catch((err) => showMessage(`Refresh failed: ${err.message}`, 'error'));
       }
@@ -499,10 +505,12 @@ export const Dashboard: FC<DashboardProps> = ({
       channelName: traceChannelName,
       onSubmit: (messageId: number) => {
         setViewMode('trace');
-        trace.execute(traceChannelId, messageId, {
-          includeContent: true,
-          maxContentLength: traceVerbose ? 2000 : 500,
-        }).catch(() => {});
+        trace
+          .execute(traceChannelId, messageId, {
+            includeContent: true,
+            maxContentLength: traceVerbose ? 2000 : 500,
+          })
+          .catch(() => {});
       },
       onCancel: () => {
         setTraceChannelId(null);

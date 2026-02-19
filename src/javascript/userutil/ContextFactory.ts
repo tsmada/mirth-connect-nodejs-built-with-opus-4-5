@@ -149,7 +149,5 @@ export function createContextFactory(
   resourceIds: Set<string>,
   isolatedCache?: Record<string, unknown>
 ): ContextFactory {
-  return new ContextFactory(
-    new DefaultContextFactoryDelegate(resourceIds, isolatedCache || null)
-  );
+  return new ContextFactory(new DefaultContextFactoryDelegate(resourceIds, isolatedCache || null));
 }

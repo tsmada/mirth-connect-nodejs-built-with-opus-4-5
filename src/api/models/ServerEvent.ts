@@ -112,7 +112,9 @@ export function attributesToObject(attributes: Map<string, string>): Record<stri
 /**
  * Convert plain object to attributes Map
  */
-export function objectToAttributes(obj: Record<string, string> | null | undefined): Map<string, string> {
+export function objectToAttributes(
+  obj: Record<string, string> | null | undefined
+): Map<string, string> {
   const map = new Map<string, string>();
   if (obj) {
     for (const [key, value] of Object.entries(obj)) {

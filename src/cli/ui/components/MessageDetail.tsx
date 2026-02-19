@@ -8,7 +8,7 @@
 
 import React, { FC, useState, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Message, ConnectorMessage, MessageContent, MessageStatus } from '../../types/index.js';
+import { Message, ConnectorMessage, MessageStatus } from '../../types/index.js';
 
 export interface MessageDetailProps {
   /** Basic message data (already loaded from list) */
@@ -84,7 +84,9 @@ export function getContentTypeLabel(key: number | string): string {
  * Sort connector messages by metaDataId.
  * Exported for testing.
  */
-export function sortConnectors(connectorMessages: Record<number, ConnectorMessage>): ConnectorMessage[] {
+export function sortConnectors(
+  connectorMessages: Record<number, ConnectorMessage>
+): ConnectorMessage[] {
   return Object.values(connectorMessages).sort((a, b) => a.metaDataId - b.metaDataId);
 }
 
@@ -133,7 +135,10 @@ export const MessageDetail: FC<MessageDetailProps> = ({
     [fullMessage]
   );
 
-  const clampedConnectorIndex = Math.min(selectedConnectorIndex, Math.max(0, connectors.length - 1));
+  const clampedConnectorIndex = Math.min(
+    selectedConnectorIndex,
+    Math.max(0, connectors.length - 1)
+  );
 
   useInput((input, key) => {
     if (key.escape) {
@@ -257,11 +262,7 @@ export const MessageDetail: FC<MessageDetailProps> = ({
       );
     }
 
-    return React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 1 },
-      ...elements
-    );
+    return React.createElement(Box, { flexDirection: 'column', marginTop: 1 }, ...elements);
   };
 
   const renderContentTab = () => {
@@ -315,7 +316,11 @@ export const MessageDetail: FC<MessageDetailProps> = ({
             { bold: isSelected, color: isSelected ? 'cyan' : 'white' },
             `[${conn.metaDataId}] ${conn.connectorName}`
           ),
-          React.createElement(Text, { color: statusColor }, ` ${STATUS_LABELS[conn.status] ?? conn.status}`)
+          React.createElement(
+            Text,
+            { color: statusColor },
+            ` ${STATUS_LABELS[conn.status] ?? conn.status}`
+          )
         )
       );
     }
@@ -342,7 +347,7 @@ export const MessageDetail: FC<MessageDetailProps> = ({
         );
       } else {
         for (const [typeKey, mc] of contentEntries) {
-          const content = mc as MessageContent;
+          const content = mc;
           const label = getContentTypeLabel(Number(typeKey) || typeKey);
           elements.push(
             React.createElement(
@@ -354,11 +359,7 @@ export const MessageDetail: FC<MessageDetailProps> = ({
                 React.createElement(Text, { color: 'cyan', bold: true }, `${label}:`),
                 React.createElement(Text, { color: 'gray' }, ` (${content.dataType})`)
               ),
-              React.createElement(
-                Text,
-                { color: 'white' },
-                truncateContent(content.content)
-              )
+              React.createElement(Text, { color: 'white' }, truncateContent(content.content))
             )
           );
         }
@@ -373,11 +374,7 @@ export const MessageDetail: FC<MessageDetailProps> = ({
       );
     }
 
-    return React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 1 },
-      ...elements
-    );
+    return React.createElement(Box, { flexDirection: 'column', marginTop: 1 }, ...elements);
   };
 
   return React.createElement(

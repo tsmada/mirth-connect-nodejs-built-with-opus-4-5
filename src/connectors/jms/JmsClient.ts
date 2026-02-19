@@ -121,16 +121,10 @@ export class JmsClient extends EventEmitter {
   private subscriptions = new Map<string, StompitSubscription>();
   private clientId: string;
 
-  constructor(
-    connectionConfig: JmsConnectionProperties,
-    channelId: string,
-    connectorName: string
-  ) {
+  constructor(connectionConfig: JmsConnectionProperties, channelId: string, connectorName: string) {
     super();
     this.connectionConfig = connectionConfig;
-    this.clientId =
-      connectionConfig.clientId ||
-      generateClientId(channelId, connectorName);
+    this.clientId = connectionConfig.clientId || generateClientId(channelId, connectorName);
   }
 
   /**
@@ -146,9 +140,7 @@ export class JmsClient extends EventEmitter {
     let client = JmsClient.connectionPool.get(connectionKey);
     if (!client) {
       if (JmsClient.connectionPool.size >= JmsClient.MAX_CONNECTIONS) {
-        throw new Error(
-          `Maximum number of JMS connections (${JmsClient.MAX_CONNECTIONS}) reached`
-        );
+        throw new Error(`Maximum number of JMS connections (${JmsClient.MAX_CONNECTIONS}) reached`);
       }
 
       client = new JmsClient(connectionConfig, channelId, connectorName);
@@ -238,9 +230,7 @@ export class JmsClient extends EventEmitter {
         : baseOptions;
 
       // Apply additional connection properties as extra options
-      for (const [key, value] of Object.entries(
-        this.connectionConfig.connectionProperties
-      )) {
+      for (const [key, value] of Object.entries(this.connectionConfig.connectionProperties)) {
         (connectOptions as unknown as Record<string, unknown>)[key] = value;
       }
 
@@ -368,9 +358,7 @@ export class JmsClient extends EventEmitter {
     const subscribeHeaders: SubscribeHeaders = {
       destination,
       id: subscriptionId,
-      ack: acknowledgeModeTodStompAck(
-        options.acknowledgeMode || AcknowledgeMode.CLIENT
-      ),
+      ack: acknowledgeModeTodStompAck(options.acknowledgeMode || AcknowledgeMode.CLIENT),
     };
 
     // Add selector if provided
@@ -380,8 +368,7 @@ export class JmsClient extends EventEmitter {
 
     // Add durable subscription headers for topics
     if (isTopic && options.durableSubscription) {
-      subscribeHeaders['activemq.subscriptionName'] =
-        options.subscriptionName || subscriptionId;
+      subscribeHeaders['activemq.subscriptionName'] = options.subscriptionName || subscriptionId;
       subscribeHeaders['durable'] = 'true';
     }
 
@@ -391,17 +378,14 @@ export class JmsClient extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
-      const subscription = this.connection!.subscribe(
-        subscribeHeaders,
-        (error, message) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          this.handleMessage(message, listener);
+      const subscription = this.connection!.subscribe(subscribeHeaders, (error, message) => {
+        if (error) {
+          reject(error);
+          return;
         }
-      );
+
+        this.handleMessage(message, listener);
+      });
 
       this.subscriptions.set(subscriptionId, subscription);
       resolve(subscriptionId);
@@ -411,10 +395,7 @@ export class JmsClient extends EventEmitter {
   /**
    * Handle incoming message from subscription
    */
-  private handleMessage(
-    message: StompitClient.Message,
-    listener: MessageListener
-  ): void {
+  private handleMessage(message: StompitClient.Message, listener: MessageListener): void {
     let body = '';
 
     message.on('data', (chunk: Buffer) => {

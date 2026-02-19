@@ -48,16 +48,14 @@ function getRootProgram(cmd: Command): Command {
  */
 function getGlobalOpts(cmd: Command): GlobalOptions {
   const root = getRootProgram(cmd);
-  return (root.opts() as GlobalOptions) || {};
+  return root.opts() || {};
 }
 
 /**
  * Register config commands
  */
 export function registerConfigCommands(program: Command): void {
-  const configCmd = program
-    .command('config')
-    .description('View or manage CLI configuration');
+  const configCmd = program.command('config').description('View or manage CLI configuration');
 
   // ==========================================================================
   // config (no args) - show all config
@@ -87,9 +85,7 @@ export function registerConfigCommands(program: Command): void {
       for (const [key, value] of Object.entries(config)) {
         const description = CONFIG_DESCRIPTIONS[key] || '';
         const displayValue =
-          key === 'sessionToken' && value
-            ? (value as string).slice(0, 20) + '...'
-            : value;
+          key === 'sessionToken' && value ? (value as string).slice(0, 20) + '...' : value;
 
         if (value !== undefined) {
           console.log(`  ${chalk.cyan(key)}: ${displayValue}`);

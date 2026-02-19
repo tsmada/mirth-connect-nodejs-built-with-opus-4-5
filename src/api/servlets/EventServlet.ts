@@ -25,10 +25,7 @@ import {
   getAllEvents,
   exportEventsToCSV,
 } from '../../db/EventDao.js';
-import {
-  parseEventFilter,
-  toServerEventResponse,
-} from '../models/ServerEvent.js';
+import { parseEventFilter, toServerEventResponse } from '../models/ServerEvent.js';
 import { authorize } from '../middleware/authorization.js';
 import {
   EVENT_GET,
@@ -122,7 +119,8 @@ eventRouter.get(
   authorize({ operation: EVENT_GET }),
   async (req: Request, res: Response) => {
     try {
-      const { eventId: eventIdStr } = req.params as unknown as EventIdParams; const eventId = parseInt(eventIdStr, 10);
+      const { eventId: eventIdStr } = req.params as unknown as EventIdParams;
+      const eventId = parseInt(eventIdStr, 10);
 
       if (isNaN(eventId)) {
         res.status(400).json({ error: 'Invalid event ID' });

@@ -5,11 +5,11 @@ import type { SecretValue, SecretsProvider } from '../types.js';
 export interface VaultConfig {
   addr: string;
   token?: string;
-  path?: string;          // KV v2 mount path, default 'secret/data/mirth'
+  path?: string; // KV v2 mount path, default 'secret/data/mirth'
   auth?: 'token' | 'approle' | 'kubernetes';
-  roleId?: string;        // AppRole
-  secretId?: string;      // AppRole
-  k8sRole?: string;       // Kubernetes auth
+  roleId?: string; // AppRole
+  secretId?: string; // AppRole
+  k8sRole?: string; // Kubernetes auth
 }
 
 export class VaultSecretsProvider implements SecretsProvider {
@@ -133,9 +133,13 @@ export class VaultSecretsProvider implements SecretsProvider {
 
   async set(key: string, value: string): Promise<void> {
     if (!this.http || !this.token) throw new Error('VaultSecretsProvider not initialized');
-    await this.http.post(`/v1/${this.config.path}/${key}`, {
-      data: { value },
-    }, { headers: this.headers() });
+    await this.http.post(
+      `/v1/${this.config.path}/${key}`,
+      {
+        data: { value },
+      },
+      { headers: this.headers() }
+    );
   }
 
   async delete(key: string): Promise<void> {

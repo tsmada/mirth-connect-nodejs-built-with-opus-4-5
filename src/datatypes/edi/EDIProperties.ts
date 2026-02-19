@@ -79,10 +79,7 @@ export function unescapeEDIDelimiter(str: string): string {
  * Position 104: subelement delimiter
  * Position 105: segment delimiter
  */
-export function detectX12Delimiters(
-  message: string,
-  defaults: EDIDelimiters
-): EDIDelimiters {
+export function detectX12Delimiters(message: string, defaults: EDIDelimiters): EDIDelimiters {
   // Check if this looks like an X12 message
   if (!message.startsWith('ISA') || message.length <= 105) {
     return defaults;

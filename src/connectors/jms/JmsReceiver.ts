@@ -135,11 +135,7 @@ export class JmsReceiver extends SourceConnector {
     const channelId = this.channel?.getId() ?? 'unknown';
 
     // Create JMS client during deploy (matches Java JmsReceiver.onDeploy())
-    this.jmsClient = JmsClient.getClient(
-      this.properties,
-      channelId,
-      this.name
-    );
+    this.jmsClient = JmsClient.getClient(this.properties, channelId, this.name);
 
     this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE);
   }
@@ -161,11 +157,7 @@ export class JmsReceiver extends SourceConnector {
       // if start() is called without prior onDeploy()
       if (!this.jmsClient) {
         const channelId = this.channel?.getId() ?? 'unknown';
-        this.jmsClient = JmsClient.getClient(
-          this.properties,
-          channelId,
-          this.name
-        );
+        this.jmsClient = JmsClient.getClient(this.properties, channelId, this.name);
       }
 
       // Set up event handlers
@@ -182,8 +174,7 @@ export class JmsReceiver extends SourceConnector {
       // CPC-JMS-001: Dispatch CONNECTED event after successful start (matches Java line 92)
       this.dispatchConnectionEvent(ConnectionStatusEventType.CONNECTED);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // CPC-JMS-008: Use reportError pattern instead of console.error
       this.reportError(
@@ -416,11 +407,7 @@ export class JmsReceiver extends SourceConnector {
    * Dispatches an error event for the dashboard and logs the error.
    * Matches Java: eventController.dispatchEvent(new ErrorEvent(...))
    */
-  private reportError(
-    errorMessage: string,
-    _messageId: number | undefined,
-    error: Error
-  ): void {
+  private reportError(errorMessage: string, _messageId: number | undefined, error: Error): void {
     const channelId = this.channel?.getId() ?? 'unknown';
     const channelName = this.channel?.getName() ?? 'unknown';
     // Log in format matching Java: "message (channel: name)"

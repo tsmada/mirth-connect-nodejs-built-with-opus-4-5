@@ -32,13 +32,21 @@ async function gracefulShutdown(): Promise<void> {
 
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
-  try { logger.warn('Received SIGINT, shutting down...'); } catch { console.error('Received SIGINT, shutting down...'); }
+  try {
+    logger.warn('Received SIGINT, shutting down...');
+  } catch {
+    console.error('Received SIGINT, shutting down...');
+  }
   await gracefulShutdown();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  try { logger.warn('Received SIGTERM, shutting down...'); } catch { console.error('Received SIGTERM, shutting down...'); }
+  try {
+    logger.warn('Received SIGTERM, shutting down...');
+  } catch {
+    console.error('Received SIGTERM, shutting down...');
+  }
   await gracefulShutdown();
   process.exit(0);
 });
@@ -46,7 +54,10 @@ process.on('SIGTERM', async () => {
 // Handle unhandled promise rejections
 process.on('unhandledRejection', async (reason: unknown) => {
   try {
-    logger.error('Unhandled promise rejection', reason instanceof Error ? reason : new Error(String(reason)));
+    logger.error(
+      'Unhandled promise rejection',
+      reason instanceof Error ? reason : new Error(String(reason))
+    );
   } catch {
     console.error('Unhandled promise rejection:', reason);
   }
@@ -72,7 +83,10 @@ async function main(): Promise<void> {
     await mirth.start();
   } catch (error) {
     try {
-      logger.error('Failed to start Mirth Connect:', error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        'Failed to start Mirth Connect:',
+        error instanceof Error ? error : new Error(String(error))
+      );
     } catch {
       console.error('Failed to start Mirth Connect:', error);
     }

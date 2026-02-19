@@ -121,10 +121,7 @@ export class ChannelController {
   /**
    * Create a new channel, preserving raw XML if provided
    */
-  static async createChannelWithXml(
-    channel: Partial<Channel>,
-    rawXml?: string
-  ): Promise<boolean> {
+  static async createChannelWithXml(channel: Partial<Channel>, rawXml?: string): Promise<boolean> {
     if (!channel.id || !channel.name) {
       return false;
     }
@@ -179,7 +176,10 @@ export class ChannelController {
     let channelXml: string;
     if (rawXml) {
       // Update revision in raw XML
-      channelXml = rawXml.replace(/<revision>\d+<\/revision>/, `<revision>${newRevision}</revision>`);
+      channelXml = rawXml.replace(
+        /<revision>\d+<\/revision>/,
+        `<revision>${newRevision}</revision>`
+      );
     } else {
       const updatedChannel = {
         ...this.parseChannelXml(existing.CHANNEL, existing.ID, existing.NAME, existing.REVISION),
@@ -189,12 +189,7 @@ export class ChannelController {
       channelXml = this.serializeChannelToXml(updatedChannel);
     }
 
-    await MirthDao.upsertChannel(
-      channelId,
-      channel.name || existing.NAME,
-      channelXml,
-      newRevision
-    );
+    await MirthDao.upsertChannel(channelId, channel.name || existing.NAME, channelXml, newRevision);
     return true;
   }
 
@@ -245,12 +240,7 @@ export class ChannelController {
   /**
    * Parse channel XML to Channel object
    */
-  private static parseChannelXml(
-    xml: string,
-    id: string,
-    name: string,
-    revision: number
-  ): Channel {
+  private static parseChannelXml(xml: string, id: string, name: string, revision: number): Channel {
     try {
       const parsed = xmlParser.parse(xml);
       const channelData = parsed.channel || parsed;
@@ -315,7 +305,8 @@ export class ChannelController {
       properties: (data.properties as Record<string, unknown>) || {},
       filter: data.filter as Channel['sourceConnector']['filter'],
       transformer: data.transformer as Channel['sourceConnector']['transformer'],
-      responseTransformer: data.responseTransformer as Channel['sourceConnector']['responseTransformer'],
+      responseTransformer:
+        data.responseTransformer as Channel['sourceConnector']['responseTransformer'],
       waitForPrevious: data.waitForPrevious as boolean,
       queueEnabled: data.queueEnabled as boolean,
     };
@@ -370,7 +361,8 @@ export class ChannelController {
       initialState: data.initialState as Channel['properties']['initialState'],
       storeAttachments: data.storeAttachments as boolean,
       metaDataColumns: data.metaDataColumns as Channel['properties']['metaDataColumns'],
-      attachmentProperties: data.attachmentProperties as Channel['properties']['attachmentProperties'],
+      attachmentProperties:
+        data.attachmentProperties as Channel['properties']['attachmentProperties'],
       resourceIds: data.resourceIds as Record<string, string>,
     };
   }

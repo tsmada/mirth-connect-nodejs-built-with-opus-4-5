@@ -34,8 +34,4 @@ export {
 } from './HL7v2ACKGenerator.js';
 
 // Metadata extraction
-export {
-  HL7v2MetaData,
-  extractMetaData,
-  extractMetaDataFromXML,
-} from './HL7v2MetaData.js';
+export { HL7v2MetaData, extractMetaData, extractMetaDataFromXML } from './HL7v2MetaData.js';

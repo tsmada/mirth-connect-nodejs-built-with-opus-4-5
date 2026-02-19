@@ -185,10 +185,7 @@ export class MessageBuilderStep {
   /**
    * Generate pre-script for iterator processing (not needed for Message Builder)
    */
-  getPreScript(
-    _loadFiles: boolean = false,
-    _ancestors: IteratorProperties[] = []
-  ): string | null {
+  getPreScript(_loadFiles: boolean = false, _ancestors: IteratorProperties[] = []): string | null {
     return null;
   }
 
@@ -196,10 +193,7 @@ export class MessageBuilderStep {
    * Generate iteration script for batch processing
    * This generates complex segment creation logic for both E4X and regular objects
    */
-  getIterationScript(
-    _loadFiles: boolean = false,
-    ancestors: IteratorProperties[] = []
-  ): string {
+  getIterationScript(_loadFiles: boolean = false, ancestors: IteratorProperties[] = []): string {
     const lines: string[] = [];
     const exprParts = getExpressionParts(this.messageSegment);
 
@@ -235,10 +229,16 @@ export class MessageBuilderStep {
               const baseSegmentName = baseSegmentPart.propertyName;
 
               if (!baseSegmentPart.isNumberLiteral && !indexVariables.has(baseSegmentName)) {
-                const baseSegment = exprParts.slice(0, currentIndex - 1).map((p) => p.value).join('');
+                const baseSegment = exprParts
+                  .slice(0, currentIndex - 1)
+                  .map((p) => p.value)
+                  .join('');
                 lines.push(`if (typeof(${baseSegment}[0]) == 'undefined') {`);
 
-                const targetSegment = exprParts.slice(0, currentIndex - 2).map((p) => p.value).join('');
+                const targetSegment = exprParts
+                  .slice(0, currentIndex - 2)
+                  .map((p) => p.value)
+                  .join('');
                 const quotedBaseName = quoteLiteral(baseSegmentName);
                 lines.push(`createSegment(${quotedBaseName}, ${targetSegment});`);
                 lines.push(`}`);
@@ -246,10 +246,16 @@ export class MessageBuilderStep {
             }
 
             // Create the segment at the index position
-            const wholeSegment = exprParts.slice(0, currentIndex + 1).map((p) => p.value).join('');
+            const wholeSegment = exprParts
+              .slice(0, currentIndex + 1)
+              .map((p) => p.value)
+              .join('');
             lines.push(`if (typeof(${wholeSegment}) == 'undefined') {`);
 
-            const targetSegment = exprParts.slice(0, currentIndex - 1).map((p) => p.value).join('');
+            const targetSegment = exprParts
+              .slice(0, currentIndex - 1)
+              .map((p) => p.value)
+              .join('');
             const quotedSegmentName = quoteLiteral(segmentName);
             lines.push(`createSegment(${quotedSegmentName}, ${targetSegment}, ${indexVar});`);
             lines.push(`}`);
@@ -269,7 +275,10 @@ export class MessageBuilderStep {
         if (currentIndex > 0) {
           // Iterate from first segment to current index
           for (let i = lastIndexChecked + 1; i <= currentIndex; i++) {
-            const targetSegment = exprParts.slice(0, i + 1).map((p) => p.value).join('');
+            const targetSegment = exprParts
+              .slice(0, i + 1)
+              .map((p) => p.value)
+              .join('');
             lines.push(`if (typeof(${targetSegment}) == 'undefined') {`);
 
             // If segment is before index var or number literal, create array
@@ -291,7 +300,10 @@ export class MessageBuilderStep {
 
       // Create remaining segments up to second-to-last
       for (let i = lastIndexChecked + 1; i <= exprParts.length - 2; i++) {
-        const targetSegment = exprParts.slice(0, i + 1).map((p) => p.value).join('');
+        const targetSegment = exprParts
+          .slice(0, i + 1)
+          .map((p) => p.value)
+          .join('');
         lines.push(`if (typeof(${targetSegment}) == 'undefined') {`);
 
         let value = '{}';
@@ -318,10 +330,7 @@ export class MessageBuilderStep {
   /**
    * Generate post-script for iterator processing (not needed for Message Builder)
    */
-  getPostScript(
-    _loadFiles: boolean = false,
-    _ancestors: IteratorProperties[] = []
-  ): string | null {
+  getPostScript(_loadFiles: boolean = false, _ancestors: IteratorProperties[] = []): string | null {
     return null;
   }
 

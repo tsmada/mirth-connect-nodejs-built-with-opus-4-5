@@ -46,11 +46,7 @@ export const Header: FC<HeaderProps> = ({
     React.createElement(
       Box,
       null,
-      React.createElement(
-        Text,
-        { color: statusDisplay.color },
-        `[${statusDisplay.text}]`
-      ),
+      React.createElement(Text, { color: statusDisplay.color }, `[${statusDisplay.text}]`),
       React.createElement(Text, { color: 'yellow' }, refreshIndicator)
     )
   );

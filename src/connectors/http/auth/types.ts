@@ -157,7 +157,10 @@ export interface HttpAuthenticator {
    * - CHALLENGED: send 401 with response headers (e.g., WWW-Authenticate)
    * - FAILURE: send 401 without challenge
    */
-  authenticate(request: RequestInfo, credentialsResolver?: CredentialsResolver): Promise<AuthenticationResult>;
+  authenticate(
+    request: RequestInfo,
+    credentialsResolver?: CredentialsResolver
+  ): Promise<AuthenticationResult>;
 
   /**
    * Called when the authenticator provider is being shut down (e.g., on channel undeploy).
@@ -245,7 +248,10 @@ export type CredentialsResolver = (variableName: string) => Map<string, string> 
 /**
  * Union of all authentication property types.
  */
-export type HttpAuthProperties = BasicAuthProperties | DigestAuthProperties | JavaScriptAuthProperties;
+export type HttpAuthProperties =
+  | BasicAuthProperties
+  | DigestAuthProperties
+  | JavaScriptAuthProperties;
 
 /**
  * Default Basic auth properties.

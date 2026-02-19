@@ -95,10 +95,7 @@ export class GitSyncService {
    * 3. Also store raw XML for round-trip assembly
    * 4. Stage, commit, and optionally push
    */
-  async pushToGit(
-    channelXmls: Map<string, string>,
-    options?: PushOptions
-  ): Promise<SyncResult> {
+  async pushToGit(channelXmls: Map<string, string>, options?: PushOptions): Promise<SyncResult> {
     const result: SyncResult = {
       direction: 'push',
       channelsAffected: [],
@@ -150,8 +147,8 @@ export class GitSyncService {
         return result;
       }
 
-      const message = options?.message
-        || `sync: export ${result.channelsAffected.length} channel(s)`;
+      const message =
+        options?.message || `sync: export ${result.channelsAffected.length} channel(s)`;
       result.commitHash = await this.gitClient.commit(message);
 
       if (options?.push) {
@@ -282,8 +279,8 @@ export class GitSyncService {
     try {
       const entries = await fs.readdir(channelsDir, { withFileTypes: true });
       return entries
-        .filter(e => e.isDirectory())
-        .map(e => e.name)
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
         .sort();
     } catch {
       return [];
@@ -360,11 +357,7 @@ export class GitSyncService {
       await fs.mkdir(scriptsDir, { recursive: true });
 
       for (const [name, script] of Object.entries(config.globalScripts)) {
-        await fs.writeFile(
-          path.join(scriptsDir, `${sanitizeName(name)}.js`),
-          script,
-          'utf-8'
-        );
+        await fs.writeFile(path.join(scriptsDir, `${sanitizeName(name)}.js`), script, 'utf-8');
       }
     }
   }
@@ -380,16 +373,12 @@ export class GitSyncService {
     relativePath: string,
     entries: FileTreeEntry[]
   ): Promise<void> {
-    const fullPath = relativePath
-      ? path.join(baseDir, relativePath)
-      : baseDir;
+    const fullPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
 
     const dirEntries = await fs.readdir(fullPath, { withFileTypes: true });
 
     for (const entry of dirEntries) {
-      const entryRelPath = relativePath
-        ? `${relativePath}/${entry.name}`
-        : entry.name;
+      const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
 
       if (entry.isDirectory()) {
         await this.readDirRecursive(baseDir, entryRelPath, entries);
@@ -397,10 +386,7 @@ export class GitSyncService {
         // Skip internal files
         if (entry.name === '.raw.xml') continue;
 
-        const content = await fs.readFile(
-          path.join(baseDir, entryRelPath),
-          'utf-8'
-        );
+        const content = await fs.readFile(path.join(baseDir, entryRelPath), 'utf-8');
 
         let type: 'yaml' | 'js' | 'xml';
         if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
@@ -422,10 +408,7 @@ export class GitSyncService {
    * This reads channel.yaml for metadata updates and script files for
    * content updates, then patches the decomposed channel in-place.
    */
-  private overlayFilesOnDecomposed(
-    decomposed: DecomposedChannel,
-    files: FileTreeEntry[]
-  ): void {
+  private overlayFilesOnDecomposed(decomposed: DecomposedChannel, files: FileTreeEntry[]): void {
     for (const file of files) {
       if (file.path === 'channel.yaml') {
         const meta = yaml.load(file.content) as Record<string, unknown>;
@@ -461,10 +444,7 @@ export class GitSyncService {
    * Overlay a transformer or filter script file onto the decomposed channel.
    * Matches by path pattern, e.g., source/transformer/step-0-set-field.js
    */
-  private overlayTransformerScript(
-    decomposed: DecomposedChannel,
-    file: FileTreeEntry
-  ): void {
+  private overlayTransformerScript(decomposed: DecomposedChannel, file: FileTreeEntry): void {
     if (file.type !== 'js') return;
 
     // Parse @sequence from header comments
@@ -478,13 +458,15 @@ export class GitSyncService {
     const parts = file.path.split('/');
 
     if (parts[0] === 'source' && parts[1] === 'transformer') {
-      const step = decomposed.source.transformer?.steps.find(s => s.sequenceNumber === seq);
+      const step = decomposed.source.transformer?.steps.find((s) => s.sequenceNumber === seq);
       if (step) step.script = scriptBody;
     } else if (parts[0] === 'source' && parts[1] === 'response-transformer') {
-      const step = decomposed.source.responseTransformer?.steps.find(s => s.sequenceNumber === seq);
+      const step = decomposed.source.responseTransformer?.steps.find(
+        (s) => s.sequenceNumber === seq
+      );
       if (step) step.script = scriptBody;
     } else if (parts[0] === 'source' && parts[1] === 'filter') {
-      const rule = decomposed.source.filter?.rules.find(r => r.sequenceNumber === seq);
+      const rule = decomposed.source.filter?.rules.find((r) => r.sequenceNumber === seq);
       if (rule) rule.script = scriptBody;
     } else if (parts[0] === 'destinations' && parts.length >= 4) {
       const destName = parts[1]!;
@@ -492,13 +474,13 @@ export class GitSyncService {
       if (!dest) return;
 
       if (parts[2] === 'transformer') {
-        const step = dest.transformer?.steps.find(s => s.sequenceNumber === seq);
+        const step = dest.transformer?.steps.find((s) => s.sequenceNumber === seq);
         if (step) step.script = scriptBody;
       } else if (parts[2] === 'response-transformer') {
-        const step = dest.responseTransformer?.steps.find(s => s.sequenceNumber === seq);
+        const step = dest.responseTransformer?.steps.find((s) => s.sequenceNumber === seq);
         if (step) step.script = scriptBody;
       } else if (parts[2] === 'filter') {
-        const rule = dest.filter?.rules.find(r => r.sequenceNumber === seq);
+        const rule = dest.filter?.rules.find((r) => r.sequenceNumber === seq);
         if (rule) rule.script = scriptBody;
       }
     }
@@ -508,15 +490,8 @@ export class GitSyncService {
    * Load environment-specific variables from an env file.
    * Looks for config/environments/{envName}.yaml in the repo.
    */
-  private async loadEnvironmentVariables(
-    environment: string
-  ): Promise<Record<string, string>> {
-    const envPath = path.join(
-      this.repoPath,
-      'config',
-      'environments',
-      `${environment}.yaml`
-    );
+  private async loadEnvironmentVariables(environment: string): Promise<Record<string, string>> {
+    const envPath = path.join(this.repoPath, 'config', 'environments', `${environment}.yaml`);
     try {
       const content = await fs.readFile(envPath, 'utf-8');
       const vars = yaml.load(content);

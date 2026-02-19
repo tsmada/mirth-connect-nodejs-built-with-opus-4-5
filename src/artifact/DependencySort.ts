@@ -149,7 +149,9 @@ export class DependencySort {
    * Uses DFS with color marking (white/gray/black).
    */
   static findCycles(graph: DependencyGraph): string[][] {
-    const WHITE = 0, GRAY = 1, BLACK = 2;
+    const WHITE = 0,
+      GRAY = 1,
+      BLACK = 2;
     const color = new Map<string, number>();
     const parent = new Map<string, string | null>();
     const cycles: string[][] = [];

@@ -6,7 +6,11 @@
  * inline in FileReceiver/FileDispatcher (they don't need a separate client class).
  */
 
-import { FileScheme, FileReceiverProperties, FileDispatcherProperties } from '../FileConnectorProperties.js';
+import {
+  FileScheme,
+  FileReceiverProperties,
+  FileDispatcherProperties,
+} from '../FileConnectorProperties.js';
 import { FileSystemClient } from './types.js';
 import { FtpClient } from './FtpClient.js';
 import { S3Client } from './S3Client.js';
@@ -29,7 +33,9 @@ export function createFileSystemClient(
 ): FileSystemClient {
   switch (scheme) {
     case FileScheme.FTP: {
-      const ftpSchemeProps = (props as unknown as Record<string, unknown>).ftpSchemeProperties as Partial<FtpSchemeProperties> | undefined;
+      const ftpSchemeProps = (props as unknown as Record<string, unknown>).ftpSchemeProperties as
+        | Partial<FtpSchemeProperties>
+        | undefined;
       return new FtpClient({
         host: props.host,
         port: props.port,
@@ -43,7 +49,9 @@ export function createFileSystemClient(
     }
 
     case FileScheme.S3: {
-      const s3SchemeProps = (props as unknown as Record<string, unknown>).s3SchemeProperties as Partial<S3SchemeProperties> | undefined;
+      const s3SchemeProps = (props as unknown as Record<string, unknown>).s3SchemeProperties as
+        | Partial<S3SchemeProperties>
+        | undefined;
       return new S3Client({
         host: props.host,
         username: props.username,
@@ -55,7 +63,9 @@ export function createFileSystemClient(
     }
 
     case FileScheme.SMB: {
-      const smbSchemeProps = (props as unknown as Record<string, unknown>).smbSchemeProperties as Partial<SmbSchemeProperties> | undefined;
+      const smbSchemeProps = (props as unknown as Record<string, unknown>).smbSchemeProperties as
+        | Partial<SmbSchemeProperties>
+        | undefined;
       return new SmbClient({
         host: props.host,
         username: props.username,

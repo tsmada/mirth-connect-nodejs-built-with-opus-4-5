@@ -34,7 +34,10 @@ function parseTimestampFormat(value: string | undefined): 'mirth' | 'iso' {
 
 function parseDebugComponents(value: string | undefined): string[] {
   if (!value || value.trim() === '') return [];
-  return value.split(',').map((c) => c.trim()).filter((c) => c.length > 0);
+  return value
+    .split(',')
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
 }
 
 /**

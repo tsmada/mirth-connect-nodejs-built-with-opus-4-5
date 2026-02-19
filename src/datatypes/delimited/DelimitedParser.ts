@@ -188,37 +188,21 @@ export class DelimitedParser {
         // Handle escape sequences
         if (this.properties.escapeWithDoubleQuote) {
           // Double quote escaping: "" -> "
-          if (
-            this.startsWithDelimiter(
-              input,
-              position,
-              this.quoteToken + this.quoteToken
-            )
-          ) {
+          if (this.startsWithDelimiter(input, position, this.quoteToken + this.quoteToken)) {
             value += this.quoteToken;
             position += this.quoteToken.length * 2;
             continue;
           }
         } else {
           // Escape token: \" -> "
-          if (
-            this.startsWithDelimiter(
-              input,
-              position,
-              this.quoteEscapeToken + this.quoteToken
-            )
-          ) {
+          if (this.startsWithDelimiter(input, position, this.quoteEscapeToken + this.quoteToken)) {
             value += this.quoteToken;
             position += this.quoteEscapeToken.length + this.quoteToken.length;
             continue;
           }
           // Escaped escape: \\ -> \
           if (
-            this.startsWithDelimiter(
-              input,
-              position,
-              this.quoteEscapeToken + this.quoteEscapeToken
-            )
+            this.startsWithDelimiter(input, position, this.quoteEscapeToken + this.quoteEscapeToken)
           ) {
             value += this.quoteEscapeToken;
             position += this.quoteEscapeToken.length * 2;
@@ -252,11 +236,7 @@ export class DelimitedParser {
   /**
    * Check if input starts with delimiter at given position
    */
-  private startsWithDelimiter(
-    input: string,
-    position: number,
-    delimiter: string
-  ): boolean {
+  private startsWithDelimiter(input: string, position: number, delimiter: string): boolean {
     if (position + delimiter.length > input.length) {
       return false;
     }
@@ -273,9 +253,7 @@ export class DelimitedParser {
       const record = records[rowIndex];
       if (!record) continue;
 
-      const rowElement = this.properties.numberedRows
-        ? `row${rowIndex + 1}`
-        : 'row';
+      const rowElement = this.properties.numberedRows ? `row${rowIndex + 1}` : 'row';
       xml += `<${rowElement}>`;
 
       for (let colIndex = 0; colIndex < record.length; colIndex++) {
@@ -295,10 +273,7 @@ export class DelimitedParser {
    * Get column name for given index
    */
   private getColumnName(index: number): string {
-    if (
-      this.properties.columnNames &&
-      index < this.properties.columnNames.length
-    ) {
+    if (this.properties.columnNames && index < this.properties.columnNames.length) {
       return this.properties.columnNames[index]!;
     }
     return `column${index + 1}`;

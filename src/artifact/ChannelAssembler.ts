@@ -40,14 +40,9 @@ export function assemble(decomposed: DecomposedChannel, options?: AssembleOption
     trimValues: false,
     processEntities: false,
     isArray: (name: string) => {
-      return [
-        'connector',
-        'entry',
-        'string',
-        'rule',
-        'metaDataColumn',
-        'channelTag',
-      ].includes(name);
+      return ['connector', 'entry', 'string', 'rule', 'metaDataColumn', 'channelTag'].includes(
+        name
+      );
     },
   });
 
@@ -158,10 +153,7 @@ function injectConnector(
 
   // Restore transformer
   if (connector.transformer) {
-    injectTransformer(
-      connectorXml.transformer as Record<string, unknown>,
-      connector.transformer
-    );
+    injectTransformer(connectorXml.transformer as Record<string, unknown>, connector.transformer);
   }
 
   // Restore response transformer
@@ -174,10 +166,7 @@ function injectConnector(
 
   // Restore filter
   if (connector.filter) {
-    injectFilter(
-      connectorXml.filter as Record<string, unknown>,
-      connector.filter
-    );
+    injectFilter(connectorXml.filter as Record<string, unknown>, connector.filter);
   }
 }
 
@@ -222,10 +211,7 @@ function injectTransformer(
   // the originals to maintain exact attribute fidelity (@_class, @_version).
 }
 
-function injectFilter(
-  filterXml: Record<string, unknown>,
-  filter: FilterData
-): void {
+function injectFilter(filterXml: Record<string, unknown>, filter: FilterData): void {
   if (!filterXml) return;
 
   if (filter.rules.length > 0) {
@@ -264,21 +250,17 @@ function injectDestinations(
 ): void {
   if (!destConnectors) return;
 
-  let connectors = (destConnectors as Record<string, unknown>).connector;
+  let connectors = destConnectors.connector;
   if (!connectors) return;
   if (!Array.isArray(connectors)) {
     connectors = [connectors];
-    (destConnectors as Record<string, unknown>).connector = connectors;
+    destConnectors.connector = connectors;
   }
 
   const destEntries = Array.from(destinations.values());
 
   for (let i = 0; i < (connectors as unknown[]).length && i < destEntries.length; i++) {
-    injectConnector(
-      (connectors as Record<string, unknown>[])[i]!,
-      destEntries[i]!,
-      options
-    );
+    injectConnector((connectors as Record<string, unknown>[])[i]!, destEntries[i]!, options);
   }
 }
 
@@ -298,12 +280,15 @@ function resolveVariables(
 
 function resolveValue(value: unknown, variables: Record<string, string>): unknown {
   if (typeof value === 'string') {
-    return value.replace(/\$\{([^}:]+)(?::([^}]*))?\}/g, (_match, varName: string, defaultVal: string) => {
-      return variables[varName] ?? defaultVal ?? _match;
-    });
+    return value.replace(
+      /\$\{([^}:]+)(?::([^}]*))?\}/g,
+      (_match, varName: string, defaultVal: string) => {
+        return variables[varName] ?? defaultVal ?? _match;
+      }
+    );
   }
   if (Array.isArray(value)) {
-    return value.map(v => resolveValue(v, variables));
+    return value.map((v) => resolveValue(v, variables));
   }
   if (value && typeof value === 'object') {
     return resolveVariables(value as Record<string, unknown>, variables);

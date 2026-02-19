@@ -29,8 +29,8 @@ registerComponent('api', 'REST API server');
 const logger = getLogger('api');
 
 // In-memory cache for code templates
-let codeTemplateCache: Map<string, CodeTemplate> = new Map();
-let libraryCache: Map<string, CodeTemplateLibrary> = new Map();
+const codeTemplateCache: Map<string, CodeTemplate> = new Map();
+const libraryCache: Map<string, CodeTemplateLibrary> = new Map();
 let cacheInitialized = false;
 
 const xmlParser = new XMLParser({
@@ -323,13 +323,23 @@ export async function updateCodeTemplateLibraries(
         template.lastModified = new Date();
 
         const templateXml = serializeCodeTemplate(template);
-        await MirthDao.upsertCodeTemplate(template.id, template.name, templateXml, template.revision);
+        await MirthDao.upsertCodeTemplate(
+          template.id,
+          template.name,
+          templateXml,
+          template.revision
+        );
         codeTemplateCache.set(template.id, template);
       }
     }
 
     const libraryXml = serializeLibrary(library);
-    await MirthDao.upsertCodeTemplateLibrary(library.id, library.name, libraryXml, library.revision);
+    await MirthDao.upsertCodeTemplateLibrary(
+      library.id,
+      library.name,
+      libraryXml,
+      library.revision
+    );
     libraryCache.set(library.id, library);
   }
 
@@ -408,7 +418,12 @@ export async function updateLibrariesAndTemplates(
     library.lastModified = new Date();
 
     const libraryXml = serializeLibrary(library);
-    await MirthDao.upsertCodeTemplateLibrary(library.id, library.name, libraryXml, library.revision);
+    await MirthDao.upsertCodeTemplateLibrary(
+      library.id,
+      library.name,
+      libraryXml,
+      library.revision
+    );
     libraryCache.set(library.id, library);
     result.updatedLibraries.push(library);
   }
@@ -448,9 +463,7 @@ export async function getCodeTemplateScripts(
  * Context filtering is skipped because ScriptBuilder includes templates uniformly
  * across all generated script types.
  */
-export async function getAllCodeTemplateScriptsForChannel(
-  channelId: string
-): Promise<string[]> {
+export async function getAllCodeTemplateScriptsForChannel(channelId: string): Promise<string[]> {
   await initializeCache();
 
   const scripts: string[] = [];

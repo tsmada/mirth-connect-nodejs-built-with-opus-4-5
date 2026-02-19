@@ -7,12 +7,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
-import {
-  sendMLLP,
-  sendHTTP,
-  readMessage,
-  parseHostPort,
-} from '../lib/MessageSender.js';
+import { sendMLLP, sendHTTP, readMessage, parseHostPort } from '../lib/MessageSender.js';
 import { OutputFormatter, formatDuration } from '../lib/OutputFormatter.js';
 import { GlobalOptions } from '../types/index.js';
 
@@ -20,9 +15,7 @@ import { GlobalOptions } from '../types/index.js';
  * Register send commands
  */
 export function registerSendCommands(program: Command): void {
-  const sendCmd = program
-    .command('send')
-    .description('Send messages to endpoints');
+  const sendCmd = program.command('send').description('Send messages to endpoints');
 
   // ==========================================================================
   // send mllp <host:port> <message|@file>
@@ -96,7 +89,12 @@ export function registerSendCommands(program: Command): void {
     .description('Send a message via HTTP')
     .option('-m, --method <method>', 'HTTP method', 'POST')
     .option('-c, --content-type <type>', 'Content-Type header', 'text/plain')
-    .option('-H, --header <header>', 'Additional header (format: key:value)', (v, prev: string[]) => [...prev, v], [])
+    .option(
+      '-H, --header <header>',
+      'Additional header (format: key:value)',
+      (v, prev: string[]) => [...prev, v],
+      []
+    )
     .option('-t, --timeout <ms>', 'Request timeout in milliseconds', '30000')
     .option('-r, --raw', 'Show raw response')
     .action(async (url: string, message: string, options, cmd) => {
@@ -189,9 +187,18 @@ export function registerSendCommands(program: Command): void {
       // Default test ADT message if none provided
       const defaultMessage = [
         'MSH|^~\\&|SENDING_APP|SENDING_FAC|RECEIVING_APP|RECEIVING_FAC|' +
-          new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14) +
-          '||ADT^A01|' + Date.now() + '|P|2.5.1',
-        'EVN|A01|' + new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14),
+          new Date()
+            .toISOString()
+            .replace(/[-:T.Z]/g, '')
+            .slice(0, 14) +
+          '||ADT^A01|' +
+          Date.now() +
+          '|P|2.5.1',
+        'EVN|A01|' +
+          new Date()
+            .toISOString()
+            .replace(/[-:T.Z]/g, '')
+            .slice(0, 14),
         'PID|1||123456^^^MRN||Doe^John^Q||19800101|M|||123 Main St^^City^ST^12345||555-123-4567',
         'PV1|1|I|WARD^ROOM^BED',
       ].join('\r');

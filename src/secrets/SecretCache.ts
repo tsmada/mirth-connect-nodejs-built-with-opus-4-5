@@ -7,8 +7,8 @@ import type { SecretValue } from './types.js';
 
 interface CacheEntry {
   secret: SecretValue;
-  encryptedValue?: string;   // if encryption enabled, value stored encrypted
-  expiresAt: number;         // Date.now() + ttl
+  encryptedValue?: string; // if encryption enabled, value stored encrypted
+  expiresAt: number; // Date.now() + ttl
 }
 
 export interface CacheStats {

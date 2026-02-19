@@ -160,9 +160,7 @@ export class VMRouter {
     } else if (engineController) {
       this.engineCtrl = engineController;
     } else {
-      throw new Error(
-        'No engine controller available. Call setEngineController() during startup.'
-      );
+      throw new Error('No engine controller available. Call setEngineController() during startup.');
     }
   }
 

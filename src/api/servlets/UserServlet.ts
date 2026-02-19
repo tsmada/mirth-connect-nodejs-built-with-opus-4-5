@@ -7,12 +7,7 @@
 
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
-import {
-  User,
-  LoginStatus,
-  LoginStatusType,
-  createLoginStatus,
-} from '../models/User.js';
+import { User, LoginStatus, LoginStatusType, createLoginStatus } from '../models/User.js';
 import {
   authMiddleware,
   createSession,
@@ -50,7 +45,10 @@ const loginLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too Many Requests', message: 'Too many login attempts. Please try again later.' },
+  message: {
+    error: 'Too Many Requests',
+    message: 'Too many login attempts. Please try again later.',
+  },
 });
 
 /**
@@ -138,336 +136,405 @@ userRouter.post('/_login', loginLimiter, async (req: Request, res: Response) => 
  * POST /users/_logout
  * Logout current session
  */
-userRouter.post('/_logout', authMiddleware({ required: false }), async (req: Request, res: Response) => {
-  try {
-    if (req.session) {
-      // Update login status in database
-      await MirthDao.updatePersonLoginStatus(req.session.userId, false);
-      await destroySession(req.session.id);
+userRouter.post(
+  '/_logout',
+  authMiddleware({ required: false }),
+  async (req: Request, res: Response) => {
+    try {
+      if (req.session) {
+        // Update login status in database
+        await MirthDao.updatePersonLoginStatus(req.session.userId, false);
+        await destroySession(req.session.id);
+      }
+      clearSessionCookie(res);
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Logout error', error as Error);
+      res.status(500).json({ error: 'An error occurred during logout' });
     }
-    clearSessionCookie(res);
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Logout error', error as Error);
-    res.status(500).json({ error: 'An error occurred during logout' });
   }
-});
+);
 
 /**
  * GET /users
  * Get all users
  */
-userRouter.get('/', authMiddleware({ required: true }), authorize({ operation: USER_GET_ALL }), async (_req: Request, res: Response) => {
-  try {
-    const rows = await MirthDao.getAllPersons();
-    const users: User[] = rows.map(personRowToUser);
-    res.sendData(users);
-  } catch (error) {
-    logger.error('Get users error', error as Error);
-    res.status(500).json({ error: 'Failed to retrieve users' });
+userRouter.get(
+  '/',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_GET_ALL }),
+  async (_req: Request, res: Response) => {
+    try {
+      const rows = await MirthDao.getAllPersons();
+      const users: User[] = rows.map(personRowToUser);
+      res.sendData(users);
+    } catch (error) {
+      logger.error('Get users error', error as Error);
+      res.status(500).json({ error: 'Failed to retrieve users' });
+    }
   }
-});
+);
 
 /**
  * GET /users/current
  * Get current logged in user
  */
-userRouter.get('/current', authMiddleware({ required: true }), authorize({ operation: USER_GET, dontCheckAuthorized: true }), (req: Request, res: Response) => {
-  if (req.user) {
-    res.sendData(req.user);
-  } else {
-    res.status(401).json({ error: 'Not authenticated' });
+userRouter.get(
+  '/current',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_GET, dontCheckAuthorized: true }),
+  (req: Request, res: Response) => {
+    if (req.user) {
+      res.sendData(req.user);
+    } else {
+      res.status(401).json({ error: 'Not authenticated' });
+    }
   }
-});
+);
 
 /**
  * GET /users/:userIdOrName
  * Get user by ID or username
  */
-userRouter.get('/:userIdOrName', authMiddleware({ required: true }), authorize({ operation: USER_GET }), async (req: Request, res: Response) => {
-  try {
-    const userIdOrName = req.params.userIdOrName as string;
-    let personRow;
+userRouter.get(
+  '/:userIdOrName',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_GET }),
+  async (req: Request, res: Response) => {
+    try {
+      const userIdOrName = req.params.userIdOrName as string;
+      let personRow;
 
-    // Check if it's a numeric ID
-    const userId = parseInt(userIdOrName, 10);
-    if (!isNaN(userId)) {
-      personRow = await MirthDao.getPersonById(userId);
-    } else {
-      personRow = await MirthDao.getPersonByUsername(userIdOrName);
+      // Check if it's a numeric ID
+      const userId = parseInt(userIdOrName, 10);
+      if (!isNaN(userId)) {
+        personRow = await MirthDao.getPersonById(userId);
+      } else {
+        personRow = await MirthDao.getPersonByUsername(userIdOrName);
+      }
+
+      if (!personRow) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const user = personRowToUser(personRow);
+      res.sendData(user);
+    } catch (error) {
+      logger.error('Get user error', error as Error);
+      res.status(500).json({ error: 'Failed to retrieve user' });
     }
-
-    if (!personRow) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
-
-    const user = personRowToUser(personRow);
-    res.sendData(user);
-  } catch (error) {
-    logger.error('Get user error', error as Error);
-    res.status(500).json({ error: 'Failed to retrieve user' });
   }
-});
+);
 
 /**
  * POST /users
  * Create a new user
  */
-userRouter.post('/', authMiddleware({ required: true }), authorize({ operation: USER_CREATE }), async (req: Request, res: Response) => {
-  try {
-    const userData = req.body;
+userRouter.post(
+  '/',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_CREATE }),
+  async (req: Request, res: Response) => {
+    try {
+      const userData = req.body;
 
-    if (!userData.username) {
-      res.status(400).json({ error: 'Username is required' });
-      return;
+      if (!userData.username) {
+        res.status(400).json({ error: 'Username is required' });
+        return;
+      }
+
+      // Check if user already exists
+      const existing = await MirthDao.getPersonByUsername(userData.username);
+      if (existing) {
+        res.status(409).json({ error: 'User already exists' });
+        return;
+      }
+
+      // Hash password
+      const hashedPassword = hashPassword(userData.password || 'admin');
+
+      // Create user in database
+      await MirthDao.createPerson({
+        username: userData.username,
+        password: hashedPassword,
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || '',
+        organization: userData.organization || '',
+        email: userData.email || '',
+        phoneNumber: userData.phoneNumber || '',
+        description: userData.description || '',
+        industry: userData.industry || '',
+      });
+
+      res.status(201).end();
+    } catch (error) {
+      logger.error('Create user error', error as Error);
+      res.status(500).json({ error: 'Failed to create user' });
     }
-
-    // Check if user already exists
-    const existing = await MirthDao.getPersonByUsername(userData.username);
-    if (existing) {
-      res.status(409).json({ error: 'User already exists' });
-      return;
-    }
-
-    // Hash password
-    const hashedPassword = hashPassword(userData.password || 'admin');
-
-    // Create user in database
-    await MirthDao.createPerson({
-      username: userData.username,
-      password: hashedPassword,
-      firstName: userData.firstName || '',
-      lastName: userData.lastName || '',
-      organization: userData.organization || '',
-      email: userData.email || '',
-      phoneNumber: userData.phoneNumber || '',
-      description: userData.description || '',
-      industry: userData.industry || '',
-    });
-
-    res.status(201).end();
-  } catch (error) {
-    logger.error('Create user error', error as Error);
-    res.status(500).json({ error: 'Failed to create user' });
   }
-});
+);
 
 /**
  * PUT /users/:userId
  * Update a user
  */
-userRouter.put('/:userId', authMiddleware({ required: true }), authorize({ operation: USER_UPDATE, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const userData = req.body;
+userRouter.put(
+  '/:userId',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_UPDATE, checkAuthorizedUserId: 'userId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const userData = req.body;
 
-    const existing = await MirthDao.getPersonById(userId);
-    if (!existing) {
-      res.status(404).json({ error: 'User not found' });
-      return;
+      const existing = await MirthDao.getPersonById(userId);
+      if (!existing) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      await MirthDao.updatePerson(userId, {
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        organization: userData.organization,
+        email: userData.email,
+        phoneNumber: userData.phoneNumber,
+        description: userData.description,
+        industry: userData.industry,
+      });
+
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Update user error', error as Error);
+      res.status(500).json({ error: 'Failed to update user' });
     }
-
-    await MirthDao.updatePerson(userId, {
-      firstName: userData.firstName,
-      lastName: userData.lastName,
-      organization: userData.organization,
-      email: userData.email,
-      phoneNumber: userData.phoneNumber,
-      description: userData.description,
-      industry: userData.industry,
-    });
-
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Update user error', error as Error);
-    res.status(500).json({ error: 'Failed to update user' });
   }
-});
+);
 
 /**
  * DELETE /users/:userId
  * Delete a user
  */
-userRouter.delete('/:userId', authMiddleware({ required: true }), authorize({ operation: USER_REMOVE }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
+userRouter.delete(
+  '/:userId',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_REMOVE }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
 
-    const existing = await MirthDao.getPersonById(userId);
-    if (!existing) {
-      res.status(404).json({ error: 'User not found' });
-      return;
+      const existing = await MirthDao.getPersonById(userId);
+      if (!existing) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      await MirthDao.deletePerson(userId);
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Delete user error', error as Error);
+      res.status(500).json({ error: 'Failed to delete user' });
     }
-
-    await MirthDao.deletePerson(userId);
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Delete user error', error as Error);
-    res.status(500).json({ error: 'Failed to delete user' });
   }
-});
+);
 
 /**
  * GET /users/:userId/loggedIn
  * Check if user is logged in
  */
-userRouter.get('/:userId/loggedIn', authMiddleware({ required: true }), authorize({ operation: USER_IS_LOGGED_IN }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const loggedIn = await isUserLoggedIn(userId);
-    res.sendData(loggedIn);
-  } catch (error) {
-    logger.error('Check logged in error', error as Error);
-    res.status(500).json({ error: 'Failed to check login status' });
+userRouter.get(
+  '/:userId/loggedIn',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_IS_LOGGED_IN }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const loggedIn = await isUserLoggedIn(userId);
+      res.sendData(loggedIn);
+    } catch (error) {
+      logger.error('Check logged in error', error as Error);
+      res.status(500).json({ error: 'Failed to check login status' });
+    }
   }
-});
+);
 
 /**
  * PUT /users/:userId/password
  * Update user password
  */
-userRouter.put('/:userId/password', authMiddleware({ required: true }), authorize({ operation: USER_UPDATE_PASSWORD, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const newPassword = typeof req.body === 'string' ? req.body : req.body.password;
+userRouter.put(
+  '/:userId/password',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_UPDATE_PASSWORD, checkAuthorizedUserId: 'userId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const newPassword = typeof req.body === 'string' ? req.body : req.body.password;
 
-    if (!newPassword) {
-      res.status(400).json({ error: 'Password is required' });
-      return;
+      if (!newPassword) {
+        res.status(400).json({ error: 'Password is required' });
+        return;
+      }
+
+      const existing = await MirthDao.getPersonById(userId);
+      if (!existing) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      // Check password requirements
+      const requirements: string[] = [];
+      if (newPassword.length < 8) {
+        requirements.push('Password must be at least 8 characters');
+      }
+
+      if (requirements.length > 0) {
+        res.sendData(requirements, 400);
+        return;
+      }
+
+      // Generate hash (Mirth 3.x uses SHA256 without salt)
+      const hashedPassword = hashPassword(newPassword);
+
+      await MirthDao.updatePersonPassword(userId, hashedPassword);
+      res.sendData([]);
+    } catch (error) {
+      logger.error('Update password error', error as Error);
+      res.status(500).json({ error: 'Failed to update password' });
     }
-
-    const existing = await MirthDao.getPersonById(userId);
-    if (!existing) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
-
-    // Check password requirements
-    const requirements: string[] = [];
-    if (newPassword.length < 8) {
-      requirements.push('Password must be at least 8 characters');
-    }
-
-    if (requirements.length > 0) {
-      res.sendData(requirements, 400);
-      return;
-    }
-
-    // Generate hash (Mirth 3.x uses SHA256 without salt)
-    const hashedPassword = hashPassword(newPassword);
-
-    await MirthDao.updatePersonPassword(userId, hashedPassword);
-    res.sendData([]);
-  } catch (error) {
-    logger.error('Update password error', error as Error);
-    res.status(500).json({ error: 'Failed to update password' });
   }
-});
+);
 
 /**
  * POST /users/_checkPassword
  * Check password against requirements
  */
-userRouter.post('/_checkPassword', authMiddleware({ required: true }), authorize({ operation: USER_CHECK_PASSWORD }), (req: Request, res: Response) => {
-  const password = typeof req.body === 'string' ? req.body : req.body.password;
-  const requirements: string[] = [];
+userRouter.post(
+  '/_checkPassword',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_CHECK_PASSWORD }),
+  (req: Request, res: Response) => {
+    const password = typeof req.body === 'string' ? req.body : req.body.password;
+    const requirements: string[] = [];
 
-  if (!password || password.length < 8) {
-    requirements.push('Password must be at least 8 characters');
+    if (!password || password.length < 8) {
+      requirements.push('Password must be at least 8 characters');
+    }
+
+    res.sendData(requirements);
   }
-
-  res.sendData(requirements);
-});
+);
 
 /**
  * GET /users/:userId/preferences/:name
  * Get a single preference by name
  */
-userRouter.get('/:userId/preferences/:name', authMiddleware({ required: true }), authorize({ operation: USER_GET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const name = req.params.name as string;
+userRouter.get(
+  '/:userId/preferences/:name',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_GET_PREFERENCES, checkAuthorizedUserId: 'userId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const name = req.params.name as string;
 
-    const prefs = await MirthDao.getPersonPreferences(userId);
-    const value = prefs[name];
+      const prefs = await MirthDao.getPersonPreferences(userId);
+      const value = prefs[name];
 
-    if (value === undefined) {
-      res.status(404).json({ error: 'Preference not found' });
-      return;
+      if (value === undefined) {
+        res.status(404).json({ error: 'Preference not found' });
+        return;
+      }
+
+      res.type('text/plain').send(value);
+    } catch (error) {
+      logger.error('Get preference error', error as Error);
+      res.status(500).json({ error: 'Failed to get preference' });
     }
-
-    res.type('text/plain').send(value);
-  } catch (error) {
-    logger.error('Get preference error', error as Error);
-    res.status(500).json({ error: 'Failed to get preference' });
   }
-});
+);
 
 /**
  * PUT /users/:userId/preferences/:name
  * Set a single preference by name
  */
-userRouter.put('/:userId/preferences/:name', authMiddleware({ required: true }), authorize({ operation: USER_SET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const name = req.params.name as string;
-    const value = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+userRouter.put(
+  '/:userId/preferences/:name',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_SET_PREFERENCES, checkAuthorizedUserId: 'userId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const name = req.params.name as string;
+      const value = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
 
-    // Get existing preferences and update the single value
-    const prefs = await MirthDao.getPersonPreferences(userId);
-    prefs[name] = value;
-    await MirthDao.setPersonPreferences(userId, prefs);
+      // Get existing preferences and update the single value
+      const prefs = await MirthDao.getPersonPreferences(userId);
+      prefs[name] = value;
+      await MirthDao.setPersonPreferences(userId, prefs);
 
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Set preference error', error as Error);
-    res.status(500).json({ error: 'Failed to set preference' });
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Set preference error', error as Error);
+      res.status(500).json({ error: 'Failed to set preference' });
+    }
   }
-});
+);
 
 /**
  * GET /users/:userId/preferences
  * Get user preferences
  */
-userRouter.get('/:userId/preferences', authMiddleware({ required: true }), authorize({ operation: USER_GET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const nameFilter = req.query.name;
+userRouter.get(
+  '/:userId/preferences',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_GET_PREFERENCES, checkAuthorizedUserId: 'userId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const nameFilter = req.query.name;
 
-    const prefs = await MirthDao.getPersonPreferences(userId);
+      const prefs = await MirthDao.getPersonPreferences(userId);
 
-    // Filter by name if specified
-    if (nameFilter && typeof nameFilter === 'string') {
-      const filtered: Record<string, string> = {};
-      if (prefs[nameFilter]) {
-        filtered[nameFilter] = prefs[nameFilter];
+      // Filter by name if specified
+      if (nameFilter && typeof nameFilter === 'string') {
+        const filtered: Record<string, string> = {};
+        if (prefs[nameFilter]) {
+          filtered[nameFilter] = prefs[nameFilter];
+        }
+        res.sendData(filtered);
+      } else {
+        res.sendData(prefs);
       }
-      res.sendData(filtered);
-    } else {
-      res.sendData(prefs);
+    } catch (error) {
+      logger.error('Get preferences error', error as Error);
+      res.status(500).json({ error: 'Failed to get preferences' });
     }
-  } catch (error) {
-    logger.error('Get preferences error', error as Error);
-    res.status(500).json({ error: 'Failed to get preferences' });
   }
-});
+);
 
 /**
  * PUT /users/:userId/preferences
  * Update user preferences
  */
-userRouter.put('/:userId/preferences', authMiddleware({ required: true }), authorize({ operation: USER_SET_PREFERENCES, checkAuthorizedUserId: 'userId' }), async (req: Request, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId as string, 10);
-    const preferences = req.body;
+userRouter.put(
+  '/:userId/preferences',
+  authMiddleware({ required: true }),
+  authorize({ operation: USER_SET_PREFERENCES, checkAuthorizedUserId: 'userId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string, 10);
+      const preferences = req.body;
 
-    await MirthDao.setPersonPreferences(userId, preferences);
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Set preferences error', error as Error);
-    res.status(500).json({ error: 'Failed to set preferences' });
+      await MirthDao.setPersonPreferences(userId, preferences);
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Set preferences error', error as Error);
+      res.status(500).json({ error: 'Failed to set preferences' });
+    }
   }
-});
+);
 
 /**
  * Helper to convert database row to User object

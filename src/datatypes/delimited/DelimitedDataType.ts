@@ -72,15 +72,12 @@ export class DelimitedDataType {
     if (toXml) {
       const defaults = getDefaultDelimitedSerializationProperties();
       return (
-        this.serializationProperties.columnDelimiter !==
-          defaults.columnDelimiter ||
-        this.serializationProperties.recordDelimiter !==
-          defaults.recordDelimiter ||
+        this.serializationProperties.columnDelimiter !== defaults.columnDelimiter ||
+        this.serializationProperties.recordDelimiter !== defaults.recordDelimiter ||
         this.serializationProperties.columnWidths !== null ||
         this.serializationProperties.quoteToken !== defaults.quoteToken ||
         !this.serializationProperties.escapeWithDoubleQuote ||
-        this.serializationProperties.quoteEscapeToken !==
-          defaults.quoteEscapeToken ||
+        this.serializationProperties.quoteEscapeToken !== defaults.quoteEscapeToken ||
         this.serializationProperties.columnNames !== null ||
         this.serializationProperties.numberedRows ||
         !this.serializationProperties.ignoreCR
@@ -88,15 +85,12 @@ export class DelimitedDataType {
     } else {
       const defaults = getDefaultDelimitedDeserializationProperties();
       return (
-        this.deserializationProperties.columnDelimiter !==
-          defaults.columnDelimiter ||
-        this.deserializationProperties.recordDelimiter !==
-          defaults.recordDelimiter ||
+        this.deserializationProperties.columnDelimiter !== defaults.columnDelimiter ||
+        this.deserializationProperties.recordDelimiter !== defaults.recordDelimiter ||
         this.deserializationProperties.columnWidths !== null ||
         this.deserializationProperties.quoteToken !== defaults.quoteToken ||
         !this.deserializationProperties.escapeWithDoubleQuote ||
-        this.deserializationProperties.quoteEscapeToken !==
-          defaults.quoteEscapeToken
+        this.deserializationProperties.quoteEscapeToken !== defaults.quoteEscapeToken
       );
     }
   }
@@ -177,16 +171,14 @@ export class DelimitedDataType {
     return {
       serializationProperties: {
         columnWidths: this.serializationProperties.columnWidths,
-        escapeWithDoubleQuote:
-          this.serializationProperties.escapeWithDoubleQuote,
+        escapeWithDoubleQuote: this.serializationProperties.escapeWithDoubleQuote,
         columnNameCount: this.serializationProperties.columnNames?.length ?? 0,
         numberedRows: this.serializationProperties.numberedRows,
         ignoreCR: this.serializationProperties.ignoreCR,
       },
       deserializationProperties: {
         columnWidths: this.deserializationProperties.columnWidths,
-        escapeWithDoubleQuote:
-          this.deserializationProperties.escapeWithDoubleQuote,
+        escapeWithDoubleQuote: this.deserializationProperties.escapeWithDoubleQuote,
       },
     };
   }

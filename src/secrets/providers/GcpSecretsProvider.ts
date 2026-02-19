@@ -6,17 +6,21 @@ export class GcpSecretsProvider implements SecretsProvider {
   private project: string;
 
   constructor(project?: string) {
-    this.project = project ?? process.env['GCP_PROJECT_ID'] ?? process.env['GOOGLE_CLOUD_PROJECT'] ?? '';
+    this.project =
+      project ?? process.env['GCP_PROJECT_ID'] ?? process.env['GOOGLE_CLOUD_PROJECT'] ?? '';
   }
 
   async initialize(): Promise<void> {
-    if (!this.project) throw new Error('GCP project ID required (MIRTH_SECRETS_GCP_PROJECT or GCP_PROJECT_ID)');
+    if (!this.project)
+      throw new Error('GCP project ID required (MIRTH_SECRETS_GCP_PROJECT or GCP_PROJECT_ID)');
     try {
       // @ts-expect-error -- optional peer dependency, installed by user
       const { SecretManagerServiceClient } = await import('@google-cloud/secret-manager');
       this.client = new SecretManagerServiceClient();
     } catch {
-      throw new Error('GCP Secret Manager SDK not installed. Run: npm install @google-cloud/secret-manager');
+      throw new Error(
+        'GCP Secret Manager SDK not installed. Run: npm install @google-cloud/secret-manager'
+      );
     }
   }
 

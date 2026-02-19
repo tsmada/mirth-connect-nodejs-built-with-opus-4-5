@@ -201,10 +201,7 @@ export class DatabaseReceiver extends SourceConnector {
 
     // Compile update script only if updateMode is not NEVER
     // Java: if (connectorProperties.getUpdateMode() != DatabaseReceiverProperties.UPDATE_NEVER)
-    if (
-      this.properties.updateMode !== UpdateMode.NEVER &&
-      this.properties.update
-    ) {
+    if (this.properties.updateMode !== UpdateMode.NEVER && this.properties.update) {
       const updateSource = `(function() {\n${this.properties.update}\n})()`;
       try {
         this.compiledUpdateScript = new vm.Script(updateSource, {
@@ -413,9 +410,7 @@ export class DatabaseReceiver extends SourceConnector {
           }
 
           // Wait before retry
-          await new Promise((resolve) =>
-            setTimeout(resolve, this.properties.retryInterval)
-          );
+          await new Promise((resolve) => setTimeout(resolve, this.properties.retryInterval));
         }
       }
     } finally {
@@ -462,10 +457,7 @@ export class DatabaseReceiver extends SourceConnector {
       await this.dispatchRawMessage(xml);
 
       // Execute update if needed
-      if (
-        this.properties.updateMode === UpdateMode.ONCE &&
-        this.properties.update
-      ) {
+      if (this.properties.updateMode === UpdateMode.ONCE && this.properties.update) {
         await conn.query(this.properties.update);
       }
     } else {
@@ -475,19 +467,13 @@ export class DatabaseReceiver extends SourceConnector {
         await this.dispatchRawMessage(xml);
 
         // Execute update for each row
-        if (
-          this.properties.updateMode === UpdateMode.EACH &&
-          this.properties.update
-        ) {
+        if (this.properties.updateMode === UpdateMode.EACH && this.properties.update) {
           await conn.query(this.properties.update);
         }
       }
 
       // Execute update once after all rows
-      if (
-        this.properties.updateMode === UpdateMode.ONCE &&
-        this.properties.update
-      ) {
+      if (this.properties.updateMode === UpdateMode.ONCE && this.properties.update) {
         await conn.query(this.properties.update);
       }
     }
@@ -564,14 +550,14 @@ export class DatabaseReceiver extends SourceConnector {
     } else {
       // Send each row as separate message
       for (const row of rows) {
-        const xml = resultsToXml([row as Record<string, unknown>]);
+        const xml = resultsToXml([row]);
         const processedMessage = await this.dispatchRawMessage(xml);
 
         // Run per-row post-process update (Java: runPostProcess with UPDATE_EACH)
         // Java: delegate.runPostProcess(resultMap, dispatchResult.getProcessedMessage().getMergedConnectorMessage())
         if (this.properties.updateMode === UpdateMode.EACH && this.compiledUpdateScript) {
           const merged = processedMessage?.getMergedConnectorMessage() ?? null;
-          await this.runUpdateScript(row as Record<string, unknown>, null, merged);
+          await this.runUpdateScript(row, null, merged);
         }
       }
     }

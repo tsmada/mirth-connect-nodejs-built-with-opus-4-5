@@ -183,7 +183,10 @@ export abstract class ConnectorMessageQueue {
     if (this.size !== null) {
       this.size++;
     }
-    queueDepth.add(1, { 'channel.id': this.channelId, 'queue.type': this.metaDataId === 0 ? 'source' : 'destination' });
+    queueDepth.add(1, {
+      'channel.id': this.channelId,
+      'queue.type': this.metaDataId === 0 ? 'source' : 'destination',
+    });
   }
 
   /**
@@ -193,7 +196,10 @@ export abstract class ConnectorMessageQueue {
     if (this.size !== null) {
       this.size--;
     }
-    queueDepth.add(-1, { 'channel.id': this.channelId, 'queue.type': this.metaDataId === 0 ? 'source' : 'destination' });
+    queueDepth.add(-1, {
+      'channel.id': this.channelId,
+      'queue.type': this.metaDataId === 0 ? 'source' : 'destination',
+    });
   }
 
   /**
@@ -253,10 +259,7 @@ export abstract class ConnectorMessageQueue {
     this.invalidated = false;
 
     if (this.dataSource && this.size !== null) {
-      this.buffer = this.dataSource.getItems(
-        0,
-        Math.min(this.bufferCapacity, this.size)
-      );
+      this.buffer = this.dataSource.getItems(0, Math.min(this.bufferCapacity, this.size));
 
       if (this.buffer.size === this.size) {
         this.reachedCapacity = false;

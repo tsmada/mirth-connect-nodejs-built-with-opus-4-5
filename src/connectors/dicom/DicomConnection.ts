@@ -90,7 +90,7 @@ export enum DimseCommandType {
   N_CREATE_RSP = 0x8140,
   N_DELETE_RQ = 0x0150,
   N_DELETE_RSP = 0x8150,
-  C_CANCEL_RQ = 0x0FFF,
+  C_CANCEL_RQ = 0x0fff,
 }
 
 /**
@@ -98,14 +98,14 @@ export enum DimseCommandType {
  */
 export enum DicomStatus {
   SUCCESS = 0x0000,
-  PENDING = 0xFF00,
-  PENDING_WARNING = 0xFF01,
-  CANCEL = 0xFE00,
-  WARNING_COERCION = 0xB000,
-  WARNING_ELEMENT_COERCION = 0xB006,
-  WARNING_DATA_TRUNCATION = 0xB007,
-  REFUSED_OUT_OF_RESOURCES = 0xA700,
-  REFUSED_SOP_CLASS_NOT_SUPPORTED = 0xA800,
+  PENDING = 0xff00,
+  PENDING_WARNING = 0xff01,
+  CANCEL = 0xfe00,
+  WARNING_COERCION = 0xb000,
+  WARNING_ELEMENT_COERCION = 0xb006,
+  WARNING_DATA_TRUNCATION = 0xb007,
+  REFUSED_OUT_OF_RESOURCES = 0xa700,
+  REFUSED_SOP_CLASS_NOT_SUPPORTED = 0xa800,
   REFUSED_NOT_AUTHORIZED = 0x0124,
   PROCESSING_FAILURE = 0x0110,
   DUPLICATE_SOP_INSTANCE = 0x0111,
@@ -320,14 +320,11 @@ export class DicomConnection extends EventEmitter {
         if (this.params.localPort) {
           (tlsOpts as Record<string, unknown>).localPort = this.params.localPort;
         }
-        this.socket = tls.connect(
-          tlsOpts,
-          () => {
-            clearTimeout(connectTimeout);
-            this.setupSocketHandlers();
-            resolve();
-          }
-        );
+        this.socket = tls.connect(tlsOpts, () => {
+          clearTimeout(connectTimeout);
+          this.setupSocketHandlers();
+          resolve();
+        });
       } else {
         this.socket = new net.Socket();
         const connectOpts: net.TcpSocketConnectOpts = {
@@ -461,7 +458,11 @@ export class DicomConnection extends EventEmitter {
     // Presentation Context Items (0x20)
     let contextId = 1;
     for (const sopClass of this.params.sopClasses) {
-      const pcItem = this.buildPresentationContextItem(contextId, sopClass, this.params.transferSyntaxes);
+      const pcItem = this.buildPresentationContextItem(
+        contextId,
+        sopClass,
+        this.params.transferSyntaxes
+      );
       items.push(pcItem);
       this.presentationContexts.set(contextId, {
         id: contextId,
@@ -797,11 +798,7 @@ export class DicomConnection extends EventEmitter {
   /**
    * Send C-STORE request
    */
-  async cStore(
-    sopClassUid: string,
-    sopInstanceUid: string,
-    dataSet: Buffer
-  ): Promise<DicomStatus> {
+  async cStore(sopClassUid: string, sopInstanceUid: string, dataSet: Buffer): Promise<DicomStatus> {
     if (!this.isAssociated()) {
       throw new Error('Not associated');
     }
@@ -814,11 +811,7 @@ export class DicomConnection extends EventEmitter {
     const messageId = this.messageIdCounter++;
 
     // Build C-STORE-RQ command
-    const command = this.buildCStoreCommand(
-      sopClassUid,
-      sopInstanceUid,
-      messageId
-    );
+    const command = this.buildCStoreCommand(sopClassUid, sopInstanceUid, messageId);
 
     // Send command
     await this.sendDataTf(context.id, true, true, command);
@@ -955,7 +948,12 @@ export class DicomConnection extends EventEmitter {
 
       const responseBuffer: Buffer[] = [];
 
-      const handlePdv = (pdv: { contextId: number; isCommand: boolean; isLast: boolean; data: Buffer }) => {
+      const handlePdv = (pdv: {
+        contextId: number;
+        isCommand: boolean;
+        isLast: boolean;
+        data: Buffer;
+      }) => {
         responseBuffer.push(pdv.data);
 
         if (pdv.isLast && pdv.isCommand) {
@@ -1062,7 +1060,12 @@ export class DicomConnection extends EventEmitter {
 
       const responseBuffer: Buffer[] = [];
 
-      const handlePdv = (pdv: { contextId: number; isCommand: boolean; isLast: boolean; data: Buffer }) => {
+      const handlePdv = (pdv: {
+        contextId: number;
+        isCommand: boolean;
+        isLast: boolean;
+        data: Buffer;
+      }) => {
         responseBuffer.push(pdv.data);
 
         if (pdv.isLast && pdv.isCommand) {
@@ -1190,11 +1193,7 @@ export class DicomConnection extends EventEmitter {
     const command = this.buildNActionCommand(messageId);
 
     // Build the N-ACTION dataset: Transaction UID + Referenced SOP Sequence
-    const dataset = this.buildStorageCommitmentDataset(
-      transactionUID,
-      sopClassUID,
-      sopInstanceUID
-    );
+    const dataset = this.buildStorageCommitmentDataset(transactionUID, sopClassUID, sopInstanceUID);
 
     // Send N-ACTION command
     await this.sendDataTf(context.id, true, true, command);
@@ -1256,29 +1255,35 @@ export class DicomConnection extends EventEmitter {
     const elements: Buffer[] = [];
 
     // Transaction UID (0008,1195) — UI VR
-    elements.push(this.encodeElement(
-      StorageCommitment.TAG_TRANSACTION_UID.group,
-      StorageCommitment.TAG_TRANSACTION_UID.element,
-      transactionUID
-    ));
+    elements.push(
+      this.encodeElement(
+        StorageCommitment.TAG_TRANSACTION_UID.group,
+        StorageCommitment.TAG_TRANSACTION_UID.element,
+        transactionUID
+      )
+    );
 
     // Referenced SOP Sequence (0008,1199) — SQ VR
     // Build the sequence item contents
     const seqItemElements: Buffer[] = [];
 
     // Referenced SOP Class UID (0008,1150)
-    seqItemElements.push(this.encodeElement(
-      StorageCommitment.TAG_REFERENCED_SOP_CLASS_UID.group,
-      StorageCommitment.TAG_REFERENCED_SOP_CLASS_UID.element,
-      sopClassUID
-    ));
+    seqItemElements.push(
+      this.encodeElement(
+        StorageCommitment.TAG_REFERENCED_SOP_CLASS_UID.group,
+        StorageCommitment.TAG_REFERENCED_SOP_CLASS_UID.element,
+        sopClassUID
+      )
+    );
 
     // Referenced SOP Instance UID (0008,1155)
-    seqItemElements.push(this.encodeElement(
-      StorageCommitment.TAG_REFERENCED_SOP_INSTANCE_UID.group,
-      StorageCommitment.TAG_REFERENCED_SOP_INSTANCE_UID.element,
-      sopInstanceUID
-    ));
+    seqItemElements.push(
+      this.encodeElement(
+        StorageCommitment.TAG_REFERENCED_SOP_INSTANCE_UID.group,
+        StorageCommitment.TAG_REFERENCED_SOP_INSTANCE_UID.element,
+        sopInstanceUID
+      )
+    );
 
     const seqItemContent = Buffer.concat(seqItemElements);
 
@@ -1287,18 +1292,18 @@ export class DicomConnection extends EventEmitter {
     const seqHeader = Buffer.alloc(8);
     seqHeader.writeUInt16LE(StorageCommitment.TAG_REFERENCED_SOP_SEQUENCE.group, 0);
     seqHeader.writeUInt16LE(StorageCommitment.TAG_REFERENCED_SOP_SEQUENCE.element, 2);
-    seqHeader.writeUInt32LE(0xFFFFFFFF, 4); // Undefined length
+    seqHeader.writeUInt32LE(0xffffffff, 4); // Undefined length
 
     // Item tag (FFFE,E000) with explicit length
     const itemHeader = Buffer.alloc(8);
-    itemHeader.writeUInt16LE(0xFFFE, 0);
-    itemHeader.writeUInt16LE(0xE000, 2);
+    itemHeader.writeUInt16LE(0xfffe, 0);
+    itemHeader.writeUInt16LE(0xe000, 2);
     itemHeader.writeUInt32LE(seqItemContent.length, 4);
 
     // Sequence Delimitation Item (FFFE,E00D)
     const seqDelim = Buffer.alloc(8);
-    seqDelim.writeUInt16LE(0xFFFE, 0);
-    seqDelim.writeUInt16LE(0xE00D, 2);
+    seqDelim.writeUInt16LE(0xfffe, 0);
+    seqDelim.writeUInt16LE(0xe00d, 2);
     seqDelim.writeUInt32LE(0, 4);
 
     elements.push(seqHeader);
@@ -1332,7 +1337,12 @@ export class DicomConnection extends EventEmitter {
       let phase: 'awaiting-action-rsp' | 'awaiting-event-report' = 'awaiting-action-rsp';
       const commandBuffer: Buffer[] = [];
 
-      const handlePdv = (pdv: { contextId: number; isCommand: boolean; isLast: boolean; data: Buffer }) => {
+      const handlePdv = (pdv: {
+        contextId: number;
+        isCommand: boolean;
+        isLast: boolean;
+        data: Buffer;
+      }) => {
         if (!pdv.isCommand) return; // Only process command PDVs for N-*-RSP
 
         commandBuffer.push(pdv.data);

@@ -175,12 +175,14 @@ export class TcpReceiver extends SourceConnector {
         await this.attemptBind();
         return; // Success
       } catch (error: unknown) {
-        const isAddressInUse = error instanceof Error &&
-          ('code' in error && (error as NodeJS.ErrnoException).code === 'EADDRINUSE');
+        const isAddressInUse =
+          error instanceof Error &&
+          'code' in error &&
+          (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
 
         if (isAddressInUse && bindAttempts < maxAttempts) {
           // Retry after interval, matching Java's createServerSocket() behavior
-          await new Promise<void>(resolve => setTimeout(resolve, retryInterval));
+          await new Promise<void>((resolve) => setTimeout(resolve, retryInterval));
         } else {
           throw error;
         }
@@ -271,14 +273,10 @@ export class TcpReceiver extends SourceConnector {
         }
       });
 
-      this.clientSocket.connect(
-        this.properties.port,
-        this.properties.host,
-        () => {
-          this.handleConnection(this.clientSocket!);
-          resolve();
-        }
-      );
+      this.clientSocket.connect(this.properties.port, this.properties.host, () => {
+        this.handleConnection(this.clientSocket!);
+        resolve();
+      });
 
       this.clientSocket.on('error', (error) => {
         if (!this.running) {
@@ -374,10 +372,7 @@ export class TcpReceiver extends SourceConnector {
           await this.processMessage(socket, message);
 
           // CPC-MCE-001: IDLE event after processing
-          this.dispatchConnectionEvent(
-            ConnectionStatusEventType.IDLE,
-            addr
-          );
+          this.dispatchConnectionEvent(ConnectionStatusEventType.IDLE, addr);
         } else {
           break;
         }
@@ -449,10 +444,7 @@ export class TcpReceiver extends SourceConnector {
   /**
    * Process a received message
    */
-  private async processMessage(
-    socket: net.Socket,
-    message: string
-  ): Promise<void> {
+  private async processMessage(socket: net.Socket, message: string): Promise<void> {
     try {
       // Build source map
       const sourceMapData = new Map<string, unknown>();
@@ -689,8 +681,12 @@ export class TcpReceiver extends SourceConnector {
       connectionCount: this.connections.size,
       maxConnections: this.properties.maxConnections,
       transportType: this.properties.tls?.enabled
-        ? (this.properties.transmissionMode === TransmissionMode.MLLP ? 'MLLPS' : 'TCP+TLS')
-        : (this.properties.transmissionMode === TransmissionMode.MLLP ? 'MLLP' : 'TCP'),
+        ? this.properties.transmissionMode === TransmissionMode.MLLP
+          ? 'MLLPS'
+          : 'TCP+TLS'
+        : this.properties.transmissionMode === TransmissionMode.MLLP
+          ? 'MLLP'
+          : 'TCP',
       listening: this.server.listening,
     };
   }

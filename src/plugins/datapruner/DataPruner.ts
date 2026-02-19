@@ -15,10 +15,18 @@ import {
   createPrunerTask,
 } from './DataPrunerStatus.js';
 import * as DonkeyDao from '../../db/DonkeyDao.js';
-import type { MessageRow, ConnectorMessageRow, ContentRow, AttachmentRow } from '../../db/DonkeyDao.js';
+import type {
+  MessageRow,
+  ConnectorMessageRow,
+  ContentRow,
+  AttachmentRow,
+} from '../../db/DonkeyDao.js';
 import { ConfigurationController } from '../../controllers/ConfigurationController.js';
 import { ChannelController } from '../../controllers/ChannelController.js';
-import { MessageStorageMode, parseMessageStorageMode } from '../../donkey/channel/StorageSettings.js';
+import {
+  MessageStorageMode,
+  parseMessageStorageMode,
+} from '../../donkey/channel/StorageSettings.js';
 import * as EventDao from '../../db/EventDao.js';
 import {
   messageArchiver,
@@ -403,10 +411,7 @@ export class DataPruner {
     // Build a map of channelId -> messageStorageMode for skipping DISABLED channels
     const storageModes = new Map<string, MessageStorageMode>();
     for (const channel of allChannels) {
-      storageModes.set(
-        channel.id,
-        parseMessageStorageMode(channel.properties?.messageStorageMode)
-      );
+      storageModes.set(channel.id, parseMessageStorageMode(channel.properties?.messageStorageMode));
     }
 
     for (const [channelId] of localChannelIds) {
@@ -526,7 +531,8 @@ export class DataPruner {
             for (let i = 0; i < archivedIds.length; i += this.prunerBlockSize) {
               this.checkAborted();
               const batch = archivedIds.slice(i, i + this.prunerBlockSize);
-              const contentOnly = contentDateThreshold !== null && task.messageDateThreshold !== null;
+              const contentOnly =
+                contentDateThreshold !== null && task.messageDateThreshold !== null;
               const batchResult = await this.pruneMessageBatch(task.channelId, batch, contentOnly);
               result.numMessagesPruned += batchResult.numMessagesPruned;
               result.numContentPruned += batchResult.numContentPruned;

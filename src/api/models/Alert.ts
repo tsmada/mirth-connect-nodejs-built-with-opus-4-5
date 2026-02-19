@@ -222,7 +222,10 @@ export function objectToAlertChannels(obj: Record<string, unknown>): AlertChanne
   const partialChannels = new Map<string, AlertConnectors>();
   if (obj.partialChannels && typeof obj.partialChannels === 'object') {
     for (const [channelId, connectors] of Object.entries(
-      obj.partialChannels as Record<string, { enabledConnectors?: number[]; disabledConnectors?: number[] }>
+      obj.partialChannels as Record<
+        string,
+        { enabledConnectors?: number[]; disabledConnectors?: number[] }
+      >
     )) {
       partialChannels.set(channelId, {
         enabledConnectors: new Set(connectors.enabledConnectors ?? []),
@@ -247,9 +250,7 @@ export function serializeAlertModel(alert: AlertModel): string {
   // Convert Sets to arrays for JSON serialization
   const serializable = {
     ...alert,
-    alertChannels: alert.alertChannels
-      ? alertChannelsToObject(alert.alertChannels)
-      : undefined,
+    alertChannels: alert.alertChannels ? alertChannelsToObject(alert.alertChannels) : undefined,
   };
   return JSON.stringify(serializable);
 }

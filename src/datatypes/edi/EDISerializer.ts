@@ -10,11 +10,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import {
-  EDIDelimiters,
-  getDefaultEDISerializationProperties,
-} from './EDIProperties.js';
-
+import { EDIDelimiters, getDefaultEDISerializationProperties } from './EDIProperties.js';
 
 /**
  * Serialize XML to EDI/X12 format
@@ -27,8 +23,7 @@ export class EDISerializer {
     this.delimiters = {
       segmentDelimiter: delimiters?.segmentDelimiter ?? defaults.segmentDelimiter,
       elementDelimiter: delimiters?.elementDelimiter ?? defaults.elementDelimiter,
-      subelementDelimiter:
-        delimiters?.subelementDelimiter ?? defaults.subelementDelimiter,
+      subelementDelimiter: delimiters?.subelementDelimiter ?? defaults.subelementDelimiter,
     };
   }
 
@@ -102,10 +97,7 @@ export class EDISerializer {
   /**
    * Serialize document structure
    */
-  private serializeDocument(
-    root: Record<string, unknown>,
-    _rootName: string
-  ): string {
+  private serializeDocument(root: Record<string, unknown>, _rootName: string): string {
     let output = '';
 
     // Process each segment (non-attribute keys)
@@ -125,10 +117,7 @@ export class EDISerializer {
   /**
    * Serialize a single segment
    */
-  private serializeSegment(
-    segmentId: string,
-    segment: unknown
-  ): string {
+  private serializeSegment(segmentId: string, segment: unknown): string {
     let output = segmentId;
 
     if (!segment || typeof segment !== 'object') {
@@ -283,10 +272,7 @@ export class EDISerializer {
 /**
  * Serialize XML to EDI (convenience function)
  */
-export function serializeXMLToEDI(
-  source: string,
-  delimiters?: Partial<EDIDelimiters>
-): string {
+export function serializeXMLToEDI(source: string, delimiters?: Partial<EDIDelimiters>): string {
   const serializer = new EDISerializer(delimiters);
   return serializer.serialize(source);
 }

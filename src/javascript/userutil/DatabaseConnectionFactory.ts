@@ -24,8 +24,7 @@ const defaultLogger: Logger = {
       console.debug(`[DatabaseConnectionFactory] ${msg}`);
     }
   },
-  warn: (msg: string | Error) =>
-    console.warn(`[DatabaseConnectionFactory] ${msg}`),
+  warn: (msg: string | Error) => console.warn(`[DatabaseConnectionFactory] ${msg}`),
   error: (msg: string, err?: Error) =>
     console.error(`[DatabaseConnectionFactory] ${msg}`, err || ''),
 };
@@ -125,11 +124,7 @@ export class DatabaseConnectionFactory {
     await this.initializeDriver(driver);
 
     const parsed = this.parseJdbcUrl(address);
-    const connection = await this.createNativeConnection(
-      parsed,
-      username,
-      password
-    );
+    const connection = await this.createNativeConnection(parsed, username, password);
 
     return new DatabaseConnection(connection, address, this.logger);
   }
@@ -214,14 +209,10 @@ export class DatabaseConnectionFactory {
           require.resolve('mssql');
           break;
         default:
-          this.logger.warn(
-            `Unknown database type for driver: ${driver}, defaulting to MySQL`
-          );
+          this.logger.warn(`Unknown database type for driver: ${driver}, defaulting to MySQL`);
       }
     } catch (error) {
-      this.logger.warn(
-        `Driver package not available for ${driver}: ${(error as Error).message}`
-      );
+      this.logger.warn(`Driver package not available for ${driver}: ${(error as Error).message}`);
     }
 
     driverInfo.initialized = true;
@@ -378,9 +369,7 @@ export class DatabaseConnectionFactory {
 
       default:
         // Default to MySQL
-        this.logger.warn(
-          `Unknown database type: ${dbType}, attempting MySQL connection`
-        );
+        this.logger.warn(`Unknown database type: ${dbType}, attempting MySQL connection`);
         return this.createMySqlConnection(parsed, username, password);
     }
   }

@@ -123,42 +123,26 @@ export class DestinationChain {
     }
 
     // Loop through each metaDataId in the chain
-    for (
-      let i = startMetaDataId;
-      i < this.enabledMetaDataIds.length && !stopChain;
-      i++
-    ) {
+    for (let i = startMetaDataId; i < this.enabledMetaDataIds.length && !stopChain; i++) {
       const metaDataId = this.enabledMetaDataIds[i]!;
       const nextMetaDataId =
-        i + 1 < this.enabledMetaDataIds.length
-          ? this.enabledMetaDataIds[i + 1]!
-          : null;
+        i + 1 < this.enabledMetaDataIds.length ? this.enabledMetaDataIds[i + 1]! : null;
 
       let nextMessage: ConnectorMessage | null = null;
-      const destinationConnector = this.chainProvider
-        .getDestinationConnectors()
-        .get(metaDataId!);
+      const destinationConnector = this.chainProvider.getDestinationConnectors().get(metaDataId);
 
       if (!destinationConnector) {
-        throw new Error(
-          `No destination connector found for metadata ID ${metaDataId}`
-        );
+        throw new Error(`No destination connector found for metadata ID ${metaDataId}`);
       }
 
       try {
         switch (message.getStatus()) {
           case Status.RECEIVED:
             // Transform and process the message
-            await this.transformAndProcess(
-              destinationConnector,
-              message
-            );
+            await this.transformAndProcess(destinationConnector, message);
 
             // If error occurred in filter/transformer without sending, stop chain
-            if (
-              message.getStatus() === Status.ERROR &&
-              !message.getSentContent()
-            ) {
+            if (message.getStatus() === Status.ERROR && !message.getSentContent()) {
               stopChain = true;
             }
             break;
@@ -173,9 +157,7 @@ export class DestinationChain {
             break;
 
           default:
-            throw new Error(
-              `Received message with invalid status: ${message.getStatus()}`
-            );
+            throw new Error(`Received message with invalid status: ${message.getStatus()}`);
         }
       } catch (error) {
         // Error in processing - update status and continue
@@ -191,11 +173,7 @@ export class DestinationChain {
           .get(nextMetaDataId);
 
         if (nextDestinationConnector) {
-          nextMessage = this.createNextMessage(
-            message,
-            nextMetaDataId,
-            nextDestinationConnector
-          );
+          nextMessage = this.createNextMessage(message, nextMetaDataId, nextDestinationConnector);
         }
       }
 

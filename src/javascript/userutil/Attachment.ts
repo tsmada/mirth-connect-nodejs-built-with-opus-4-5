@@ -51,12 +51,7 @@ export class Attachment {
    */
   constructor(id: string, content: string, charset: string, type: string);
 
-  constructor(
-    id?: string,
-    content?: Buffer | string,
-    charsetOrType?: string,
-    type?: string
-  ) {
+  constructor(id?: string, content?: Buffer | string, charsetOrType?: string, type?: string) {
     if (id === undefined) {
       // No-arg constructor
       return;

@@ -97,20 +97,18 @@ export class SensitiveDataDetector {
     );
 
     for (const [destName, dest] of decomposed.destinations) {
-      this.scanConnector(
-        dest,
-        `destinations.${destName}`,
-        channelName,
-        results,
-        additionalFields
-      );
+      this.scanConnector(dest, `destinations.${destName}`, channelName, results, additionalFields);
     }
 
     return results;
   }
 
   private scanConnector(
-    connector: { properties: Record<string, unknown>; propertiesClass: string; transportName: string },
+    connector: {
+      properties: Record<string, unknown>;
+      propertiesClass: string;
+      transportName: string;
+    },
     basePath: string,
     channelName: string,
     results: SensitiveField[],

@@ -121,7 +121,7 @@ const DEFAULT_SCRIPTS = [
 export function isDefaultScript(script: string | undefined): boolean {
   if (!script) return true;
   const trimmed = script.trim();
-  return DEFAULT_SCRIPTS.some(d => trimmed === d.trim());
+  return DEFAULT_SCRIPTS.some((d) => trimmed === d.trim());
 }
 
 /**

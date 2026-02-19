@@ -57,12 +57,7 @@ export {
 } from './JmsConnectorProperties.js';
 
 // Client
-export {
-  JmsClient,
-  StompConnection,
-  JmsMessage,
-  MessageListener,
-} from './JmsClient.js';
+export { JmsClient, StompConnection, JmsMessage, MessageListener } from './JmsClient.js';
 
 // Connectors
 export { JmsReceiver, JmsReceiverConfig } from './JmsReceiver.js';

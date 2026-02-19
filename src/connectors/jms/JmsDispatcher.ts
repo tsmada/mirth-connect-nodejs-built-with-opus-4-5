@@ -173,8 +173,14 @@ export class JmsDispatcher extends DestinationConnector {
     // Resolve JNDI properties if using JNDI
     if (resolved.useJndi) {
       resolved.jndiProviderUrl = this.resolveVariables(resolved.jndiProviderUrl, connectorMessage);
-      resolved.jndiInitialContextFactory = this.resolveVariables(resolved.jndiInitialContextFactory, connectorMessage);
-      resolved.jndiConnectionFactoryName = this.resolveVariables(resolved.jndiConnectionFactoryName, connectorMessage);
+      resolved.jndiInitialContextFactory = this.resolveVariables(
+        resolved.jndiInitialContextFactory,
+        connectorMessage
+      );
+      resolved.jndiConnectionFactoryName = this.resolveVariables(
+        resolved.jndiConnectionFactoryName,
+        connectorMessage
+      );
     }
 
     return resolved;
@@ -229,9 +235,7 @@ export class JmsDispatcher extends DestinationConnector {
    * Matches Java JmsDispatcher.getConnectionKey() (lines 195-233).
    */
   private getConnectionKey(props: JmsDispatcherProperties): string {
-    const parts: string[] = [
-      String(props.useJndi),
-    ];
+    const parts: string[] = [String(props.useJndi)];
 
     if (props.useJndi) {
       parts.push(props.jndiProviderUrl);
@@ -354,8 +358,7 @@ export class JmsDispatcher extends DestinationConnector {
       connectorMessage.getConnectorMap().set('jmsDestination', resolvedProps.destinationName);
       connectorMessage.getConnectorMap().set('jmsIsTopic', resolvedProps.topic);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Dispatch error event
       if (this.channel) {

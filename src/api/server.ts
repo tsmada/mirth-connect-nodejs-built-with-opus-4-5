@@ -10,7 +10,12 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer, Server as HttpServer } from 'http';
 import { getLogger, registerComponent } from '../logging/index.js';
-import { authMiddleware, contentNegotiationMiddleware, shadowGuard, requestIdMiddleware } from './middleware/index.js';
+import {
+  authMiddleware,
+  contentNegotiationMiddleware,
+  shadowGuard,
+  requestIdMiddleware,
+} from './middleware/index.js';
 import { wsConnections } from '../telemetry/metrics.js';
 
 registerComponent('api', 'REST API server');
@@ -60,7 +65,7 @@ const DEFAULT_OPTIONS: ServerOptions = {
   host: '0.0.0.0',
   corsEnabled: true,
   corsOrigins: process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
     : ['*'],
 };
 
@@ -76,20 +81,25 @@ export function createApp(options: ServerOptions = {}): Express {
 
   // General API rate limiting (configurable via MIRTH_API_RATE_LIMIT env var)
   const apiRateLimit = parseInt(process.env.MIRTH_API_RATE_LIMIT || '100', 10);
-  app.use('/api', rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: apiRateLimit,
-    skip: (req) => req.path.startsWith('/health'),
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too Many Requests', message: 'Rate limit exceeded. Try again later.' },
-  }));
+  app.use(
+    '/api',
+    rateLimit({
+      windowMs: 60 * 1000, // 1 minute
+      max: apiRateLimit,
+      skip: (req) => req.path.startsWith('/health'),
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too Many Requests', message: 'Rate limit exceeded. Try again later.' },
+    })
+  );
 
   // Warn if CORS wildcard is used
   if (config.corsOrigins?.includes('*')) {
     logger.warn('CORS configured with wildcard (*). Set CORS_ORIGINS env var for production.');
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('CORS wildcard (*) is not allowed in production. Set the CORS_ORIGINS environment variable.');
+      throw new Error(
+        'CORS wildcard (*) is not allowed in production. Set the CORS_ORIGINS environment variable.'
+      );
     }
   }
 
@@ -166,12 +176,27 @@ export function createApp(options: ServerOptions = {}): Express {
   // channelStatusRouter, channelStatisticsRouter, and engineRouter have routes like /statuses
   // which must be matched BEFORE channelRouter's /:channelId route.
   app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), channelStatusRouter);
-  app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), channelStatisticsRouter);
+  app.use(
+    '/api/channels',
+    authMiddleware({ required: true }),
+    shadowGuard(),
+    channelStatisticsRouter
+  );
   app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), engineRouter);
   app.use('/api/channels', authMiddleware({ required: true }), shadowGuard(), channelRouter);
-  app.use('/api/channels/:channelId/messages', authMiddleware({ required: true }), shadowGuard(), messageRouter);
+  app.use(
+    '/api/channels/:channelId/messages',
+    authMiddleware({ required: true }),
+    shadowGuard(),
+    messageRouter
+  );
   app.use('/api/messages/trace', authMiddleware({ required: true }), traceRouter);
-  app.use('/api/channelgroups', authMiddleware({ required: true }), shadowGuard(), channelGroupRouter);
+  app.use(
+    '/api/channelgroups',
+    authMiddleware({ required: true }),
+    shadowGuard(),
+    channelGroupRouter
+  );
   app.use('/api/server', authMiddleware({ required: true }), shadowGuard(), configurationRouter);
   app.use('/api/events', authMiddleware({ required: true }), eventRouter);
   app.use('/api/alerts', authMiddleware({ required: true }), shadowGuard(), alertRouter);
@@ -240,7 +265,7 @@ export async function startServer(options: ServerOptions = {}): Promise<HttpServ
   });
 
   return new Promise((resolve) => {
-    server.listen(config.port!, config.host!, () => {
+    server.listen(config.port, config.host, () => {
       logger.info(`Mirth Connect API server listening on http://${config.host}:${config.port}`);
       logger.info(`WebSocket endpoints available at /ws/dashboardstatus and /ws/serverlog`);
       resolve(server);

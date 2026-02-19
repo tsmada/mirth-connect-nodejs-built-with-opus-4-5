@@ -76,10 +76,7 @@ function formatSummary(result: TraceResult): string {
     parts.push(`Errors: ${chalk.red.bold(String(errorCount))}`);
   }
 
-  return [
-    `${chalk.bold('Message Trace:')} ${pathStr}`,
-    chalk.gray(parts.join(' | ')),
-  ].join('\n');
+  return [`${chalk.bold('Message Trace:')} ${pathStr}`, chalk.gray(parts.join(' | '))].join('\n');
 }
 
 /**
@@ -94,7 +91,7 @@ function collectPathNames(node: TraceNode): string[] {
     names.push(...collectPathNames(node.children[0]!));
   } else {
     // Multiple children — show them comma-separated
-    const childNames = node.children.map(c => chalk.cyan(c.channelName));
+    const childNames = node.children.map((c) => chalk.cyan(c.channelName));
     names.push(childNames.join(', '));
   }
 
@@ -105,7 +102,7 @@ function collectPathNames(node: TraceNode): string[] {
  * Count errors in the tree
  */
 function countErrors(node: TraceNode): number {
-  let count = (node.status === 'ERROR' || node.error) ? 1 : 0;
+  let count = node.status === 'ERROR' || node.error ? 1 : 0;
   for (const child of node.children) {
     count += countErrors(child);
   }
@@ -125,7 +122,7 @@ function formatNode(
 
   // Node line: connector symbol + status + channel name + message ID + timing
   const isRoot = node.depth === 0;
-  const connector = isRoot ? '' : (isLast ? '└──► ' : '├──► ');
+  const connector = isRoot ? '' : isLast ? '└──► ' : '├──► ';
   const statusIcon = getStatusIcon(node.status);
   const statusBadge = formatStatus(node.status);
   const channelName = chalk.cyan.bold(node.channelName);
@@ -147,7 +144,7 @@ function formatNode(
   lines.push(nodeLine);
 
   // Content lines
-  const childPrefix = isRoot ? '' : (prefix + (isLast ? '     ' : '│    '));
+  const childPrefix = isRoot ? '' : prefix + (isLast ? '     ' : '│    ');
 
   if (options.showContent && node.content) {
     const contentLines = formatNodeContent(node.content, childPrefix, options.maxPreviewLength);
@@ -164,7 +161,7 @@ function formatNode(
     const childIsLast = i === node.children.length - 1;
 
     // Add spacing between siblings
-    if (i === 0 && (options.showContent && node.content)) {
+    if (i === 0 && options.showContent && node.content) {
       lines.push(`${childPrefix}│`);
     }
 
@@ -179,7 +176,14 @@ function formatNode(
  * Format content previews for a node
  */
 function formatNodeContent(
-  content: { raw?: ContentSnapshot; transformed?: ContentSnapshot; encoded?: ContentSnapshot; sent?: ContentSnapshot; response?: ContentSnapshot; processingError?: string },
+  content: {
+    raw?: ContentSnapshot;
+    transformed?: ContentSnapshot;
+    encoded?: ContentSnapshot;
+    sent?: ContentSnapshot;
+    response?: ContentSnapshot;
+    processingError?: string;
+  },
   prefix: string,
   maxLength: number
 ): string[] {
@@ -222,7 +226,10 @@ function formatContentLine(
   }
 
   // Normalize whitespace for display
-  preview = preview.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  preview = preview
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   const sizeInfo = snapshot.truncated
     ? chalk.gray(` (${formatBytes(snapshot.fullLength)})`)
@@ -245,15 +252,24 @@ function formatBytes(bytes: number): string {
  */
 function getStatusIcon(status: string): string {
   switch (status) {
-    case 'SENT': return chalk.green('●');
-    case 'FILTERED': return chalk.yellow('○');
-    case 'ERROR': return chalk.red('●');
-    case 'QUEUED': return chalk.yellow('◐');
-    case 'RECEIVED': return chalk.blue('●');
-    case 'TRANSFORMED': return chalk.blue('●');
-    case 'PENDING': return chalk.gray('○');
-    case 'DELETED': return chalk.gray('✕');
-    default: return chalk.gray('?');
+    case 'SENT':
+      return chalk.green('●');
+    case 'FILTERED':
+      return chalk.yellow('○');
+    case 'ERROR':
+      return chalk.red('●');
+    case 'QUEUED':
+      return chalk.yellow('◐');
+    case 'RECEIVED':
+      return chalk.blue('●');
+    case 'TRANSFORMED':
+      return chalk.blue('●');
+    case 'PENDING':
+      return chalk.gray('○');
+    case 'DELETED':
+      return chalk.gray('✕');
+    default:
+      return chalk.gray('?');
   }
 }
 
@@ -262,15 +278,24 @@ function getStatusIcon(status: string): string {
  */
 function formatStatus(status: string): string {
   switch (status) {
-    case 'SENT': return chalk.green(`[${status}]`);
-    case 'FILTERED': return chalk.yellow(`[${status}]`);
-    case 'ERROR': return chalk.red(`[${status}]`);
-    case 'QUEUED': return chalk.yellow(`[${status}]`);
-    case 'RECEIVED': return chalk.blue(`[${status}]`);
-    case 'TRANSFORMED': return chalk.blue(`[${status}]`);
-    case 'PENDING': return chalk.gray(`[${status}]`);
-    case 'DELETED': return chalk.gray(`[${status}]`);
-    default: return chalk.gray(`[${status}]`);
+    case 'SENT':
+      return chalk.green(`[${status}]`);
+    case 'FILTERED':
+      return chalk.yellow(`[${status}]`);
+    case 'ERROR':
+      return chalk.red(`[${status}]`);
+    case 'QUEUED':
+      return chalk.yellow(`[${status}]`);
+    case 'RECEIVED':
+      return chalk.blue(`[${status}]`);
+    case 'TRANSFORMED':
+      return chalk.blue(`[${status}]`);
+    case 'PENDING':
+      return chalk.gray(`[${status}]`);
+    case 'DELETED':
+      return chalk.gray(`[${status}]`);
+    default:
+      return chalk.gray(`[${status}]`);
   }
 }
 

@@ -25,14 +25,28 @@ import { Response } from '../model/Response.js';
 import { dashboardStatusController } from '../plugins/dashboardstatus/DashboardStatusController.js';
 import { dataPrunerController } from '../plugins/datapruner/DataPrunerController.js';
 import { ConfigurationController } from '../controllers/ConfigurationController.js';
-import { registerServer, startHeartbeat, stopHeartbeat, deregisterServer } from '../cluster/ServerRegistry.js';
+import {
+  registerServer,
+  startHeartbeat,
+  stopHeartbeat,
+  deregisterServer,
+} from '../cluster/ServerRegistry.js';
 import { setShuttingDown, setStartupComplete } from '../cluster/HealthCheck.js';
 import { getClusterConfig } from '../cluster/ClusterConfig.js';
 import { setShadowMode, isShadowMode } from '../cluster/ShadowMode.js';
-import { initializeLogging, shutdownLogging, getLogger, registerComponent } from '../logging/index.js';
+import {
+  initializeLogging,
+  shutdownLogging,
+  getLogger,
+  registerComponent,
+} from '../logging/index.js';
 import { serverLogController } from '../plugins/serverlog/ServerLogController.js';
 import { DatabaseMapBackend } from '../cluster/MapBackend.js';
-import { GlobalMap, GlobalChannelMapStore, ConfigurationMap } from '../javascript/userutil/MirthMap.js';
+import {
+  GlobalMap,
+  GlobalChannelMapStore,
+  ConfigurationMap,
+} from '../javascript/userutil/MirthMap.js';
 
 registerComponent('server', 'Server lifecycle');
 const logger = getLogger('server');
@@ -124,7 +138,7 @@ export class Mirth {
       if (missing.length > 0) {
         throw new Error(
           `Missing required environment variables for production: ${missing.join(', ')}. ` +
-          'Set these before starting, or unset NODE_ENV=production to use defaults.'
+            'Set these before starting, or unset NODE_ENV=production to use defaults.'
         );
       }
     }
@@ -132,14 +146,18 @@ export class Mirth {
     // Initialize database connection pool
     logger.info('Connecting to database...');
     initPool(this.config.database);
-    logger.info(`Connected to database at ${this.config.database.host}:${this.config.database.port}`);
+    logger.info(
+      `Connected to database at ${this.config.database.host}:${this.config.database.port}`
+    );
 
     // Initialize content encryptor from environment (MIRTH_ENCRYPTION_KEY)
     initEncryptorFromEnv();
 
     // Warn about default credentials
     if (this.config.database.user === 'mirth' && this.config.database.password === 'mirth') {
-      logger.warn('SECURITY: Using default database credentials (mirth/mirth). Change DB_USER and DB_PASSWORD for production.');
+      logger.warn(
+        'SECURITY: Using default database credentials (mirth/mirth). Change DB_USER and DB_PASSWORD for production.'
+      );
     }
 
     // Block default database credentials in production unless explicitly opted in
@@ -149,14 +167,17 @@ export class Mirth {
       if (process.env['MIRTH_ALLOW_DEFAULT_CREDENTIALS'] !== 'true') {
         throw new Error(
           'Default database credentials are not allowed in production. ' +
-          'Set DB_USER/DB_PASSWORD environment variables, or set MIRTH_ALLOW_DEFAULT_CREDENTIALS=true to override.'
+            'Set DB_USER/DB_PASSWORD environment variables, or set MIRTH_ALLOW_DEFAULT_CREDENTIALS=true to override.'
         );
       }
-      logger.warn('Using default database credentials in production (MIRTH_ALLOW_DEFAULT_CREDENTIALS=true)');
+      logger.warn(
+        'Using default database credentials in production (MIRTH_ALLOW_DEFAULT_CREDENTIALS=true)'
+      );
     }
 
     // Initialize schema based on operational mode
-    const { detectMode, verifySchema, ensureCoreTables, ensureNodeJsTables, seedDefaults } = await import('../db/SchemaManager.js');
+    const { detectMode, verifySchema, ensureCoreTables, ensureNodeJsTables, seedDefaults } =
+      await import('../db/SchemaManager.js');
 
     this.detectedMode = await detectMode();
     logger.info(`Operational mode: ${this.detectedMode}`);
@@ -173,7 +194,9 @@ export class Mirth {
       logger.info('Standalone mode: ensuring core tables exist...');
       await ensureCoreTables();
       await seedDefaults();
-      logger.warn('SECURITY: Default admin/admin credentials seeded. Change the admin password before production use.');
+      logger.warn(
+        'SECURITY: Default admin/admin credentials seeded. Change the admin password before production use.'
+      );
       logger.info('Core schema initialized');
     } else {
       // Takeover mode - verify existing schema
@@ -192,7 +215,7 @@ export class Mirth {
 
     // Initialize Donkey engine
     this.donkey = new Donkey();
-    donkeyInstance = this.donkey;  // Expose globally for EngineController
+    donkeyInstance = this.donkey; // Expose globally for EngineController
     await this.donkey.start();
 
     // Start REST API server
@@ -205,20 +228,26 @@ export class Mirth {
       if (!clusterConfig.redisUrl && process.env['NODE_ENV'] === 'production') {
         throw new Error(
           'MIRTH_CLUSTER_ENABLED=true requires MIRTH_CLUSTER_REDIS_URL in production. ' +
-          'Set MIRTH_CLUSTER_REDIS_URL to a Redis instance for shared state, or unset NODE_ENV=production to use in-memory storage.'
+            'Set MIRTH_CLUSTER_REDIS_URL to a Redis instance for shared state, or unset NODE_ENV=production to use in-memory storage.'
         );
       }
       startHeartbeat();
       if (!clusterConfig.redisUrl) {
-        logger.warn('Cluster mode active but MIRTH_CLUSTER_REDIS_URL not set. GlobalMap will use volatile in-memory storage. Set MIRTH_CLUSTER_REDIS_URL for persistent shared state.');
+        logger.warn(
+          'Cluster mode active but MIRTH_CLUSTER_REDIS_URL not set. GlobalMap will use volatile in-memory storage. Set MIRTH_CLUSTER_REDIS_URL for persistent shared state.'
+        );
       }
-      logger.warn('Cluster mode: session store is in-memory. Sessions will not be shared across instances. Consider a shared session store for production.');
+      logger.warn(
+        'Cluster mode: session store is in-memory. Sessions will not be shared across instances. Consider a shared session store for production.'
+      );
     }
 
     // Wire GlobalMap and GlobalChannelMap to database backend for persistent $g/$gc
     // This benefits both single-instance (survives restarts) and cluster (shared state)
     GlobalMap.setBackend(new DatabaseMapBackend('global'));
-    GlobalChannelMapStore.setBackendFactory((channelId) => new DatabaseMapBackend('gcm:' + channelId));
+    GlobalChannelMapStore.setBackendFactory(
+      (channelId) => new DatabaseMapBackend('gcm:' + channelId)
+    );
     await GlobalMap.getInstance().loadFromBackend();
     logger.info('GlobalMap database backend initialized');
 
@@ -256,8 +285,28 @@ export class Mirth {
           }
           return count;
         },
-        getDbPoolActive: () => { try { const p = getPool(); return (p as { pool?: { _allConnections?: { length: number } } }).pool?._allConnections?.length ?? 0; } catch { return 0; } },
-        getDbPoolIdle: () => { try { const p = getPool(); return (p as { pool?: { _freeConnections?: { length: number } } }).pool?._freeConnections?.length ?? 0; } catch { return 0; } },
+        getDbPoolActive: () => {
+          try {
+            const p = getPool();
+            return (
+              (p as { pool?: { _allConnections?: { length: number } } }).pool?._allConnections
+                ?.length ?? 0
+            );
+          } catch {
+            return 0;
+          }
+        },
+        getDbPoolIdle: () => {
+          try {
+            const p = getPool();
+            return (
+              (p as { pool?: { _freeConnections?: { length: number } } }).pool?._freeConnections
+                ?.length ?? 0
+            );
+          } catch {
+            return 0;
+          }
+        },
       });
     } catch {
       // Telemetry module not available — ok (no-otel mode)
@@ -284,7 +333,8 @@ export class Mirth {
       logger.info(`Secrets providers initialized: ${secretsProviders}`);
 
       // Wire secrets as ConfigurationMap fallback
-      const { createConfigMapFallback } = await import('../secrets/integration/ConfigMapBackend.js');
+      const { createConfigMapFallback } =
+        await import('../secrets/integration/ConfigMapBackend.js');
       const { ConfigurationMap } = await import('../javascript/userutil/MirthMap.js');
       ConfigurationMap.getInstance().setFallback(createConfigMapFallback());
 
@@ -355,7 +405,9 @@ export class Mirth {
       const { SecretsManager } = await import('../secrets/SecretsManager.js');
       const mgr = SecretsManager.getInstance();
       if (mgr) await mgr.shutdown();
-    } catch { /* module not loaded */ }
+    } catch {
+      /* module not loaded */
+    }
 
     // Flush OTEL spans/metrics before closing DB pool
     try {
@@ -465,13 +517,12 @@ export class Mirth {
    */
   private async initializeChannelUtil(): Promise<void> {
     try {
-      const {
-        setChannelUtilChannelController,
-        setChannelUtilEngineController,
-      } = await import('../javascript/userutil/ChannelUtil.js');
+      const { setChannelUtilChannelController, setChannelUtilEngineController } =
+        await import('../javascript/userutil/ChannelUtil.js');
       const { EngineController: EC } = await import('../controllers/EngineController.js');
       const { Status } = await import('../model/Status.js');
-      const { DeployedState: UserDeployedState } = await import('../javascript/userutil/DeployedState.js');
+      const { DeployedState: UserDeployedState } =
+        await import('../javascript/userutil/DeployedState.js');
 
       // --- ErrorTaskHandler helper ---
       type IErrorTaskHandler = { isErrored(): boolean; getError(): Error | null };
@@ -522,7 +573,7 @@ export class Mirth {
         },
         async resetStatistics(
           _channelMap: Map<string, (number | null)[]>,
-          _statusesToReset: Set<typeof Status[keyof typeof Status]>
+          _statusesToReset: Set<(typeof Status)[keyof typeof Status]>
         ) {
           // Stub — statistics reset through ChannelStatisticsServlet is the primary path
         },
@@ -550,7 +601,7 @@ export class Mirth {
           const ch = EC.getDeployedChannel(channelId);
           if (!ch) return null;
           const stats = ch.getStatistics();
-          const statMap = new Map<typeof Status[keyof typeof Status], number>();
+          const statMap = new Map<(typeof Status)[keyof typeof Status], number>();
           statMap.set(Status.RECEIVED, stats.received);
           statMap.set(Status.FILTERED, stats.filtered);
           statMap.set(Status.SENT, stats.sent);
@@ -559,7 +610,8 @@ export class Mirth {
           // Map DashboardStatus DeployedState → userutil DeployedState (string-compatible)
           const rawState = ch.getCurrentState() as string;
           const mappedState = (UserDeployedState as Record<string, string>)[rawState] as
-            typeof UserDeployedState[keyof typeof UserDeployedState] | undefined;
+            | (typeof UserDeployedState)[keyof typeof UserDeployedState]
+            | undefined;
           return {
             channelId,
             name: ch.getName(),
@@ -571,43 +623,57 @@ export class Mirth {
           try {
             for (const id of channelIds) await EC.startChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async stopChannels(channelIds: Set<string>) {
           try {
             for (const id of channelIds) await EC.stopChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async pauseChannels(channelIds: Set<string>) {
           try {
             for (const id of channelIds) await EC.pauseChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async resumeChannels(channelIds: Set<string>) {
           try {
             for (const id of channelIds) await EC.resumeChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async haltChannels(channelIds: Set<string>) {
           try {
             for (const id of channelIds) await EC.haltChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async deployChannels(channelIds: Set<string>, _context: unknown | null) {
           try {
             for (const id of channelIds) await EC.deployChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async undeployChannels(channelIds: Set<string>, _context: unknown | null) {
           try {
             for (const id of channelIds) await EC.undeployChannel(id);
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async startConnector(channelConnectorMap: Map<string, number[]>) {
           try {
@@ -615,7 +681,9 @@ export class Mirth {
               for (const mid of metaIds) await EC.startConnector(chId, mid);
             }
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
         async stopConnector(channelConnectorMap: Map<string, number[]>) {
           try {
@@ -623,7 +691,9 @@ export class Mirth {
               for (const mid of metaIds) await EC.stopConnector(chId, mid);
             }
             return noError();
-          } catch (e) { return withError(e); }
+          } catch (e) {
+            return withError(e);
+          }
         },
       });
 

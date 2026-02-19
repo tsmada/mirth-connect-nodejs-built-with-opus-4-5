@@ -5,7 +5,13 @@
  * Ported from: ~/Projects/connect/server/src/com/mirth/connect/plugins/datapruner/DefaultDataPrunerController.java
  */
 
-import { dataPruner, DataPruner, DEFAULT_PRUNING_BLOCK_SIZE, DEFAULT_ARCHIVING_BLOCK_SIZE, SkipStatus } from './DataPruner.js';
+import {
+  dataPruner,
+  DataPruner,
+  DEFAULT_PRUNING_BLOCK_SIZE,
+  DEFAULT_ARCHIVING_BLOCK_SIZE,
+  SkipStatus,
+} from './DataPruner.js';
 import { DataPrunerStatus } from './DataPrunerStatus.js';
 import * as MirthDao from '../../db/MirthDao.js';
 import type { MessageWriterOptions } from './MessageArchiver.js';
@@ -173,7 +179,9 @@ class DataPrunerController {
 
     const intervalMs = this.config.pollingIntervalHours * 60 * 60 * 1000;
 
-    logger.info(`Starting data pruner scheduler (interval: ${this.config.pollingIntervalHours} hours)`);
+    logger.info(
+      `Starting data pruner scheduler (interval: ${this.config.pollingIntervalHours} hours)`
+    );
 
     this.schedulerTimer = setInterval(() => {
       void this.runScheduledPrune();

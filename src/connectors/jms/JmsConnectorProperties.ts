@@ -203,10 +203,7 @@ export function getDefaultJmsDispatcherProperties(): JmsDispatcherProperties {
  * - RabbitMQ: /queue/name or /topic/name (or /exchange/name)
  * - Apollo: /queue/name or /topic/name
  */
-export function buildDestinationPath(
-  destinationName: string,
-  isTopic: boolean
-): string {
+export function buildDestinationPath(destinationName: string, isTopic: boolean): string {
   // If destination already has a prefix, use as-is
   if (
     destinationName.startsWith('/queue/') ||
@@ -223,10 +220,7 @@ export function buildDestinationPath(
 /**
  * Generate a unique client ID based on channel context
  */
-export function generateClientId(
-  channelId: string,
-  connectorName: string
-): string {
+export function generateClientId(channelId: string, connectorName: string): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
   return `mirth-${channelId.substring(0, 8)}-${connectorName}-${timestamp}-${random}`;

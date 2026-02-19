@@ -46,9 +46,18 @@ interface BasicFtpClient {
   list(path?: string): Promise<BasicFtpFileInfo[]>;
   cd(path: string): Promise<{ code: number; message: string }>;
   pwd(): Promise<string>;
-  downloadTo(writable: NodeJS.WritableStream, remotePath: string): Promise<{ code: number; message: string }>;
-  uploadFrom(readable: NodeJS.ReadableStream | string, remotePath: string): Promise<{ code: number; message: string }>;
-  appendFrom(readable: NodeJS.ReadableStream | string, remotePath: string): Promise<{ code: number; message: string }>;
+  downloadTo(
+    writable: NodeJS.WritableStream,
+    remotePath: string
+  ): Promise<{ code: number; message: string }>;
+  uploadFrom(
+    readable: NodeJS.ReadableStream | string,
+    remotePath: string
+  ): Promise<{ code: number; message: string }>;
+  appendFrom(
+    readable: NodeJS.ReadableStream | string,
+    remotePath: string
+  ): Promise<{ code: number; message: string }>;
   remove(path: string): Promise<{ code: number; message: string }>;
   rename(srcPath: string, destPath: string): Promise<{ code: number; message: string }>;
   ensureDir(path: string): Promise<void>;
@@ -144,7 +153,10 @@ export class FtpClient implements FileSystemClient {
           try {
             await this.client.send(command);
           } catch (err) {
-            logger.error(`Failed to execute FTP initial command: ${command}`, err instanceof Error ? err : undefined);
+            logger.error(
+              `Failed to execute FTP initial command: ${command}`,
+              err instanceof Error ? err : undefined
+            );
           }
         }
       }
@@ -179,7 +191,12 @@ export class FtpClient implements FileSystemClient {
     return this.connected && this.client !== null && !this.client.closed;
   }
 
-  async listFiles(fromDir: string, filenamePattern: string, isRegex: boolean, ignoreDot: boolean): Promise<FileInfo[]> {
+  async listFiles(
+    fromDir: string,
+    filenamePattern: string,
+    isRegex: boolean,
+    ignoreDot: boolean
+  ): Promise<FileInfo[]> {
     this.ensureConnected();
 
     // Java: cwd(fromDir) then client.listFiles()
@@ -266,7 +283,11 @@ export class FtpClient implements FileSystemClient {
     return Buffer.concat(chunks);
   }
 
-  async readFileAsString(file: string, fromDir: string, encoding: BufferEncoding = 'utf8'): Promise<string> {
+  async readFileAsString(
+    file: string,
+    fromDir: string,
+    encoding: BufferEncoding = 'utf8'
+  ): Promise<string> {
     const buffer = await this.readFile(file, fromDir);
     return buffer.toString(encoding);
   }
@@ -276,7 +297,12 @@ export class FtpClient implements FileSystemClient {
     return true;
   }
 
-  async writeFile(file: string, toDir: string, content: Buffer | string, append: boolean): Promise<void> {
+  async writeFile(
+    file: string,
+    toDir: string,
+    content: Buffer | string,
+    append: boolean
+  ): Promise<void> {
     this.ensureConnected();
 
     // Java: cdmake(toDir) — ensure directory exists

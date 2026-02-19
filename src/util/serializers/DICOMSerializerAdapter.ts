@@ -14,10 +14,7 @@ import {
 } from '../SerializerBase.js';
 import { DICOMSerializer } from '../../datatypes/dicom/DICOMSerializer.js';
 import { DICOMDataTypeProperties } from '../../datatypes/dicom/DICOMDataTypeProperties.js';
-import {
-  TYPE_VARIABLE_MAPPING,
-  VERSION_VARIABLE_MAPPING,
-} from '../../model/DefaultMetaData.js';
+import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class DICOMSerializerAdapter extends BaseSerializer {
   private readonly delegate: DICOMSerializer;
@@ -27,9 +24,7 @@ export class DICOMSerializerAdapter extends BaseSerializer {
     deserializationProps: DeserializationProperties = {}
   ) {
     super(serializationProps, deserializationProps);
-    this.delegate = new DICOMSerializer(
-      deserializationProps as Partial<DICOMDataTypeProperties>
-    );
+    this.delegate = new DICOMSerializer(deserializationProps as Partial<DICOMDataTypeProperties>);
   }
 
   getDataType(): string {

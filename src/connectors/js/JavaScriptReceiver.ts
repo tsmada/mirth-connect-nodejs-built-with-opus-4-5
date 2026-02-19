@@ -25,10 +25,7 @@ import { getDefaultExecutor } from '../../javascript/runtime/JavaScriptExecutor.
 import { buildMessageReceiverScope } from '../../javascript/runtime/ScopeBuilder.js';
 import { E4XTranspiler } from '../../javascript/e4x/E4XTranspiler.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
-import {
-  getAlertEventController,
-  ErrorEventType,
-} from '../../javascript/userutil/AlertSender.js';
+import { getAlertEventController, ErrorEventType } from '../../javascript/userutil/AlertSender.js';
 import {
   JavaScriptReceiverProperties,
   getDefaultJavaScriptReceiverProperties,
@@ -147,14 +144,10 @@ export class JavaScriptReceiver extends SourceConnector {
 
   private startPolling(): void {
     // First poll runs immediately (matches Java PollConnector behavior)
-    this.poll().catch((err) =>
-      logger.error('JS Receiver poll error', err as Error)
-    );
+    this.poll().catch((err) => logger.error('JS Receiver poll error', err as Error));
 
     this.pollTimer = setInterval(() => {
-      this.poll().catch((err) =>
-        logger.error('JS Receiver poll error', err as Error)
-      );
+      this.poll().catch((err) => logger.error('JS Receiver poll error', err as Error));
     }, this.properties.pollInterval);
   }
 
@@ -194,11 +187,9 @@ export class JavaScriptReceiver extends SourceConnector {
         metaDataId: 0,
       });
 
-      const result = executor.executeWithScope<unknown>(
-        this.compiledScript,
-        scope,
-        { timeout: 60000 }
-      );
+      const result = executor.executeWithScope<unknown>(this.compiledScript, scope, {
+        timeout: 60000,
+      });
 
       if (!result.success) {
         throw result.error ?? new Error('JavaScript execution failed');
@@ -301,10 +292,6 @@ export class JavaScriptReceiver extends SourceConnector {
    * Matches Java's `instanceof com.mirth.connect.server.userutil.RawMessage` check.
    */
   private isRawMessageLike(obj: unknown): obj is RawMessageLike {
-    return (
-      typeof obj === 'object' &&
-      obj !== null &&
-      'rawData' in (obj as Record<string, unknown>)
-    );
+    return typeof obj === 'object' && obj !== null && 'rawData' in (obj as Record<string, unknown>);
   }
 }

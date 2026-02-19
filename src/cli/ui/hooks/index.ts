@@ -9,7 +9,11 @@ export { useChannels } from './useChannels.js';
 export type { UseChannelsOptions, UseChannelsResult } from './useChannels.js';
 
 export { useChannelGroups } from './useChannelGroups.js';
-export type { UseChannelGroupsOptions, UseChannelGroupsResult, GroupedChannel } from './useChannelGroups.js';
+export type {
+  UseChannelGroupsOptions,
+  UseChannelGroupsResult,
+  GroupedChannel,
+} from './useChannelGroups.js';
 
 export {
   useKeyboardShortcuts,

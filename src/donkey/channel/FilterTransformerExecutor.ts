@@ -200,12 +200,17 @@ export class FilterTransformerExecutor {
   /**
    * Process connector message (combined filter + transform with status updates)
    */
-  async processConnectorMessage(connectorMessage: ConnectorMessage): Promise<FilterTransformerResult> {
+  async processConnectorMessage(
+    connectorMessage: ConnectorMessage
+  ): Promise<FilterTransformerResult> {
     const result = await this.execute(connectorMessage);
 
     // Update connector message with transformed content
     if (!result.filtered && result.transformedData) {
-      connectorMessage.setTransformedData(result.transformedData, result.transformedDataType ?? 'XML');
+      connectorMessage.setTransformedData(
+        result.transformedData,
+        result.transformedDataType ?? 'XML'
+      );
     }
 
     return result;

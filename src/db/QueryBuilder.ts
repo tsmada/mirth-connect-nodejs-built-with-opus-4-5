@@ -154,7 +154,11 @@ export class QueryBuilder {
   /**
    * Add a LIKE condition (case-insensitive)
    */
-  whereLike(column: string, pattern: string | undefined, position: 'start' | 'end' | 'both' = 'both'): this {
+  whereLike(
+    column: string,
+    pattern: string | undefined,
+    position: 'start' | 'end' | 'both' = 'both'
+  ): this {
     if (pattern !== undefined && pattern !== null && pattern.trim() !== '') {
       const paramName = this.nextParamName();
       this.conditions.push(`LOWER(${column}) LIKE LOWER(:${paramName})`);

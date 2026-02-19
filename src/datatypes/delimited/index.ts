@@ -25,10 +25,7 @@ export {
 export { DelimitedParser, parseDelimitedToXML } from './DelimitedParser.js';
 
 // Serializer (XML -> Text)
-export {
-  DelimitedSerializer,
-  serializeXMLToDelimited,
-} from './DelimitedSerializer.js';
+export { DelimitedSerializer, serializeXMLToDelimited } from './DelimitedSerializer.js';
 
 // Data Type
 export {

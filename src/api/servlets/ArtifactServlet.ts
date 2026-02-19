@@ -39,7 +39,8 @@ function checkInitialized(_req: Request, res: Response): boolean {
   if (!ArtifactController.isInitialized()) {
     res.status(503).json({
       error: 'Artifact System Not Initialized',
-      message: 'The artifact controller has not been initialized. Configure MIRTH_ARTIFACT_REPO_PATH or call POST /api/artifacts/git/init.',
+      message:
+        'The artifact controller has not been initialized. Configure MIRTH_ARTIFACT_REPO_PATH or call POST /api/artifacts/git/init.',
     });
     return false;
   }
@@ -403,10 +404,10 @@ artifactRouter.post('/deploy', async (req: Request, res: Response) => {
       // Full deploy — import all and return channel list
       const imported = await ArtifactController.importAll();
       res.json({
-        deployed: imported.filter(c => c.xml).map(c => c.name),
+        deployed: imported.filter((c) => c.xml).map((c) => c.name),
         errors: imported
-          .filter(c => !c.xml && c.warnings.length > 0)
-          .map(c => ({ channel: c.name, error: c.warnings.join('; ') })),
+          .filter((c) => !c.xml && c.warnings.length > 0)
+          .map((c) => ({ channel: c.name, error: c.warnings.join('; ') })),
       });
     }
   } catch (error) {

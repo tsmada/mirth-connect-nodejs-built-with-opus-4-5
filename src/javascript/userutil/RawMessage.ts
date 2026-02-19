@@ -230,7 +230,11 @@ export class RawMessage {
       const rawBytes = model.getRawBytes();
       if (rawBytes) {
         // Convert Buffer to Uint8Array
-        const uint8Array = new Uint8Array(rawBytes.buffer, rawBytes.byteOffset, rawBytes.byteLength);
+        const uint8Array = new Uint8Array(
+          rawBytes.buffer,
+          rawBytes.byteOffset,
+          rawBytes.byteLength
+        );
         return new RawMessage(uint8Array, ids ?? null, sourceMap);
       }
     }

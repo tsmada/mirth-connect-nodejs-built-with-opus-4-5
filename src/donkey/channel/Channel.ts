@@ -263,8 +263,9 @@ export class Channel extends EventEmitter {
    * Matches Java Mirth Channel.isActive()
    */
   isActive(): boolean {
-    return this.currentState !== DeployedState.STOPPED &&
-           this.currentState !== DeployedState.STOPPING;
+    return (
+      this.currentState !== DeployedState.STOPPED && this.currentState !== DeployedState.STOPPING
+    );
   }
 
   /**
@@ -317,7 +318,11 @@ export class Channel extends EventEmitter {
       if (!this.tablesExist) return;
 
       const rows = await getStatistics(this.id);
-      let received = 0, sent = 0, error = 0, filtered = 0, queued = 0;
+      let received = 0,
+        sent = 0,
+        error = 0,
+        filtered = 0,
+        queued = 0;
       for (const row of rows) {
         received += Number(row.RECEIVED) || 0;
         filtered += Number(row.FILTERED) || 0;
@@ -358,9 +363,11 @@ export class Channel extends EventEmitter {
    * Matches Java Mirth pattern in Channel.java:664-762
    */
   async start(): Promise<void> {
-    if (this.currentState !== DeployedState.STOPPED &&
-        this.currentState !== DeployedState.PAUSED &&
-        this.currentState !== DeployedState.DEPLOYING) {
+    if (
+      this.currentState !== DeployedState.STOPPED &&
+      this.currentState !== DeployedState.PAUSED &&
+      this.currentState !== DeployedState.DEPLOYING
+    ) {
       throw new Error(`Cannot start channel in state: ${this.currentState}`);
     }
 
@@ -598,11 +605,13 @@ export class Channel extends EventEmitter {
       if (!this.tablesExist) return;
       if (operations.length === 0) return;
 
-      await withRetry(() => transaction(async (conn) => {
-        for (const op of operations) {
-          await op(conn);
-        }
-      }));
+      await withRetry(() =>
+        transaction(async (conn) => {
+          for (const op of operations) {
+            await op(conn);
+          }
+        })
+      );
     } catch (err) {
       this.persistenceFailureCount++;
       logger.error(`[${this.name}] DB transaction error: ${err}`);
@@ -740,7 +749,9 @@ export class Channel extends EventEmitter {
     if (this.storageSettings.storeAttachments) {
       try {
         const modifiedContent = await this.attachmentHandler.extractAttachments(
-          this.id, messageId, sourceMessage
+          this.id,
+          messageId,
+          sourceMessage
         );
         if (modifiedContent !== rawData) {
           rawData = modifiedContent;
@@ -759,23 +770,47 @@ export class Channel extends EventEmitter {
 
     // Transaction 1: Source intake — persist message + source connector + raw content + stats
     // Pass maps during source insert when rawDurable or storeMaps is set (matches Java Mirth's storeMaps=true behavior)
-    const sourceInsertOptions = (this.storageSettings.rawDurable || this.storageSettings.storeMaps)
-      ? {
-          storeMaps: {
-            sourceMap: sourceMessage.getSourceMap(),
-            connectorMap: sourceMessage.getConnectorMap(),
-            channelMap: sourceMessage.getChannelMap(),
-            responseMap: sourceMessage.getResponseMap(),
-          },
-        }
-      : undefined;
+    const sourceInsertOptions =
+      this.storageSettings.rawDurable || this.storageSettings.storeMaps
+        ? {
+            storeMaps: {
+              sourceMap: sourceMessage.getSourceMap(),
+              connectorMap: sourceMessage.getConnectorMap(),
+              channelMap: sourceMessage.getChannelMap(),
+              responseMap: sourceMessage.getResponseMap(),
+            },
+          }
+        : undefined;
     this.statsAccumulator.increment(0, Status.RECEIVED);
     await this.persistInTransaction([
       (conn) => insertMessage(this.id, messageId, serverId, messageData.receivedDate, conn),
-      (conn) => insertConnectorMessage(this.id, messageId, 0, sourceMessage.getConnectorName(), sourceMessage.getReceivedDate(), Status.RECEIVED, 0, sourceInsertOptions, conn),
-      ...(this.storageSettings.storeRaw ? [
-        (conn: PoolConnection) => insertContent(this.id, messageId, 0, ContentType.RAW, rawData, sourceDataType, this.encryptData, conn),
-      ] : []),
+      (conn) =>
+        insertConnectorMessage(
+          this.id,
+          messageId,
+          0,
+          sourceMessage.getConnectorName(),
+          sourceMessage.getReceivedDate(),
+          Status.RECEIVED,
+          0,
+          sourceInsertOptions,
+          conn
+        ),
+      ...(this.storageSettings.storeRaw
+        ? [
+            (conn: PoolConnection) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.RAW,
+                rawData,
+                sourceDataType,
+                this.encryptData,
+                conn
+              ),
+          ]
+        : []),
       ...this.statsAccumulator.getFlushOps(this.id, serverId),
     ]);
     this.statsAccumulator.reset();
@@ -784,7 +819,11 @@ export class Channel extends EventEmitter {
     this.stats.received++;
 
     // Source queue mode: persist raw + return immediately for background processing
-    if (this.sourceConnector && !this.sourceConnector.getRespondAfterProcessing() && this.sourceQueue) {
+    if (
+      this.sourceConnector &&
+      !this.sourceConnector.getRespondAfterProcessing() &&
+      this.sourceQueue
+    ) {
       sourceMessage.getSourceMap().set('__rawData', rawData);
       this.sourceQueue.add(sourceMessage);
       message.setProcessed(false);
@@ -805,16 +844,24 @@ export class Channel extends EventEmitter {
 
         // Persist PROCESSED_RAW content
         if (this.storageSettings.storeProcessedRaw) {
-          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, sourceDataType, this.encryptData));
+          await this.persistToDb(() =>
+            insertContent(
+              this.id,
+              messageId,
+              0,
+              ContentType.PROCESSED_RAW,
+              processedData,
+              sourceDataType,
+              this.encryptData
+            )
+          );
         }
       }
 
       // Initialize DestinationSet in sourceMap before filter/transformer runs
       // Java Mirth: Channel.java — populates destination metaDataIds so user scripts
       // can call destinationSet.remove() to selectively skip destinations
-      const destMetaDataIds = new Set<number>(
-        this.destinationConnectors.map((_, i) => i + 1)
-      );
+      const destMetaDataIds = new Set<number>(this.destinationConnectors.map((_, i) => i + 1));
       sourceMessage.getSourceMap().set(DESTINATION_SET_KEY, destMetaDataIds);
 
       // Also build destinationIdMap (connector name → metaDataId) for name-based removal
@@ -852,16 +899,36 @@ export class Channel extends EventEmitter {
         if (this.storageSettings.storeTransformed) {
           const transformedContent = sourceMessage.getTransformedContent();
           if (transformedContent) {
-            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
-              transformedContent.content, transformedContent.dataType, this.encryptData, conn));
+            txn2Ops.push((conn) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.TRANSFORMED,
+                transformedContent.content,
+                transformedContent.dataType,
+                this.encryptData,
+                conn
+              )
+            );
           }
         }
 
         if (this.storageSettings.storeSourceEncoded) {
           const encodedContent = sourceMessage.getEncodedContent();
           if (encodedContent) {
-            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.ENCODED,
-              encodedContent.content, encodedContent.dataType, this.encryptData, conn));
+            txn2Ops.push((conn) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.ENCODED,
+                encodedContent.content,
+                encodedContent.dataType,
+                this.encryptData,
+                conn
+              )
+            );
           }
         }
 
@@ -871,7 +938,9 @@ export class Channel extends EventEmitter {
         if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
           const metaData = setMetaDataMap(sourceMessage, this.metaDataColumns);
           if (metaData.size > 0) {
-            txn2Ops.push((conn) => insertCustomMetaData(this.id, messageId, 0, Object.fromEntries(metaData), conn));
+            txn2Ops.push((conn) =>
+              insertCustomMetaData(this.id, messageId, 0, Object.fromEntries(metaData), conn)
+            );
           }
         }
 
@@ -880,12 +949,15 @@ export class Channel extends EventEmitter {
 
       // Dispatch to destinations
       // Java Mirth: Channel.java:1665-1699 — source's encoded content becomes destination's RAW
-      const sourceEncoded = sourceMessage.getEncodedContent()
-        ?? sourceMessage.getTransformedContent()
-        ?? sourceMessage.getRawContent();
+      const sourceEncoded =
+        sourceMessage.getEncodedContent() ??
+        sourceMessage.getTransformedContent() ??
+        sourceMessage.getRawContent();
 
       // Read back DestinationSet after filter/transformer — user may have removed destinations
-      const activeDestIds = sourceMessage.getSourceMap().get(DESTINATION_SET_KEY) as Set<number> | undefined;
+      const activeDestIds = sourceMessage.getSourceMap().get(DESTINATION_SET_KEY) as
+        | Set<number>
+        | undefined;
 
       for (let i = 0; i < this.destinationConnectors.length; i++) {
         const dest = this.destinationConnectors[i];
@@ -901,8 +973,20 @@ export class Channel extends EventEmitter {
           this.stats.filtered++;
           this.statsAccumulator.increment(destMetaId, Status.FILTERED);
           await this.persistInTransaction([
-            (conn) => insertConnectorMessage(this.id, messageId, destMetaId, dest.getName(), filteredMsg.getReceivedDate(), Status.RECEIVED, 0, {}, conn),
-            (conn) => updateConnectorMessageStatus(this.id, messageId, destMetaId, Status.FILTERED, conn),
+            (conn) =>
+              insertConnectorMessage(
+                this.id,
+                messageId,
+                destMetaId,
+                dest.getName(),
+                filteredMsg.getReceivedDate(),
+                Status.RECEIVED,
+                0,
+                {},
+                conn
+              ),
+            (conn) =>
+              updateConnectorMessageStatus(this.id, messageId, destMetaId, Status.FILTERED, conn),
             ...this.statsAccumulator.getFlushOps(this.id, serverId),
           ]);
           this.statsAccumulator.reset();
@@ -925,7 +1009,16 @@ export class Channel extends EventEmitter {
         message.setConnectorMessage(i + 1, destMessage);
 
         // Persist destination connector message
-        await this.persistToDb(() => insertConnectorMessage(this.id, messageId, i + 1, dest.getName(), destMessage.getReceivedDate(), Status.RECEIVED));
+        await this.persistToDb(() =>
+          insertConnectorMessage(
+            this.id,
+            messageId,
+            i + 1,
+            dest.getName(),
+            destMessage.getReceivedDate(),
+            Status.RECEIVED
+          )
+        );
 
         try {
           // Execute destination filter
@@ -935,7 +1028,8 @@ export class Channel extends EventEmitter {
             this.stats.filtered++;
             this.statsAccumulator.increment(i + 1, Status.FILTERED);
             await this.persistInTransaction([
-              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
+              (conn) =>
+                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
               ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
             this.statsAccumulator.reset();
@@ -945,14 +1039,25 @@ export class Channel extends EventEmitter {
           // Execute destination transformer
           await dest.executeTransformer(destMessage);
           destMessage.setStatus(Status.TRANSFORMED);
-          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED));
+          await this.persistToDb(() =>
+            updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED)
+          );
 
           // Persist destination ENCODED content (ContentType=4)
           if (this.storageSettings.storeDestinationEncoded) {
             const destEncoded = destMessage.getEncodedContent();
             if (destEncoded) {
-              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.ENCODED,
-                destEncoded.content, destEncoded.dataType, this.encryptData));
+              await this.persistToDb(() =>
+                insertContent(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  ContentType.ENCODED,
+                  destEncoded.content,
+                  destEncoded.dataType,
+                  this.encryptData
+                )
+              );
             }
           }
 
@@ -980,7 +1085,9 @@ export class Channel extends EventEmitter {
               // If server crashes between send and response transformer,
               // recovery can re-run response transformer for PENDING messages
               destMessage.setStatus(Status.PENDING);
-              await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING));
+              await this.persistToDb(() =>
+                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING)
+              );
 
               // Execute response transformer
               await dest.executeResponseTransformer(destMessage);
@@ -999,8 +1106,18 @@ export class Channel extends EventEmitter {
           if (this.storageSettings.storeSent) {
             const sentData = destMessage.getEncodedContent();
             if (sentData) {
-              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.SENT,
-                sentData.content, sentData.dataType, this.encryptData, conn));
+              destOps.push((conn) =>
+                storeContent(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  ContentType.SENT,
+                  sentData.content,
+                  sentData.dataType,
+                  this.encryptData,
+                  conn
+                )
+              );
             }
           }
 
@@ -1008,16 +1125,36 @@ export class Channel extends EventEmitter {
           if (this.storageSettings.storeResponse) {
             const respContent = destMessage.getResponseContent();
             if (respContent) {
-              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, this.encryptData, conn));
+              destOps.push((conn) =>
+                storeContent(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  ContentType.RESPONSE,
+                  respContent.content,
+                  respContent.dataType,
+                  this.encryptData,
+                  conn
+                )
+              );
             }
 
             // Persist RESPONSE_TRANSFORMED content (ContentType=7)
             if (this.storageSettings.storeResponseTransformed) {
               const responseTransformed = destMessage.getContent(ContentType.RESPONSE_TRANSFORMED);
               if (responseTransformed) {
-                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE_TRANSFORMED,
-                  responseTransformed.content, responseTransformed.dataType, this.encryptData, conn));
+                destOps.push((conn) =>
+                  storeContent(
+                    this.id,
+                    messageId,
+                    i + 1,
+                    ContentType.RESPONSE_TRANSFORMED,
+                    responseTransformed.content,
+                    responseTransformed.dataType,
+                    this.encryptData,
+                    conn
+                  )
+                );
               }
             }
 
@@ -1025,27 +1162,63 @@ export class Channel extends EventEmitter {
             if (this.storageSettings.storeProcessedResponse) {
               const processedResponse = destMessage.getContent(ContentType.PROCESSED_RESPONSE);
               if (processedResponse) {
-                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.PROCESSED_RESPONSE,
-                  processedResponse.content, processedResponse.dataType, this.encryptData, conn));
+                destOps.push((conn) =>
+                  storeContent(
+                    this.id,
+                    messageId,
+                    i + 1,
+                    ContentType.PROCESSED_RESPONSE,
+                    processedResponse.content,
+                    processedResponse.dataType,
+                    this.encryptData,
+                    conn
+                  )
+                );
               }
             }
           }
 
           // Update send attempts and dates
-          destOps.push((conn) => updateSendAttempts(this.id, messageId, i + 1,
-            destMessage.getSendAttempts(), sendDate, destMessage.getResponseDate(), conn));
+          destOps.push((conn) =>
+            updateSendAttempts(
+              this.id,
+              messageId,
+              i + 1,
+              destMessage.getSendAttempts(),
+              sendDate,
+              destMessage.getResponseDate(),
+              conn
+            )
+          );
 
           // Persist destination maps
           if (this.storageSettings.storeMaps) {
-            destOps.push((conn) => updateMaps(this.id, messageId, i + 1,
-              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+            destOps.push((conn) =>
+              updateMaps(
+                this.id,
+                messageId,
+                i + 1,
+                destMessage.getConnectorMap(),
+                destMessage.getChannelMap(),
+                destMessage.getResponseMap(),
+                conn
+              )
+            );
           }
 
           // Custom metadata after destination transformer
           if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
             const destMetaData = setMetaDataMap(destMessage, this.metaDataColumns);
             if (destMetaData.size > 0) {
-              destOps.push((conn) => insertCustomMetaData(this.id, messageId, i + 1, Object.fromEntries(destMetaData), conn));
+              destOps.push((conn) =>
+                insertCustomMetaData(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  Object.fromEntries(destMetaData),
+                  conn
+                )
+              );
             }
           }
 
@@ -1065,7 +1238,8 @@ export class Channel extends EventEmitter {
 
             this.statsAccumulator.increment(i + 1, Status.QUEUED);
             await this.persistInTransaction([
-              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
+              (conn) =>
+                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
               ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
             this.statsAccumulator.reset();
@@ -1080,13 +1254,31 @@ export class Channel extends EventEmitter {
             this.statsAccumulator.increment(i + 1, Status.ERROR);
             const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
-              (conn) => updateErrors(this.id, messageId, i + 1,
-                String(error), undefined, errorCode, undefined, conn),
+              (conn) =>
+                updateErrors(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  String(error),
+                  undefined,
+                  errorCode,
+                  undefined,
+                  conn
+                ),
             ];
 
             if (this.storageSettings.storeMaps) {
-              errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
-                destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+              errOps.push((conn) =>
+                updateMaps(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  destMessage.getConnectorMap(),
+                  destMessage.getChannelMap(),
+                  destMessage.getResponseMap(),
+                  conn
+                )
+              );
             }
 
             errOps.push(...this.statsAccumulator.getFlushOps(this.id, serverId));
@@ -1113,8 +1305,18 @@ export class Channel extends EventEmitter {
                 dataType: respContent.dataType,
                 encrypted: false,
               });
-              txn4Ops.push((conn) => storeContent(this.id, messageId, 0, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, this.encryptData, conn));
+              txn4Ops.push((conn) =>
+                storeContent(
+                  this.id,
+                  messageId,
+                  0,
+                  ContentType.RESPONSE,
+                  respContent.content,
+                  respContent.dataType,
+                  this.encryptData,
+                  conn
+                )
+              );
               break;
             }
           }
@@ -1127,12 +1329,24 @@ export class Channel extends EventEmitter {
       sourceMessage.setSendAttempts(1);
       sourceMessage.setSendDate(sourceFinishDate);
       sourceMessage.setResponseDate(sourceFinishDate);
-      txn4Ops.push((conn) => updateSendAttempts(this.id, messageId, 0, 1, sourceFinishDate, sourceFinishDate, conn));
+      txn4Ops.push((conn) =>
+        updateSendAttempts(this.id, messageId, 0, 1, sourceFinishDate, sourceFinishDate, conn)
+      );
 
       // Persist source response error if present
       if (sourceMessage.getResponseError()) {
-        txn4Ops.push((conn) => updateErrors(this.id, messageId, 0,
-          undefined, undefined, sourceMessage.updateErrorCode(), sourceMessage.getResponseError(), conn));
+        txn4Ops.push((conn) =>
+          updateErrors(
+            this.id,
+            messageId,
+            0,
+            undefined,
+            undefined,
+            sourceMessage.updateErrorCode(),
+            sourceMessage.getResponseError(),
+            conn
+          )
+        );
       }
 
       // Execute postprocessor (runs outside transaction — errors caught separately)
@@ -1142,8 +1356,9 @@ export class Channel extends EventEmitter {
         } catch (postError) {
           sourceMessage.setPostProcessorError(String(postError));
           const errorCode = sourceMessage.updateErrorCode();
-          await this.persistToDb(() => updateErrors(this.id, messageId, 0,
-            undefined, String(postError), errorCode));
+          await this.persistToDb(() =>
+            updateErrors(this.id, messageId, 0, undefined, String(postError), errorCode)
+          );
         }
       }
 
@@ -1165,8 +1380,17 @@ export class Channel extends EventEmitter {
 
       // Source maps
       if (this.storageSettings.storeMaps) {
-        txn4Ops.push((conn) => updateMaps(this.id, messageId, 0,
-          sourceMessage.getConnectorMap(), sourceMessage.getChannelMap(), sourceMessage.getResponseMap(), conn));
+        txn4Ops.push((conn) =>
+          updateMaps(
+            this.id,
+            messageId,
+            0,
+            sourceMessage.getConnectorMap(),
+            sourceMessage.getChannelMap(),
+            sourceMessage.getResponseMap(),
+            conn
+          )
+        );
       }
 
       // Mark processed
@@ -1175,15 +1399,21 @@ export class Channel extends EventEmitter {
 
       // Content/attachment removal — only if all destinations are in terminal state
       if (this.storageSettings.removeContentOnCompletion) {
-        if (!this.storageSettings.removeOnlyFilteredOnCompletion ||
-            sourceMessage.getStatus() === Status.FILTERED) {
+        if (
+          !this.storageSettings.removeOnlyFilteredOnCompletion ||
+          sourceMessage.getStatus() === Status.FILTERED
+        ) {
           if (await this.allDestinationsTerminal(messageId)) {
-            txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
+            txn4Ops.push(async () => {
+              await pruneMessageContent(this.id, [messageId]);
+            });
           }
         }
       }
       if (this.storageSettings.removeAttachmentsOnCompletion) {
-        txn4Ops.push(async () => { await pruneMessageAttachments(this.id, [messageId]); });
+        txn4Ops.push(async () => {
+          await pruneMessageAttachments(this.id, [messageId]);
+        });
       }
 
       await this.persistInTransaction(txn4Ops);
@@ -1197,8 +1427,8 @@ export class Channel extends EventEmitter {
       this.statsAccumulator.increment(0, Status.ERROR);
       await this.persistInTransaction([
         (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR, conn),
-        (conn) => updateErrors(this.id, messageId, 0,
-          String(error), undefined, errorCode, undefined, conn),
+        (conn) =>
+          updateErrors(this.id, messageId, 0, String(error), undefined, errorCode, undefined, conn),
         ...this.statsAccumulator.getFlushOps(this.id, serverId),
       ]);
       this.statsAccumulator.reset();
@@ -1211,7 +1441,17 @@ export class Channel extends EventEmitter {
     srcMap.delete(DESTINATION_SET_KEY);
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() =>
+        storeContent(
+          this.id,
+          messageId,
+          0,
+          ContentType.SOURCE_MAP,
+          JSON.stringify(mapObj),
+          'JSON',
+          false
+        )
+      );
     }
 
     // Record OTEL metrics
@@ -1282,11 +1522,7 @@ export class Channel extends EventEmitter {
     }
 
     const context = this.getScriptContext();
-    const result = this.executor.executePostprocessor(
-      this.postprocessorScript,
-      message,
-      context
-    );
+    const result = this.executor.executePostprocessor(this.postprocessorScript, message, context);
 
     if (!result.success) {
       throw result.error ?? new Error('Postprocessor script failed');
@@ -1314,9 +1550,19 @@ export class Channel extends EventEmitter {
 
   private sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (signal?.aborted) { reject(new Error('aborted')); return; }
+      if (signal?.aborted) {
+        reject(new Error('aborted'));
+        return;
+      }
       const timer = setTimeout(resolve, ms);
-      signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')); }, { once: true });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new Error('aborted'));
+        },
+        { once: true }
+      );
     });
   }
 
@@ -1353,11 +1599,12 @@ export class Channel extends EventEmitter {
           continue;
         }
 
-        const rawData = (connectorMessage.getSourceMap().get('__rawData') as string) ??
-                         connectorMessage.getRawContent()?.content ?? '';
+        const rawData =
+          (connectorMessage.getSourceMap().get('__rawData') as string) ??
+          connectorMessage.getRawContent()?.content ??
+          '';
 
         await this.processFromSourceQueue(connectorMessage, rawData);
-
       } catch (error) {
         if (signal.aborted) break;
         logger.error(`[${this.name}] Source queue processing error: ${error}`);
@@ -1371,7 +1618,7 @@ export class Channel extends EventEmitter {
    */
   private async processFromSourceQueue(
     sourceMessage: ConnectorMessage,
-    rawData: string,
+    rawData: string
   ): Promise<void> {
     const messageId = sourceMessage.getMessageId();
     const serverId = this.serverId;
@@ -1403,14 +1650,22 @@ export class Channel extends EventEmitter {
         });
 
         if (this.storageSettings.storeProcessedRaw) {
-          await this.persistToDb(() => insertContent(this.id, messageId, 0, ContentType.PROCESSED_RAW, processedData, queueDataType, this.encryptData));
+          await this.persistToDb(() =>
+            insertContent(
+              this.id,
+              messageId,
+              0,
+              ContentType.PROCESSED_RAW,
+              processedData,
+              queueDataType,
+              this.encryptData
+            )
+          );
         }
       }
 
       // Initialize DestinationSet in sourceMap before filter/transformer runs (same as dispatchRawMessage)
-      const destMetaDataIds2 = new Set<number>(
-        this.destinationConnectors.map((_, i) => i + 1)
-      );
+      const destMetaDataIds2 = new Set<number>(this.destinationConnectors.map((_, i) => i + 1));
       sourceMessage.getSourceMap().set(DESTINATION_SET_KEY, destMetaDataIds2);
 
       const destIdMap2 = new Map<string, number>();
@@ -1447,16 +1702,36 @@ export class Channel extends EventEmitter {
         if (this.storageSettings.storeTransformed) {
           const transformedContent = sourceMessage.getTransformedContent();
           if (transformedContent) {
-            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.TRANSFORMED,
-              transformedContent.content, transformedContent.dataType, this.encryptData, conn));
+            txn2Ops.push((conn) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.TRANSFORMED,
+                transformedContent.content,
+                transformedContent.dataType,
+                this.encryptData,
+                conn
+              )
+            );
           }
         }
 
         if (this.storageSettings.storeSourceEncoded) {
           const encodedContent = sourceMessage.getEncodedContent();
           if (encodedContent) {
-            txn2Ops.push((conn) => insertContent(this.id, messageId, 0, ContentType.ENCODED,
-              encodedContent.content, encodedContent.dataType, this.encryptData, conn));
+            txn2Ops.push((conn) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.ENCODED,
+                encodedContent.content,
+                encodedContent.dataType,
+                this.encryptData,
+                conn
+              )
+            );
           }
         }
 
@@ -1465,7 +1740,9 @@ export class Channel extends EventEmitter {
         if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
           const metaData = setMetaDataMap(sourceMessage, this.metaDataColumns);
           if (metaData.size > 0) {
-            txn2Ops.push((conn) => insertCustomMetaData(this.id, messageId, 0, Object.fromEntries(metaData), conn));
+            txn2Ops.push((conn) =>
+              insertCustomMetaData(this.id, messageId, 0, Object.fromEntries(metaData), conn)
+            );
           }
         }
 
@@ -1474,12 +1751,15 @@ export class Channel extends EventEmitter {
 
       // Dispatch to destinations
       // Java Mirth: source's encoded content becomes destination's RAW
-      const sourceEncoded2 = sourceMessage.getEncodedContent()
-        ?? sourceMessage.getTransformedContent()
-        ?? sourceMessage.getRawContent();
+      const sourceEncoded2 =
+        sourceMessage.getEncodedContent() ??
+        sourceMessage.getTransformedContent() ??
+        sourceMessage.getRawContent();
 
       // Read back DestinationSet after filter/transformer (same as dispatchRawMessage)
-      const activeDestIds2 = sourceMessage.getSourceMap().get(DESTINATION_SET_KEY) as Set<number> | undefined;
+      const activeDestIds2 = sourceMessage.getSourceMap().get(DESTINATION_SET_KEY) as
+        | Set<number>
+        | undefined;
 
       for (let i = 0; i < this.destinationConnectors.length; i++) {
         const dest = this.destinationConnectors[i];
@@ -1494,8 +1774,20 @@ export class Channel extends EventEmitter {
           this.stats.filtered++;
           this.statsAccumulator.increment(destMetaId2, Status.FILTERED);
           await this.persistInTransaction([
-            (conn) => insertConnectorMessage(this.id, messageId, destMetaId2, dest.getName(), filteredMsg.getReceivedDate(), Status.RECEIVED, 0, {}, conn),
-            (conn) => updateConnectorMessageStatus(this.id, messageId, destMetaId2, Status.FILTERED, conn),
+            (conn) =>
+              insertConnectorMessage(
+                this.id,
+                messageId,
+                destMetaId2,
+                dest.getName(),
+                filteredMsg.getReceivedDate(),
+                Status.RECEIVED,
+                0,
+                {},
+                conn
+              ),
+            (conn) =>
+              updateConnectorMessageStatus(this.id, messageId, destMetaId2, Status.FILTERED, conn),
             ...this.statsAccumulator.getFlushOps(this.id, serverId),
           ]);
           this.statsAccumulator.reset();
@@ -1516,7 +1808,16 @@ export class Channel extends EventEmitter {
 
         message.setConnectorMessage(i + 1, destMessage);
 
-        await this.persistToDb(() => insertConnectorMessage(this.id, messageId, i + 1, dest.getName(), destMessage.getReceivedDate(), Status.RECEIVED));
+        await this.persistToDb(() =>
+          insertConnectorMessage(
+            this.id,
+            messageId,
+            i + 1,
+            dest.getName(),
+            destMessage.getReceivedDate(),
+            Status.RECEIVED
+          )
+        );
 
         try {
           const filtered = await dest.executeFilter(destMessage);
@@ -1525,7 +1826,8 @@ export class Channel extends EventEmitter {
             this.stats.filtered++;
             this.statsAccumulator.increment(i + 1, Status.FILTERED);
             await this.persistInTransaction([
-              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
+              (conn) =>
+                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.FILTERED, conn),
               ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
             this.statsAccumulator.reset();
@@ -1534,13 +1836,24 @@ export class Channel extends EventEmitter {
 
           await dest.executeTransformer(destMessage);
           destMessage.setStatus(Status.TRANSFORMED);
-          await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED));
+          await this.persistToDb(() =>
+            updateConnectorMessageStatus(this.id, messageId, i + 1, Status.TRANSFORMED)
+          );
 
           if (this.storageSettings.storeDestinationEncoded) {
             const destEncoded = destMessage.getEncodedContent();
             if (destEncoded) {
-              await this.persistToDb(() => insertContent(this.id, messageId, i + 1, ContentType.ENCODED,
-                destEncoded.content, destEncoded.dataType, this.encryptData));
+              await this.persistToDb(() =>
+                insertContent(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  ContentType.ENCODED,
+                  destEncoded.content,
+                  destEncoded.dataType,
+                  this.encryptData
+                )
+              );
             }
           }
 
@@ -1564,7 +1877,9 @@ export class Channel extends EventEmitter {
 
               // PENDING checkpoint — crash recovery marker (matching dispatchRawMessage path)
               destMessage.setStatus(Status.PENDING);
-              await this.persistToDb(() => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING));
+              await this.persistToDb(() =>
+                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING)
+              );
 
               // Execute response transformer
               await dest.executeResponseTransformer(destMessage);
@@ -1582,45 +1897,111 @@ export class Channel extends EventEmitter {
           if (this.storageSettings.storeSent) {
             const sentData = destMessage.getEncodedContent();
             if (sentData) {
-              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.SENT,
-                sentData.content, sentData.dataType, this.encryptData, conn));
+              destOps.push((conn) =>
+                storeContent(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  ContentType.SENT,
+                  sentData.content,
+                  sentData.dataType,
+                  this.encryptData,
+                  conn
+                )
+              );
             }
           }
 
           if (this.storageSettings.storeResponse) {
             const respContent = destMessage.getResponseContent();
             if (respContent) {
-              destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, this.encryptData, conn));
+              destOps.push((conn) =>
+                storeContent(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  ContentType.RESPONSE,
+                  respContent.content,
+                  respContent.dataType,
+                  this.encryptData,
+                  conn
+                )
+              );
             }
             if (this.storageSettings.storeResponseTransformed) {
               const responseTransformed = destMessage.getContent(ContentType.RESPONSE_TRANSFORMED);
               if (responseTransformed) {
-                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.RESPONSE_TRANSFORMED,
-                  responseTransformed.content, responseTransformed.dataType, this.encryptData, conn));
+                destOps.push((conn) =>
+                  storeContent(
+                    this.id,
+                    messageId,
+                    i + 1,
+                    ContentType.RESPONSE_TRANSFORMED,
+                    responseTransformed.content,
+                    responseTransformed.dataType,
+                    this.encryptData,
+                    conn
+                  )
+                );
               }
             }
             if (this.storageSettings.storeProcessedResponse) {
               const processedResponse = destMessage.getContent(ContentType.PROCESSED_RESPONSE);
               if (processedResponse) {
-                destOps.push((conn) => storeContent(this.id, messageId, i + 1, ContentType.PROCESSED_RESPONSE,
-                  processedResponse.content, processedResponse.dataType, this.encryptData, conn));
+                destOps.push((conn) =>
+                  storeContent(
+                    this.id,
+                    messageId,
+                    i + 1,
+                    ContentType.PROCESSED_RESPONSE,
+                    processedResponse.content,
+                    processedResponse.dataType,
+                    this.encryptData,
+                    conn
+                  )
+                );
               }
             }
           }
 
-          destOps.push((conn) => updateSendAttempts(this.id, messageId, i + 1,
-            destMessage.getSendAttempts(), sendDate, destMessage.getResponseDate(), conn));
+          destOps.push((conn) =>
+            updateSendAttempts(
+              this.id,
+              messageId,
+              i + 1,
+              destMessage.getSendAttempts(),
+              sendDate,
+              destMessage.getResponseDate(),
+              conn
+            )
+          );
 
           if (this.storageSettings.storeMaps) {
-            destOps.push((conn) => updateMaps(this.id, messageId, i + 1,
-              destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+            destOps.push((conn) =>
+              updateMaps(
+                this.id,
+                messageId,
+                i + 1,
+                destMessage.getConnectorMap(),
+                destMessage.getChannelMap(),
+                destMessage.getResponseMap(),
+                conn
+              )
+            );
           }
 
           if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
             const destMetaData = setMetaDataMap(destMessage, this.metaDataColumns);
             if (destMetaData.size > 0) {
-              destOps.push((conn) => insertCustomMetaData(this.id, messageId, i + 1, Object.fromEntries(destMetaData), conn));
+              destOps.push((conn) =>
+                insertCustomMetaData(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  Object.fromEntries(destMetaData),
+                  conn
+                )
+              );
             }
           }
 
@@ -1640,7 +2021,8 @@ export class Channel extends EventEmitter {
 
             this.statsAccumulator.increment(i + 1, Status.QUEUED);
             await this.persistInTransaction([
-              (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
+              (conn) =>
+                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.QUEUED, conn),
               ...this.statsAccumulator.getFlushOps(this.id, serverId),
             ]);
             this.statsAccumulator.reset();
@@ -1654,13 +2036,31 @@ export class Channel extends EventEmitter {
             this.statsAccumulator.increment(i + 1, Status.ERROR);
             const errOps: Array<(conn: PoolConnection) => Promise<void>> = [
               (conn) => updateConnectorMessageStatus(this.id, messageId, i + 1, Status.ERROR, conn),
-              (conn) => updateErrors(this.id, messageId, i + 1,
-                String(error), undefined, errorCode, undefined, conn),
+              (conn) =>
+                updateErrors(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  String(error),
+                  undefined,
+                  errorCode,
+                  undefined,
+                  conn
+                ),
             ];
 
             if (this.storageSettings.storeMaps) {
-              errOps.push((conn) => updateMaps(this.id, messageId, i + 1,
-                destMessage.getConnectorMap(), destMessage.getChannelMap(), destMessage.getResponseMap(), conn));
+              errOps.push((conn) =>
+                updateMaps(
+                  this.id,
+                  messageId,
+                  i + 1,
+                  destMessage.getConnectorMap(),
+                  destMessage.getChannelMap(),
+                  destMessage.getResponseMap(),
+                  conn
+                )
+              );
             }
 
             errOps.push(...this.statsAccumulator.getFlushOps(this.id, serverId));
@@ -1685,8 +2085,18 @@ export class Channel extends EventEmitter {
                 dataType: respContent.dataType,
                 encrypted: false,
               });
-              txn4Ops.push((conn) => storeContent(this.id, messageId, 0, ContentType.RESPONSE,
-                respContent.content, respContent.dataType, this.encryptData, conn));
+              txn4Ops.push((conn) =>
+                storeContent(
+                  this.id,
+                  messageId,
+                  0,
+                  ContentType.RESPONSE,
+                  respContent.content,
+                  respContent.dataType,
+                  this.encryptData,
+                  conn
+                )
+              );
               break;
             }
           }
@@ -1698,12 +2108,24 @@ export class Channel extends EventEmitter {
       sourceMessage.setSendAttempts(1);
       sourceMessage.setSendDate(sourceFinishDate2);
       sourceMessage.setResponseDate(sourceFinishDate2);
-      txn4Ops.push((conn) => updateSendAttempts(this.id, messageId, 0, 1, sourceFinishDate2, sourceFinishDate2, conn));
+      txn4Ops.push((conn) =>
+        updateSendAttempts(this.id, messageId, 0, 1, sourceFinishDate2, sourceFinishDate2, conn)
+      );
 
       // Persist source response error if present
       if (sourceMessage.getResponseError()) {
-        txn4Ops.push((conn) => updateErrors(this.id, messageId, 0,
-          undefined, undefined, sourceMessage.updateErrorCode(), sourceMessage.getResponseError(), conn));
+        txn4Ops.push((conn) =>
+          updateErrors(
+            this.id,
+            messageId,
+            0,
+            undefined,
+            undefined,
+            sourceMessage.updateErrorCode(),
+            sourceMessage.getResponseError(),
+            conn
+          )
+        );
       }
 
       if (this.postprocessorScript) {
@@ -1712,8 +2134,9 @@ export class Channel extends EventEmitter {
         } catch (postError) {
           sourceMessage.setPostProcessorError(String(postError));
           const errorCode = sourceMessage.updateErrorCode();
-          await this.persistToDb(() => updateErrors(this.id, messageId, 0,
-            undefined, String(postError), errorCode));
+          await this.persistToDb(() =>
+            updateErrors(this.id, messageId, 0, undefined, String(postError), errorCode)
+          );
         }
       }
 
@@ -1733,8 +2156,17 @@ export class Channel extends EventEmitter {
       }
 
       if (this.storageSettings.storeMaps) {
-        txn4Ops.push((conn) => updateMaps(this.id, messageId, 0,
-          sourceMessage.getConnectorMap(), sourceMessage.getChannelMap(), sourceMessage.getResponseMap(), conn));
+        txn4Ops.push((conn) =>
+          updateMaps(
+            this.id,
+            messageId,
+            0,
+            sourceMessage.getConnectorMap(),
+            sourceMessage.getChannelMap(),
+            sourceMessage.getResponseMap(),
+            conn
+          )
+        );
       }
 
       message.setProcessed(true);
@@ -1742,15 +2174,21 @@ export class Channel extends EventEmitter {
 
       // Content/attachment removal — only if all destinations are in terminal state
       if (this.storageSettings.removeContentOnCompletion) {
-        if (!this.storageSettings.removeOnlyFilteredOnCompletion ||
-            sourceMessage.getStatus() === Status.FILTERED) {
+        if (
+          !this.storageSettings.removeOnlyFilteredOnCompletion ||
+          sourceMessage.getStatus() === Status.FILTERED
+        ) {
           if (await this.allDestinationsTerminal(messageId)) {
-            txn4Ops.push(async () => { await pruneMessageContent(this.id, [messageId]); });
+            txn4Ops.push(async () => {
+              await pruneMessageContent(this.id, [messageId]);
+            });
           }
         }
       }
       if (this.storageSettings.removeAttachmentsOnCompletion) {
-        txn4Ops.push(async () => { await pruneMessageAttachments(this.id, [messageId]); });
+        txn4Ops.push(async () => {
+          await pruneMessageAttachments(this.id, [messageId]);
+        });
       }
 
       await this.persistInTransaction(txn4Ops);
@@ -1764,8 +2202,8 @@ export class Channel extends EventEmitter {
       this.statsAccumulator.increment(0, Status.ERROR);
       await this.persistInTransaction([
         (conn) => updateConnectorMessageStatus(this.id, messageId, 0, Status.ERROR, conn),
-        (conn) => updateErrors(this.id, messageId, 0,
-          String(error), undefined, errorCode, undefined, conn),
+        (conn) =>
+          updateErrors(this.id, messageId, 0, String(error), undefined, errorCode, undefined, conn),
         ...this.statsAccumulator.getFlushOps(this.id, serverId),
       ]);
       this.statsAccumulator.reset();
@@ -1777,7 +2215,17 @@ export class Channel extends EventEmitter {
     srcMap.delete(DESTINATION_SET_KEY);
     if (srcMap.size > 0) {
       const mapObj = Object.fromEntries(srcMap);
-      await this.persistToDb(() => storeContent(this.id, messageId, 0, ContentType.SOURCE_MAP, JSON.stringify(mapObj), 'JSON', false));
+      await this.persistToDb(() =>
+        storeContent(
+          this.id,
+          messageId,
+          0,
+          ContentType.SOURCE_MAP,
+          JSON.stringify(mapObj),
+          'JSON',
+          false
+        )
+      );
     }
 
     this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });

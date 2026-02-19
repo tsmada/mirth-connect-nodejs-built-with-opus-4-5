@@ -212,9 +212,7 @@ export function formatWebServiceDispatcherProperties(
 /**
  * Get attachments from properties
  */
-export function getAttachmentEntries(
-  props: WebServiceDispatcherProperties
-): AttachmentEntry[] {
+export function getAttachmentEntries(props: WebServiceDispatcherProperties): AttachmentEntry[] {
   const entries: AttachmentEntry[] = [];
 
   for (let i = 0; i < props.attachmentNames.length; i++) {

@@ -124,14 +124,16 @@ export class S3Client implements FileSystemClient {
 
     // Dynamic import with actionable error message
     try {
-      this.s3Module = await import('@aws-sdk/client-s3') as unknown as Record<string, unknown>;
+      this.s3Module = (await import('@aws-sdk/client-s3')) as unknown as Record<string, unknown>;
     } catch {
       throw new Error(
         'S3 support requires @aws-sdk/client-s3. Install with: npm install @aws-sdk/client-s3'
       );
     }
 
-    const S3ClientClass = this.s3Module['S3Client'] as new (config: Record<string, unknown>) => unknown;
+    const S3ClientClass = this.s3Module['S3Client'] as new (
+      config: Record<string, unknown>
+    ) => unknown;
 
     // Build credentials configuration matching Java's createCredentialsProvider()
     const config: Record<string, unknown> = {
@@ -247,17 +249,27 @@ export class S3Client implements FileSystemClient {
     return headers;
   }
 
-  private async sendCommand(CommandClass: new (input: Record<string, unknown>) => unknown, input: Record<string, unknown>): Promise<unknown> {
+  private async sendCommand(
+    CommandClass: new (input: Record<string, unknown>) => unknown,
+    input: Record<string, unknown>
+  ): Promise<unknown> {
     this.ensureConnected();
     const command = new CommandClass(input);
     return (this.s3 as { send(cmd: unknown): Promise<unknown> }).send(command);
   }
 
-  async listFiles(fromDir: string, filenamePattern: string, isRegex: boolean, ignoreDot: boolean): Promise<FileInfo[]> {
+  async listFiles(
+    fromDir: string,
+    filenamePattern: string,
+    isRegex: boolean,
+    ignoreDot: boolean
+  ): Promise<FileInfo[]> {
     this.ensureConnected();
 
     const { bucket, prefix } = this.getBucketNameAndPrefix(fromDir);
-    const ListObjectsV2Command = this.s3Module!['ListObjectsV2Command'] as new (input: Record<string, unknown>) => unknown;
+    const ListObjectsV2Command = this.s3Module!['ListObjectsV2Command'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
     const files: FileInfo[] = [];
     let continuationToken: string | undefined;
@@ -272,7 +284,7 @@ export class S3Client implements FileSystemClient {
         input.ContinuationToken = continuationToken;
       }
 
-      const result = await this.sendCommand(ListObjectsV2Command, input) as ListObjectsV2Output;
+      const result = (await this.sendCommand(ListObjectsV2Command, input)) as ListObjectsV2Output;
 
       if (result.Contents) {
         for (const s3Object of result.Contents) {
@@ -317,7 +329,9 @@ export class S3Client implements FileSystemClient {
     this.ensureConnected();
 
     const { bucket, prefix } = this.getBucketNameAndPrefix(fromDir);
-    const ListObjectsV2Command = this.s3Module!['ListObjectsV2Command'] as new (input: Record<string, unknown>) => unknown;
+    const ListObjectsV2Command = this.s3Module!['ListObjectsV2Command'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
     const directories: string[] = [];
     let continuationToken: string | undefined;
@@ -332,7 +346,7 @@ export class S3Client implements FileSystemClient {
         input.ContinuationToken = continuationToken;
       }
 
-      const result = await this.sendCommand(ListObjectsV2Command, input) as ListObjectsV2Output;
+      const result = (await this.sendCommand(ListObjectsV2Command, input)) as ListObjectsV2Output;
 
       if (result.CommonPrefixes) {
         for (const cp of result.CommonPrefixes) {
@@ -353,13 +367,15 @@ export class S3Client implements FileSystemClient {
 
     const { bucket, prefix } = this.getBucketNameAndPrefix(path);
     const key = this.getKey(prefix, file);
-    const HeadObjectCommand = this.s3Module!['HeadObjectCommand'] as new (input: Record<string, unknown>) => unknown;
+    const HeadObjectCommand = this.s3Module!['HeadObjectCommand'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
     try {
-      const result = await this.sendCommand(HeadObjectCommand, {
+      const result = (await this.sendCommand(HeadObjectCommand, {
         Bucket: bucket,
         Key: key,
-      }) as HeadObjectOutput;
+      })) as HeadObjectOutput;
 
       return result !== null && (result.DeleteMarker == null || !result.DeleteMarker);
     } catch {
@@ -372,12 +388,14 @@ export class S3Client implements FileSystemClient {
 
     const { bucket, prefix } = this.getBucketNameAndPrefix(fromDir);
     const key = this.getKey(prefix, file);
-    const GetObjectCommand = this.s3Module!['GetObjectCommand'] as new (input: Record<string, unknown>) => unknown;
+    const GetObjectCommand = this.s3Module!['GetObjectCommand'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
-    const result = await this.sendCommand(GetObjectCommand, {
+    const result = (await this.sendCommand(GetObjectCommand, {
       Bucket: bucket,
       Key: key,
-    }) as GetObjectOutput;
+    })) as GetObjectOutput;
 
     if (!result.Body) {
       throw new Error(`Empty response body for S3 object: ${bucket}/${key}`);
@@ -387,7 +405,11 @@ export class S3Client implements FileSystemClient {
     return Buffer.from(bytes);
   }
 
-  async readFileAsString(file: string, fromDir: string, encoding: BufferEncoding = 'utf8'): Promise<string> {
+  async readFileAsString(
+    file: string,
+    fromDir: string,
+    encoding: BufferEncoding = 'utf8'
+  ): Promise<string> {
     const buffer = await this.readFile(file, fromDir);
     return buffer.toString(encoding);
   }
@@ -397,12 +419,19 @@ export class S3Client implements FileSystemClient {
     return false;
   }
 
-  async writeFile(file: string, toDir: string, content: Buffer | string, _append: boolean): Promise<void> {
+  async writeFile(
+    file: string,
+    toDir: string,
+    content: Buffer | string,
+    _append: boolean
+  ): Promise<void> {
     this.ensureConnected();
 
     const { bucket, prefix } = this.getBucketNameAndPrefix(toDir);
     const key = this.getKey(prefix, file);
-    const PutObjectCommand = this.s3Module!['PutObjectCommand'] as new (input: Record<string, unknown>) => unknown;
+    const PutObjectCommand = this.s3Module!['PutObjectCommand'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
     const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
 
@@ -419,7 +448,7 @@ export class S3Client implements FileSystemClient {
       input.Metadata = customHeaders;
     }
 
-    const result = await this.sendCommand(PutObjectCommand, input) as PutObjectOutput;
+    const result = (await this.sendCommand(PutObjectCommand, input)) as PutObjectOutput;
 
     // Log metadata for debugging
     if (result.ETag) {
@@ -432,7 +461,9 @@ export class S3Client implements FileSystemClient {
 
     const { bucket, prefix } = this.getBucketNameAndPrefix(fromDir);
     const key = this.getKey(prefix, file);
-    const DeleteObjectCommand = this.s3Module!['DeleteObjectCommand'] as new (input: Record<string, unknown>) => unknown;
+    const DeleteObjectCommand = this.s3Module!['DeleteObjectCommand'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
     // Java: client.deleteObject(deleteRequest)
     // S3 delete is idempotent — doesn't error if object doesn't exist
@@ -451,7 +482,9 @@ export class S3Client implements FileSystemClient {
     const { bucket: toBucket, prefix: toPrefix } = this.getBucketNameAndPrefix(toDir);
     const toKey = this.getKey(toPrefix, toName);
 
-    const CopyObjectCommand = this.s3Module!['CopyObjectCommand'] as new (input: Record<string, unknown>) => unknown;
+    const CopyObjectCommand = this.s3Module!['CopyObjectCommand'] as new (
+      input: Record<string, unknown>
+    ) => unknown;
 
     try {
       // Java: CopyObject + DeleteObject (S3 has no native rename/move)
@@ -475,7 +508,9 @@ export class S3Client implements FileSystemClient {
 
     try {
       const { bucket, prefix } = this.getBucketNameAndPrefix(readDir);
-      const ListObjectsV2Command = this.s3Module!['ListObjectsV2Command'] as new (input: Record<string, unknown>) => unknown;
+      const ListObjectsV2Command = this.s3Module!['ListObjectsV2Command'] as new (
+        input: Record<string, unknown>
+      ) => unknown;
 
       await this.sendCommand(ListObjectsV2Command, {
         Bucket: bucket,

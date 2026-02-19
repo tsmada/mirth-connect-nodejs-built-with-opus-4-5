@@ -1,4 +1,4 @@
-<!-- Planned: 2026-02-08 | Status: Pending -->
+<!-- Completed: 2026-02-19 | Status: Implemented -->
 
 # Plan: Connect MessageArchiver to DataPruner Pipeline
 

@@ -17,12 +17,7 @@ export interface ChannelGroupProps {
 /**
  * Channel group header component
  */
-export const ChannelGroup: FC<ChannelGroupProps> = ({
-  name,
-  channelCount,
-  expanded,
-  selected,
-}) => {
+export const ChannelGroup: FC<ChannelGroupProps> = ({ name, channelCount, expanded, selected }) => {
   const expandIcon = expanded ? '▼' : '▶';
   const rowColor = selected ? 'cyan' : 'white';
 

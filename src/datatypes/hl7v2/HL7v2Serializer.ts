@@ -38,18 +38,14 @@ export class HL7v2Serializer {
   serialize(xml: string): string {
     // Extract delimiters from MSH.1 and MSH.2
     const fieldSeparator = this.extractNodeValue(xml, 'MSH.1') || HL7V2_DEFAULTS.FIELD_SEPARATOR;
-    const encodingChars = this.unescapeXmlEntities(
-      this.extractNodeValue(xml, 'MSH.2') || '^~\\&'
-    );
+    const encodingChars = this.unescapeXmlEntities(this.extractNodeValue(xml, 'MSH.2') || '^~\\&');
 
     const componentSeparator = encodingChars.charAt(0) || HL7V2_DEFAULTS.COMPONENT_SEPARATOR;
     const repetitionSeparator = encodingChars.charAt(1) || HL7V2_DEFAULTS.REPETITION_SEPARATOR;
     const escapeCharacter = encodingChars.charAt(2) || HL7V2_DEFAULTS.ESCAPE_CHARACTER;
     const subcomponentSeparator = encodingChars.charAt(3) || HL7V2_DEFAULTS.SUBCOMPONENT_SEPARATOR;
 
-    const segmentDelimiter = unescapeSegmentDelimiter(
-      this.properties.segmentDelimiter
-    );
+    const segmentDelimiter = unescapeSegmentDelimiter(this.properties.segmentDelimiter);
 
     // Clean up pretty-printed XML
     xml = this.removePrettyPrintWhitespace(xml);
@@ -79,9 +75,7 @@ export class HL7v2Serializer {
   /**
    * Extract all segment elements from XML
    */
-  private extractSegments(
-    xml: string
-  ): Array<{ name: string; content: string }> {
+  private extractSegments(xml: string): Array<{ name: string; content: string }> {
     // Find the HL7Message root element content
     const rootMatch = xml.match(
       new RegExp(`<${MESSAGE_ROOT_ID}[^>]*>([\\s\\S]*)</${MESSAGE_ROOT_ID}>`)
@@ -97,9 +91,7 @@ export class HL7v2Serializer {
   /**
    * Extract segments from content string
    */
-  private extractSegmentsFromContent(
-    content: string
-  ): Array<{ name: string; content: string }> {
+  private extractSegmentsFromContent(content: string): Array<{ name: string; content: string }> {
     const segments: Array<{ name: string; content: string }> = [];
 
     // Match segment elements (3 uppercase letters)
@@ -128,8 +120,7 @@ export class HL7v2Serializer {
     escapeCharacter: string,
     subcomponentSeparator: string
   ): string {
-    const isHeaderSegment =
-      segmentName === 'MSH' || segmentName === 'FHS' || segmentName === 'BHS';
+    const isHeaderSegment = segmentName === 'MSH' || segmentName === 'FHS' || segmentName === 'BHS';
 
     // Extract all fields
     const fieldRegex = new RegExp(
@@ -250,10 +241,7 @@ export class HL7v2Serializer {
     }
 
     // Trim trailing empty components
-    while (
-      componentParts.length > 0 &&
-      componentParts[componentParts.length - 1] === ''
-    ) {
+    while (componentParts.length > 0 && componentParts[componentParts.length - 1] === '') {
       componentParts.pop();
     }
 
@@ -286,10 +274,7 @@ export class HL7v2Serializer {
       const subcomponentContent = match[2] ?? '';
       maxSubcomponentIndex = Math.max(maxSubcomponentIndex, subcomponentIndex);
 
-      subcomponents.set(
-        subcomponentIndex,
-        this.unescapeXmlEntities(subcomponentContent.trim())
-      );
+      subcomponents.set(subcomponentIndex, this.unescapeXmlEntities(subcomponentContent.trim()));
     }
 
     if (maxSubcomponentIndex === 0) {
@@ -304,10 +289,7 @@ export class HL7v2Serializer {
     }
 
     // Trim trailing empty subcomponents
-    while (
-      subcomponentParts.length > 0 &&
-      subcomponentParts[subcomponentParts.length - 1] === ''
-    ) {
+    while (subcomponentParts.length > 0 && subcomponentParts[subcomponentParts.length - 1] === '') {
       subcomponentParts.pop();
     }
 

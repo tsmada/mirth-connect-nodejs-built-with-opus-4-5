@@ -42,7 +42,12 @@ export interface FileSystemClient {
    * @param ignoreDot - Whether to ignore files starting with '.'
    * @returns List of matching file info objects
    */
-  listFiles(fromDir: string, filenamePattern: string, isRegex: boolean, ignoreDot: boolean): Promise<FileInfo[]>;
+  listFiles(
+    fromDir: string,
+    filenamePattern: string,
+    isRegex: boolean,
+    ignoreDot: boolean
+  ): Promise<FileInfo[]>;
 
   /**
    * List subdirectory paths in a directory.

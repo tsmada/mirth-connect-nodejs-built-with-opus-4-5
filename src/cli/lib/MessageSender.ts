@@ -96,10 +96,7 @@ export function readMessage(messageOrFile: string): string {
 /**
  * Send a message via MLLP protocol
  */
-export async function sendMLLP(
-  message: string,
-  options: MllpSendOptions
-): Promise<SendResponse> {
+export async function sendMLLP(message: string, options: MllpSendOptions): Promise<SendResponse> {
   const { host, port, timeout = 30000 } = options;
   const startTime = Date.now();
 
@@ -196,10 +193,7 @@ export async function sendMLLP(
 /**
  * Send a message via HTTP
  */
-export async function sendHTTP(
-  message: string,
-  options: HttpSendOptions
-): Promise<SendResponse> {
+export async function sendHTTP(message: string, options: HttpSendOptions): Promise<SendResponse> {
   const { url, method = 'POST', headers = {}, timeout = 30000 } = options;
   const startTime = Date.now();
 
@@ -222,9 +216,7 @@ export async function sendHTTP(
       success: response.status >= 200 && response.status < 300,
       statusCode: response.status,
       message: `HTTP ${response.status} ${response.statusText}`,
-      response: typeof response.data === 'string'
-        ? response.data
-        : JSON.stringify(response.data),
+      response: typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
       duration,
     };
   } catch (error) {

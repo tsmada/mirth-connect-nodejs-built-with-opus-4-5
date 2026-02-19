@@ -96,7 +96,7 @@ export class JsonUtil {
     const separator = pretty ? '\n' : '';
 
     if (Array.isArray(obj)) {
-      return obj.map(item => JsonUtil.objectToXml(item, indent)).join('');
+      return obj.map((item) => JsonUtil.objectToXml(item, indent)).join('');
     }
 
     const lines: string[] = [];
@@ -119,7 +119,9 @@ export class JsonUtil {
           lines.push(`${currentIndent}<${safeName}>${inner}</${safeName}>`);
         }
       } else {
-        lines.push(`${currentIndent}<${safeName}>${JsonUtil.escapeXml(String(value ?? ''))}</${safeName}>`);
+        lines.push(
+          `${currentIndent}<${safeName}>${JsonUtil.escapeXml(String(value ?? ''))}</${safeName}>`
+        );
       }
     }
     return lines.join(separator);

@@ -124,10 +124,7 @@ export class EDIDataType {
           source = this.getElement(message, delimiters, index, 6);
         }
         // Look for GS segment (source if not found, version)
-        else if (
-          (source === null || version === null) &&
-          message.startsWith('GS', index)
-        ) {
+        else if ((source === null || version === null) && message.startsWith('GS', index)) {
           if (source === null) {
             source = this.getElement(message, delimiters, index, 2);
           }
@@ -139,11 +136,7 @@ export class EDIDataType {
         }
 
         // Move to next segment
-        const nextIndex = this.getDelimiterIndex(
-          message,
-          delimiters.segmentDelimiter,
-          index
-        );
+        const nextIndex = this.getDelimiterIndex(message, delimiters.segmentDelimiter, index);
         if (nextIndex === -1) break;
         index = nextIndex + 1;
 
@@ -170,15 +163,9 @@ export class EDIDataType {
    */
   private getDelimiters(message: string): EDIDelimiters {
     const baseDelimiters: EDIDelimiters = {
-      segmentDelimiter: unescapeEDIDelimiter(
-        this.serializationProperties.segmentDelimiter
-      ),
-      elementDelimiter: unescapeEDIDelimiter(
-        this.serializationProperties.elementDelimiter
-      ),
-      subelementDelimiter: unescapeEDIDelimiter(
-        this.serializationProperties.subelementDelimiter
-      ),
+      segmentDelimiter: unescapeEDIDelimiter(this.serializationProperties.segmentDelimiter),
+      elementDelimiter: unescapeEDIDelimiter(this.serializationProperties.elementDelimiter),
+      subelementDelimiter: unescapeEDIDelimiter(this.serializationProperties.subelementDelimiter),
     };
 
     if (this.serializationProperties.inferX12Delimiters) {
@@ -191,11 +178,7 @@ export class EDIDataType {
   /**
    * Find delimiter index starting from position
    */
-  private getDelimiterIndex(
-    message: string,
-    delimiter: string,
-    startIndex: number
-  ): number {
+  private getDelimiterIndex(message: string, delimiter: string, startIndex: number): number {
     for (let i = startIndex; i < message.length; i++) {
       if (delimiter.includes(message.charAt(i))) {
         return i;
@@ -207,11 +190,7 @@ export class EDIDataType {
   /**
    * Check if character at position is a delimiter
    */
-  private startsWithDelimiter(
-    message: string,
-    delimiter: string,
-    index: number
-  ): boolean {
+  private startsWithDelimiter(message: string, delimiter: string, index: number): boolean {
     return delimiter.includes(message.charAt(index));
   }
 
@@ -251,9 +230,7 @@ export class EDIDataType {
       }
 
       // Check for subelement delimiter
-      if (
-        this.startsWithDelimiter(message, delimiters.subelementDelimiter, index)
-      ) {
+      if (this.startsWithDelimiter(message, delimiters.subelementDelimiter, index)) {
         if (found) {
           // End of first subelement
           return value.trim();

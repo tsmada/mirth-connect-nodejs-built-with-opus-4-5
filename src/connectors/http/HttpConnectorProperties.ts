@@ -216,11 +216,7 @@ export function getDefaultHttpDispatcherProperties(): HttpDispatcherProperties {
 /**
  * Check if a MIME type is binary based on pattern
  */
-export function isBinaryMimeType(
-  mimeType: string,
-  pattern: string,
-  isRegex: boolean
-): boolean {
+export function isBinaryMimeType(mimeType: string, pattern: string, isRegex: boolean): boolean {
   if (isRegex) {
     try {
       const regex = new RegExp(pattern);
@@ -229,7 +225,10 @@ export function isBinaryMimeType(
       return false;
     }
   } else {
-    const patterns = pattern.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+    const patterns = pattern
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
     return patterns.some((p) => mimeType.startsWith(p));
   }
 }

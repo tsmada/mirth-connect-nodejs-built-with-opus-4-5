@@ -244,8 +244,7 @@ export const DELIMITED_SERIALIZATION_PROPERTY_DESCRIPTORS = {
   },
   numberedRows: {
     name: 'Numbered Rows',
-    description:
-      'Check to number each row in the XML representation of the message.',
+    description: 'Check to number each row in the XML representation of the message.',
     type: 'boolean' as const,
   },
   ignoreCR: {

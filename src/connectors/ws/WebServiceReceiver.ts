@@ -125,14 +125,8 @@ export class WebServiceReceiver extends SourceConnector {
     );
 
     // Setup authentication if configured
-    if (
-      this.properties.authProperties &&
-      this.properties.authProperties.authType !== 'NONE'
-    ) {
-      this.app.use(
-        getServicePath(this.properties),
-        this.createAuthMiddleware()
-      );
+    if (this.properties.authProperties && this.properties.authProperties.authType !== 'NONE') {
+      this.app.use(getServicePath(this.properties), this.createAuthMiddleware());
     }
 
     // Setup SOAP endpoint
@@ -140,10 +134,7 @@ export class WebServiceReceiver extends SourceConnector {
 
     // Handle WSDL requests (GET with ?wsdl)
     this.app.get(servicePath, (req: Request, res: Response) => {
-      if (
-        req.query.wsdl !== undefined ||
-        req.query.WSDL !== undefined
-      ) {
+      if (req.query.wsdl !== undefined || req.query.WSDL !== undefined) {
         res.type('text/xml');
         res.send(this.generateWsdl());
       } else {
@@ -152,25 +143,18 @@ export class WebServiceReceiver extends SourceConnector {
     });
 
     // Handle SOAP requests (POST)
-    this.app.post(
-      servicePath,
-      async (req: Request, res: Response) => {
-        await this.handleSoapRequest(req, res);
-      }
-    );
+    this.app.post(servicePath, async (req: Request, res: Response) => {
+      await this.handleSoapRequest(req, res);
+    });
 
     // Create and start server
     this.server = createServer(this.app);
 
     await new Promise<void>((resolve, reject) => {
-      this.server!.listen(
-        this.properties.port,
-        this.properties.host,
-        () => {
-          this.running = true;
-          resolve();
-        }
-      );
+      this.server!.listen(this.properties.port, this.properties.host, () => {
+        this.running = true;
+        resolve();
+      });
 
       this.server!.on('error', reject);
     });
@@ -227,10 +211,7 @@ export class WebServiceReceiver extends SourceConnector {
    * CPC-MCE-006: Dispatches CONNECTED on arrival, RECEIVING during parse, IDLE in finally.
    * CPC-WS-003: Event lifecycle matches Java's WebServiceReceiver.
    */
-  private async handleSoapRequest(
-    req: Request,
-    res: Response
-  ): Promise<void> {
+  private async handleSoapRequest(req: Request, res: Response): Promise<void> {
     this.processingCount++;
 
     // CPC-MCE-006: Dispatch CONNECTED when a new SOAP request arrives
@@ -250,13 +231,7 @@ export class WebServiceReceiver extends SourceConnector {
       } else {
         res.status(400);
         res.type('text/xml');
-        res.send(
-          this.buildFaultResponse(
-            'Client',
-            'Invalid request body',
-            SoapVersion.SOAP_1_1
-          )
-        );
+        res.send(this.buildFaultResponse('Client', 'Invalid request body', SoapVersion.SOAP_1_1));
         return;
       }
 
@@ -328,8 +303,7 @@ export class WebServiceReceiver extends SourceConnector {
         res.status(202).send();
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       res.status(500);
       res.type('text/xml');
@@ -399,11 +373,7 @@ export class WebServiceReceiver extends SourceConnector {
   /**
    * Build SOAP fault response
    */
-  private buildFaultResponse(
-    faultCode: string,
-    faultString: string,
-    version: SoapVersion
-  ): string {
+  private buildFaultResponse(faultCode: string, faultString: string, version: SoapVersion): string {
     return buildSoapFaultEnvelope(
       {
         faultCode,
@@ -486,11 +456,7 @@ export class WebServiceReceiver extends SourceConnector {
   /**
    * Create authentication middleware
    */
-  private createAuthMiddleware(): (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => void {
+  private createAuthMiddleware(): (req: Request, res: Response, next: NextFunction) => void {
     return (req: Request, res: Response, next: NextFunction) => {
       const authProps = this.properties.authProperties;
 
@@ -503,10 +469,7 @@ export class WebServiceReceiver extends SourceConnector {
         const authHeader = req.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith('Basic ')) {
-          res.setHeader(
-            'WWW-Authenticate',
-            `Basic realm="${authProps.realm || 'WebService'}"`
-          );
+          res.setHeader('WWW-Authenticate', `Basic realm="${authProps.realm || 'WebService'}"`);
           res.status(401);
           res.type('text/xml');
           res.send(
@@ -521,16 +484,11 @@ export class WebServiceReceiver extends SourceConnector {
 
         try {
           const base64Credentials = authHeader.substring(6);
-          const credentials = Buffer.from(
-            base64Credentials,
-            'base64'
-          ).toString('utf-8');
+          const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
           const [username, password] = credentials.split(':');
 
           if (authProps.credentials) {
-            const expectedPassword = authProps.credentials.get(
-              username || ''
-            );
+            const expectedPassword = authProps.credentials.get(username || '');
 
             if (expectedPassword !== undefined && expectedPassword === password) {
               next();
@@ -541,10 +499,7 @@ export class WebServiceReceiver extends SourceConnector {
           // Fall through to unauthorized
         }
 
-        res.setHeader(
-          'WWW-Authenticate',
-          `Basic realm="${authProps.realm || 'WebService'}"`
-        );
+        res.setHeader('WWW-Authenticate', `Basic realm="${authProps.realm || 'WebService'}"`);
         res.status(401);
         res.type('text/xml');
         res.send(
@@ -566,10 +521,7 @@ export class WebServiceReceiver extends SourceConnector {
    * Get the endpoint URL
    */
   getEndpointUrl(): string {
-    const host =
-      this.properties.host === '0.0.0.0'
-        ? 'localhost'
-        : this.properties.host;
+    const host = this.properties.host === '0.0.0.0' ? 'localhost' : this.properties.host;
     return `http://${host}:${this.properties.port}${getServicePath(this.properties)}`;
   }
 
@@ -593,7 +545,7 @@ export class WebServiceReceiver extends SourceConnector {
       port: this.properties.port,
       host: this.properties.host || '0.0.0.0',
       connectionCount: this.processingCount, // Number of requests being processed
-      maxConnections: 0,  // No limit by default
+      maxConnections: 0, // No limit by default
       transportType: 'WS',
       listening: this.server.listening,
     };

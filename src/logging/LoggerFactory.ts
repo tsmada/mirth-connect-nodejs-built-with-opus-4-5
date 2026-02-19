@@ -40,12 +40,18 @@ const WINSTON_LEVELS: Record<string, number> = {
 /** Map LogLevel enum to winston level string */
 function toWinstonLevel(level: LogLevel): string {
   switch (level) {
-    case LogLevel.ERROR: return 'error';
-    case LogLevel.WARN: return 'warn';
-    case LogLevel.INFO: return 'info';
-    case LogLevel.DEBUG: return 'debug';
-    case LogLevel.TRACE: return 'trace';
-    default: return 'info';
+    case LogLevel.ERROR:
+      return 'error';
+    case LogLevel.WARN:
+      return 'warn';
+    case LogLevel.INFO:
+      return 'info';
+    case LogLevel.DEBUG:
+      return 'debug';
+    case LogLevel.TRACE:
+      return 'trace';
+    default:
+      return 'info';
   }
 }
 
@@ -103,11 +109,8 @@ export function initializeLogging(
   initFromEnv(config.debugComponents);
 
   // Re-wire existing cached loggers to new root
-  for (const [component, ] of loggerCache) {
-    loggerCache.set(
-      component,
-      new Logger(component, rootLogger, serverLogCtrl)
-    );
+  for (const [component] of loggerCache) {
+    loggerCache.set(component, new Logger(component, rootLogger, serverLogCtrl));
   }
 }
 

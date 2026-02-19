@@ -5,10 +5,7 @@
  * Ported from Java implementation.
  */
 
-export {
-  SmtpDispatcher,
-  type SmtpDispatcherConfig,
-} from './SmtpDispatcher.js';
+export { SmtpDispatcher, type SmtpDispatcherConfig } from './SmtpDispatcher.js';
 
 export {
   type SmtpDispatcherProperties,

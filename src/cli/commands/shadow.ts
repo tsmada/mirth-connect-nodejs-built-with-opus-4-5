@@ -172,7 +172,9 @@ export function registerShadowCommands(program: Command): void {
         const channelId = resolveResult.channel.id;
         const channelName = resolveResult.channel.name;
 
-        console.log(chalk.yellow('WARNING: Ensure this channel is stopped on Java Mirth before promoting.'));
+        console.log(
+          chalk.yellow('WARNING: Ensure this channel is stopped on Java Mirth before promoting.')
+        );
         console.log();
 
         const spinner = ora(`Promoting channel ${channelName}...`).start();
@@ -240,7 +242,11 @@ export function registerShadowCommands(program: Command): void {
 
         const spinner = ora(`Demoting channel ${channelName}...`).start();
 
-        await client.request({ method: 'POST', url: '/api/system/shadow/demote', data: { channelId } });
+        await client.request({
+          method: 'POST',
+          url: '/api/system/shadow/demote',
+          data: { channelId },
+        });
 
         spinner.stop();
 
@@ -328,7 +334,11 @@ export function registerShadowCommands(program: Command): void {
             console.log(chalk.red(`    ${err.channelId}: ${err.error}`));
           }
           console.log();
-          console.log(chalk.yellow('Some channels failed to start. Check if ports are still in use on Java Mirth.'));
+          console.log(
+            chalk.yellow(
+              'Some channels failed to start. Check if ports are still in use on Java Mirth.'
+            )
+          );
         } else {
           console.log(chalk.green('  All channels started successfully.'));
         }

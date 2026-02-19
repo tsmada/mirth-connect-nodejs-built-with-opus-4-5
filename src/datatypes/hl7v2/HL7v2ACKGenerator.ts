@@ -83,9 +83,7 @@ export class HL7v2ACKGenerator {
     } = options;
 
     if (!message || message.length < 9) {
-      throw new Error(
-        `Unable to parse message. It is NULL or too short: ${message}`
-      );
+      throw new Error(`Unable to parse message. It is NULL or too short: ${message}`);
     }
 
     // Extract MSH fields from the message
@@ -98,27 +96,14 @@ export class HL7v2ACKGenerator {
     const parts: string[] = [];
 
     // MSH segment
-    parts.push(
-      this.buildMSHSegment(
-        mshFields,
-        timestamp
-      )
-    );
+    parts.push(this.buildMSHSegment(mshFields, timestamp));
 
     // MSA segment
-    parts.push(
-      this.buildMSASegment(
-        mshFields,
-        ackCode,
-        textMessage
-      )
-    );
+    parts.push(this.buildMSASegment(mshFields, ackCode, textMessage));
 
     // ERR segment (if error message provided)
     if (errorMessage) {
-      parts.push(
-        `ERR${mshFields.fieldSeparator}${errorMessage}`
-      );
+      parts.push(`ERR${mshFields.fieldSeparator}${errorMessage}`);
     }
 
     return parts.join(segmentDelimiter) + segmentDelimiter;
@@ -127,10 +112,7 @@ export class HL7v2ACKGenerator {
   /**
    * Extract MSH fields from message
    */
-  private static extractMSHFields(
-    message: string,
-    segmentDelimiter: string
-  ): MSHFields {
+  private static extractMSHFields(message: string, segmentDelimiter: string): MSHFields {
     const encoding = extractEncodingCharacters(message);
 
     const result: MSHFields = {
@@ -152,10 +134,7 @@ export class HL7v2ACKGenerator {
 
     // Find first segment delimiter
     const firstDelimIndex = this.findSegmentDelimiter(message, segmentDelimiter);
-    const mshString =
-      firstDelimIndex !== -1
-        ? message.substring(0, firstDelimIndex)
-        : message;
+    const mshString = firstDelimIndex !== -1 ? message.substring(0, firstDelimIndex) : message;
 
     // Split MSH by field separator
     const fields = mshString.split(encoding.fieldSeparator);
@@ -164,34 +143,22 @@ export class HL7v2ACKGenerator {
     // Extract fields
     // MSH-3: Sending Application
     if (fields.length > 2 && fields[2]) {
-      result.sendingApplication = this.getFirstComponent(
-        fields[2],
-        componentPattern
-      );
+      result.sendingApplication = this.getFirstComponent(fields[2], componentPattern);
     }
 
     // MSH-4: Sending Facility
     if (fields.length > 3 && fields[3]) {
-      result.sendingFacility = this.getFirstComponent(
-        fields[3],
-        componentPattern
-      );
+      result.sendingFacility = this.getFirstComponent(fields[3], componentPattern);
     }
 
     // MSH-5: Receiving Application
     if (fields.length > 4 && fields[4]) {
-      result.receivingApplication = this.getFirstComponent(
-        fields[4],
-        componentPattern
-      );
+      result.receivingApplication = this.getFirstComponent(fields[4], componentPattern);
     }
 
     // MSH-6: Receiving Facility
     if (fields.length > 5 && fields[5]) {
-      result.receivingFacility = this.getFirstComponent(
-        fields[5],
-        componentPattern
-      );
+      result.receivingFacility = this.getFirstComponent(fields[5], componentPattern);
     }
 
     // MSH-9: Message Type (get event from component 2)
@@ -204,10 +171,7 @@ export class HL7v2ACKGenerator {
 
     // MSH-10: Message Control ID
     if (fields.length > 9 && fields[9]) {
-      result.messageControlId = this.getFirstComponent(
-        fields[9],
-        componentPattern
-      );
+      result.messageControlId = this.getFirstComponent(fields[9], componentPattern);
     }
 
     // MSH-11: Processing ID
@@ -221,8 +185,7 @@ export class HL7v2ACKGenerator {
 
     // MSH-12: Version ID
     if (fields.length > 11 && fields[11]) {
-      result.versionId =
-        this.getFirstComponent(fields[11], componentPattern) || '2.4';
+      result.versionId = this.getFirstComponent(fields[11], componentPattern) || '2.4';
     }
 
     // Set defaults
@@ -239,10 +202,7 @@ export class HL7v2ACKGenerator {
   /**
    * Build MSH segment for ACK
    */
-  private static buildMSHSegment(
-    fields: MSHFields,
-    timestamp: string
-  ): string {
+  private static buildMSHSegment(fields: MSHFields, timestamp: string): string {
     const {
       fieldSeparator,
       componentSeparator,
@@ -262,7 +222,9 @@ export class HL7v2ACKGenerator {
     const parts: string[] = [];
 
     // MSH.1-2: Field separator and encoding characters
-    parts.push(`MSH${fieldSeparator}${componentSeparator}${repetitionSeparator}${escapeCharacter}${subcomponentSeparator}`);
+    parts.push(
+      `MSH${fieldSeparator}${componentSeparator}${repetitionSeparator}${escapeCharacter}${subcomponentSeparator}`
+    );
 
     // MSH.3: Sending Application (swap - was receiving)
     parts.push(receivingApplication);
@@ -328,10 +290,7 @@ export class HL7v2ACKGenerator {
   /**
    * Find segment delimiter in message
    */
-  private static findSegmentDelimiter(
-    message: string,
-    delimiter: string
-  ): number {
+  private static findSegmentDelimiter(message: string, delimiter: string): number {
     // Check for the delimiter itself
     const idx = message.indexOf(delimiter);
     if (idx !== -1) return idx;
@@ -376,8 +335,7 @@ export class HL7v2ACKGenerator {
    * Format timestamp for HL7
    */
   private static formatTimestamp(date: Date): string {
-    const pad = (n: number, width: number = 2) =>
-      n.toString().padStart(width, '0');
+    const pad = (n: number, width: number = 2) => n.toString().padStart(width, '0');
 
     return (
       date.getFullYear().toString() +
@@ -407,11 +365,7 @@ export function generateAck(
 /**
  * Generate NAK (negative acknowledgment) for an HL7 message
  */
-export function generateNak(
-  message: string,
-  errorMessage?: string,
-  textMessage?: string
-): string {
+export function generateNak(message: string, errorMessage?: string, textMessage?: string): string {
   return HL7v2ACKGenerator.generateAck(message, {
     ackCode: AckCode.AE,
     textMessage,

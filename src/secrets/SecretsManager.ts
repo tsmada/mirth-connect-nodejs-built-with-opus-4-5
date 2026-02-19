@@ -26,9 +26,7 @@ export class SecretsManager {
 
   private constructor(config: SecretsManagerConfig) {
     this.config = config;
-    const encryptionKey = config.encryptCache
-      ? process.env['MIRTH_ENCRYPTION_KEY']
-      : undefined;
+    const encryptionKey = config.encryptCache ? process.env['MIRTH_ENCRYPTION_KEY'] : undefined;
     this.cache = new SecretCache(config.cacheTtlSeconds, encryptionKey);
   }
 
@@ -70,7 +68,7 @@ export class SecretsManager {
    */
   static async initializeWithProviders(
     providers: SecretsProvider[],
-    config?: Partial<SecretsManagerConfig>,
+    config?: Partial<SecretsManagerConfig>
   ): Promise<SecretsManager> {
     const baseConfig = parseSecretsConfig();
     const mergedConfig: SecretsManagerConfig = { ...baseConfig, ...config };
@@ -127,7 +125,9 @@ export class SecretsManager {
           return secret;
         }
       } catch (err) {
-        logger.error(`Provider '${provider.name}' error for key '${key}': ${(err as Error).message}`);
+        logger.error(
+          `Provider '${provider.name}' error for key '${key}': ${(err as Error).message}`
+        );
         // Continue to next provider
       }
     }
@@ -169,7 +169,7 @@ export class SecretsManager {
    * Get initialization status of all providers (for /api/secrets/status).
    */
   getProviderStatus(): Array<{ name: string; initialized: boolean }> {
-    return this.providers.map(p => ({
+    return this.providers.map((p) => ({
       name: p.name,
       initialized: true, // If it's in the array, it initialized successfully
     }));
@@ -191,9 +191,7 @@ export class SecretsManager {
       this.refreshTimer = null;
     }
 
-    await Promise.allSettled(
-      this.providers.map(p => p.shutdown())
-    );
+    await Promise.allSettled(this.providers.map((p) => p.shutdown()));
 
     this.syncCache.clear();
     this.cache.invalidateAll();
@@ -204,7 +202,10 @@ export class SecretsManager {
    * Factory: create a provider instance by type string.
    * Uses dynamic imports so cloud SDK dependencies are only loaded when needed.
    */
-  private static async createProvider(type: string, config: SecretsManagerConfig): Promise<SecretsProvider> {
+  private static async createProvider(
+    type: string,
+    config: SecretsManagerConfig
+  ): Promise<SecretsProvider> {
     switch (type) {
       case 'env': {
         const { EnvProvider } = await import('./providers/EnvProvider.js');
@@ -215,7 +216,8 @@ export class SecretsManager {
         return new FileProvider(config.filePath);
       }
       case 'props': {
-        if (!config.configFile) throw new Error('PropertiesFileProvider requires MIRTH_CONFIG_FILE');
+        if (!config.configFile)
+          throw new Error('PropertiesFileProvider requires MIRTH_CONFIG_FILE');
         const { PropertiesFileProvider } = await import('./providers/PropertiesFileProvider.js');
         return new PropertiesFileProvider(config.configFile);
       }
@@ -255,12 +257,16 @@ export class SecretsManager {
   private startRefreshTimer(): void {
     if (this.config.cacheTtlSeconds <= 0) return;
     this.refreshTimer = setInterval(() => {
-      this.refreshSyncCache().catch(err =>
+      this.refreshSyncCache().catch((err) =>
         logger.error('[SecretsManager] Sync cache refresh failed', err as Error)
       );
     }, this.config.cacheTtlSeconds * 1000);
-    if (this.refreshTimer && typeof this.refreshTimer === 'object' && 'unref' in this.refreshTimer) {
-      (this.refreshTimer as NodeJS.Timeout).unref();
+    if (
+      this.refreshTimer &&
+      typeof this.refreshTimer === 'object' &&
+      'unref' in this.refreshTimer
+    ) {
+      this.refreshTimer.unref();
     }
   }
 

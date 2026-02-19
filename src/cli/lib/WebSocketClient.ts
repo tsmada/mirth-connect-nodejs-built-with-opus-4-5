@@ -366,11 +366,7 @@ export class WebSocketClient extends EventEmitter {
     this.cancelReconnect();
     this.reconnectAttempts++;
 
-    this.emit(
-      'reconnecting',
-      this.reconnectAttempts,
-      this.options.maxReconnectAttempts
-    );
+    this.emit('reconnecting', this.reconnectAttempts, this.options.maxReconnectAttempts);
 
     this.reconnectTimer = setTimeout(async () => {
       try {
@@ -404,11 +400,10 @@ export function createDashboardStatusClient(
   options?: Partial<WebSocketClientOptions>
 ): WebSocketClient {
   // Convert HTTP URL to WebSocket URL
-  const wsUrl = serverUrl
-    .replace(/^https?:\/\//, (match) =>
-      match === 'https://' ? 'wss://' : 'ws://'
-    )
-    .replace(/\/$/, '') + '/ws/dashboardstatus';
+  const wsUrl =
+    serverUrl
+      .replace(/^https?:\/\//, (match) => (match === 'https://' ? 'wss://' : 'ws://'))
+      .replace(/\/$/, '') + '/ws/dashboardstatus';
 
   return new WebSocketClient({
     url: wsUrl,
@@ -424,11 +419,10 @@ export function createServerLogClient(
   options?: Partial<WebSocketClientOptions>
 ): WebSocketClient {
   // Convert HTTP URL to WebSocket URL
-  const wsUrl = serverUrl
-    .replace(/^https?:\/\//, (match) =>
-      match === 'https://' ? 'wss://' : 'ws://'
-    )
-    .replace(/\/$/, '') + '/ws/serverlog';
+  const wsUrl =
+    serverUrl
+      .replace(/^https?:\/\//, (match) => (match === 'https://' ? 'wss://' : 'ws://'))
+      .replace(/\/$/, '') + '/ws/serverlog';
 
   return new WebSocketClient({
     url: wsUrl,

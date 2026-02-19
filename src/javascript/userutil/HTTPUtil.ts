@@ -66,10 +66,7 @@ export class HTTPUtil {
    * @param contentType - The MIME content type of the request.
    * @returns The serialized XML string.
    */
-  static httpBodyToXml(
-    httpBody: string | Buffer,
-    contentType: string
-  ): string {
+  static httpBodyToXml(httpBody: string | Buffer, contentType: string): string {
     const parsedContentType = HTTPUtil.getContentType(contentType);
     const mimeType = parsedContentType.mimeType;
 
@@ -167,11 +164,7 @@ export class HTTPUtil {
 
     if (!boundary) {
       // No boundary found, treat as plain content
-      return HTTPUtil.contentToXml(
-        body,
-        { mimeType: 'text/plain', charset: 'utf-8' },
-        true
-      );
+      return HTTPUtil.contentToXml(body, { mimeType: 'text/plain', charset: 'utf-8' }, true);
     }
 
     const parts = HTTPUtil.parseMultipart(body, boundary);
@@ -222,7 +215,7 @@ export class HTTPUtil {
     const endDelimiter = delimiter + '--';
 
     // Remove end delimiter
-    let content = body.replace(endDelimiter, '').trim();
+    const content = body.replace(endDelimiter, '').trim();
 
     // Split by delimiter
     const rawParts = content.split(delimiter);

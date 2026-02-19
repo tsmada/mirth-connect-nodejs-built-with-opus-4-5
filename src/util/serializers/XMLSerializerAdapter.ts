@@ -7,12 +7,13 @@
  * Ported from: ~/Projects/connect/server/src/com/mirth/connect/plugins/datatypes/xml/XMLSerializer.java
  */
 
-import { BaseSerializer, SerializationProperties, DeserializationProperties } from '../SerializerBase.js';
-import { XMLDataType } from '../../datatypes/xml/XMLDataType.js';
 import {
-  TYPE_VARIABLE_MAPPING,
-  VERSION_VARIABLE_MAPPING,
-} from '../../model/DefaultMetaData.js';
+  BaseSerializer,
+  SerializationProperties,
+  DeserializationProperties,
+} from '../SerializerBase.js';
+import { XMLDataType } from '../../datatypes/xml/XMLDataType.js';
+import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export interface XMLAdapterSerializationProperties extends SerializationProperties {
   stripNamespaces?: boolean;

@@ -196,10 +196,9 @@ export async function removeAllEvents(): Promise<void> {
  * @returns The number of events deleted
  */
 export async function deleteEventsBeforeDate(dateThreshold: Date): Promise<number> {
-  const result = await execute(
-    'DELETE FROM EVENT WHERE DATE_CREATED < :dateThreshold',
-    { dateThreshold }
-  );
+  const result = await execute('DELETE FROM EVENT WHERE DATE_CREATED < :dateThreshold', {
+    dateThreshold,
+  });
   return result.affectedRows;
 }
 

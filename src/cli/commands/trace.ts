@@ -42,7 +42,11 @@ export function registerTraceCommand(program: Command): void {
     .command('trace <channel> <messageId>')
     .description('Trace a message across VM-connected channels')
     .option('-v, --verbose', 'Show full content (2000 char limit vs 200)')
-    .option('-c, --content <types>', 'Content types to show (comma-separated)', 'raw,transformed,response,error')
+    .option(
+      '-c, --content <types>',
+      'Content types to show (comma-separated)',
+      'raw,transformed,response,error'
+    )
     .option('--max-depth <n>', 'Max trace depth', '10')
     .option('--direction <dir>', 'Trace direction: both, backward, forward', 'both')
     .option('--no-content', 'Hide content, show tree structure only')

@@ -13,8 +13,8 @@ import { getPool, withRetry } from '../db/pool.js';
 import { sequenceTable } from '../db/DonkeyDao.js';
 
 interface SequenceBlock {
-  nextId: number;   // Next ID to return
-  maxId: number;    // Last ID in this block (exclusive)
+  nextId: number; // Next ID to return
+  maxId: number; // Last ID in this block (exclusive)
 }
 
 export class SequenceAllocator {
@@ -62,10 +62,7 @@ export class SequenceAllocator {
         const newMaxId = currentId + this.blockSize;
 
         // Advance the sequence by the full block size
-        await connection.query(
-          `UPDATE ${table} SET LOCAL_CHANNEL_ID = ? WHERE ID = 1`,
-          [newMaxId]
-        );
+        await connection.query(`UPDATE ${table} SET LOCAL_CHANNEL_ID = ? WHERE ID = 1`, [newMaxId]);
 
         await connection.commit();
 

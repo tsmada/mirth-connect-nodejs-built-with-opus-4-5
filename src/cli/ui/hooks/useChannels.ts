@@ -43,10 +43,7 @@ export interface UseChannelsResult {
   /** Update a single channel's state (for WebSocket updates) */
   updateChannelState: (channelId: string, state: ChannelStatus['state']) => void;
   /** Update channel statistics */
-  updateChannelStats: (
-    channelId: string,
-    stats: Partial<ChannelStatus['statistics']>
-  ) => void;
+  updateChannelStats: (channelId: string, stats: Partial<ChannelStatus['statistics']>) => void;
 }
 
 /**
@@ -158,15 +155,10 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
   );
 
   // Direct state updates (for WebSocket integration)
-  const updateChannelState = useCallback(
-    (channelId: string, state: ChannelStatus['state']) => {
-      setChannels((prev) =>
-        prev.map((ch) => (ch.channelId === channelId ? { ...ch, state } : ch))
-      );
-      setLastUpdate(new Date());
-    },
-    []
-  );
+  const updateChannelState = useCallback((channelId: string, state: ChannelStatus['state']) => {
+    setChannels((prev) => prev.map((ch) => (ch.channelId === channelId ? { ...ch, state } : ch)));
+    setLastUpdate(new Date());
+  }, []);
 
   const updateChannelStats = useCallback(
     (channelId: string, stats: Partial<ChannelStatus['statistics']>) => {

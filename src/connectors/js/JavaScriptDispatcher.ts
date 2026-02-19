@@ -30,10 +30,7 @@ import { getDefaultExecutor } from '../../javascript/runtime/JavaScriptExecutor.
 import { buildMessageDispatcherScope } from '../../javascript/runtime/ScopeBuilder.js';
 import { E4XTranspiler } from '../../javascript/e4x/E4XTranspiler.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
-import {
-  getAlertEventController,
-  ErrorEventType,
-} from '../../javascript/userutil/AlertSender.js';
+import { getAlertEventController, ErrorEventType } from '../../javascript/userutil/AlertSender.js';
 import {
   JavaScriptDispatcherProperties,
   getDefaultJavaScriptDispatcherProperties,
@@ -172,11 +169,9 @@ export class JavaScriptDispatcher extends DestinationConnector {
           connectorMessage
         );
 
-        const result = executor.executeWithScope<unknown>(
-          this.compiledScript,
-          scope,
-          { timeout: 60000 }
-        );
+        const result = executor.executeWithScope<unknown>(this.compiledScript, scope, {
+          timeout: 60000,
+        });
 
         if (!result.success) {
           const err = result.error ?? new Error('Script execution failed');
@@ -207,8 +202,7 @@ export class JavaScriptDispatcher extends DestinationConnector {
         // If result is null/undefined, defaults are used (SENT status)
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       responseError = errorMessage;
       responseStatus = Status.ERROR;
 
@@ -253,9 +247,7 @@ export class JavaScriptDispatcher extends DestinationConnector {
   /**
    * Get the response for the sent message.
    */
-  async getResponse(
-    connectorMessage: ConnectorMessage
-  ): Promise<string | null> {
+  async getResponse(connectorMessage: ConnectorMessage): Promise<string | null> {
     const response = connectorMessage.getResponseContent();
     return response?.content ?? null;
   }

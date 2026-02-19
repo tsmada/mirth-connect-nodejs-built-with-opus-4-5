@@ -156,7 +156,7 @@ export class ServerLogController extends EventEmitter {
    * Get server logs with optional filtering
    */
   getServerLogs(fetchSize: number = DEFAULT_LOG_SIZE, lastLogId?: number | null): ServerLogItem[] {
-    let result: ServerLogItem[] = [];
+    const result: ServerLogItem[] = [];
 
     for (const logItem of this.logs) {
       // Filter by lastLogId - only return logs newer than this ID
@@ -178,7 +178,7 @@ export class ServerLogController extends EventEmitter {
    * Get server logs with filtering options
    */
   getFilteredLogs(fetchSize: number, filter?: LogFilter): ServerLogItem[] {
-    let result: ServerLogItem[] = [];
+    const result: ServerLogItem[] = [];
 
     for (const logItem of this.logs) {
       // Filter by lastLogId
@@ -322,7 +322,7 @@ export function hookConsole(controller: ServerLogController = serverLogControlle
 
   console.error = (...args: unknown[]) => {
     originalConsoleError.apply(console, args);
-    const errorArg = args.find((arg) => arg instanceof Error) as Error | undefined;
+    const errorArg = args.find((arg) => arg instanceof Error);
     controller.error(formatArgs(args), 'console', errorArg);
   };
 

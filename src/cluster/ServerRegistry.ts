@@ -40,7 +40,10 @@ interface ClusterNodeRow extends RowDataPacket {
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let deadNodeTimer: ReturnType<typeof setInterval> | null = null;
 let consecutiveHeartbeatFailures = 0;
-const MAX_HEARTBEAT_FAILURES = parseInt(process.env['MIRTH_CLUSTER_MAX_HEARTBEAT_FAILURES'] ?? '3', 10);
+const MAX_HEARTBEAT_FAILURES = parseInt(
+  process.env['MIRTH_CLUSTER_MAX_HEARTBEAT_FAILURES'] ?? '3',
+  10
+);
 
 /**
  * Get the current consecutive heartbeat failure count (for testing/monitoring).
@@ -100,14 +103,16 @@ export function startHeartbeat(): void {
 
   heartbeatTimer = setInterval(async () => {
     try {
-      await execute(
-        `UPDATE D_SERVERS SET LAST_HEARTBEAT = NOW() WHERE SERVER_ID = :serverId`,
-        { serverId }
-      );
+      await execute(`UPDATE D_SERVERS SET LAST_HEARTBEAT = NOW() WHERE SERVER_ID = :serverId`, {
+        serverId,
+      });
       consecutiveHeartbeatFailures = 0;
     } catch (err) {
       consecutiveHeartbeatFailures++;
-      logger.error(`Heartbeat failed (${consecutiveHeartbeatFailures}/${MAX_HEARTBEAT_FAILURES})`, err as Error);
+      logger.error(
+        `Heartbeat failed (${consecutiveHeartbeatFailures}/${MAX_HEARTBEAT_FAILURES})`,
+        err as Error
+      );
       if (consecutiveHeartbeatFailures >= MAX_HEARTBEAT_FAILURES) {
         logger.error('Database unreachable — self-fencing to prevent split-brain');
         process.exit(1);

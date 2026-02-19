@@ -145,10 +145,7 @@ export class XMLDataType {
 /**
  * Parse XML (convenience function - pass-through)
  */
-export function parseXML(
-  source: string,
-  properties?: Partial<XMLSerializationProperties>
-): string {
+export function parseXML(source: string, properties?: Partial<XMLSerializationProperties>): string {
   const dataType = new XMLDataType(properties);
   return dataType.toXML(source);
 }

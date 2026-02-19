@@ -12,10 +12,7 @@ import {
   DeserializationProperties,
 } from '../SerializerBase.js';
 import { HL7V3Serializer } from '../../datatypes/hl7v3/HL7V3Serializer.js';
-import {
-  TYPE_VARIABLE_MAPPING,
-  VERSION_VARIABLE_MAPPING,
-} from '../../model/DefaultMetaData.js';
+import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class HL7V3SerializerAdapter extends BaseSerializer {
   private readonly serializer: HL7V3Serializer;

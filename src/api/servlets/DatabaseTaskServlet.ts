@@ -18,7 +18,12 @@
 
 import { Router, Request, Response } from 'express';
 import { authorize } from '../middleware/authorization.js';
-import { DATABASE_TASK_GET, DATABASE_TASK_GET_ALL, DATABASE_TASK_RUN, DATABASE_TASK_CANCEL } from '../middleware/operations.js';
+import {
+  DATABASE_TASK_GET,
+  DATABASE_TASK_GET_ALL,
+  DATABASE_TASK_RUN,
+  DATABASE_TASK_CANCEL,
+} from '../middleware/operations.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
 registerComponent('api', 'REST API server');
@@ -56,7 +61,10 @@ interface DatabaseTask {
 // ============================================================================
 
 // In-memory task state
-const taskStates = new Map<string, { status: TaskStatus; progress: number; startTime?: Date; endTime?: Date; error?: string }>();
+const taskStates = new Map<
+  string,
+  { status: TaskStatus; progress: number; startTime?: Date; endTime?: Date; error?: string }
+>();
 
 /**
  * Get available database tasks

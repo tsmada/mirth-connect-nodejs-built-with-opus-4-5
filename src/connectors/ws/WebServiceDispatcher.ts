@@ -30,12 +30,7 @@ import {
   AttachmentEntry,
   getAttachmentEntries,
 } from './WebServiceDispatcherProperties.js';
-import {
-  parseWsdlFromUrl,
-  ParsedWsdl,
-  getEndpointLocation,
-  getSoapAction,
-} from './WsdlParser.js';
+import { parseWsdlFromUrl, ParsedWsdl, getEndpointLocation, getSoapAction } from './WsdlParser.js';
 import {
   parseSoapEnvelope,
   SoapVersion,
@@ -159,9 +154,7 @@ export class WebServiceDispatcher extends DestinationConnector {
     const numTasks = this.pendingTasks.size;
     if (numTasks > 0) {
       const plural = numTasks === 1 ? '' : 's';
-      logger.error(
-        `Error halting Web Service Sender: ${numTasks} request${plural} aborted.`
-      );
+      logger.error(`Error halting Web Service Sender: ${numTasks} request${plural} aborted.`);
     }
 
     this.pendingTasks.clear();
@@ -195,7 +188,7 @@ export class WebServiceDispatcher extends DestinationConnector {
       const resolvedHeaders = new Map<string, string[]>();
       for (const [key, values] of resolved.headers) {
         const resolvedKey = this.resolveVariables(key, connectorMessage);
-        const resolvedValues = values.map(v => this.resolveVariables(v, connectorMessage));
+        const resolvedValues = values.map((v) => this.resolveVariables(v, connectorMessage));
         resolvedHeaders.set(resolvedKey, resolvedValues);
       }
       resolved.headers = resolvedHeaders;
@@ -203,18 +196,18 @@ export class WebServiceDispatcher extends DestinationConnector {
 
     // Resolve attachment names, contents, and types (CPC-W18-018)
     if (resolved.attachmentNames && resolved.attachmentNames.length > 0) {
-      resolved.attachmentNames = resolved.attachmentNames.map(
-        (name: string) => this.resolveVariables(name, connectorMessage)
+      resolved.attachmentNames = resolved.attachmentNames.map((name: string) =>
+        this.resolveVariables(name, connectorMessage)
       );
     }
     if (resolved.attachmentContents && resolved.attachmentContents.length > 0) {
-      resolved.attachmentContents = resolved.attachmentContents.map(
-        (c: string) => this.resolveVariables(c, connectorMessage)
+      resolved.attachmentContents = resolved.attachmentContents.map((c: string) =>
+        this.resolveVariables(c, connectorMessage)
       );
     }
     if (resolved.attachmentTypes && resolved.attachmentTypes.length > 0) {
-      resolved.attachmentTypes = resolved.attachmentTypes.map(
-        (t: string) => this.resolveVariables(t, connectorMessage)
+      resolved.attachmentTypes = resolved.attachmentTypes.map((t: string) =>
+        this.resolveVariables(t, connectorMessage)
       );
     }
 
@@ -290,10 +283,7 @@ export class WebServiceDispatcher extends DestinationConnector {
       }
 
       try {
-        const response = await this.executeRequest(
-          connectorMessage,
-          dispatchContainer
-        );
+        const response = await this.executeRequest(connectorMessage, dispatchContainer);
 
         // CPC-WS-008: Extensibility hook for SOAP result processing
         await this.handleSOAPResult(connectorMessage, response);
@@ -331,19 +321,13 @@ export class WebServiceDispatcher extends DestinationConnector {
    * - Connection refused / NoRouteToHost → Status.QUEUED (retryable)
    * - Other errors → Status.QUEUED (retryable) with error event
    */
-  private handleSendError(
-    connectorMessage: ConnectorMessage,
-    error: unknown
-  ): void {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+  private handleSendError(connectorMessage: ConnectorMessage, error: unknown): void {
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
     if (this.isSoapFault(error)) {
       // SOAPFault → ERROR (permanent, matches Java behavior)
       connectorMessage.setStatus(Status.ERROR);
-      connectorMessage.setProcessingError(
-        `SOAP Fault: ${errorMessage}`
-      );
+      connectorMessage.setProcessingError(`SOAP Fault: ${errorMessage}`);
 
       // Try to extract fault response
       const faultResponse = this.extractFaultResponse(error);
@@ -358,15 +342,11 @@ export class WebServiceDispatcher extends DestinationConnector {
     } else if (this.isConnectionError(error)) {
       // Connection errors → QUEUED (retryable, matches Java behavior)
       // Java: ConnectException → "Connection refused", NoRouteToHostException → "HTTP transport error"
-      connectorMessage.setProcessingError(
-        `Connection error: ${errorMessage}`
-      );
+      connectorMessage.setProcessingError(`Connection error: ${errorMessage}`);
       // Status stays QUEUED (default) for retry
     } else {
       // Other errors → QUEUED for retry
-      connectorMessage.setProcessingError(
-        `Error invoking web service: ${errorMessage}`
-      );
+      connectorMessage.setProcessingError(`Error invoking web service: ${errorMessage}`);
     }
   }
 
@@ -499,7 +479,9 @@ export class WebServiceDispatcher extends DestinationConnector {
       );
 
       if (logger.isDebugEnabled()) {
-        logger.debug('Finished invoking web service (MTOM), got result.', { endpoint: endpointLocation });
+        logger.debug('Finished invoking web service (MTOM), got result.', {
+          endpoint: endpointLocation,
+        });
         logger.debug(`SOAP Response envelope: ${mtomResult}`);
       }
 
@@ -513,11 +495,7 @@ export class WebServiceDispatcher extends DestinationConnector {
     }
 
     // Send raw SOAP request
-    const result = await this.sendSoapRequest(
-      endpointLocation,
-      envelope,
-      headers
-    );
+    const result = await this.sendSoapRequest(endpointLocation, envelope, headers);
 
     // Log response (matching Java: logger.debug("Finished invoking web service, got result."))
     if (logger.isDebugEnabled()) {
@@ -555,14 +533,11 @@ export class WebServiceDispatcher extends DestinationConnector {
     // Parse WSDL if URL provided
     if (this.properties.wsdlUrl) {
       try {
-        container.parsedWsdl = await parseWsdlFromUrl(
-          this.properties.wsdlUrl,
-          {
-            username: this.properties.username || undefined,
-            password: this.properties.password || undefined,
-            timeout: this.properties.socketTimeout,
-          }
-        );
+        container.parsedWsdl = await parseWsdlFromUrl(this.properties.wsdlUrl, {
+          username: this.properties.username || undefined,
+          password: this.properties.password || undefined,
+          timeout: this.properties.socketTimeout,
+        });
 
         // Update definition map in properties
         this.properties.wsdlDefinitionMap = container.parsedWsdl.definitionMap;
@@ -581,10 +556,7 @@ export class WebServiceDispatcher extends DestinationConnector {
           };
         }
 
-        container.client = await soap.createClientAsync(
-          this.properties.wsdlUrl,
-          clientOptions
-        );
+        container.client = await soap.createClientAsync(this.properties.wsdlUrl, clientOptions);
 
         // Set endpoint if overridden
         if (this.properties.locationURI) {
@@ -594,10 +566,7 @@ export class WebServiceDispatcher extends DestinationConnector {
         // Set authentication on client
         if (this.properties.useAuthentication) {
           container.client.setSecurity(
-            new soap.BasicAuthSecurity(
-              this.properties.username,
-              this.properties.password
-            )
+            new soap.BasicAuthSecurity(this.properties.username, this.properties.password)
           );
         }
       } catch (error) {
@@ -723,9 +692,7 @@ export class WebServiceDispatcher extends DestinationConnector {
   /**
    * Get attachments for the request
    */
-  private getAttachments(
-    connectorMessage: ConnectorMessage
-  ): AttachmentEntry[] {
+  private getAttachments(connectorMessage: ConnectorMessage): AttachmentEntry[] {
     if (!this.properties.useMtom) {
       return [];
     }
@@ -733,14 +700,11 @@ export class WebServiceDispatcher extends DestinationConnector {
     if (this.properties.useAttachmentsVariable) {
       // Get attachments from variable
       const connectorMap = connectorMessage.getConnectorMap();
-      const attachments = connectorMap.get(
-        this.properties.attachmentsVariable
-      );
+      const attachments = connectorMap.get(this.properties.attachmentsVariable);
 
       if (Array.isArray(attachments)) {
         return attachments.filter(
-          (a): a is AttachmentEntry =>
-            a && typeof a === 'object' && 'name' in a && 'content' in a
+          (a): a is AttachmentEntry => a && typeof a === 'object' && 'name' in a && 'content' in a
         );
       }
 
@@ -770,10 +734,7 @@ export class WebServiceDispatcher extends DestinationConnector {
 
       const controller = new AbortController();
       this.pendingTasks.add(controller);
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        this.properties.socketTimeout
-      );
+      const timeoutId = setTimeout(() => controller.abort(), this.properties.socketTimeout);
 
       try {
         const requestInit: RequestInit = {
@@ -790,19 +751,14 @@ export class WebServiceDispatcher extends DestinationConnector {
           const credentials = Buffer.from(
             `${this.properties.username}:${this.properties.password}`
           ).toString('base64');
-          (requestInit.headers as Record<string, string>)['Authorization'] =
-            `Basic ${credentials}`;
+          (requestInit.headers as Record<string, string>)['Authorization'] = `Basic ${credentials}`;
         }
 
         const response = await fetch(currentEndpoint, requestInit);
         clearTimeout(timeoutId);
 
         // CPC-WS-004: Handle redirects (3xx) — matches Java's redirect loop
-        if (
-          tryCount < MAX_REDIRECTS &&
-          response.status >= 300 &&
-          response.status < 400
-        ) {
+        if (tryCount < MAX_REDIRECTS && response.status >= 300 && response.status < 400) {
           const location = response.headers.get('Location');
           if (location) {
             redirect = true;
@@ -829,9 +785,7 @@ export class WebServiceDispatcher extends DestinationConnector {
             if (e instanceof SoapFaultError) throw e;
           }
 
-          throw new Error(
-            `HTTP ${response.status}: ${response.statusText}`
-          );
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         // Handle one-way operations
@@ -859,9 +813,7 @@ export class WebServiceDispatcher extends DestinationConnector {
         clearTimeout(timeoutId);
 
         if (error instanceof Error && error.name === 'AbortError') {
-          throw new Error(
-            `Request timeout after ${this.properties.socketTimeout}ms`
-          );
+          throw new Error(`Request timeout after ${this.properties.socketTimeout}ms`);
         }
 
         throw error;
@@ -943,20 +895,15 @@ export class WebServiceDispatcher extends DestinationConnector {
       return [];
     }
 
-    const parsedWsdl = await parseWsdlFromUrl(
-      this.properties.wsdlUrl,
-      {
-        username: this.properties.username || undefined,
-        password: this.properties.password || undefined,
-        timeout: this.properties.socketTimeout,
-      }
-    );
+    const parsedWsdl = await parseWsdlFromUrl(this.properties.wsdlUrl, {
+      username: this.properties.username || undefined,
+      password: this.properties.password || undefined,
+      timeout: this.properties.socketTimeout,
+    });
 
     this.properties.wsdlDefinitionMap = parsedWsdl.definitionMap;
 
-    const serviceMap = parsedWsdl.definitionMap.map.get(
-      this.properties.service
-    );
+    const serviceMap = parsedWsdl.definitionMap.map.get(this.properties.service);
 
     if (!serviceMap) return [];
 
@@ -973,11 +920,7 @@ export class SoapFaultError extends Error {
   readonly faultCode?: string;
   readonly responseXml?: string;
 
-  constructor(
-    message: string,
-    faultCode?: string,
-    responseXml?: string
-  ) {
+  constructor(message: string, faultCode?: string, responseXml?: string) {
     super(message);
     this.name = 'SoapFaultError';
     this.faultCode = faultCode;

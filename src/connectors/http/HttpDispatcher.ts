@@ -179,13 +179,14 @@ export class HttpDispatcher extends DestinationConnector {
     resolved.contentType = this.resolveVariables(resolved.contentType, connectorMessage);
     resolved.charset = this.resolveVariables(resolved.charset, connectorMessage);
     resolved.proxyAddress = this.resolveVariables(resolved.proxyAddress, connectorMessage);
-    resolved.proxyPort = Number(this.resolveVariables(String(resolved.proxyPort), connectorMessage)) || 0;
+    resolved.proxyPort =
+      Number(this.resolveVariables(String(resolved.proxyPort), connectorMessage)) || 0;
 
     // Resolve each header value
     if (resolved.headers instanceof Map) {
       const resolvedHeaders = new Map<string, string[]>();
       for (const [key, values] of resolved.headers) {
-        const resolvedValues = values.map(v => this.resolveVariables(v, connectorMessage));
+        const resolvedValues = values.map((v) => this.resolveVariables(v, connectorMessage));
         resolvedHeaders.set(key, resolvedValues);
       }
       resolved.headers = resolvedHeaders;
@@ -195,7 +196,7 @@ export class HttpDispatcher extends DestinationConnector {
     if (resolved.parameters instanceof Map) {
       const resolvedParams = new Map<string, string[]>();
       for (const [key, values] of resolved.parameters) {
-        const resolvedValues = values.map(v => this.resolveVariables(v, connectorMessage));
+        const resolvedValues = values.map((v) => this.resolveVariables(v, connectorMessage));
         resolvedParams.set(key, resolvedValues);
       }
       resolved.parameters = resolvedParams;
@@ -370,7 +371,10 @@ export class HttpDispatcher extends DestinationConnector {
 
       // Store response metadata in connector map
       const connectorMap = connectorMessage.getConnectorMap();
-      connectorMap.set('responseStatusLine', `HTTP/1.1 ${response.statusCode} ${response.statusMessage}`);
+      connectorMap.set(
+        'responseStatusLine',
+        `HTTP/1.1 ${response.statusCode} ${response.statusMessage}`
+      );
       connectorMap.set('responseHeaders', response.headers);
 
       // CPC-RHG-001 + CPC-MEH-001: Match Java's status code handling
@@ -388,12 +392,12 @@ export class HttpDispatcher extends DestinationConnector {
       // CPC-MEH-001: Java dispatches ErrorEvent on connection exception
       // CPC-MEH-002: Timeout errors caught and mapped to QUEUED
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isTimeout = error instanceof Error && (
-        error.name === 'AbortError' ||
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('ETIMEDOUT') ||
-        errorMessage.includes('ESOCKETTIMEDOUT')
-      );
+      const isTimeout =
+        error instanceof Error &&
+        (error.name === 'AbortError' ||
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('ETIMEDOUT') ||
+          errorMessage.includes('ESOCKETTIMEDOUT'));
 
       responseStatusMessage = 'Error connecting to HTTP server';
       responseError = isTimeout
@@ -428,7 +432,10 @@ export class HttpDispatcher extends DestinationConnector {
    * ConcurrentHashMap<Long, CloseableHttpClient>).
    * CPC-MAM-002: Supports Digest auth via challenge-response.
    */
-  private async executeRequest(connectorMessage: ConnectorMessage, props: HttpDispatcherProperties): Promise<HttpResponse> {
+  private async executeRequest(
+    connectorMessage: ConnectorMessage,
+    props: HttpDispatcherProperties
+  ): Promise<HttpResponse> {
     // Build URL with query parameters
     const url = this.buildUrl(props);
 
@@ -444,9 +451,7 @@ export class HttpDispatcher extends DestinationConnector {
     // and for getHttpAgent() inspection, but fetch() does not accept http.Agent directly.
     const options: RequestInit = {
       method: props.method,
-      headers: Object.fromEntries(
-        Array.from(headers.entries()).map(([k, v]) => [k, v.join(', ')])
-      ),
+      headers: Object.fromEntries(Array.from(headers.entries()).map(([k, v]) => [k, v.join(', ')])),
     };
 
     // Add body for methods that support it
@@ -590,9 +595,7 @@ export class HttpDispatcher extends DestinationConnector {
     if (
       props.method === 'GET' ||
       props.method === 'DELETE' ||
-      !props.contentType
-        .toLowerCase()
-        .includes('application/x-www-form-urlencoded')
+      !props.contentType.toLowerCase().includes('application/x-www-form-urlencoded')
     ) {
       for (const [key, values] of props.parameters) {
         for (const value of values) {
@@ -628,7 +631,10 @@ export class HttpDispatcher extends DestinationConnector {
   /**
    * Build request body
    */
-  private buildBody(connectorMessage: ConnectorMessage, props: HttpDispatcherProperties): string | FormData | null {
+  private buildBody(
+    connectorMessage: ConnectorMessage,
+    props: HttpDispatcherProperties
+  ): string | FormData | null {
     // Get content from properties or connector message
     let content = props.content;
 
@@ -639,7 +645,8 @@ export class HttpDispatcher extends DestinationConnector {
     }
 
     // Check if this is a multipart/form-data request
-    const isMultipart = props.multipart || props.contentType?.toLowerCase().includes('multipart/form-data');
+    const isMultipart =
+      props.multipart || props.contentType?.toLowerCase().includes('multipart/form-data');
 
     if (isMultipart) {
       const formData = new FormData();
@@ -672,11 +679,7 @@ export class HttpDispatcher extends DestinationConnector {
     }
 
     // Check if this is a form-encoded POST/PUT/PATCH
-    if (
-      props.contentType
-        .toLowerCase()
-        .includes('application/x-www-form-urlencoded')
-    ) {
+    if (props.contentType.toLowerCase().includes('application/x-www-form-urlencoded')) {
       // Build form data from parameters
       const params = new URLSearchParams();
       for (const [key, values] of props.parameters) {
@@ -704,9 +707,7 @@ export class HttpDispatcher extends DestinationConnector {
       return null;
     }
 
-    const credentials = Buffer.from(
-      `${props.username}:${props.password}`
-    ).toString('base64');
+    const credentials = Buffer.from(`${props.username}:${props.password}`).toString('base64');
     return `Basic ${credentials}`;
   }
 
@@ -716,7 +717,11 @@ export class HttpDispatcher extends DestinationConnector {
    * Java uses Apache HttpClient's DigestScheme which handles the challenge-response
    * automatically. We parse the WWW-Authenticate header and compute the digest manually.
    */
-  private buildDigestAuthHeader(wwwAuth: string, requestUrl: string, props: HttpDispatcherProperties): string | null {
+  private buildDigestAuthHeader(
+    wwwAuth: string,
+    requestUrl: string,
+    props: HttpDispatcherProperties
+  ): string | null {
     // Parse challenge parameters
     const params = this.parseDigestChallenge(wwwAuth);
     const realm = params.get('realm') || '';
@@ -746,9 +751,7 @@ export class HttpDispatcher extends DestinationConnector {
     const uri = new URL(requestUrl).pathname;
 
     // Compute HA2 = MD5(method:uri)
-    const ha2 = createHash('md5')
-      .update(`${props.method}:${uri}`)
-      .digest('hex');
+    const ha2 = createHash('md5').update(`${props.method}:${uri}`).digest('hex');
 
     // Compute response
     let response: string;
@@ -757,9 +760,7 @@ export class HttpDispatcher extends DestinationConnector {
         .update(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
         .digest('hex');
     } else {
-      response = createHash('md5')
-        .update(`${ha1}:${nonce}:${ha2}`)
-        .digest('hex');
+      response = createHash('md5').update(`${ha1}:${nonce}:${ha2}`).digest('hex');
     }
 
     // Build header
@@ -786,7 +787,10 @@ export class HttpDispatcher extends DestinationConnector {
    * is true), we reuse these to build a digest header without a 401 round-trip —
    * matching Java Apache HttpClient's AuthCache behavior.
    */
-  private buildPreemptiveDigestHeader(requestUrl: string, props: HttpDispatcherProperties): string | null {
+  private buildPreemptiveDigestHeader(
+    requestUrl: string,
+    props: HttpDispatcherProperties
+  ): string | null {
     if (!this.digestCachedNonce || !this.digestCachedRealm) return null;
 
     const realm = this.digestCachedRealm;
@@ -804,9 +808,7 @@ export class HttpDispatcher extends DestinationConnector {
 
     const uri = new URL(requestUrl).pathname;
 
-    const ha2 = createHash('md5')
-      .update(`${props.method}:${uri}`)
-      .digest('hex');
+    const ha2 = createHash('md5').update(`${props.method}:${uri}`).digest('hex');
 
     let response: string;
     if (qop === 'auth' || qop === 'auth-int') {
@@ -814,9 +816,7 @@ export class HttpDispatcher extends DestinationConnector {
         .update(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
         .digest('hex');
     } else {
-      response = createHash('md5')
-        .update(`${ha1}:${nonce}:${ha2}`)
-        .digest('hex');
+      response = createHash('md5').update(`${ha1}:${nonce}:${ha2}`).digest('hex');
     }
 
     let header = `Digest username="${props.username}", realm="${realm}", nonce="${nonce}", uri="${uri}", response="${response}"`;
@@ -847,7 +847,7 @@ export class HttpDispatcher extends DestinationConnector {
     while ((match = pattern.exec(challengeStr)) !== null) {
       const key = match[1]!.toLowerCase();
       // Use quoted value (group 3) if available, otherwise unquoted (group 4)
-      const value = match[3] !== undefined ? match[3] : (match[4] || '');
+      const value = match[3] !== undefined ? match[3] : match[4] || '';
       params.set(key, value);
     }
 

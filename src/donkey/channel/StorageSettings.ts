@@ -172,11 +172,17 @@ export function getStorageSettings(
 export function parseMessageStorageMode(mode?: string): MessageStorageMode {
   if (!mode) return MessageStorageMode.DEVELOPMENT;
   switch (mode.toUpperCase()) {
-    case 'DISABLED': return MessageStorageMode.DISABLED;
-    case 'METADATA': return MessageStorageMode.METADATA;
-    case 'RAW': return MessageStorageMode.RAW;
-    case 'PRODUCTION': return MessageStorageMode.PRODUCTION;
-    case 'DEVELOPMENT': return MessageStorageMode.DEVELOPMENT;
-    default: return MessageStorageMode.DEVELOPMENT;
+    case 'DISABLED':
+      return MessageStorageMode.DISABLED;
+    case 'METADATA':
+      return MessageStorageMode.METADATA;
+    case 'RAW':
+      return MessageStorageMode.RAW;
+    case 'PRODUCTION':
+      return MessageStorageMode.PRODUCTION;
+    case 'DEVELOPMENT':
+      return MessageStorageMode.DEVELOPMENT;
+    default:
+      return MessageStorageMode.DEVELOPMENT;
   }
 }

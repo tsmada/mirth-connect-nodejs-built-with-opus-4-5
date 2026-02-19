@@ -172,7 +172,7 @@ export class DICOMUtil {
       const group = header.readUInt16LE(offset);
       const element = header.readUInt16LE(offset + 2);
 
-      if (group === 0x7FE0 && element === 0x0010) {
+      if (group === 0x7fe0 && element === 0x0010) {
         // Found pixel data tag
         insertOffset = offset;
         break;
@@ -180,7 +180,7 @@ export class DICOMUtil {
 
       // Skip to next element (simplified - assumes implicit VR)
       const length = header.readUInt32LE(offset + 4);
-      if (length === 0xFFFFFFFF) {
+      if (length === 0xffffffff) {
         // Undefined length - skip to end
         break;
       }
@@ -197,15 +197,15 @@ export class DICOMUtil {
     if (attachments.length > 1) {
       // Encapsulated pixel data format
       const tagBuf = Buffer.alloc(8);
-      tagBuf.writeUInt16LE(0x7FE0, 0);
+      tagBuf.writeUInt16LE(0x7fe0, 0);
       tagBuf.writeUInt16LE(0x0010, 2);
-      tagBuf.writeUInt32LE(0xFFFFFFFF, 4); // Undefined length
+      tagBuf.writeUInt32LE(0xffffffff, 4); // Undefined length
       parts.push(tagBuf);
 
       // Add basic offset table (empty)
       const offsetTableTag = Buffer.alloc(8);
-      offsetTableTag.writeUInt16LE(0xFFFE, 0);
-      offsetTableTag.writeUInt16LE(0xE000, 2);
+      offsetTableTag.writeUInt16LE(0xfffe, 0);
+      offsetTableTag.writeUInt16LE(0xe000, 2);
       offsetTableTag.writeUInt32LE(0, 4);
       parts.push(offsetTableTag);
 
@@ -216,8 +216,8 @@ export class DICOMUtil {
         const frameData = Buffer.isBuffer(content) ? content : Buffer.alloc(0);
 
         const itemTag = Buffer.alloc(8);
-        itemTag.writeUInt16LE(0xFFFE, 0);
-        itemTag.writeUInt16LE(0xE000, 2);
+        itemTag.writeUInt16LE(0xfffe, 0);
+        itemTag.writeUInt16LE(0xe000, 2);
         // Pad to even length
         const paddedLength = frameData.length + (frameData.length % 2);
         itemTag.writeUInt32LE(paddedLength, 4);
@@ -230,8 +230,8 @@ export class DICOMUtil {
 
       // Add sequence delimitation item
       const seqDelimTag = Buffer.alloc(8);
-      seqDelimTag.writeUInt16LE(0xFFFE, 0);
-      seqDelimTag.writeUInt16LE(0xE0DD, 2);
+      seqDelimTag.writeUInt16LE(0xfffe, 0);
+      seqDelimTag.writeUInt16LE(0xe0dd, 2);
       seqDelimTag.writeUInt32LE(0, 4);
       parts.push(seqDelimTag);
     } else {
@@ -243,7 +243,7 @@ export class DICOMUtil {
       const pixelData = Buffer.isBuffer(content) ? content : Buffer.alloc(0);
 
       const tagBuf = Buffer.alloc(8);
-      tagBuf.writeUInt16LE(0x7FE0, 0);
+      tagBuf.writeUInt16LE(0x7fe0, 0);
       tagBuf.writeUInt16LE(0x0010, 2);
       tagBuf.writeUInt32LE(pixelData.length, 4);
       parts.push(tagBuf);
@@ -290,7 +290,7 @@ export class DICOMUtil {
       if (group > 0x0028) break;
 
       const length = data.readUInt32LE(offset + 4);
-      if (length === 0xFFFFFFFF) break;
+      if (length === 0xffffffff) break;
       offset += 8 + length;
     }
 
@@ -354,10 +354,10 @@ export class DICOMUtil {
     _autoThreshold: boolean
   ): Promise<Buffer> {
     // Extract image parameters
-    const rows = this.getElementValue(data, 0x0028, 0x0010, 'US') as number || 0;
-    const columns = this.getElementValue(data, 0x0028, 0x0011, 'US') as number || 0;
-    const bitsAllocated = this.getElementValue(data, 0x0028, 0x0100, 'US') as number || 16;
-    const bitsStored = this.getElementValue(data, 0x0028, 0x0101, 'US') as number || 12;
+    const rows = (this.getElementValue(data, 0x0028, 0x0010, 'US') as number) || 0;
+    const columns = (this.getElementValue(data, 0x0028, 0x0011, 'US') as number) || 0;
+    const bitsAllocated = (this.getElementValue(data, 0x0028, 0x0100, 'US') as number) || 16;
+    const bitsStored = (this.getElementValue(data, 0x0028, 0x0101, 'US') as number) || 12;
 
     // Find pixel data
     let pixelDataOffset = 0;
@@ -367,13 +367,13 @@ export class DICOMUtil {
       const group = data.readUInt16LE(offset);
       const element = data.readUInt16LE(offset + 2);
 
-      if (group === 0x7FE0 && element === 0x0010) {
+      if (group === 0x7fe0 && element === 0x0010) {
         pixelDataOffset = offset + 8;
         break;
       }
 
       const length = data.readUInt32LE(offset + 4);
-      if (length === 0xFFFFFFFF) {
+      if (length === 0xffffffff) {
         offset += 8;
         continue;
       }
@@ -434,7 +434,7 @@ export class DICOMUtil {
       if (group > groupNum) break;
 
       const length = data.readUInt32LE(offset + 4);
-      if (length === 0xFFFFFFFF) break;
+      if (length === 0xffffffff) break;
       offset += 8 + length;
     }
 
@@ -448,7 +448,10 @@ export class DICOMUtil {
    * @param decodeBase64 - If true, the data is assumed to be Base64-encoded.
    * @returns The converted DicomObject.
    */
-  static byteArrayToDicomObject(bytes: Buffer | string, decodeBase64: boolean = false): DicomObject {
+  static byteArrayToDicomObject(
+    bytes: Buffer | string,
+    decodeBase64: boolean = false
+  ): DicomObject {
     let data: Buffer;
 
     if (typeof bytes === 'string') {
@@ -499,7 +502,9 @@ export class DICOMUtil {
     for (const [tag, element] of dicomObject.elements) {
       const tagLower = tag.toLowerCase();
       const value = String(element.value);
-      lines.push(`  <tag${tagLower} tag="${tagLower}" len="${value.length}">${value}</tag${tagLower}>`);
+      lines.push(
+        `  <tag${tagLower} tag="${tagLower}" len="${value.length}">${value}</tag${tagLower}>`
+      );
     }
 
     lines.push('</dicom>');
@@ -542,7 +547,7 @@ export class DICOMUtil {
       if (g > group) break;
 
       const length = buffer.readUInt32LE(offset + 4);
-      if (length === 0xFFFFFFFF) break;
+      if (length === 0xffffffff) break;
       offset += 8 + length;
     }
 

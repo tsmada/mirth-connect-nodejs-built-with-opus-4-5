@@ -9,11 +9,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { ApiClient } from '../lib/ApiClient.js';
 import { ConfigManager } from '../lib/ConfigManager.js';
-import {
-  OutputFormatter,
-  formatEventTable,
-  formatDate,
-} from '../lib/OutputFormatter.js';
+import { OutputFormatter, formatEventTable, formatDate } from '../lib/OutputFormatter.js';
 import { GlobalOptions, EventFilter, EventLevel } from '../types/index.js';
 
 /**
@@ -40,7 +36,7 @@ function parseLevelFilter(level: string | string[] | undefined): EventLevel[] | 
     for (const part of parts) {
       if (['INFORMATION', 'WARNING', 'ERROR', 'INFO'].includes(part)) {
         // Normalize INFO to INFORMATION
-        levels.push(part === 'INFO' ? 'INFORMATION' : part as EventLevel);
+        levels.push(part === 'INFO' ? 'INFORMATION' : (part as EventLevel));
       }
     }
   }
@@ -95,9 +91,7 @@ function parseDate(dateStr: string | undefined): string | undefined {
  * Register event commands
  */
 export function registerEventCommands(program: Command): void {
-  const eventsCmd = program
-    .command('events')
-    .description('View and search audit events');
+  const eventsCmd = program.command('events').description('View and search audit events');
 
   // ==========================================================================
   // events (list recent)
@@ -276,10 +270,10 @@ export function registerEventCommands(program: Command): void {
           for (const event of events) {
             console.log(
               chalk.red('●') +
-              ' ' +
-              chalk.bold(event.name) +
-              ' ' +
-              chalk.gray(`(${formatDate(event.dateTime)})`)
+                ' ' +
+                chalk.bold(event.name) +
+                ' ' +
+                chalk.gray(`(${formatDate(event.dateTime)})`)
             );
             if (event.attributes) {
               for (const [key, value] of Object.entries(event.attributes)) {

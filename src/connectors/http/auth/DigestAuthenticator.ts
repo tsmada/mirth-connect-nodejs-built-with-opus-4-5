@@ -139,7 +139,10 @@ export class DigestAuthenticator implements HttpAuthenticator {
     this.properties = properties;
   }
 
-  async authenticate(request: RequestInfo, credentialsResolver?: CredentialsResolver): Promise<AuthenticationResult> {
+  async authenticate(
+    request: RequestInfo,
+    credentialsResolver?: CredentialsResolver
+  ): Promise<AuthenticationResult> {
     const authHeaderList = request.headers.get('authorization');
     const directives = new Map<string, string>();
     let nonceString: string | undefined;
@@ -217,13 +220,17 @@ export class DigestAuthenticator implements HttpAuthenticator {
         }
 
         if (this.properties.realm.toLowerCase() !== realm.toLowerCase()) {
-          throw new Error(`Realm "${realm}" does not match expected realm "${this.properties.realm}".`);
+          throw new Error(
+            `Realm "${realm}" does not match expected realm "${this.properties.realm}".`
+          );
         }
         if (requestURI.toLowerCase() !== uri.toLowerCase()) {
           throw new Error(`URI "${uri}" does not match the request URI "${requestURI}".`);
         }
         if (opaque !== nonceOpaque) {
-          throw new Error(`Opaque value "${opaque}" does not match expected value "${nonceOpaque}".`);
+          throw new Error(
+            `Opaque value "${opaque}" does not match expected value "${nonceOpaque}".`
+          );
         }
 
         const credentialsSource = this.getCredentials(credentialsResolver);
@@ -239,7 +246,8 @@ export class DigestAuthenticator implements HttpAuthenticator {
 
         if (
           !algorithm ||
-          (algorithm.toUpperCase() === DigestAlgorithm.MD5 && this.properties.algorithms.has(DigestAlgorithm.MD5))
+          (algorithm.toUpperCase() === DigestAlgorithm.MD5 &&
+            this.properties.algorithms.has(DigestAlgorithm.MD5))
         ) {
           ha1 = md5Digest(username, realm, password);
         } else if (
@@ -258,9 +266,15 @@ export class DigestAuthenticator implements HttpAuthenticator {
         // QOP auth-int: A2 = method:uri:H(entityBody)
         let ha2: string;
 
-        if (!qop || (qop.toLowerCase() === 'auth' && this.properties.qopModes.has(DigestQOPMode.AUTH))) {
+        if (
+          !qop ||
+          (qop.toLowerCase() === 'auth' && this.properties.qopModes.has(DigestQOPMode.AUTH))
+        ) {
           ha2 = md5Digest(request.method, uri);
-        } else if (qop.toLowerCase() === 'auth-int' && this.properties.qopModes.has(DigestQOPMode.AUTH_INT)) {
+        } else if (
+          qop.toLowerCase() === 'auth-int' &&
+          this.properties.qopModes.has(DigestQOPMode.AUTH_INT)
+        ) {
           const entityBody = request.getEntity();
           const entityDigest = md5Digest(entityBody);
           ha2 = md5Digest(request.method, uri, entityDigest);

@@ -190,12 +190,27 @@ systemRouter.get(
 
         // Group by SERVER_ID
         const serverMap = new Map<string, PerServerStats>();
-        const aggregate = { received: 0, filtered: 0, transformed: 0, pending: 0, sent: 0, error: 0 };
+        const aggregate = {
+          received: 0,
+          filtered: 0,
+          transformed: 0,
+          pending: 0,
+          sent: 0,
+          error: 0,
+        };
 
         for (const row of rows) {
           let entry = serverMap.get(row.SERVER_ID);
           if (!entry) {
-            entry = { serverId: row.SERVER_ID, received: 0, filtered: 0, transformed: 0, pending: 0, sent: 0, error: 0 };
+            entry = {
+              serverId: row.SERVER_ID,
+              received: 0,
+              filtered: 0,
+              transformed: 0,
+              pending: 0,
+              sent: 0,
+              error: 0,
+            };
             serverMap.set(row.SERVER_ID, entry);
           }
           // Sum across all METADATA_IDs for this server

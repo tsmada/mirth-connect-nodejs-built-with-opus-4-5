@@ -50,10 +50,7 @@ export enum VmDispatcherStatus {
 /**
  * Event listener for connection status changes
  */
-export type DispatcherStatusListener = (
-  status: VmDispatcherStatus,
-  info?: string
-) => void;
+export type DispatcherStatusListener = (status: VmDispatcherStatus, info?: string) => void;
 
 /**
  * Interface for the engine controller that can dispatch messages to channels
@@ -196,10 +193,7 @@ export class VmDispatcher extends DestinationConnector {
   /**
    * Dispatch a connection status event
    */
-  private dispatchStatusEvent(
-    status: VmDispatcherStatus,
-    info?: string
-  ): void {
+  private dispatchStatusEvent(status: VmDispatcherStatus, info?: string): void {
     for (const listener of this.statusListeners) {
       try {
         listener(status, info);
@@ -308,10 +302,7 @@ export class VmDispatcher extends DestinationConnector {
   /**
    * Get a map value from various scopes (response, connector, channel, source, globalChannel, global, config)
    */
-  private getMapValue(
-    connectorMessage: ConnectorMessage,
-    key: string
-  ): unknown {
+  private getMapValue(connectorMessage: ConnectorMessage, key: string): unknown {
     // Check response map
     if (connectorMessage.getResponseMap().has(key)) {
       return connectorMessage.getResponseMap().get(key);
@@ -374,10 +365,7 @@ export class VmDispatcher extends DestinationConnector {
       ConnectionStatusEventType.SENDING,
       `Target Channel: ${targetChannelId}`
     );
-    this.dispatchStatusEvent(
-      VmDispatcherStatus.SENDING,
-      `Target Channel: ${targetChannelId}`
-    );
+    this.dispatchStatusEvent(VmDispatcherStatus.SENDING, `Target Channel: ${targetChannelId}`);
 
     let responseData: string | null = null;
     let responseError: string | null = null;
@@ -442,9 +430,7 @@ export class VmDispatcher extends DestinationConnector {
             responseData = dispatchResult.selectedResponse.message;
           }
         } else {
-          throw new Error(
-            'No engine controller configured for VM dispatcher'
-          );
+          throw new Error('No engine controller configured for VM dispatcher');
         }
 
         // Check if response validation is requested — matches Java line 164
@@ -457,8 +443,7 @@ export class VmDispatcher extends DestinationConnector {
       // CPC-MEH-006: On error, responseStatus stays QUEUED — matches Java line 102/169-172
       // Java's VmDispatcher.send() returns Response(QUEUED, ...) on error.
       // The Donkey engine layer decides whether to actually queue or error.
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       responseStatusMessage = `Error routing message to channel id: ${targetChannelId} - ${errorMessage}`;
       responseError = errorMessage;
@@ -470,7 +455,12 @@ export class VmDispatcher extends DestinationConnector {
 
     // Build response matching Java's return statement (line 177):
     //   return new Response(responseStatus, responseData, responseStatusMessage, responseError, validateResponse)
-    const response = new Response(responseStatus, responseData ?? '', responseStatusMessage ?? '', responseError ?? '');
+    const response = new Response(
+      responseStatus,
+      responseData ?? '',
+      responseStatusMessage ?? '',
+      responseError ?? ''
+    );
 
     // CPC-RHG-002: Wire response validator when validateResponse is true.
     // Java's DestinationConnector.send() calls responseValidator.validate() on the response.
@@ -531,10 +521,7 @@ export class VmDispatcher extends DestinationConnector {
     if (content.includes('${message.transformedData}')) {
       const transformed = connectorMessage.getTransformedContent();
       const transformedData = transformed?.content ?? '';
-      content = content.replace(
-        /\$\{message\.transformedData\}/g,
-        transformedData
-      );
+      content = content.replace(/\$\{message\.transformedData\}/g, transformedData);
     }
 
     // Replace ${message.rawData} with raw content
@@ -550,9 +537,7 @@ export class VmDispatcher extends DestinationConnector {
   /**
    * Get the response for the sent message
    */
-  async getResponse(
-    connectorMessage: ConnectorMessage
-  ): Promise<string | null> {
+  async getResponse(connectorMessage: ConnectorMessage): Promise<string | null> {
     const response = connectorMessage.getResponseContent();
     return response?.content ?? null;
   }

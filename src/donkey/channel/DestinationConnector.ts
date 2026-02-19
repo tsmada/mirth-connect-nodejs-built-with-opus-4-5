@@ -15,13 +15,19 @@ import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
 import { Status } from '../../model/Status.js';
-import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
+import {
+  FilterTransformerExecutor,
+  FilterTransformerScripts,
+} from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DestinationQueue } from '../queue/DestinationQueue.js';
 import { ResponseValidator } from '../message/ResponseValidator.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
 import { dashboardStatusController } from '../../plugins/dashboardstatus/DashboardStatusController.js';
-import type { ConnectionStatusEvent, ConnectorCountEvent } from '../../plugins/dashboardstatus/DashboardStatusController.js';
+import type {
+  ConnectionStatusEvent,
+  ConnectorCountEvent,
+} from '../../plugins/dashboardstatus/DashboardStatusController.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
@@ -30,9 +36,19 @@ const logger = getLogger('engine');
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) { reject(new Error('aborted')); return; }
+    if (signal?.aborted) {
+      reject(new Error('aborted'));
+      return;
+    }
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')); }, { once: true });
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new Error('aborted'));
+      },
+      { once: true }
+    );
   });
 }
 
@@ -217,10 +233,7 @@ export abstract class DestinationConnector {
    * - onError: with error message
    * - onStop: DISCONNECTED
    */
-  protected dispatchConnectionEvent(
-    state: ConnectionStatusEventType,
-    message?: string
-  ): void {
+  protected dispatchConnectionEvent(state: ConnectionStatusEventType, message?: string): void {
     if (!this.channel) return;
     const event: ConnectionStatusEvent = {
       channelId: this.channel.getId(),
@@ -246,7 +259,9 @@ export abstract class DestinationConnector {
     const event: ConnectorCountEvent = {
       channelId: this.channel.getId(),
       metadataId: this.metaDataId,
-      state: increment ? ConnectionStatusEventType.CONNECTED : ConnectionStatusEventType.DISCONNECTED,
+      state: increment
+        ? ConnectionStatusEventType.CONNECTED
+        : ConnectionStatusEventType.DISCONNECTED,
       message,
       channelName: this.channel.getName(),
       connectorType: this.transportName,
@@ -511,9 +526,16 @@ export abstract class DestinationConnector {
           const metaDataId = connectorMessage.getMetaDataId();
 
           try {
-            const { updateConnectorMessageStatus, updateSendAttempts, updateStatistics } = await import('../../db/DonkeyDao.js');
+            const { updateConnectorMessageStatus, updateSendAttempts, updateStatistics } =
+              await import('../../db/DonkeyDao.js');
             await updateConnectorMessageStatus(channelId, messageId, metaDataId, Status.SENT);
-            await updateSendAttempts(channelId, messageId, metaDataId, connectorMessage.getSendAttempts(), sendDate);
+            await updateSendAttempts(
+              channelId,
+              messageId,
+              metaDataId,
+              connectorMessage.getSendAttempts(),
+              sendDate
+            );
             await updateStatistics(channelId, metaDataId, serverId, Status.SENT);
           } catch (dbErr) {
             logger.error(`[${this.name}] Queue DB persist error: ${dbErr}`);
@@ -521,7 +543,6 @@ export abstract class DestinationConnector {
         }
 
         this.queue!.release(connectorMessage, true);
-
       } catch (error) {
         if (signal.aborted) break;
 
@@ -533,13 +554,19 @@ export abstract class DestinationConnector {
 
             if (this.channel) {
               try {
-                const { updateConnectorMessageStatus, updateErrors, updateStatistics } = await import('../../db/DonkeyDao.js');
+                const { updateConnectorMessageStatus, updateErrors, updateStatistics } =
+                  await import('../../db/DonkeyDao.js');
                 const channelId = this.channel.getId();
                 const messageId = connectorMessage.getMessageId();
                 const metaDataId = connectorMessage.getMetaDataId();
                 await updateConnectorMessageStatus(channelId, messageId, metaDataId, Status.ERROR);
                 await updateErrors(channelId, messageId, metaDataId, String(error));
-                await updateStatistics(channelId, metaDataId, connectorMessage.getServerId(), Status.ERROR);
+                await updateStatistics(
+                  channelId,
+                  metaDataId,
+                  connectorMessage.getServerId(),
+                  Status.ERROR
+                );
               } catch (dbErr) {
                 logger.error(`[${this.name}] Queue error persist error: ${dbErr}`);
               }

@@ -45,7 +45,7 @@ traceRouter.get(
       }
 
       if (req.query.contentTypes !== undefined) {
-        options.contentTypes = (req.query.contentTypes as string).split(',').map(s => s.trim());
+        options.contentTypes = (req.query.contentTypes as string).split(',').map((s) => s.trim());
       }
 
       if (req.query.maxContentLength !== undefined) {

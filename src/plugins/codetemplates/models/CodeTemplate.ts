@@ -145,7 +145,9 @@ export function shouldAddToScripts(template: CodeTemplate): boolean {
 /**
  * Get function definition from a template
  */
-export function getFunctionDefinition(template: CodeTemplate): CodeTemplateFunctionDefinition | null {
+export function getFunctionDefinition(
+  template: CodeTemplate
+): CodeTemplateFunctionDefinition | null {
   if (!template.properties?.code) {
     return null;
   }

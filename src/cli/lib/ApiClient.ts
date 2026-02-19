@@ -163,7 +163,10 @@ export class ApiClient {
    * Login with username and password
    * Returns the session token on success
    */
-  async login(username: string, password: string): Promise<{ status: LoginStatus; token?: string }> {
+  async login(
+    username: string,
+    password: string
+  ): Promise<{ status: LoginStatus; token?: string }> {
     const response = await this.axios.post('/api/users/_login', { username, password });
 
     if (response.status === 200 || response.status === 201) {
@@ -270,7 +273,10 @@ export class ApiClient {
   /**
    * Get channel statuses (with statistics)
    */
-  async getChannelStatuses(channelIds?: string[], includeUndeployed = false): Promise<ChannelStatus[]> {
+  async getChannelStatuses(
+    channelIds?: string[],
+    includeUndeployed = false
+  ): Promise<ChannelStatus[]> {
     const params: Record<string, string> = {};
     if (includeUndeployed) {
       params.includeUndeployed = 'true';
@@ -373,7 +379,9 @@ export class ApiClient {
    * Note: Uses returnErrors=true to surface errors (deviation from Java Mirth API default)
    */
   async undeployChannel(channelId: string): Promise<void> {
-    const response = await this.axios.post(`/api/channels/${channelId}/_undeploy?returnErrors=true`);
+    const response = await this.axios.post(
+      `/api/channels/${channelId}/_undeploy?returnErrors=true`
+    );
     if (response.status >= 400) {
       const errorMsg = this.extractErrorMessage(response.data, 'Failed to undeploy channel');
       throw new ApiError(errorMsg, response.status);
@@ -470,11 +478,7 @@ export class ApiClient {
   /**
    * Get a single message
    */
-  async getMessage(
-    channelId: string,
-    messageId: number,
-    includeContent = false
-  ): Promise<Message> {
+  async getMessage(channelId: string, messageId: number, includeContent = false): Promise<Message> {
     const url = `/api/channels/${channelId}/messages/${messageId}?includeContent=${includeContent}`;
     const response = await this.axios.get(url);
     return handleResponse<Message>(response);
@@ -485,7 +489,10 @@ export class ApiClient {
    */
   async getMessageCount(channelId: string, filter?: MessageFilter): Promise<number> {
     if (filter) {
-      const response = await this.axios.post(`/api/channels/${channelId}/messages/count/_search`, filter);
+      const response = await this.axios.post(
+        `/api/channels/${channelId}/messages/count/_search`,
+        filter
+      );
       return handleResponse<number>(response);
     }
     const response = await this.axios.get(`/api/channels/${channelId}/messages/count`);
@@ -496,7 +503,9 @@ export class ApiClient {
    * Get message attachments
    */
   async getMessageAttachments(channelId: string, messageId: number): Promise<AttachmentInfo[]> {
-    const response = await this.axios.get(`/api/channels/${channelId}/messages/${messageId}/attachments`);
+    const response = await this.axios.get(
+      `/api/channels/${channelId}/messages/${messageId}/attachments`
+    );
     return handleResponse<AttachmentInfo[]>(response);
   }
 
@@ -537,7 +546,8 @@ export class ApiClient {
     }
   ): Promise<TraceResult> {
     const params = new URLSearchParams();
-    if (options?.includeContent !== undefined) params.set('includeContent', String(options.includeContent));
+    if (options?.includeContent !== undefined)
+      params.set('includeContent', String(options.includeContent));
     if (options?.contentTypes) params.set('contentTypes', options.contentTypes);
     if (options?.maxContentLength) params.set('maxContentLength', String(options.maxContentLength));
     if (options?.maxDepth) params.set('maxDepth', String(options.maxDepth));

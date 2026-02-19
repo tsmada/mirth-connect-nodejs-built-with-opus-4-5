@@ -123,7 +123,10 @@ export class DatabasePollingEventBus implements EventBus {
         try {
           handler(data);
         } catch (err) {
-          logger.error(`[DatabasePollingEventBus] Handler error on channel "${channel}":`, err as Error);
+          logger.error(
+            `[DatabasePollingEventBus] Handler error on channel "${channel}":`,
+            err as Error
+          );
         }
       }
     }
@@ -185,7 +188,10 @@ export class DatabasePollingEventBus implements EventBus {
             try {
               handler(data);
             } catch (err) {
-              logger.error(`[DatabasePollingEventBus] Poll handler error on "${row.CHANNEL}":`, err as Error);
+              logger.error(
+                `[DatabasePollingEventBus] Poll handler error on "${row.CHANNEL}":`,
+                err as Error
+              );
             }
           }
         }
@@ -215,8 +221,9 @@ export class RedisEventBus implements EventBus {
       this.subClient = new Redis(redisUrl);
 
       // Set up message handler on sub client
-      (this.subClient as { on: (event: string, handler: (...args: string[]) => void) => void })
-        .on('message', (channel: string, message: string) => {
+      (this.subClient as { on: (event: string, handler: (...args: string[]) => void) => void }).on(
+        'message',
+        (channel: string, message: string) => {
           const channelHandlers = this.handlers.get(channel);
           if (channelHandlers) {
             let data: unknown;
@@ -229,15 +236,17 @@ export class RedisEventBus implements EventBus {
               try {
                 handler(data);
               } catch (err) {
-                logger.error(`[RedisEventBus] Handler error on channel "${channel}":`, err as Error);
+                logger.error(
+                  `[RedisEventBus] Handler error on channel "${channel}":`,
+                  err as Error
+                );
               }
             }
           }
-        });
-    } catch {
-      throw new Error(
-        'ioredis is required for RedisEventBus. Install with: npm install ioredis'
+        }
       );
+    } catch {
+      throw new Error('ioredis is required for RedisEventBus. Install with: npm install ioredis');
     }
   }
 
@@ -260,7 +269,7 @@ export class RedisEventBus implements EventBus {
     if (isNewChannel) {
       const sub = this.subClient as { subscribe: (ch: string) => Promise<number> };
       sub.subscribe(channel).catch((err: Error) => {
-        logger.error(`[RedisEventBus] Failed to subscribe to "${channel}":`, err as Error);
+        logger.error(`[RedisEventBus] Failed to subscribe to "${channel}":`, err);
       });
     }
   }
@@ -273,7 +282,7 @@ export class RedisEventBus implements EventBus {
         this.handlers.delete(channel);
         const sub = this.subClient as { unsubscribe: (ch: string) => Promise<number> };
         sub.unsubscribe(channel).catch((err: Error) => {
-          logger.error(`[RedisEventBus] Failed to unsubscribe from "${channel}":`, err as Error);
+          logger.error(`[RedisEventBus] Failed to unsubscribe from "${channel}":`, err);
         });
       }
     }

@@ -56,9 +56,7 @@ const DETAILS_SHORTCUTS: ShortcutHint[] = [
   { key: 'Esc', label: 'Close' },
 ];
 
-const HELP_SHORTCUTS: ShortcutHint[] = [
-  { key: 'Any', label: 'Close' },
-];
+const HELP_SHORTCUTS: ShortcutHint[] = [{ key: 'Any', label: 'Close' }];
 
 const MESSAGES_SHORTCUTS: ShortcutHint[] = [
   { key: '↑↓', label: 'Navigate' },
@@ -116,9 +114,7 @@ function getShortcuts(viewMode: ViewMode, hasSelection: boolean): ShortcutHint[]
 export const HelpBar: FC<HelpBarProps> = ({ viewMode, hasSelection = false }) => {
   const shortcuts = getShortcuts(viewMode, hasSelection);
 
-  const shortcutText = shortcuts
-    .map((s) => `[${s.key}] ${s.label}`)
-    .join('  ');
+  const shortcutText = shortcuts.map((s) => `[${s.key}] ${s.label}`).join('  ');
 
   return React.createElement(
     Box,

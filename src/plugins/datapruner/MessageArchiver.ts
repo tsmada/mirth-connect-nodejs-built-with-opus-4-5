@@ -369,7 +369,13 @@ export class MessageArchiver {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           await walkDir(fullPath);
-        } else if (entry.isFile() && (entry.name.endsWith('.json') || entry.name.endsWith('.json.gz') || entry.name.endsWith('.xml') || entry.name.endsWith('.xml.gz'))) {
+        } else if (
+          entry.isFile() &&
+          (entry.name.endsWith('.json') ||
+            entry.name.endsWith('.json.gz') ||
+            entry.name.endsWith('.xml') ||
+            entry.name.endsWith('.xml.gz'))
+        ) {
           files.push(fullPath);
         }
       }

@@ -58,9 +58,7 @@ async function getUsageData(): Promise<UsageData> {
   let channelCount = 0;
   let enabledChannelCount = 0;
   try {
-    const channelRows = await query<RowDataPacket>(
-      'SELECT COUNT(*) as total FROM CHANNEL'
-    );
+    const channelRows = await query<RowDataPacket>('SELECT COUNT(*) as total FROM CHANNEL');
     channelCount = channelRows[0]?.total ?? 0;
 
     // Count enabled channels (would need to parse channel XML)
@@ -72,9 +70,7 @@ async function getUsageData(): Promise<UsageData> {
   // Get user count
   let userCount = 0;
   try {
-    const userRows = await query<RowDataPacket>(
-      'SELECT COUNT(*) as total FROM PERSON'
-    );
+    const userRows = await query<RowDataPacket>('SELECT COUNT(*) as total FROM PERSON');
     userCount = userRows[0]?.total ?? 0;
   } catch {
     // Table might not exist

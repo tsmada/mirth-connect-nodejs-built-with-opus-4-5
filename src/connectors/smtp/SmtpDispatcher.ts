@@ -28,10 +28,7 @@ import {
   isTextMimeType,
   isValidMimeType,
 } from './SmtpDispatcherProperties.js';
-import {
-  getAlertEventController,
-  ErrorEventType,
-} from '../../javascript/userutil/AlertSender.js';
+import { getAlertEventController, ErrorEventType } from '../../javascript/userutil/AlertSender.js';
 
 export interface SmtpDispatcherConfig {
   name?: string;
@@ -162,7 +159,9 @@ export class SmtpDispatcher extends DestinationConnector {
    * CPC-SMTP-003: Java creates a new Email/SMTP connection per send() call.
    * We match this by creating a fresh transporter per message.
    */
-  private createTransporterForMessage(props: SmtpDispatcherProperties): Transporter<SmtpSentMessageInfo> {
+  private createTransporterForMessage(
+    props: SmtpDispatcherProperties
+  ): Transporter<SmtpSentMessageInfo> {
     const port = parseInt(props.smtpPort, 10) || 25;
     const timeout = parseInt(props.timeout, 10) || 5000;
 
@@ -323,7 +322,10 @@ export class SmtpDispatcher extends DestinationConnector {
       content: this.resolveVariables(att.content, connectorMessage),
       mimeType: this.resolveVariables(att.mimeType, connectorMessage),
     }));
-    resolved.attachmentsVariable = this.resolveVariables(resolved.attachmentsVariable, connectorMessage);
+    resolved.attachmentsVariable = this.resolveVariables(
+      resolved.attachmentsVariable,
+      connectorMessage
+    );
 
     return resolved;
   }
@@ -406,9 +408,7 @@ export class SmtpDispatcher extends DestinationConnector {
   /**
    * Convert attachment to nodemailer format
    */
-  private convertAttachment(
-    attachment: SmtpAttachment
-  ): nodemailer.SendMailOptions['attachments'] {
+  private convertAttachment(attachment: SmtpAttachment): nodemailer.SendMailOptions['attachments'] {
     let mimeType = attachment.mimeType;
     let content: string | Buffer = attachment.content;
 
@@ -556,8 +556,7 @@ export class SmtpDispatcher extends DestinationConnector {
         messageTransporter.close();
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // CPC-W19-005: Dispatch ErrorEvent matching Java SmtpDispatcher.java:257
       // Java: eventController.dispatchEvent(new ErrorEvent(getChannelId(), getMetaDataId(),

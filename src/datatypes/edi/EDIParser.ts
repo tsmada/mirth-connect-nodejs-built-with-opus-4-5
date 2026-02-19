@@ -38,9 +38,7 @@ export class EDIParser {
     const message = source.trim();
 
     if (!message || message.length < 3) {
-      throw new Error(
-        `Unable to parse, message is null or too short: ${message}`
-      );
+      throw new Error(`Unable to parse, message is null or too short: ${message}`);
     }
 
     // Get delimiters
@@ -75,15 +73,9 @@ export class EDIParser {
    */
   private getDelimiters(message: string): EDIDelimiters {
     const baseDelimiters: EDIDelimiters = {
-      segmentDelimiter: unescapeEDIDelimiter(
-        this.properties.segmentDelimiter
-      ),
-      elementDelimiter: unescapeEDIDelimiter(
-        this.properties.elementDelimiter
-      ),
-      subelementDelimiter: unescapeEDIDelimiter(
-        this.properties.subelementDelimiter
-      ),
+      segmentDelimiter: unescapeEDIDelimiter(this.properties.segmentDelimiter),
+      elementDelimiter: unescapeEDIDelimiter(this.properties.elementDelimiter),
+      subelementDelimiter: unescapeEDIDelimiter(this.properties.subelementDelimiter),
     };
 
     if (this.properties.inferX12Delimiters) {
@@ -150,17 +142,9 @@ export class EDIParser {
         const field = this.formatFieldNumber(fieldId);
 
         // Check for subelements
-        if (
-          element &&
-          element.indexOf(delimiters.subelementDelimiter) !== -1
-        ) {
+        if (element && element.indexOf(delimiters.subelementDelimiter) !== -1) {
           xml += `<${segmentId}.${field}>`;
-          xml += this.parseSubelements(
-            element,
-            segmentId,
-            field,
-            delimiters.subelementDelimiter
-          );
+          xml += this.parseSubelements(element, segmentId, field, delimiters.subelementDelimiter);
           xml += `</${segmentId}.${field}>`;
         } else {
           // Single element with subelement wrapper

@@ -23,7 +23,11 @@ const registry = new Map<string, ComponentRegistration>();
  * Register a loggable component.
  * Called at module initialization to declare a component's existence.
  */
-export function registerComponent(name: string, description: string, defaultLevel?: LogLevel): void {
+export function registerComponent(
+  name: string,
+  description: string,
+  defaultLevel?: LogLevel
+): void {
   registry.set(name, {
     name,
     description,
@@ -125,12 +129,18 @@ export function initFromEnv(debugComponents: string[]): void {
 
 function parseLevel(str: string): LogLevel {
   switch (str) {
-    case 'TRACE': return LogLevel.TRACE;
-    case 'DEBUG': return LogLevel.DEBUG;
-    case 'INFO': return LogLevel.INFO;
-    case 'WARN': return LogLevel.WARN;
-    case 'ERROR': return LogLevel.ERROR;
-    default: return LogLevel.DEBUG;
+    case 'TRACE':
+      return LogLevel.TRACE;
+    case 'DEBUG':
+      return LogLevel.DEBUG;
+    case 'INFO':
+      return LogLevel.INFO;
+    case 'WARN':
+      return LogLevel.WARN;
+    case 'ERROR':
+      return LogLevel.ERROR;
+    default:
+      return LogLevel.DEBUG;
   }
 }
 

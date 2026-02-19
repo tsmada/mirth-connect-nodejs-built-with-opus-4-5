@@ -43,9 +43,18 @@ export interface SmbClientOptions {
 interface SMB2Instance {
   readdir(path: string, callback: (err: Error | null, files?: string[]) => void): void;
   readFile(path: string, callback: (err: Error | null, data?: Buffer) => void): void;
-  readFile(path: string, options: { encoding: string }, callback: (err: Error | null, data?: string) => void): void;
+  readFile(
+    path: string,
+    options: { encoding: string },
+    callback: (err: Error | null, data?: string) => void
+  ): void;
   writeFile(path: string, data: Buffer | string, callback: (err: Error | null) => void): void;
-  writeFile(path: string, data: Buffer | string, options: Record<string, unknown>, callback: (err: Error | null) => void): void;
+  writeFile(
+    path: string,
+    data: Buffer | string,
+    options: Record<string, unknown>,
+    callback: (err: Error | null) => void
+  ): void;
   unlink(path: string, callback: (err: Error | null) => void): void;
   rename(oldPath: string, newPath: string, callback: (err: Error | null) => void): void;
   exists(path: string, callback: (err: Error | null, exists?: boolean) => void): void;
@@ -111,7 +120,9 @@ export class SmbClient implements FileSystemClient {
     let SMB2Constructor: new (options: Record<string, unknown>) => SMB2Instance;
     try {
       const mod = await import('@marsaud/smb2');
-      SMB2Constructor = (mod.default || mod) as unknown as new (options: Record<string, unknown>) => SMB2Instance;
+      SMB2Constructor = (mod.default || mod) as unknown as new (
+        options: Record<string, unknown>
+      ) => SMB2Instance;
     } catch {
       throw new Error(
         'SMB support requires @marsaud/smb2. Install with: npm install @marsaud/smb2'
@@ -170,7 +181,12 @@ export class SmbClient implements FileSystemClient {
     return this._connected && this.smb !== null;
   }
 
-  async listFiles(fromDir: string, filenamePattern: string, isRegex: boolean, ignoreDot: boolean): Promise<FileInfo[]> {
+  async listFiles(
+    fromDir: string,
+    filenamePattern: string,
+    isRegex: boolean,
+    ignoreDot: boolean
+  ): Promise<FileInfo[]> {
     this.ensureConnected();
 
     const dirPath = this.normalizePath(fromDir);
@@ -250,7 +266,11 @@ export class SmbClient implements FileSystemClient {
     return this.readFileAsync(fullPath);
   }
 
-  async readFileAsString(file: string, fromDir: string, encoding: BufferEncoding = 'utf8'): Promise<string> {
+  async readFileAsString(
+    file: string,
+    fromDir: string,
+    encoding: BufferEncoding = 'utf8'
+  ): Promise<string> {
     const buffer = await this.readFile(file, fromDir);
     return buffer.toString(encoding);
   }
@@ -260,7 +280,12 @@ export class SmbClient implements FileSystemClient {
     return true;
   }
 
-  async writeFile(file: string, toDir: string, content: Buffer | string, append: boolean): Promise<void> {
+  async writeFile(
+    file: string,
+    toDir: string,
+    content: Buffer | string,
+    append: boolean
+  ): Promise<void> {
     this.ensureConnected();
 
     const dirPath = this.normalizePath(toDir);
@@ -381,7 +406,7 @@ export class SmbClient implements FileSystemClient {
     if (dirExists) return;
 
     // Build path components and create each level
-    const parts = dirPath.split('\\').filter(p => p.length > 0);
+    const parts = dirPath.split('\\').filter((p) => p.length > 0);
     let currentPath = '';
 
     for (const part of parts) {

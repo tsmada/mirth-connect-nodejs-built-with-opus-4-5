@@ -76,17 +76,10 @@ export {
   type DatabaseConnectionOptions,
 } from './DatabaseConnection.js';
 
-export {
-  DatabaseConnectionFactory,
-  dbConnFactory,
-} from './DatabaseConnectionFactory.js';
+export { DatabaseConnectionFactory, dbConnFactory } from './DatabaseConnectionFactory.js';
 
 // Future for async operations
-export {
-  Future,
-  TimeoutError,
-  CancellationError,
-} from './Future.js';
+export { Future, TimeoutError, CancellationError } from './Future.js';
 
 // Deployed state enum
 export {
@@ -167,11 +160,7 @@ export {
 } from './ContextFactory.js';
 
 // DICOM utilities
-export {
-  DICOMUtil,
-  type DicomObject,
-  type DicomElement,
-} from './DICOMUtil.js';
+export { DICOMUtil, type DicomObject, type DicomElement } from './DICOMUtil.js';
 
 // XML utilities
 export { XmlUtil } from './XmlUtil.js';

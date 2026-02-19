@@ -140,12 +140,7 @@ export class JsonXmlUtil {
       trimValues: true,
       isArray: options.alwaysArray
         ? () => true
-        : (
-            _name: string,
-            _jpath: string,
-            _isLeafNode: boolean,
-            _isAttribute: boolean
-          ) => {
+        : (_name: string, _jpath: string, _isLeafNode: boolean, _isAttribute: boolean) => {
             // Default array detection - elements with same name become array
             return false;
           },
@@ -165,9 +160,7 @@ export class JsonXmlUtil {
       options.alwaysExpandObjects ?? false
     );
 
-    return options.prettyPrint
-      ? JSON.stringify(processed, null, 2)
-      : JSON.stringify(processed);
+    return options.prettyPrint ? JSON.stringify(processed, null, 2) : JSON.stringify(processed);
   }
 
   /**
@@ -239,11 +232,7 @@ export class JsonXmlUtil {
           const [prefix, localName] = key.split(':');
           newKey = localName!;
           // Process the value
-          const processed = this.processXmlToJson(
-            value,
-            normalizeNamespaces,
-            alwaysExpandObjects
-          );
+          const processed = this.processXmlToJson(value, normalizeNamespaces, alwaysExpandObjects);
           if (typeof processed === 'object' && processed !== null && !Array.isArray(processed)) {
             (processed as Record<string, unknown>)['xmlnsprefix'] = prefix;
           }
@@ -351,7 +340,7 @@ export class JsonXmlUtil {
         newKey = `${ATTR_PREFIX}${attrName}`;
 
         // Handle expanded attributes { $: value, xmlnsprefix: prefix }
-        if (typeof value === 'object' && value !== null && '$' in (value as object)) {
+        if (typeof value === 'object' && value !== null && '$' in value) {
           const attrObj = value as Record<string, unknown>;
           if ('xmlnsprefix' in attrObj) {
             // Attribute has namespace prefix
@@ -371,7 +360,7 @@ export class JsonXmlUtil {
           typeof value === 'object' &&
           value !== null &&
           !Array.isArray(value) &&
-          'xmlnsprefix' in (value as object)
+          'xmlnsprefix' in value
         ) {
           const elemObj = value as Record<string, unknown>;
           const prefix = elemObj['xmlnsprefix'];

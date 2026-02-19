@@ -146,10 +146,7 @@ export class SourceMap extends MirthMap {
 export class ChannelMap extends MirthMap {
   private sourceMap: SourceMap;
 
-  constructor(
-    initial?: Map<string, unknown> | Record<string, unknown>,
-    sourceMap?: SourceMap
-  ) {
+  constructor(initial?: Map<string, unknown> | Record<string, unknown>, sourceMap?: SourceMap) {
     super(initial);
     this.sourceMap = sourceMap ?? new SourceMap();
   }
@@ -166,8 +163,8 @@ export class ChannelMap extends MirthMap {
     if (this.sourceMap.containsKey(key)) {
       console.error(
         `The source map entry "${key}" was retrieved from the channel map. ` +
-        `This method of retrieval has been deprecated and will soon be removed. ` +
-        `Please use sourceMap.get('${key}') instead.`
+          `This method of retrieval has been deprecated and will soon be removed. ` +
+          `Please use sourceMap.get('${key}') instead.`
       );
       return this.sourceMap.get(key);
     }
@@ -530,9 +527,7 @@ export class ConfigurationMap extends MirthMap {
     // Dynamic import to avoid circular dependency at module load time
     const { getPool } = await import('../../db/pool.js');
     const pool = getPool();
-    const [rows] = await pool.query<ConfigurationRow[]>(
-      'SELECT NAME, VALUE FROM CONFIGURATION'
-    );
+    const [rows] = await pool.query<ConfigurationRow[]>('SELECT NAME, VALUE FROM CONFIGURATION');
     this.data.clear();
     for (const row of rows) {
       this.data.set(row.NAME, row.VALUE);

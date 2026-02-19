@@ -117,8 +117,12 @@ export class VersionCompatibility {
     const targetRange = VersionCompatibility.findCompatRange(targetVersion);
 
     // Both in same range — fully compatible
-    if (sourceRange && targetRange &&
-        sourceRange[0] === targetRange[0] && sourceRange[1] === targetRange[1]) {
+    if (
+      sourceRange &&
+      targetRange &&
+      sourceRange[0] === targetRange[0] &&
+      sourceRange[1] === targetRange[1]
+    ) {
       return { compatible: true, warnings: [], blocks: [] };
     }
 
@@ -193,7 +197,8 @@ export class VersionCompatibility {
         channelId,
         channelName,
         severity: 'warn',
-        message: 'Channel uses importPackage() which is Rhino-specific. The E4X transpiler handles this, but verify behavior.',
+        message:
+          'Channel uses importPackage() which is Rhino-specific. The E4X transpiler handles this, but verify behavior.',
       });
     }
 
@@ -203,7 +208,8 @@ export class VersionCompatibility {
         channelId,
         channelName,
         severity: 'warn',
-        message: 'Channel uses JavaAdapter which is Rhino-specific. Verify compatibility with Node.js runtime.',
+        message:
+          'Channel uses JavaAdapter which is Rhino-specific. Verify compatibility with Node.js runtime.',
       });
     }
 
@@ -235,7 +241,8 @@ export class VersionCompatibility {
         channelId,
         channelName,
         severity: 'info',
-        message: 'Channel was exported from Node.js Mirth. Verify it does not use Node.js-only features.',
+        message:
+          'Channel was exported from Node.js Mirth. Verify it does not use Node.js-only features.',
       };
       return { compatible: true, warnings: [warning], blocks: [] };
     }

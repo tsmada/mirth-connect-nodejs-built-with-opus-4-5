@@ -47,7 +47,7 @@ function getGlobalOpts(cmd: Command): GlobalOptions {
   while (current?.parent) {
     current = current.parent;
   }
-  return (current?.opts() ?? {}) as GlobalOptions;
+  return current?.opts() ?? {};
 }
 
 /**
@@ -57,7 +57,9 @@ function handleError(error: unknown): never {
   if (error instanceof ApiError) {
     console.error(chalk.red('Error:'), error.message);
     if (error.statusCode === 503) {
-      console.log(chalk.gray('Hint: Artifact system not initialized. Configure MIRTH_ARTIFACT_REPO_PATH.'));
+      console.log(
+        chalk.gray('Hint: Artifact system not initialized. Configure MIRTH_ARTIFACT_REPO_PATH.')
+      );
     }
   } else {
     console.error(chalk.red('Error:'), (error as Error).message);
@@ -69,9 +71,7 @@ function handleError(error: unknown): never {
  * Register artifact management commands
  */
 export function registerArtifactCommands(program: Command): void {
-  const artifactCmd = program
-    .command('artifact')
-    .description('Git-backed artifact management');
+  const artifactCmd = program.command('artifact').description('Git-backed artifact management');
 
   // ========================================================================
   // artifact export [channel]
@@ -101,7 +101,10 @@ export function registerArtifactCommands(program: Command): void {
 
           const spinner = ora(`Exporting channel ${resolved.channel.name}...`).start();
 
-          const response = await client.request<{ channelId: string; files: Array<{ path: string; type: string }> }>({
+          const response = await client.request<{
+            channelId: string;
+            files: Array<{ path: string; type: string }>;
+          }>({
             method: 'GET',
             url: `/api/artifacts/export/${resolved.channel.id}`,
             params: { xml: '<placeholder/>', maskSecrets: String(options.maskSecrets) },
@@ -185,7 +188,9 @@ export function registerArtifactCommands(program: Command): void {
           data.all = true;
         }
 
-        const spinner = ora(channel ? `Importing ${channel}...` : 'Importing all channels...').start();
+        const spinner = ora(
+          channel ? `Importing ${channel}...` : 'Importing all channels...'
+        ).start();
 
         const response = await client.request<{
           channels: Array<{ name: string; xml: string; warnings: string[] }>;
@@ -203,13 +208,14 @@ export function registerArtifactCommands(program: Command): void {
         }
 
         const { channels } = response;
-        const successful = channels.filter(c => c.xml);
-        const failed = channels.filter(c => !c.xml);
+        const successful = channels.filter((c) => c.xml);
+        const failed = channels.filter((c) => !c.xml);
 
         console.log(chalk.green(`Imported ${successful.length} channel(s).`));
 
         for (const ch of successful) {
-          const warnTag = ch.warnings.length > 0 ? chalk.yellow(` (${ch.warnings.length} warnings)`) : '';
+          const warnTag =
+            ch.warnings.length > 0 ? chalk.yellow(` (${ch.warnings.length} warnings)`) : '';
           console.log(`  ${chalk.green('+')} ${ch.name}${warnTag}`);
         }
 
@@ -490,7 +496,12 @@ export function registerArtifactCommands(program: Command): void {
         const response = await client.request<{
           channelName: string;
           changeCount: number;
-          configChanges: Array<{ path: string; type: string; oldValue?: unknown; newValue?: unknown }>;
+          configChanges: Array<{
+            path: string;
+            type: string;
+            oldValue?: unknown;
+            newValue?: unknown;
+          }>;
           scriptChanges: Array<{ path: string; type: string; unifiedDiff?: string }>;
           summary: string;
         }>({
@@ -513,9 +524,12 @@ export function registerArtifactCommands(program: Command): void {
         if (response.configChanges.length > 0) {
           console.log(chalk.bold('Config changes:'));
           for (const change of response.configChanges) {
-            const symbol = change.type === 'added' ? chalk.green('+')
-              : change.type === 'removed' ? chalk.red('-')
-              : chalk.yellow('~');
+            const symbol =
+              change.type === 'added'
+                ? chalk.green('+')
+                : change.type === 'removed'
+                  ? chalk.red('-')
+                  : chalk.yellow('~');
             console.log(`  ${symbol} ${change.path}`);
             if (change.oldValue !== undefined) {
               console.log(`    ${chalk.red(`- ${String(change.oldValue)}`)}`);
@@ -530,9 +544,12 @@ export function registerArtifactCommands(program: Command): void {
           console.log();
           console.log(chalk.bold('Script changes:'));
           for (const change of response.scriptChanges) {
-            const symbol = change.type === 'added' ? chalk.green('+')
-              : change.type === 'removed' ? chalk.red('-')
-              : chalk.yellow('~');
+            const symbol =
+              change.type === 'added'
+                ? chalk.green('+')
+                : change.type === 'removed'
+                  ? chalk.red('-')
+                  : chalk.yellow('~');
             console.log(`  ${symbol} ${change.path}`);
             if (change.unifiedDiff) {
               for (const line of change.unifiedDiff.split('\n')) {
@@ -613,7 +630,9 @@ export function registerArtifactCommands(program: Command): void {
           console.log();
         }
 
-        console.log(chalk.gray('Use --mask-secrets during export to replace these with ${VAR} references.'));
+        console.log(
+          chalk.gray('Use --mask-secrets during export to replace these with ${VAR} references.')
+        );
       } catch (error) {
         handleError(error);
       }
@@ -690,7 +709,9 @@ export function registerArtifactCommands(program: Command): void {
       try {
         const client = createClient(globalOpts);
 
-        const channelIds = options.channels ? (options.channels as string).split(',').map((s: string) => s.trim()) : undefined;
+        const channelIds = options.channels
+          ? (options.channels as string).split(',').map((s: string) => s.trim())
+          : undefined;
 
         if (options.dryRun) {
           console.log(chalk.yellow('Dry run mode -- no changes will be made.'));
@@ -728,7 +749,11 @@ export function registerArtifactCommands(program: Command): void {
         }
 
         if (response.success) {
-          console.log(chalk.green(`Promotion ${options.dryRun ? 'would succeed' : 'complete'}: ${response.sourceEnv} -> ${response.targetEnv}`));
+          console.log(
+            chalk.green(
+              `Promotion ${options.dryRun ? 'would succeed' : 'complete'}: ${response.sourceEnv} -> ${response.targetEnv}`
+            )
+          );
           if (response.channelsPromoted.length > 0) {
             console.log(`  Channels: ${response.channelsPromoted.length}`);
             for (const ch of response.channelsPromoted) {
@@ -775,7 +800,9 @@ export function registerArtifactCommands(program: Command): void {
 
       try {
         const client = createClient(globalOpts);
-        const channels = options.channels ? (options.channels as string).split(',').map((s: string) => s.trim()) : undefined;
+        const channels = options.channels
+          ? (options.channels as string).split(',').map((s: string) => s.trim())
+          : undefined;
 
         if (options.delta) {
           const spinner = ora('Detecting changes and deploying...').start();
@@ -880,7 +907,9 @@ export function registerArtifactCommands(program: Command): void {
           return;
         }
 
-        console.log(chalk.green(`Rollback complete. ${response.deployed.length} channel(s) restored.`));
+        console.log(
+          chalk.green(`Rollback complete. ${response.deployed.length} channel(s) restored.`)
+        );
         for (const name of response.deployed) {
           console.log(`  ${chalk.cyan(name)}`);
         }

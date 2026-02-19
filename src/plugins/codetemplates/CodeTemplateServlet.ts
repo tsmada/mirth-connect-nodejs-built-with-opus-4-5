@@ -131,28 +131,32 @@ codeTemplateRouter.use(authMiddleware({ required: true }));
  * GET /codeTemplateLibraries
  * Get all code template libraries or specific ones by ID
  */
-codeTemplateRouter.get('/codeTemplateLibraries', authorize({ operation: CODE_TEMPLATE_LIBRARY_GET_ALL }), async (req: Request, res: Response) => {
-  try {
-    const libraryIdParam = req.query.libraryId;
-    const includeCodeTemplates = req.query.includeCodeTemplates === 'true';
+codeTemplateRouter.get(
+  '/codeTemplateLibraries',
+  authorize({ operation: CODE_TEMPLATE_LIBRARY_GET_ALL }),
+  async (req: Request, res: Response) => {
+    try {
+      const libraryIdParam = req.query.libraryId;
+      const includeCodeTemplates = req.query.includeCodeTemplates === 'true';
 
-    let libraryIds: Set<string> | undefined;
-    if (libraryIdParam) {
-      libraryIds = new Set(
-        Array.isArray(libraryIdParam) ? (libraryIdParam as string[]) : [libraryIdParam as string]
+      let libraryIds: Set<string> | undefined;
+      if (libraryIdParam) {
+        libraryIds = new Set(
+          Array.isArray(libraryIdParam) ? (libraryIdParam as string[]) : [libraryIdParam as string]
+        );
+      }
+
+      const libraries = await CodeTemplateController.getCodeTemplateLibraries(
+        libraryIds,
+        includeCodeTemplates
       );
+      res.sendData(libraries);
+    } catch (error) {
+      logger.error('Get code template libraries error', error as Error);
+      res.status(500).json({ error: 'Failed to get code template libraries' });
     }
-
-    const libraries = await CodeTemplateController.getCodeTemplateLibraries(
-      libraryIds,
-      includeCodeTemplates
-    );
-    res.sendData(libraries);
-  } catch (error) {
-    logger.error('Get code template libraries error', error as Error);
-    res.status(500).json({ error: 'Failed to get code template libraries' });
   }
-});
+);
 
 /**
  * POST /codeTemplateLibraries/_getCodeTemplateLibraries
@@ -187,193 +191,229 @@ codeTemplateRouter.post(
  * GET /codeTemplateLibraries/:libraryId
  * Get a single code template library
  */
-codeTemplateRouter.get('/codeTemplateLibraries/:libraryId', authorize({ operation: CODE_TEMPLATE_LIBRARY_GET }), async (req: Request, res: Response) => {
-  try {
-    const libraryId = req.params.libraryId as string;
-    const includeCodeTemplates = req.query.includeCodeTemplates === 'true';
+codeTemplateRouter.get(
+  '/codeTemplateLibraries/:libraryId',
+  authorize({ operation: CODE_TEMPLATE_LIBRARY_GET }),
+  async (req: Request, res: Response) => {
+    try {
+      const libraryId = req.params.libraryId as string;
+      const includeCodeTemplates = req.query.includeCodeTemplates === 'true';
 
-    const library = await CodeTemplateController.getCodeTemplateLibrary(
-      libraryId,
-      includeCodeTemplates
-    );
+      const library = await CodeTemplateController.getCodeTemplateLibrary(
+        libraryId,
+        includeCodeTemplates
+      );
 
-    if (!library) {
-      res.status(404).json({ error: 'Library not found' });
-      return;
+      if (!library) {
+        res.status(404).json({ error: 'Library not found' });
+        return;
+      }
+
+      res.sendData(library);
+    } catch (error) {
+      logger.error('Get code template library error', error as Error);
+      res.status(500).json({ error: 'Failed to get code template library' });
     }
-
-    res.sendData(library);
-  } catch (error) {
-    logger.error('Get code template library error', error as Error);
-    res.status(500).json({ error: 'Failed to get code template library' });
   }
-});
+);
 
 /**
  * PUT /codeTemplateLibraries
  * Replace all code template libraries
  */
-codeTemplateRouter.put('/codeTemplateLibraries', authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }), async (req: Request, res: Response) => {
-  try {
-    const libraries = extractLibraries(req.body);
-    const override = req.query.override === 'true';
+codeTemplateRouter.put(
+  '/codeTemplateLibraries',
+  authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }),
+  async (req: Request, res: Response) => {
+    try {
+      const libraries = extractLibraries(req.body);
+      const override = req.query.override === 'true';
 
-    const success = await CodeTemplateController.updateCodeTemplateLibraries(libraries, override);
-    res.sendData(success);
-  } catch (error) {
-    logger.error('Update code template libraries error', error as Error);
-    res.status(500).json({ error: 'Failed to update code template libraries' });
+      const success = await CodeTemplateController.updateCodeTemplateLibraries(libraries, override);
+      res.sendData(success);
+    } catch (error) {
+      logger.error('Update code template libraries error', error as Error);
+      res.status(500).json({ error: 'Failed to update code template libraries' });
+    }
   }
-});
+);
 
 /**
  * GET /codeTemplates
  * Get all code templates or specific ones by ID
  */
-codeTemplateRouter.get('/codeTemplates', authorize({ operation: CODE_TEMPLATE_GET_ALL }), async (req: Request, res: Response) => {
-  try {
-    const codeTemplateIdParam = req.query.codeTemplateId;
+codeTemplateRouter.get(
+  '/codeTemplates',
+  authorize({ operation: CODE_TEMPLATE_GET_ALL }),
+  async (req: Request, res: Response) => {
+    try {
+      const codeTemplateIdParam = req.query.codeTemplateId;
 
-    let templateIds: Set<string> | undefined;
-    if (codeTemplateIdParam) {
-      templateIds = new Set(
-        Array.isArray(codeTemplateIdParam)
-          ? (codeTemplateIdParam as string[])
-          : [codeTemplateIdParam as string]
-      );
+      let templateIds: Set<string> | undefined;
+      if (codeTemplateIdParam) {
+        templateIds = new Set(
+          Array.isArray(codeTemplateIdParam)
+            ? (codeTemplateIdParam as string[])
+            : [codeTemplateIdParam as string]
+        );
+      }
+
+      const templates = await CodeTemplateController.getCodeTemplates(templateIds);
+      res.sendData(templates);
+    } catch (error) {
+      logger.error('Get code templates error', error as Error);
+      res.status(500).json({ error: 'Failed to get code templates' });
     }
-
-    const templates = await CodeTemplateController.getCodeTemplates(templateIds);
-    res.sendData(templates);
-  } catch (error) {
-    logger.error('Get code templates error', error as Error);
-    res.status(500).json({ error: 'Failed to get code templates' });
   }
-});
+);
 
 /**
  * POST /codeTemplates/_getCodeTemplates
  * Get code templates by ID (POST alternative for many IDs)
  */
-codeTemplateRouter.post('/codeTemplates/_getCodeTemplates', authorize({ operation: CODE_TEMPLATE_GET_ALL }), async (req: Request, res: Response) => {
-  try {
-    const templateIds = req.body;
+codeTemplateRouter.post(
+  '/codeTemplates/_getCodeTemplates',
+  authorize({ operation: CODE_TEMPLATE_GET_ALL }),
+  async (req: Request, res: Response) => {
+    try {
+      const templateIds = req.body;
 
-    let templateIdSet: Set<string> | undefined;
-    if (Array.isArray(templateIds)) {
-      templateIdSet = new Set(templateIds as string[]);
+      let templateIdSet: Set<string> | undefined;
+      if (Array.isArray(templateIds)) {
+        templateIdSet = new Set(templateIds as string[]);
+      }
+
+      const templates = await CodeTemplateController.getCodeTemplates(templateIdSet);
+      res.sendData(templates);
+    } catch (error) {
+      logger.error('Get code templates error', error as Error);
+      res.status(500).json({ error: 'Failed to get code templates' });
     }
-
-    const templates = await CodeTemplateController.getCodeTemplates(templateIdSet);
-    res.sendData(templates);
-  } catch (error) {
-    logger.error('Get code templates error', error as Error);
-    res.status(500).json({ error: 'Failed to get code templates' });
   }
-});
+);
 
 /**
  * GET /codeTemplates/:codeTemplateId
  * Get a single code template
  */
-codeTemplateRouter.get('/codeTemplates/:codeTemplateId', authorize({ operation: CODE_TEMPLATE_GET }), async (req: Request, res: Response) => {
-  try {
-    const codeTemplateId = req.params.codeTemplateId as string;
+codeTemplateRouter.get(
+  '/codeTemplates/:codeTemplateId',
+  authorize({ operation: CODE_TEMPLATE_GET }),
+  async (req: Request, res: Response) => {
+    try {
+      const codeTemplateId = req.params.codeTemplateId as string;
 
-    const template = await CodeTemplateController.getCodeTemplate(codeTemplateId);
+      const template = await CodeTemplateController.getCodeTemplate(codeTemplateId);
 
-    if (!template) {
-      res.status(404).json({ error: 'Code template not found' });
-      return;
+      if (!template) {
+        res.status(404).json({ error: 'Code template not found' });
+        return;
+      }
+
+      res.sendData(template);
+    } catch (error) {
+      logger.error('Get code template error', error as Error);
+      res.status(500).json({ error: 'Failed to get code template' });
     }
-
-    res.sendData(template);
-  } catch (error) {
-    logger.error('Get code template error', error as Error);
-    res.status(500).json({ error: 'Failed to get code template' });
   }
-});
+);
 
 /**
  * POST /codeTemplates/_getSummary
  * Get code template summaries for cache sync
  */
-codeTemplateRouter.post('/codeTemplates/_getSummary', authorize({ operation: CODE_TEMPLATE_GET_ALL }), async (req: Request, res: Response) => {
-  try {
-    const clientRevisions: Record<string, number> = req.body || {};
-    const revisionMap = new Map(Object.entries(clientRevisions));
+codeTemplateRouter.post(
+  '/codeTemplates/_getSummary',
+  authorize({ operation: CODE_TEMPLATE_GET_ALL }),
+  async (req: Request, res: Response) => {
+    try {
+      const clientRevisions: Record<string, number> = req.body || {};
+      const revisionMap = new Map(Object.entries(clientRevisions));
 
-    const summaries = await CodeTemplateController.getCodeTemplateSummary(revisionMap);
-    res.sendData(summaries);
-  } catch (error) {
-    logger.error('Get code template summary error', error as Error);
-    res.status(500).json({ error: 'Failed to get code template summary' });
+      const summaries = await CodeTemplateController.getCodeTemplateSummary(revisionMap);
+      res.sendData(summaries);
+    } catch (error) {
+      logger.error('Get code template summary error', error as Error);
+      res.status(500).json({ error: 'Failed to get code template summary' });
+    }
   }
-});
+);
 
 /**
  * PUT /codeTemplates/:codeTemplateId
  * Update a single code template
  */
-codeTemplateRouter.put('/codeTemplates/:codeTemplateId', authorize({ operation: CODE_TEMPLATE_UPDATE }), async (req: Request, res: Response) => {
-  try {
-    const codeTemplateId = req.params.codeTemplateId as string;
-    const template: CodeTemplate = req.body;
-    const override = req.query.override === 'true';
+codeTemplateRouter.put(
+  '/codeTemplates/:codeTemplateId',
+  authorize({ operation: CODE_TEMPLATE_UPDATE }),
+  async (req: Request, res: Response) => {
+    try {
+      const codeTemplateId = req.params.codeTemplateId as string;
+      const template: CodeTemplate = req.body;
+      const override = req.query.override === 'true';
 
-    const success = await CodeTemplateController.updateCodeTemplate(
-      codeTemplateId,
-      template,
-      override
-    );
-    res.sendData(success);
-  } catch (error) {
-    logger.error('Update code template error', error as Error);
-    res.status(500).json({ error: 'Failed to update code template' });
+      const success = await CodeTemplateController.updateCodeTemplate(
+        codeTemplateId,
+        template,
+        override
+      );
+      res.sendData(success);
+    } catch (error) {
+      logger.error('Update code template error', error as Error);
+      res.status(500).json({ error: 'Failed to update code template' });
+    }
   }
-});
+);
 
 /**
  * DELETE /codeTemplates/:codeTemplateId
  * Delete a single code template
  */
-codeTemplateRouter.delete('/codeTemplates/:codeTemplateId', authorize({ operation: CODE_TEMPLATE_REMOVE }), async (req: Request, res: Response) => {
-  try {
-    const codeTemplateId = req.params.codeTemplateId as string;
+codeTemplateRouter.delete(
+  '/codeTemplates/:codeTemplateId',
+  authorize({ operation: CODE_TEMPLATE_REMOVE }),
+  async (req: Request, res: Response) => {
+    try {
+      const codeTemplateId = req.params.codeTemplateId as string;
 
-    await CodeTemplateController.removeCodeTemplate(codeTemplateId);
-    res.status(204).end();
-  } catch (error) {
-    logger.error('Delete code template error', error as Error);
-    res.status(500).json({ error: 'Failed to delete code template' });
+      await CodeTemplateController.removeCodeTemplate(codeTemplateId);
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Delete code template error', error as Error);
+      res.status(500).json({ error: 'Failed to delete code template' });
+    }
   }
-});
+);
 
 /**
  * POST /codeTemplateLibraries/_bulkUpdate
  * Update all libraries and templates in one request
  */
-codeTemplateRouter.post('/codeTemplateLibraries/_bulkUpdate', authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }), async (req: Request, res: Response) => {
-  try {
-    const {
-      libraries = [],
-      removedLibraryIds = [],
-      updatedCodeTemplates = [],
-      removedCodeTemplateIds = [],
-    } = req.body;
-    const override = req.query.override === 'true';
+codeTemplateRouter.post(
+  '/codeTemplateLibraries/_bulkUpdate',
+  authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }),
+  async (req: Request, res: Response) => {
+    try {
+      const {
+        libraries = [],
+        removedLibraryIds = [],
+        updatedCodeTemplates = [],
+        removedCodeTemplateIds = [],
+      } = req.body;
+      const override = req.query.override === 'true';
 
-    const result = await CodeTemplateController.updateLibrariesAndTemplates(
-      libraries as CodeTemplateLibrary[],
-      new Set(removedLibraryIds as string[]),
-      updatedCodeTemplates as CodeTemplate[],
-      new Set(removedCodeTemplateIds as string[]),
-      override
-    );
+      const result = await CodeTemplateController.updateLibrariesAndTemplates(
+        libraries as CodeTemplateLibrary[],
+        new Set(removedLibraryIds as string[]),
+        updatedCodeTemplates as CodeTemplate[],
+        new Set(removedCodeTemplateIds as string[]),
+        override
+      );
 
-    res.sendData(result);
-  } catch (error) {
-    logger.error('Bulk update error', error as Error);
-    res.status(500).json({ error: 'Failed to perform bulk update' });
+      res.sendData(result);
+    } catch (error) {
+      logger.error('Bulk update error', error as Error);
+      res.status(500).json({ error: 'Failed to perform bulk update' });
+    }
   }
-});
+);

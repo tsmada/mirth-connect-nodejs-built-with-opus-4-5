@@ -285,12 +285,7 @@ export class SMTPConnection {
    * @param body - The content of the e-mail message.
    * @throws Error if an error occurred while sending the e-mail message.
    */
-  async send(
-    toList: string,
-    ccList: string,
-    subject: string,
-    body: string
-  ): Promise<void>;
+  async send(toList: string, ccList: string, subject: string, body: string): Promise<void>;
 
   async send(
     toList: string,

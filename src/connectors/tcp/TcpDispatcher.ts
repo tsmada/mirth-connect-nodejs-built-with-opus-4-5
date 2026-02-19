@@ -224,7 +224,10 @@ export class TcpDispatcher extends DestinationConnector {
    * Matches Java: dispatcherId + remoteAddress + remotePort [+ localAddress + localPort]
    * Uses resolved properties so dynamic routing creates distinct socket keys.
    */
-  private getSocketKey(connectorMessage: ConnectorMessage, resolvedProps: TcpDispatcherProperties): string {
+  private getSocketKey(
+    connectorMessage: ConnectorMessage,
+    resolvedProps: TcpDispatcherProperties
+  ): string {
     let key = `${connectorMessage.getMetaDataId()}${resolvedProps.host}${resolvedProps.port}`;
     if (resolvedProps.localAddress) {
       key += `${resolvedProps.localAddress}${resolvedProps.localPort ?? 0}`;
@@ -320,8 +323,7 @@ export class TcpDispatcher extends DestinationConnector {
           connectorMessage.setStatus(Status.SENT);
         } catch (readError: unknown) {
           // CPC-MEH-003: Socket timeout handling with queueOnResponseTimeout
-          const isTimeout = readError instanceof Error &&
-            readError.message.includes('timeout');
+          const isTimeout = readError instanceof Error && readError.message.includes('timeout');
 
           if (isTimeout) {
             if (resolvedProps.queueOnResponseTimeout) {
@@ -372,10 +374,8 @@ export class TcpDispatcher extends DestinationConnector {
         this.closeSocketQuietly(socketKey, socket);
         this.connectedSockets.delete(socketKey);
       }
-
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // CPC-MCE-001: FAILURE event on send error
       const failMsg = socket
@@ -451,12 +451,15 @@ export class TcpDispatcher extends DestinationConnector {
           tlsOptions.minVersion = tlsProps.minVersion as tls.SecureVersion;
         }
         // localAddress/localPort are net.TcpSocketConnectOpts properties forwarded by tls.connect()
-        const connectOpts = tlsOptions as tls.ConnectionOptions & { localAddress?: string; localPort?: number };
+        const connectOpts = tlsOptions as tls.ConnectionOptions & {
+          localAddress?: string;
+          localPort?: number;
+        };
         if (resolvedProps.localAddress) {
-          connectOpts.localAddress = resolvedProps.localAddress as string;
+          connectOpts.localAddress = resolvedProps.localAddress;
         }
         if (resolvedProps.localPort) {
-          connectOpts.localPort = resolvedProps.localPort as number;
+          connectOpts.localPort = resolvedProps.localPort;
         }
 
         const socket = tls.connect(connectOpts, () => {
@@ -519,7 +522,10 @@ export class TcpDispatcher extends DestinationConnector {
    * Read response from socket with timeout.
    * CPC-MEH-003: Throws on timeout to trigger queueOnResponseTimeout logic.
    */
-  private readResponse(socket: net.Socket, resolvedProps?: TcpDispatcherProperties): Promise<string | null> {
+  private readResponse(
+    socket: net.Socket,
+    resolvedProps?: TcpDispatcherProperties
+  ): Promise<string | null> {
     const props = resolvedProps ?? this.properties;
     return new Promise((resolve, reject) => {
       let buffer = Buffer.alloc(0);
@@ -536,13 +542,7 @@ export class TcpDispatcher extends DestinationConnector {
       const onData = (chunk: Buffer) => {
         buffer = Buffer.concat([buffer, chunk]);
 
-        if (
-          hasCompleteMessage(
-            buffer,
-            props.transmissionMode,
-            props.endOfMessageBytes
-          )
-        ) {
+        if (hasCompleteMessage(buffer, props.transmissionMode, props.endOfMessageBytes)) {
           responseReceived = true;
           cleanup();
 
@@ -625,7 +625,10 @@ export class TcpDispatcher extends DestinationConnector {
   /**
    * Get content to send from connector message using resolved properties.
    */
-  private getContent(connectorMessage: ConnectorMessage, resolvedProps: TcpDispatcherProperties): string {
+  private getContent(
+    connectorMessage: ConnectorMessage,
+    resolvedProps: TcpDispatcherProperties
+  ): string {
     // Use resolved template if provided and not the default placeholder
     // Note: after replaceConnectorProperties, ${message.encodedData} is already resolved
     if (resolvedProps.template && resolvedProps.template !== '${message.encodedData}') {

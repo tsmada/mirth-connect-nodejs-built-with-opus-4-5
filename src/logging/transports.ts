@@ -35,12 +35,10 @@ export function formatMirthTimestamp(date: Date): string {
  */
 function buildTextFormat(timestampFormat: 'mirth' | 'iso'): winston.Logform.Format {
   return winston.format.printf((info) => {
-    const level = (info.level as string).toUpperCase().padStart(5);
+    const level = info.level.toUpperCase().padStart(5);
     const component = info['component'] as string | undefined;
     const timestamp =
-      timestampFormat === 'iso'
-        ? new Date().toISOString()
-        : formatMirthTimestamp(new Date());
+      timestampFormat === 'iso' ? new Date().toISOString() : formatMirthTimestamp(new Date());
     const componentPart = component ? ` [${component}]` : '';
     const errorStack = info['errorStack'] as string | undefined;
     let line = `${level} ${timestamp}${componentPart} ${info.message}`;
@@ -66,10 +64,7 @@ export class ConsoleTransport implements LogTransport {
   createWinstonTransport(): winston.transport {
     if (this.format === 'json') {
       return new winston.transports.Console({
-        format: winston.format.combine(
-          winston.format.timestamp(),
-          winston.format.json()
-        ),
+        format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
         stderrLevels: [],
       });
     }

@@ -23,9 +23,4 @@ export { EDIParser, parseEDIToXML } from './EDIParser.js';
 export { EDISerializer, serializeXMLToEDI } from './EDISerializer.js';
 
 // Data Type
-export {
-  EDIDataType,
-  EDIDataTypeInput,
-  EDIMetaData,
-  extractEDIMetaData,
-} from './EDIDataType.js';
+export { EDIDataType, EDIDataTypeInput, EDIMetaData, extractEDIMetaData } from './EDIDataType.js';

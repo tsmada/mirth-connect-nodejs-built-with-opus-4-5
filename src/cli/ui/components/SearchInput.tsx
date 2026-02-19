@@ -59,11 +59,7 @@ export const SearchInput: FC<SearchInputProps> = ({
     Box,
     { flexDirection: 'row' },
     React.createElement(Text, { color: 'cyan' }, '/'),
-    React.createElement(
-      Text,
-      { color: isPlaceholder ? 'gray' : 'white' },
-      displayValue
-    ),
+    React.createElement(Text, { color: isPlaceholder ? 'gray' : 'white' }, displayValue),
     !isPlaceholder && React.createElement(Text, { color: 'cyan' }, cursor)
   );
 };

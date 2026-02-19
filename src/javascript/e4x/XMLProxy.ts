@@ -62,11 +62,7 @@ export class XMLProxy {
   private tagName: string;
   private defaultNamespace: string = '';
 
-  private constructor(
-    nodes: OrderedNode[],
-    tagName: string = '',
-    parent: XMLProxy | null = null
-  ) {
+  private constructor(nodes: OrderedNode[], tagName: string = '', parent: XMLProxy | null = null) {
     this.nodes = nodes;
     this.tagName = tagName;
     this._parent = parent;
@@ -94,7 +90,7 @@ export class XMLProxy {
         if (typeof prop === 'string') {
           const value = (target as Record<string, unknown>)[prop];
           if (typeof value === 'function') {
-            return (value as Function).bind(target);
+            return value.bind(target);
           }
         }
 
@@ -331,7 +327,11 @@ export class XMLProxy {
     return new XMLProxy(result, name ?? 'descendants', this);
   }
 
-  private collectDescendants(nodes: OrderedNode[], name: string | undefined, result: OrderedNode[]): void {
+  private collectDescendants(
+    nodes: OrderedNode[],
+    name: string | undefined,
+    result: OrderedNode[]
+  ): void {
     for (const node of nodes) {
       const tagName = this.getNodeTagName(node);
 
@@ -342,7 +342,7 @@ export class XMLProxy {
 
         const children = node[tagName];
         if (Array.isArray(children)) {
-          this.collectDescendants(children as OrderedNode[], name, result);
+          this.collectDescendants(children, name, result);
         }
       }
     }
@@ -360,7 +360,7 @@ export class XMLProxy {
         const children = node[tagName];
         if (Array.isArray(children)) {
           // Filter out text nodes - only include element nodes
-          for (const child of children as OrderedNode[]) {
+          for (const child of children) {
             if (!('#text' in child)) {
               result.push(child);
             }
@@ -516,7 +516,7 @@ export class XMLProxy {
     if (!Array.isArray(children)) return true;
 
     // Simple content if only text node children
-    return children.every((child) => '#text' in (child as OrderedNode));
+    return children.every((child) => '#text' in child);
   }
 
   /**
@@ -543,7 +543,7 @@ export class XMLProxy {
       if (tagName) {
         const children = node[tagName];
         if (Array.isArray(children)) {
-          for (const child of children as OrderedNode[]) {
+          for (const child of children) {
             if (!('#text' in child)) {
               result.push(child);
             }
@@ -589,7 +589,7 @@ export class XMLProxy {
         // CDATA is stored as __cdata: [{ "#text": "content" }] by fast-xml-parser
         const cdataChildren = node['__cdata'];
         if (Array.isArray(cdataChildren)) {
-          this.collectText(cdataChildren as OrderedNode[], texts);
+          this.collectText(cdataChildren, texts);
         } else if (typeof cdataChildren === 'string') {
           texts.push(cdataChildren);
         }
@@ -598,7 +598,7 @@ export class XMLProxy {
         if (tagName) {
           const children = node[tagName];
           if (Array.isArray(children)) {
-            this.collectText(children as OrderedNode[], texts);
+            this.collectText(children, texts);
           } else if (typeof children === 'string') {
             texts.push(children);
           }
@@ -701,7 +701,7 @@ export class XMLProxy {
     if (!Array.isArray(children)) return this;
 
     const idx = children.findIndex((child) => {
-      const ct = this.getNodeTagName(child as OrderedNode);
+      const ct = this.getNodeTagName(child);
       return ct === propertyName;
     });
 
@@ -730,9 +730,8 @@ export class XMLProxy {
     if (!Array.isArray(children)) return this;
 
     // Use getNodes() instead of .nodes — .nodes goes through the Proxy get trap
-    const newNodes = typeof newChild === 'string'
-      ? XMLProxy.create(newChild).getNodes()
-      : newChild.getNodes();
+    const newNodes =
+      typeof newChild === 'string' ? XMLProxy.create(newChild).getNodes() : newChild.getNodes();
 
     const refNodes = refChild.getNodes();
     if (refNodes.length === 0) {
@@ -765,9 +764,8 @@ export class XMLProxy {
     if (!Array.isArray(children)) return this;
 
     // Use getNodes() instead of .nodes — .nodes goes through the Proxy get trap
-    const newNodes = typeof child === 'string'
-      ? XMLProxy.create(child).getNodes()
-      : child.getNodes();
+    const newNodes =
+      typeof child === 'string' ? XMLProxy.create(child).getNodes() : child.getNodes();
 
     children.unshift(...newNodes);
     return this;
@@ -839,12 +837,16 @@ export class XMLProxy {
     const children = node[tagName];
     if (Array.isArray(children)) {
       for (const child of children) {
-        const childNode = child as OrderedNode;
+        const childNode = child;
         const childTag = this.getNodeTagName(childNode);
         if (childTag) {
           const childProxy = new XMLProxy([childNode], childTag);
           const childChildren = childNode[childTag];
-          if (Array.isArray(childChildren) && childChildren.length === 1 && (childChildren[0] as OrderedNode)['#text'] !== undefined) {
+          if (
+            Array.isArray(childChildren) &&
+            childChildren.length === 1 &&
+            (childChildren[0] as OrderedNode)['#text'] !== undefined
+          ) {
             result[childTag] = (childChildren[0] as OrderedNode)['#text'];
           } else {
             result[childTag] = childProxy.toJSON();
@@ -884,9 +886,9 @@ export class XMLProxy {
       const children = node[tagName];
       if (Array.isArray(children)) {
         for (const child of children) {
-          const childTag = this.getNodeTagName(child as OrderedNode);
+          const childTag = this.getNodeTagName(child);
           if (childTag === name) {
-            result.push(child as OrderedNode);
+            result.push(child);
           }
         }
       }

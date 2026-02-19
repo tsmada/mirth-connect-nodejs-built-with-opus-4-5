@@ -28,7 +28,10 @@ function isWriteAllowed(): { allowed: boolean; reason?: string } {
   }
   const mode = process.env['MIRTH_MODE'];
   if (mode === 'takeover') {
-    return { allowed: false, reason: 'Write operations blocked in takeover mode (shared database)' };
+    return {
+      allowed: false,
+      reason: 'Write operations blocked in takeover mode (shared database)',
+    };
   }
   return { allowed: true };
 }
@@ -72,7 +75,7 @@ secretsRouter.get('/keys', (_req: Request, res: Response) => {
 
   const status = mgr.getProviderStatus();
   res.json({
-    providers: status.map(p => p.name),
+    providers: status.map((p) => p.name),
     note: 'Key listing requires provider-specific list() support. Use GET /api/secrets/:key to check individual keys.',
   });
 });
@@ -88,7 +91,9 @@ secretsRouter.post('/preload', async (req: Request, res: Response) => {
 
   const keys = req.body?.keys;
   if (!Array.isArray(keys)) {
-    res.status(400).json({ error: 'Bad Request', message: 'Body must contain { keys: ["key1", ...] }' });
+    res
+      .status(400)
+      .json({ error: 'Bad Request', message: 'Body must contain { keys: ["key1", ...] }' });
     return;
   }
 
@@ -152,7 +157,9 @@ secretsRouter.post('/:key', async (req: Request, res: Response) => {
 
   const value = req.body?.value;
   if (typeof value !== 'string') {
-    res.status(400).json({ error: 'Bad Request', message: 'Body must contain { value: "string" }' });
+    res
+      .status(400)
+      .json({ error: 'Bad Request', message: 'Body must contain { value: "string" }' });
     return;
   }
 

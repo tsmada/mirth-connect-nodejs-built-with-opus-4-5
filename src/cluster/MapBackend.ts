@@ -147,10 +147,7 @@ export class DatabaseMapBackend implements MapBackend {
 
   async clear(): Promise<void> {
     const pool = getPool();
-    await pool.execute(
-      'DELETE FROM D_GLOBAL_MAP WHERE SCOPE = ?',
-      [this.scope]
-    );
+    await pool.execute('DELETE FROM D_GLOBAL_MAP WHERE SCOPE = ?', [this.scope]);
   }
 
   async has(key: string): Promise<boolean> {

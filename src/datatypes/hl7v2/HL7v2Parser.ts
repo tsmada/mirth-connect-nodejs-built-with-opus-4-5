@@ -38,9 +38,7 @@ export class HL7v2Parser {
    */
   parse(message: string): string {
     if (!message || message.length < 6) {
-      throw new Error(
-        `Unable to parse message. It is NULL or too short: ${message}`
-      );
+      throw new Error(`Unable to parse message. It is NULL or too short: ${message}`);
     }
 
     // Convert line breaks if configured
@@ -55,9 +53,7 @@ export class HL7v2Parser {
     const encoding = extractEncodingCharacters(message);
 
     // Tokenize segments
-    const segmentDelimiter = unescapeSegmentDelimiter(
-      this.properties.segmentDelimiter
-    );
+    const segmentDelimiter = unescapeSegmentDelimiter(this.properties.segmentDelimiter);
     const segments = message.split(segmentDelimiter).filter((s) => s.length > 0);
 
     if (segments.length === 0) {
@@ -98,12 +94,8 @@ export class HL7v2Parser {
       return '';
     }
 
-    const {
-      fieldSeparator,
-      componentSeparator,
-      repetitionSeparator,
-      subcomponentSeparator,
-    } = encoding;
+    const { fieldSeparator, componentSeparator, repetitionSeparator, subcomponentSeparator } =
+      encoding;
 
     // Split by field separator while preserving empty fields
     const fields = this.splitPreservingEmpty(segment, fieldSeparator);
@@ -123,8 +115,7 @@ export class HL7v2Parser {
     const xmlParts: string[] = [];
     xmlParts.push(`<${segmentId}>`);
 
-    const isHeaderSegment =
-      segmentId === 'MSH' || segmentId === 'FHS' || segmentId === 'BHS';
+    const isHeaderSegment = segmentId === 'MSH' || segmentId === 'FHS' || segmentId === 'BHS';
 
     // Handle header segments specially (MSH-1 is the field separator itself)
     if (isHeaderSegment && fields.length > 1) {
@@ -133,13 +124,8 @@ export class HL7v2Parser {
 
       // MSH.2 - Encoding characters (components, repetition, escape, subcomponent)
       const encodingChars =
-        componentSeparator +
-        repetitionSeparator +
-        encoding.escapeCharacter +
-        subcomponentSeparator;
-      xmlParts.push(
-        `<${segmentId}.2>${this.escapeXml(encodingChars)}</${segmentId}.2>`
-      );
+        componentSeparator + repetitionSeparator + encoding.escapeCharacter + subcomponentSeparator;
+      xmlParts.push(`<${segmentId}.2>${this.escapeXml(encodingChars)}</${segmentId}.2>`);
 
       // Process remaining fields (starting at index 2, which is MSH.3)
       // fields[0] = segment name, fields[1] = encoding chars
@@ -198,23 +184,13 @@ export class HL7v2Parser {
 
       for (const rep of repetitions) {
         xmlParts.push(
-          this.parseFieldContent(
-            rep,
-            fieldName,
-            componentSeparator,
-            subcomponentSeparator
-          )
+          this.parseFieldContent(rep, fieldName, componentSeparator, subcomponentSeparator)
         );
       }
 
       return xmlParts.join('');
     } else {
-      return this.parseFieldContent(
-        field,
-        fieldName,
-        componentSeparator,
-        subcomponentSeparator
-      );
+      return this.parseFieldContent(field, fieldName, componentSeparator, subcomponentSeparator);
     }
   }
 
@@ -229,8 +205,7 @@ export class HL7v2Parser {
   ): string {
     const hasComponents = content.includes(componentSeparator);
     const hasSubcomponents =
-      this.properties.handleSubcomponents &&
-      content.includes(subcomponentSeparator);
+      this.properties.handleSubcomponents && content.includes(subcomponentSeparator);
 
     if (!hasComponents && !hasSubcomponents) {
       // Simple field with no components
@@ -246,15 +221,9 @@ export class HL7v2Parser {
       const component = components[i] ?? '';
       const componentName = `${fieldName}.${i + 1}`;
 
-      if (
-        this.properties.handleSubcomponents &&
-        component.includes(subcomponentSeparator)
-      ) {
+      if (this.properties.handleSubcomponents && component.includes(subcomponentSeparator)) {
         // Parse subcomponents
-        const subcomponents = this.splitPreservingEmpty(
-          component,
-          subcomponentSeparator
-        );
+        const subcomponents = this.splitPreservingEmpty(component, subcomponentSeparator);
         xmlParts.push(`<${componentName}>`);
 
         for (let j = 0; j < subcomponents.length; j++) {
@@ -267,9 +236,7 @@ export class HL7v2Parser {
 
         xmlParts.push(`</${componentName}>`);
       } else {
-        xmlParts.push(
-          `<${componentName}>${this.escapeXml(component)}</${componentName}>`
-        );
+        xmlParts.push(`<${componentName}>${this.escapeXml(component)}</${componentName}>`);
       }
     }
 

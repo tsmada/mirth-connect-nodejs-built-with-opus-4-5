@@ -26,9 +26,7 @@ export class PromotionGate {
    * Category: 'artifact.promotion'
    * Name: '{sourceEnv}->{targetEnv}:{timestamp}'
    */
-  static createApproval(
-    record: Omit<ApprovalRecord, 'id' | 'approvedAt'>
-  ): ApprovalRecord {
+  static createApproval(record: Omit<ApprovalRecord, 'id' | 'approvedAt'>): ApprovalRecord {
     return {
       ...record,
       id: randomUUID(),
@@ -39,13 +37,8 @@ export class PromotionGate {
   /**
    * Get pending approvals for a target environment.
    */
-  static getPendingApprovals(
-    targetEnv: string,
-    records: ApprovalRecord[]
-  ): ApprovalRecord[] {
-    return records.filter(
-      r => r.targetEnv === targetEnv && r.status === 'pending'
-    );
+  static getPendingApprovals(targetEnv: string, records: ApprovalRecord[]): ApprovalRecord[] {
+    return records.filter((r) => r.targetEnv === targetEnv && r.status === 'pending');
   }
 
   /**
@@ -59,10 +52,7 @@ export class PromotionGate {
     records: ApprovalRecord[]
   ): boolean {
     const approvedRecords = records.filter(
-      r =>
-        r.sourceEnv === sourceEnv &&
-        r.targetEnv === targetEnv &&
-        r.status === 'approved'
+      (r) => r.sourceEnv === sourceEnv && r.targetEnv === targetEnv && r.status === 'approved'
     );
 
     if (approvedRecords.length === 0) return false;
@@ -76,7 +66,7 @@ export class PromotionGate {
     }
 
     // All requested channels must be covered
-    return channelIds.every(id => approvedChannelIds.has(id));
+    return channelIds.every((id) => approvedChannelIds.has(id));
   }
 
   /**

@@ -192,10 +192,7 @@ export class XsltStep {
   /**
    * Generate pre-script for iterator processing
    */
-  getPreScript(
-    _loadFiles: boolean = false,
-    _ancestors: XsltIteratorProperties[] = []
-  ): string {
+  getPreScript(_loadFiles: boolean = false, _ancestors: XsltIteratorProperties[] = []): string {
     const identifier = convertIdentifier(this.resultVariable);
     return `var _${identifier} = Lists.list();`;
   }
@@ -215,10 +212,7 @@ export class XsltStep {
   /**
    * Generate post-script for iterator processing
    */
-  getPostScript(
-    _loadFiles: boolean = false,
-    _ancestors: XsltIteratorProperties[] = []
-  ): string {
+  getPostScript(_loadFiles: boolean = false, _ancestors: XsltIteratorProperties[] = []): string {
     const identifier = convertIdentifier(this.resultVariable);
     return `channelMap.put('${this.resultVariable}', _${identifier}.toArray());\n`;
   }
@@ -303,9 +297,8 @@ export class XsltTransformer {
   ): Promise<string> {
     try {
       // Create a new processor instance with parameters if provided
-      const xslt = parameters && parameters.length > 0
-        ? new Xslt({ parameters })
-        : this.xsltProcessor;
+      const xslt =
+        parameters && parameters.length > 0 ? new Xslt({ parameters }) : this.xsltProcessor;
 
       // Parse input documents
       const xmlDoc = this.xmlParser.xmlParse(sourceXml);

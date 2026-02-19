@@ -34,13 +34,13 @@ const STATUS_COLORS: Record<string, string> = {
 
 /** Status to symbol mapping */
 const STATUS_SYMBOLS: Record<string, string> = {
-  SENT: '\u25CF',       // ●
-  RECEIVED: '\u25CF',   // ●
-  TRANSFORMED: '\u25CF',// ●
-  FILTERED: '\u25CB',   // ○
-  QUEUED: '\u25D0',     // ◐
-  PENDING: '\u25D4',    // ◔
-  ERROR: '\u2718',      // ✘
+  SENT: '\u25CF', // ●
+  RECEIVED: '\u25CF', // ●
+  TRANSFORMED: '\u25CF', // ●
+  FILTERED: '\u25CB', // ○
+  QUEUED: '\u25D0', // ◐
+  PENDING: '\u25D4', // ◔
+  ERROR: '\u2718', // ✘
 };
 
 /** Content type display labels */
@@ -220,11 +220,7 @@ export const TraceTreeView: FC<TraceTreeViewProps> = ({
         )
       ),
       ...lines.map((line, i) =>
-        React.createElement(
-          Text,
-          { key: `${label}-${i}`, color: 'gray' },
-          `  ${line}`
-        )
+        React.createElement(Text, { key: `${label}-${i}`, color: 'gray' }, `  ${line}`)
       )
     );
   };
@@ -275,10 +271,12 @@ export const TraceTreeView: FC<TraceTreeViewProps> = ({
     if (isSelected && node.content) {
       const c = node.content;
       if (c.raw) nodeElements.push(renderContentSnapshot(CONTENT_LABELS.raw!, c.raw));
-      if (c.transformed) nodeElements.push(renderContentSnapshot(CONTENT_LABELS.transformed!, c.transformed));
+      if (c.transformed)
+        nodeElements.push(renderContentSnapshot(CONTENT_LABELS.transformed!, c.transformed));
       if (c.encoded) nodeElements.push(renderContentSnapshot(CONTENT_LABELS.encoded!, c.encoded));
       if (c.sent) nodeElements.push(renderContentSnapshot(CONTENT_LABELS.sent!, c.sent));
-      if (c.response) nodeElements.push(renderContentSnapshot(CONTENT_LABELS.response!, c.response));
+      if (c.response)
+        nodeElements.push(renderContentSnapshot(CONTENT_LABELS.response!, c.response));
       if (c.processingError) {
         nodeElements.push(
           React.createElement(
@@ -337,16 +335,8 @@ export const TraceTreeView: FC<TraceTreeViewProps> = ({
     React.createElement(
       Box,
       { marginBottom: 0 },
-      React.createElement(
-        Text,
-        { color: 'gray' },
-        summaryParts.join(' | ')
-      ),
-      React.createElement(
-        Text,
-        { color: 'gray' },
-        verbose ? '  [verbose]' : ''
-      )
+      React.createElement(Text, { color: 'gray' }, summaryParts.join(' | ')),
+      React.createElement(Text, { color: 'gray' }, verbose ? '  [verbose]' : '')
     ),
     // Divider
     React.createElement(

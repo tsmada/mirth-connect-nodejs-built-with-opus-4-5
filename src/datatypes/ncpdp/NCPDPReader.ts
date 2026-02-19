@@ -12,11 +12,7 @@
  */
 
 import { NCPDPReference } from './NCPDPReference.js';
-import {
-  NCPDPDelimiters,
-  NCPDPVersion,
-  unescapeNCPDPDelimiter,
-} from './NCPDPProperties.js';
+import { NCPDPDelimiters, NCPDPVersion, unescapeNCPDPDelimiter } from './NCPDPProperties.js';
 
 /**
  * Parse NCPDP messages to XML
@@ -29,15 +25,9 @@ export class NCPDPReader {
   private reference: NCPDPReference;
 
   constructor(delimiters?: Partial<NCPDPDelimiters>) {
-    this.segmentDelimiter = unescapeNCPDPDelimiter(
-      delimiters?.segmentDelimiter ?? '0x1E'
-    );
-    this.groupDelimiter = unescapeNCPDPDelimiter(
-      delimiters?.groupDelimiter ?? '0x1D'
-    );
-    this.fieldDelimiter = unescapeNCPDPDelimiter(
-      delimiters?.fieldDelimiter ?? '0x1C'
-    );
+    this.segmentDelimiter = unescapeNCPDPDelimiter(delimiters?.segmentDelimiter ?? '0x1E');
+    this.groupDelimiter = unescapeNCPDPDelimiter(delimiters?.groupDelimiter ?? '0x1D');
+    this.fieldDelimiter = unescapeNCPDPDelimiter(delimiters?.fieldDelimiter ?? '0x1C');
     this.reference = NCPDPReference.getInstance();
   }
 
@@ -76,10 +66,7 @@ export class NCPDPReader {
    * Parse the transaction header
    * Returns the root element name for the XML
    */
-  private parseHeader(
-    message: string,
-    output: string[]
-  ): { rootElementName: string } {
+  private parseHeader(message: string, output: string[]): { rootElementName: string } {
     const segmentDelimiterIndex = message.indexOf(this.segmentDelimiter);
 
     if (segmentDelimiterIndex === -1) {
@@ -101,17 +88,31 @@ export class NCPDPReader {
       output.push(`<${rootElementName}>`);
       output.push('  <TransactionHeaderRequest>');
       output.push(`    <BinNumber>${this.escapeXml(header.substring(0, 6))}</BinNumber>`);
-      output.push(`    <VersionReleaseNumber>${this.escapeXml(header.substring(6, 8))}</VersionReleaseNumber>`);
-      output.push(`    <TransactionCode>${this.escapeXml(header.substring(8, 10))}</TransactionCode>`);
-      output.push(`    <ProcessorControlNumber>${this.escapeXml(header.substring(10, 20))}</ProcessorControlNumber>`);
-      output.push(`    <TransactionCount>${this.escapeXml(header.substring(20, 21))}</TransactionCount>`);
-      output.push(`    <ServiceProviderIdQualifier>${this.escapeXml(header.substring(21, 23))}</ServiceProviderIdQualifier>`);
-      output.push(`    <ServiceProviderId>${this.escapeXml(header.substring(23, 38))}</ServiceProviderId>`);
+      output.push(
+        `    <VersionReleaseNumber>${this.escapeXml(header.substring(6, 8))}</VersionReleaseNumber>`
+      );
+      output.push(
+        `    <TransactionCode>${this.escapeXml(header.substring(8, 10))}</TransactionCode>`
+      );
+      output.push(
+        `    <ProcessorControlNumber>${this.escapeXml(header.substring(10, 20))}</ProcessorControlNumber>`
+      );
+      output.push(
+        `    <TransactionCount>${this.escapeXml(header.substring(20, 21))}</TransactionCount>`
+      );
+      output.push(
+        `    <ServiceProviderIdQualifier>${this.escapeXml(header.substring(21, 23))}</ServiceProviderIdQualifier>`
+      );
+      output.push(
+        `    <ServiceProviderId>${this.escapeXml(header.substring(23, 38))}</ServiceProviderId>`
+      );
       output.push(`    <DateOfService>${this.escapeXml(header.substring(38, 46))}</DateOfService>`);
 
       // Some requests have additional fields (SoftwareVendorCertificationId at position 46-56)
       if (header.length >= 56) {
-        output.push(`    <SoftwareVendorCertificationId>${this.escapeXml(header.substring(46, 56))}</SoftwareVendorCertificationId>`);
+        output.push(
+          `    <SoftwareVendorCertificationId>${this.escapeXml(header.substring(46, 56))}</SoftwareVendorCertificationId>`
+        );
       }
 
       output.push('  </TransactionHeaderRequest>');
@@ -124,12 +125,24 @@ export class NCPDPReader {
 
       output.push(`<${rootElementName}>`);
       output.push('  <TransactionHeaderResponse>');
-      output.push(`    <VersionReleaseNumber>${this.escapeXml(header.substring(0, 2))}</VersionReleaseNumber>`);
-      output.push(`    <TransactionCode>${this.escapeXml(header.substring(2, 4))}</TransactionCode>`);
-      output.push(`    <TransactionCount>${this.escapeXml(header.substring(4, 5))}</TransactionCount>`);
-      output.push(`    <HeaderResponseStatus>${this.escapeXml(header.substring(5, 6))}</HeaderResponseStatus>`);
-      output.push(`    <ServiceProviderIdQualifier>${this.escapeXml(header.substring(6, 8))}</ServiceProviderIdQualifier>`);
-      output.push(`    <ServiceProviderId>${this.escapeXml(header.substring(8, 23))}</ServiceProviderId>`);
+      output.push(
+        `    <VersionReleaseNumber>${this.escapeXml(header.substring(0, 2))}</VersionReleaseNumber>`
+      );
+      output.push(
+        `    <TransactionCode>${this.escapeXml(header.substring(2, 4))}</TransactionCode>`
+      );
+      output.push(
+        `    <TransactionCount>${this.escapeXml(header.substring(4, 5))}</TransactionCount>`
+      );
+      output.push(
+        `    <HeaderResponseStatus>${this.escapeXml(header.substring(5, 6))}</HeaderResponseStatus>`
+      );
+      output.push(
+        `    <ServiceProviderIdQualifier>${this.escapeXml(header.substring(6, 8))}</ServiceProviderIdQualifier>`
+      );
+      output.push(
+        `    <ServiceProviderId>${this.escapeXml(header.substring(8, 23))}</ServiceProviderId>`
+      );
       output.push(`    <DateOfService>${this.escapeXml(header.substring(23, 31))}</DateOfService>`);
       output.push('  </TransactionHeaderResponse>');
     }
@@ -274,12 +287,18 @@ export class NCPDPReader {
 
       if (!fieldDescription) {
         // Unknown field ID, output with raw code
-        output.push(`${fieldIndent}<Field_${fieldId}>${this.escapeXml(fieldMessage)}</Field_${fieldId}>`);
+        output.push(
+          `${fieldIndent}<Field_${fieldId}>${this.escapeXml(fieldMessage)}</Field_${fieldId}>`
+        );
         continue;
       }
 
       // Handle closing count elements when we encounter non-repeating fields
-      if (inCount && !this.isRepeatingField(fieldDescription) && !fieldDescription.endsWith('Count')) {
+      if (
+        inCount &&
+        !this.isRepeatingField(fieldDescription) &&
+        !fieldDescription.endsWith('Count')
+      ) {
         while (fieldStack.length > 0) {
           const closingField = fieldStack.pop()!;
           output.push(`${fieldIndent}</${closingField}>`);
@@ -295,18 +314,24 @@ export class NCPDPReader {
         }
 
         inCounter = true;
-        output.push(`${fieldIndent}<${fieldDescription} counter="${this.escapeXml(fieldMessage)}">`);
+        output.push(
+          `${fieldIndent}<${fieldDescription} counter="${this.escapeXml(fieldMessage)}">`
+        );
         fieldStack.push(fieldDescription);
       }
       // Handle Count fields (like RejectCount)
       else if (fieldDescription.endsWith('Count')) {
         inCount = true;
-        output.push(`${fieldIndent}<${fieldDescription} ${fieldDescription}="${this.escapeXml(fieldMessage)}">`);
+        output.push(
+          `${fieldIndent}<${fieldDescription} ${fieldDescription}="${this.escapeXml(fieldMessage)}">`
+        );
         fieldStack.push(fieldDescription);
       }
       // Regular field
       else {
-        output.push(`${fieldIndent}<${fieldDescription}>${this.escapeXml(fieldMessage)}</${fieldDescription}>`);
+        output.push(
+          `${fieldIndent}<${fieldDescription}>${this.escapeXml(fieldMessage)}</${fieldDescription}>`
+        );
       }
     }
 
@@ -342,10 +367,7 @@ export class NCPDPReader {
 /**
  * Parse NCPDP message to XML (convenience function)
  */
-export function parseNCPDPToXML(
-  message: string,
-  delimiters?: Partial<NCPDPDelimiters>
-): string {
+export function parseNCPDPToXML(message: string, delimiters?: Partial<NCPDPDelimiters>): string {
   const reader = new NCPDPReader(delimiters);
   return reader.parse(message);
 }

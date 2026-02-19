@@ -50,7 +50,9 @@ loggingRouter.put('/level', async (req: Request, res: Response) => {
       return;
     }
     if (!VALID_LEVELS.includes(level.toUpperCase())) {
-      res.status(400).json({ error: `Invalid log level: ${level}. Valid: ${VALID_LEVELS.join(', ')}` });
+      res
+        .status(400)
+        .json({ error: `Invalid log level: ${level}. Valid: ${VALID_LEVELS.join(', ')}` });
       return;
     }
     const parsed = parseLogLevel(level);
@@ -74,7 +76,9 @@ loggingRouter.put('/components/:name', async (req: Request, res: Response) => {
       return;
     }
     if (!VALID_LEVELS.includes(level.toUpperCase())) {
-      res.status(400).json({ error: `Invalid log level: ${level}. Valid: ${VALID_LEVELS.join(', ')}` });
+      res
+        .status(400)
+        .json({ error: `Invalid log level: ${level}. Valid: ${VALID_LEVELS.join(', ')}` });
       return;
     }
     const parsed = parseLogLevel(level);

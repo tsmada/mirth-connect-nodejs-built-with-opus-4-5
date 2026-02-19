@@ -23,7 +23,6 @@ export class DestinationQueue extends ConnectorMessageQueue {
    */
   private groupBy: string;
 
-
   /**
    * Set of message IDs currently checked out
    */
@@ -59,11 +58,7 @@ export class DestinationQueue extends ConnectorMessageQueue {
    */
   private currentThreadId: number = 0;
 
-  constructor(
-    groupBy: string = '',
-    threadCount: number = 1,
-    regenerateTemplate: boolean = false
-  ) {
+  constructor(groupBy: string = '', threadCount: number = 1, regenerateTemplate: boolean = false) {
     super();
     this.groupBy = groupBy || '';
     // regenerateTemplate is stored for future use in advanced bucketing scenarios
@@ -191,10 +186,7 @@ export class DestinationQueue extends ConnectorMessageQueue {
             this.dataSource.setLastItem(connectorMessage);
           }
         }
-      } while (
-        connectorMessage !== null &&
-        this.checkedOut.has(connectorMessage.getMessageId())
-      );
+      } while (connectorMessage !== null && this.checkedOut.has(connectorMessage.getMessageId()));
     }
 
     if (connectorMessage !== null) {
@@ -288,9 +280,7 @@ export class DestinationQueue extends ConnectorMessageQueue {
     const connectorMap = connectorMessage.getConnectorMap();
 
     const value =
-      channelMap.get(this.groupBy) ??
-      sourceMap.get(this.groupBy) ??
-      connectorMap.get(this.groupBy);
+      channelMap.get(this.groupBy) ?? sourceMap.get(this.groupBy) ?? connectorMap.get(this.groupBy);
 
     groupByValue = String(value ?? '');
 

@@ -96,9 +96,7 @@ const JAVA_TO_DATEFNS_PATTERNS: Record<string, string> = {
  */
 function convertPattern(javaPattern: string): string {
   // Sort patterns by length (longest first) to avoid partial replacements
-  const sortedPatterns = Object.keys(JAVA_TO_DATEFNS_PATTERNS).sort(
-    (a, b) => b.length - a.length
-  );
+  const sortedPatterns = Object.keys(JAVA_TO_DATEFNS_PATTERNS).sort((a, b) => b.length - a.length);
 
   let result = javaPattern;
 
@@ -152,9 +150,7 @@ export class DateUtil {
     const result = parse(date, dateFnsPattern, new Date());
 
     if (isNaN(result.getTime())) {
-      throw new Error(
-        `Unable to parse date "${date}" with pattern "${pattern}"`
-      );
+      throw new Error(`Unable to parse date "${date}" with pattern "${pattern}"`);
     }
 
     return result;
@@ -192,11 +188,7 @@ export class DateUtil {
    * @returns The converted date string.
    * @throws Error if the pattern could not be parsed.
    */
-  static convertDate(
-    inPattern: string,
-    outPattern: string,
-    date: string
-  ): string {
+  static convertDate(inPattern: string, outPattern: string, date: string): string {
     const parsedDate = DateUtil.getDate(inPattern, date);
     return DateUtil.formatDate(outPattern, parsedDate);
   }

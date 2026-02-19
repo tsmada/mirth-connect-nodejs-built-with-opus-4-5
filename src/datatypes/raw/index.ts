@@ -16,9 +16,4 @@ export {
 } from './RawProperties.js';
 
 // Data Type
-export {
-  RawDataType,
-  RawMetaData,
-  passThrough,
-  extractRawMetaData,
-} from './RawDataType.js';
+export { RawDataType, RawMetaData, passThrough, extractRawMetaData } from './RawDataType.js';

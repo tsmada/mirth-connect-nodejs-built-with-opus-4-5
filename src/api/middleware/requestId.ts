@@ -28,9 +28,7 @@ export function requestIdMiddleware() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const incoming = req.get(REQUEST_ID_HEADER);
     // Reuse client-provided ID if it looks safe (alphanumeric + hyphens, max 64 chars)
-    const requestId = (incoming && /^[\w-]{1,64}$/.test(incoming))
-      ? incoming
-      : randomUUID();
+    const requestId = incoming && /^[\w-]{1,64}$/.test(incoming) ? incoming : randomUUID();
 
     req.requestId = requestId;
     res.setHeader(REQUEST_ID_HEADER, requestId);

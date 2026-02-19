@@ -21,7 +21,7 @@ export const SMB_DIALECT_VERSIONS = [
   { version: 'SMB311', readable: 'SMB v3.1.1' },
 ] as const;
 
-export type SmbDialectVersion = typeof SMB_DIALECT_VERSIONS[number]['version'];
+export type SmbDialectVersion = (typeof SMB_DIALECT_VERSIONS)[number]['version'];
 
 /**
  * SMB scheme-specific configuration properties.
@@ -48,6 +48,6 @@ export function getDefaultSmbSchemeProperties(): SmbSchemeProperties {
  * Get human-readable version string for an SMB dialect version.
  */
 export function getReadableVersion(dialectVersion: string): string | null {
-  const found = SMB_DIALECT_VERSIONS.find(v => v.version === dialectVersion);
+  const found = SMB_DIALECT_VERSIONS.find((v) => v.version === dialectVersion);
   return found ? found.readable : null;
 }

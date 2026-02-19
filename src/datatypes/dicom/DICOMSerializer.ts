@@ -10,7 +10,12 @@
  * - Extract metadata from DICOM attributes
  */
 
-import { DICOMDataTypeProperties, DICOMMetaData, DicomTag, formatTag } from './DICOMDataTypeProperties.js';
+import {
+  DICOMDataTypeProperties,
+  DICOMMetaData,
+  DicomTag,
+  formatTag,
+} from './DICOMDataTypeProperties.js';
 
 /**
  * DICOM element value representation
@@ -70,7 +75,9 @@ export class DICOMSerializer {
       // Convert to XML
       return this.elementsToXml(elements);
     } catch (error) {
-      throw new Error(`Error converting DICOM to XML: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Error converting DICOM to XML: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -92,7 +99,9 @@ export class DICOMSerializer {
       // Encode as base64
       return dicomData.toString('base64');
     } catch (error) {
-      throw new Error(`Error converting XML to DICOM: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Error converting XML to DICOM: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -118,7 +127,9 @@ export class DICOMSerializer {
 
       // Get transfer syntax from file meta info
       const tsElement = metaElements.elements.find(
-        (e) => e.tag === formatTag(DicomTag.TRANSFER_SYNTAX_UID.group, DicomTag.TRANSFER_SYNTAX_UID.element)
+        (e) =>
+          e.tag ===
+          formatTag(DicomTag.TRANSFER_SYNTAX_UID.group, DicomTag.TRANSFER_SYNTAX_UID.element)
       );
       if (tsElement && typeof tsElement.value === 'string') {
         const ts = tsElement.value.trim();
@@ -133,7 +144,14 @@ export class DICOMSerializer {
     }
 
     // Parse dataset
-    const datasetElements = this.parseElements(data, offset, data.length, isExplicitVr, bigEndian, false);
+    const datasetElements = this.parseElements(
+      data,
+      offset,
+      data.length,
+      isExplicitVr,
+      bigEndian,
+      false
+    );
     elements.push(...datasetElements.elements);
 
     return elements;
@@ -171,7 +189,7 @@ export class DICOMSerializer {
         break;
       }
 
-      if (group === 0x7FE0 && element === 0x0010) {
+      if (group === 0x7fe0 && element === 0x0010) {
         // Pixel data - store marker but skip content
         elements.push({
           tag: formatTag(group, element),
@@ -283,7 +301,7 @@ export class DICOMSerializer {
    */
   private findSequenceEnd(data: Buffer, startOffset: number): number {
     let offset = startOffset;
-    const seqDelimTag = 0xFFFEE0DD; // Sequence Delimitation Item
+    const seqDelimTag = 0xfffee0dd; // Sequence Delimitation Item
 
     while (offset < data.length - 8) {
       const tag = data.readUInt32LE(offset);
@@ -324,12 +342,12 @@ export class DICOMSerializer {
       if (element === 0x0020) return 'LO'; // Patient ID
     }
     if (group === 0x0020) {
-      if (element === 0x000D || element === 0x000E) return 'UI'; // Study/Series UID
+      if (element === 0x000d || element === 0x000e) return 'UI'; // Study/Series UID
     }
     if (group === 0x0028) {
       if (element === 0x0010 || element === 0x0011) return 'US'; // Rows/Columns
     }
-    if (group === 0x7FE0 && element === 0x0010) return 'OW'; // Pixel Data
+    if (group === 0x7fe0 && element === 0x0010) return 'OW'; // Pixel Data
 
     return 'UN'; // Unknown
   }
@@ -346,7 +364,9 @@ export class DICOMSerializer {
       const vrAttr = elem.vr ? ` vr="${elem.vr}"` : '';
       const lenAttr = ` len="${elem.length}"`;
 
-      lines.push(`  <tag${tagLower} tag="${tagLower}"${vrAttr}${lenAttr}>${valueStr}</tag${tagLower}>`);
+      lines.push(
+        `  <tag${tagLower} tag="${tagLower}"${vrAttr}${lenAttr}>${valueStr}</tag${tagLower}>`
+      );
     }
 
     lines.push('</dicom>');
@@ -391,7 +411,8 @@ export class DICOMSerializer {
     const elements: DicomElement[] = [];
 
     // Simple regex-based XML parser for DICOM XML format
-    const tagRegex = /<tag([0-9a-f]{8})\s+tag="([^"]+)"(?:\s+vr="([^"]+)")?(?:\s+len="([^"]+)")?[^>]*>([^<]*)<\/tag\1>/gi;
+    const tagRegex =
+      /<tag([0-9a-f]{8})\s+tag="([^"]+)"(?:\s+vr="([^"]+)")?(?:\s+len="([^"]+)")?[^>]*>([^<]*)<\/tag\1>/gi;
 
     let match;
     while ((match = tagRegex.exec(xml)) !== null) {
@@ -436,7 +457,8 @@ export class DICOMSerializer {
 
     // Find charset (default to ASCII)
     const charsetElem = elements.find((e) => e.tag === '00080005');
-    const charset = charsetElem && typeof charsetElem.value === 'string' ? charsetElem.value : 'ascii';
+    const charset =
+      charsetElem && typeof charsetElem.value === 'string' ? charsetElem.value : 'ascii';
 
     // Separate file meta info and dataset
     const metaElements = elements.filter((e) => e.tag.startsWith('0002'));
@@ -607,7 +629,9 @@ export class DICOMSerializer {
     const elements = serializer.parseDicom(data);
 
     // Filter out pixel data
-    const filtered = elements.filter((e) => e.tag !== formatTag(DicomTag.PIXEL_DATA.group, DicomTag.PIXEL_DATA.element));
+    const filtered = elements.filter(
+      (e) => e.tag !== formatTag(DicomTag.PIXEL_DATA.group, DicomTag.PIXEL_DATA.element)
+    );
 
     return serializer.elementsToDicom(filtered);
   }

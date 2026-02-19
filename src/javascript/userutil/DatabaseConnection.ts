@@ -16,14 +16,7 @@
  * DatabaseConnectionFactory's driver mapping.
  */
 
-import type {
-  Connection,
-  PoolConnection,
-  FieldPacket,
-  RowDataPacket,
-  ResultSetHeader,
-  Pool,
-} from 'mysql2/promise';
+import type { Connection, PoolConnection, RowDataPacket, ResultSetHeader, Pool } from 'mysql2/promise';
 import { MirthCachedRowSet } from './MirthCachedRowSet.js';
 
 /** Logger interface matching Mirth's logging pattern */
@@ -41,8 +34,7 @@ const defaultLogger: Logger = {
     }
   },
   warn: (msg: string | Error) => console.warn(`[DatabaseConnection] ${msg}`),
-  error: (msg: string, err?: Error) =>
-    console.error(`[DatabaseConnection] ${msg}`, err || ''),
+  error: (msg: string, err?: Error) => console.error(`[DatabaseConnection] ${msg}`, err || ''),
 };
 
 /**
@@ -105,11 +97,7 @@ export class DatabaseConnection {
    * @param address - The server address
    * @param logger - Optional logger instance
    */
-  constructor(
-    connection: Connection,
-    address: string,
-    logger: Logger = defaultLogger
-  ) {
+  constructor(connection: Connection, address: string, logger: Logger = defaultLogger) {
     this.connection = connection;
     this.address = address;
     this.logger = logger;
@@ -171,15 +159,9 @@ export class DatabaseConnection {
    * @param parameters - Array of parameter values
    * @returns A CachedRowSet containing the query results
    */
-  async executeCachedQuery(
-    expression: string,
-    parameters: unknown[]
-  ): Promise<MirthCachedRowSet>;
+  async executeCachedQuery(expression: string, parameters: unknown[]): Promise<MirthCachedRowSet>;
 
-  async executeCachedQuery(
-    expression: string,
-    parameters?: unknown[]
-  ): Promise<MirthCachedRowSet> {
+  async executeCachedQuery(expression: string, parameters?: unknown[]): Promise<MirthCachedRowSet> {
     const conn = this.ensureConnection();
     this.logger.debug(`Executing query:\n${expression}`);
 
@@ -193,7 +175,7 @@ export class DatabaseConnection {
         : conn.query<RowDataPacket[]>(expression));
 
       const crs = new MirthCachedRowSet();
-      crs.populate(rows as Record<string, unknown>[], fields as FieldPacket[]);
+      crs.populate(rows as Record<string, unknown>[], fields);
       return crs;
     } catch (error) {
       this.logger.error(`Query failed: ${expression}`, error as Error);
@@ -216,15 +198,9 @@ export class DatabaseConnection {
    * @param parameters - Array of parameter values
    * @returns The number of rows affected, or -1 if a result set was returned
    */
-  async executeUpdate(
-    expression: string,
-    parameters: unknown[]
-  ): Promise<number>;
+  async executeUpdate(expression: string, parameters: unknown[]): Promise<number>;
 
-  async executeUpdate(
-    expression: string,
-    parameters?: unknown[]
-  ): Promise<number> {
+  async executeUpdate(expression: string, parameters?: unknown[]): Promise<number> {
     const conn = this.ensureConnection();
     this.logger.debug(`Executing update:\n${expression}`);
 
@@ -255,9 +231,7 @@ export class DatabaseConnection {
    * @param expression - The SQL INSERT statement
    * @returns A CachedRowSet containing the generated keys
    */
-  async executeUpdateAndGetGeneratedKeys(
-    expression: string
-  ): Promise<MirthCachedRowSet>;
+  async executeUpdateAndGetGeneratedKeys(expression: string): Promise<MirthCachedRowSet>;
 
   /**
    * Executes a prepared INSERT statement and returns the generated keys.
@@ -303,10 +277,7 @@ export class DatabaseConnection {
 
       return crs;
     } catch (error) {
-      this.logger.error(
-        `Update (with generated keys) failed: ${expression}`,
-        error as Error
-      );
+      this.logger.error(`Update (with generated keys) failed: ${expression}`, error as Error);
       throw error;
     }
   }

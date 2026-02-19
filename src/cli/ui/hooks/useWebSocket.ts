@@ -187,12 +187,9 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketResult {
     []
   );
 
-  const onConnectionLog = useCallback(
-    (handler: (item: ConnectionLogItem) => void) => {
-      handlersRef.current.connectionLog.push(handler);
-    },
-    []
-  );
+  const onConnectionLog = useCallback((handler: (item: ConnectionLogItem) => void) => {
+    handlersRef.current.connectionLog.push(handler);
+  }, []);
 
   const onStates = useCallback(
     (handler: (states: Record<string, ConnectionStateItem[]>) => void) => {

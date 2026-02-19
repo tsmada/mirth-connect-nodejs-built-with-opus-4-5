@@ -108,9 +108,7 @@ export class VariableResolver {
     const resolved = this.resolveString(input, unresolvedVars, new Set(), 0);
 
     if (this.strict && unresolvedVars.length > 0) {
-      throw new Error(
-        `Unresolved variables in strict mode: ${unresolvedVars.join(', ')}`
-      );
+      throw new Error(`Unresolved variables in strict mode: ${unresolvedVars.join(', ')}`);
     }
 
     return { resolved, unresolvedVars: [...new Set(unresolvedVars)] };
@@ -346,11 +344,13 @@ export class VariableResolver {
 
     // Circular reference detection
     if (resolutionStack.has(varName)) {
-      throw new Error(`Circular variable reference detected: ${[...resolutionStack, varName].join(' -> ')}`);
+      throw new Error(
+        `Circular variable reference detected: ${[...resolutionStack, varName].join(' -> ')}`
+      );
     }
 
     // Look up value from priority chain
-    let value = this.lookupVariable(varName);
+    const value = this.lookupVariable(varName);
 
     if (value !== undefined) {
       // Found in a source — resolve any nested variables within the value

@@ -164,18 +164,12 @@ export class DefaultAuthorizationController implements AuthorizationController {
     return true;
   }
 
-  async doesUserHaveChannelRestrictions(
-    _userId: number,
-    _operation: Operation
-  ): Promise<boolean> {
+  async doesUserHaveChannelRestrictions(_userId: number, _operation: Operation): Promise<boolean> {
     // Default: no restrictions
     return false;
   }
 
-  async getChannelAuthorizer(
-    _userId: number,
-    _operation: Operation
-  ): Promise<ChannelAuthorizer> {
+  async getChannelAuthorizer(_userId: number, _operation: Operation): Promise<ChannelAuthorizer> {
     // Default: allow all channels
     return new DefaultChannelAuthorizer();
   }
@@ -277,9 +271,19 @@ export function authorize(options: AuthorizeOptions): RequestHandler {
     // Include body params for audit (excluding sensitive data)
     if (req.body && typeof req.body === 'object') {
       const SENSITIVE_KEYS = new Set([
-        'password', 'token', 'apiKey', 'apikey', 'secret',
-        'passphrase', 'credential', 'credentials', 'authorization',
-        'accessToken', 'refreshToken', 'privateKey', 'secretKey',
+        'password',
+        'token',
+        'apiKey',
+        'apikey',
+        'secret',
+        'passphrase',
+        'credential',
+        'credentials',
+        'authorization',
+        'accessToken',
+        'refreshToken',
+        'privateKey',
+        'secretKey',
       ]);
       const body = req.body as Record<string, unknown>;
       const safeBody: Record<string, unknown> = {};
@@ -397,10 +401,7 @@ export function authorize(options: AuthorizeOptions): RequestHandler {
 /**
  * Check if user is authorized (for use in @DontCheckAuthorized servlets)
  */
-export async function checkUserAuthorized(
-  req: Request,
-  audit: boolean = true
-): Promise<boolean> {
+export async function checkUserAuthorized(req: Request, audit: boolean = true): Promise<boolean> {
   if (!req.userId || !req.authContext?.operation) {
     return false;
   }

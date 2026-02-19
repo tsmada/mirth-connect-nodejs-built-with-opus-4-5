@@ -264,11 +264,7 @@ export const MessageList: FC<MessageListProps> = ({
     React.createElement(
       Box,
       { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 0 },
-      React.createElement(
-        Text,
-        { bold: true, color: 'cyan' },
-        `Messages: ${channelName}`
-      ),
+      React.createElement(Text, { bold: true, color: 'cyan' }, `Messages: ${channelName}`),
       React.createElement(Text, { color: 'gray' }, '[Esc] Back')
     ),
     // Filter and page info
@@ -280,11 +276,7 @@ export const MessageList: FC<MessageListProps> = ({
         { color: 'gray' },
         `Filter: ${getFilterLabel(statusFilter)} (${totalCount} total)`
       ),
-      React.createElement(
-        Text,
-        { color: 'gray' },
-        `Page ${page + 1} of ${totalPageCount}`
-      )
+      React.createElement(Text, { color: 'gray' }, `Page ${page + 1} of ${totalPageCount}`)
     ),
     // Divider
     React.createElement(
@@ -318,7 +310,9 @@ export const MessageList: FC<MessageListProps> = ({
         React.createElement(Text, { color: 'red' }, `Error: ${error}`)
       ),
     // Empty state
-    !loading && !error && messages.length === 0 &&
+    !loading &&
+      !error &&
+      messages.length === 0 &&
       React.createElement(
         Box,
         { marginTop: 1 },

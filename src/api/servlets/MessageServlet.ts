@@ -274,15 +274,20 @@ async function searchMessages(
   const pool = getPool();
 
   // Build query for message IDs
-  const qb = new QueryBuilder()
-    .select('DISTINCT m.ID')
-    .from(`${messageTable(channelId)} m`);
+  const qb = new QueryBuilder().select('DISTINCT m.ID').from(`${messageTable(channelId)} m`);
 
   // Join with connector messages if needed for status/connector filtering
-  if (filter.statuses || filter.includedMetaDataIds || filter.excludedMetaDataIds ||
-      filter.sendAttemptsLower !== undefined || filter.sendAttemptsUpper !== undefined ||
-      filter.error !== undefined) {
-    qb.whereRaw(`EXISTS (SELECT 1 FROM ${connectorMessageTable(channelId)} mm WHERE mm.MESSAGE_ID = m.ID)`);
+  if (
+    filter.statuses ||
+    filter.includedMetaDataIds ||
+    filter.excludedMetaDataIds ||
+    filter.sendAttemptsLower !== undefined ||
+    filter.sendAttemptsUpper !== undefined ||
+    filter.error !== undefined
+  ) {
+    qb.whereRaw(
+      `EXISTS (SELECT 1 FROM ${connectorMessageTable(channelId)} mm WHERE mm.MESSAGE_ID = m.ID)`
+    );
   }
 
   // Apply message table filters
@@ -390,23 +395,15 @@ async function deleteMessage(channelId: string, messageId: number): Promise<bool
   const pool = getPool();
 
   // Delete in order: content, attachments, connector messages, message
-  await pool.execute(
-    `DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`,
-    [messageId]
-  );
-  await pool.execute(
-    `DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`,
-    [messageId]
-  );
-  await pool.execute(
-    `DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`,
-    [messageId]
-  );
+  await pool.execute(`DELETE FROM ${contentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
+  await pool.execute(`DELETE FROM ${attachmentTable(channelId)} WHERE MESSAGE_ID = ?`, [messageId]);
+  await pool.execute(`DELETE FROM ${connectorMessageTable(channelId)} WHERE MESSAGE_ID = ?`, [
+    messageId,
+  ]);
 
-  const [result] = await pool.execute(
-    `DELETE FROM ${messageTable(channelId)} WHERE ID = ?`,
-    [messageId]
-  );
+  const [result] = await pool.execute(`DELETE FROM ${messageTable(channelId)} WHERE ID = ?`, [
+    messageId,
+  ]);
 
   return (result as { affectedRows: number }).affectedRows > 0;
 }
@@ -711,7 +708,7 @@ messageRouter.post(
       }
 
       res.sendData({
-        reprocessed: results.filter(r => r.success).length,
+        reprocessed: results.filter((r) => r.success).length,
         total: messages.length,
         results,
       });
@@ -898,12 +895,15 @@ messageRouter.post(
         serverId?: string;
         receivedDate?: string;
         processed?: boolean;
-        connectorMessages?: Record<number, {
-          metaDataId: number;
-          connectorName: string;
-          status: string;
-          content?: Record<number, { contentType: number; content: string; dataType: string }>;
-        }>;
+        connectorMessages?: Record<
+          number,
+          {
+            metaDataId: number;
+            connectorName: string;
+            status: string;
+            content?: Record<number, { contentType: number; content: string; dataType: string }>;
+          }
+        >;
       };
 
       if (!importedMessage || !importedMessage.connectorMessages) {
@@ -921,10 +921,7 @@ messageRouter.post(
         `SELECT ID FROM ${sequenceTable(channelId)} FOR UPDATE`
       );
       const nextId = (seqRows[0]?.ID ?? 0) + 1;
-      await pool.execute(
-        `UPDATE ${sequenceTable(channelId)} SET ID = ?`,
-        [nextId]
-      );
+      await pool.execute(`UPDATE ${sequenceTable(channelId)} SET ID = ?`, [nextId]);
 
       // Insert message
       const receivedDate = importedMessage.receivedDate
@@ -945,7 +942,9 @@ messageRouter.post(
       );
 
       // Insert connector messages and content
-      for (const [metaDataIdStr, connectorMsg] of Object.entries(importedMessage.connectorMessages)) {
+      for (const [metaDataIdStr, connectorMsg] of Object.entries(
+        importedMessage.connectorMessages
+      )) {
         const metaDataId = parseInt(metaDataIdStr, 10);
 
         await pool.execute(
@@ -993,7 +992,7 @@ messageRouter.post(
       const channelId = getChannelId(req);
       const filter = parseMessageFilter(req.body as Record<string, unknown>);
       const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : 100;
-      const writerType = req.query.writerType as string ?? 'JSON';
+      const writerType = (req.query.writerType as string) ?? 'JSON';
       // Note: includeAttachments query param available for future attachment export support
 
       // Get messages to export
@@ -1060,8 +1059,8 @@ messageRouter.post(
       if (destinationMetaDataIdStr) {
         const destinationMetaDataIds = destinationMetaDataIdStr
           .split(',')
-          .map(id => parseInt(id.trim(), 10))
-          .filter(id => !isNaN(id));
+          .map((id) => parseInt(id.trim(), 10))
+          .filter((id) => !isNaN(id));
         if (destinationMetaDataIds.length > 0) {
           sourceMap.set('destinationMetaDataIds', destinationMetaDataIds);
         }
@@ -1158,8 +1157,11 @@ messageRouter.post(
       if (clearStatistics && removedCount > 0) {
         try {
           const pool = getPool();
-          await pool.execute(`UPDATE ${statisticsTable(channelId)} SET
-            RECEIVED = GREATEST(RECEIVED - ?, 0)`, [removedCount]);
+          await pool.execute(
+            `UPDATE ${statisticsTable(channelId)} SET
+            RECEIVED = GREATEST(RECEIVED - ?, 0)`,
+            [removedCount]
+          );
         } catch {
           // Statistics table might not exist
         }
@@ -1214,12 +1216,15 @@ messageRouter.post(
         serverId?: string;
         receivedDate?: string;
         processed?: boolean;
-        connectorMessages?: Record<number, {
-          metaDataId: number;
-          connectorName: string;
-          status: string;
-          content?: Record<number, { contentType: number; content: string; dataType: string }>;
-        }>;
+        connectorMessages?: Record<
+          number,
+          {
+            metaDataId: number;
+            connectorName: string;
+            status: string;
+            content?: Record<number, { contentType: number; content: string; dataType: string }>;
+          }
+        >;
       };
 
       try {
@@ -1244,9 +1249,7 @@ messageRouter.post(
 
       // Get next message ID
       const seqTable = `${sequenceTable(channelId)}`;
-      const [seqRows] = await pool.query<RowDataPacket[]>(
-        `SELECT ID FROM ${seqTable} FOR UPDATE`
-      );
+      const [seqRows] = await pool.query<RowDataPacket[]>(`SELECT ID FROM ${seqTable} FOR UPDATE`);
       const nextId = (seqRows[0]?.ID ?? 0) + 1;
       await pool.execute(`UPDATE ${seqTable} SET ID = ?`, [nextId]);
 
@@ -1269,7 +1272,9 @@ messageRouter.post(
       );
 
       // Insert connector messages and content
-      for (const [metaDataIdStr, connectorMsg] of Object.entries(importedMessage.connectorMessages)) {
+      for (const [metaDataIdStr, connectorMsg] of Object.entries(
+        importedMessage.connectorMessages
+      )) {
         const metaDataId = parseInt(metaDataIdStr, 10);
 
         await pool.execute(

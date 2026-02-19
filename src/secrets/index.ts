@@ -15,4 +15,8 @@ export { PropertiesFileProvider } from './providers/PropertiesFileProvider.js';
 // Integration
 export { createConfigMapFallback } from './integration/ConfigMapBackend.js';
 export { resolveSecretReferences } from './integration/VariableResolverPlugin.js';
-export { createSecretsFunction, createSecretsMap, SecretsMap } from './integration/ScriptSecretsMap.js';
+export {
+  createSecretsFunction,
+  createSecretsMap,
+  SecretsMap,
+} from './integration/ScriptSecretsMap.js';

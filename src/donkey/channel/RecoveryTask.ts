@@ -45,7 +45,9 @@ export async function runRecoveryTask(
       try {
         // Find pending connector messages for this message
         const pending = await getConnectorMessagesByStatus(
-          channelId, [Status.RECEIVED, Status.PENDING], msg.ID
+          channelId,
+          [Status.RECEIVED, Status.PENDING],
+          msg.ID
         );
 
         // Wrap all recovery operations for this message in a single transaction
@@ -53,14 +55,24 @@ export async function runRecoveryTask(
           // Mark pending connectors as ERROR
           for (const cm of pending) {
             await updateConnectorMessageStatus(
-              channelId, cm.MESSAGE_ID, cm.METADATA_ID, Status.ERROR, conn
+              channelId,
+              cm.MESSAGE_ID,
+              cm.METADATA_ID,
+              Status.ERROR,
+              conn
             );
 
             // Store recovery error content
             const errorMsg = `Message recovered after server restart. Original status: ${cm.STATUS}`;
             await updateErrors(
-              channelId, cm.MESSAGE_ID, cm.METADATA_ID,
-              errorMsg, undefined, undefined, undefined, conn
+              channelId,
+              cm.MESSAGE_ID,
+              cm.METADATA_ID,
+              errorMsg,
+              undefined,
+              undefined,
+              undefined,
+              conn
             );
 
             // Update error statistics
@@ -80,7 +92,9 @@ export async function runRecoveryTask(
     }
 
     if (result.recovered > 0) {
-      logger.info(`[RecoveryTask] Recovered ${result.recovered} unfinished messages (${result.errors} marked as ERROR) for channel ${channelId}`);
+      logger.info(
+        `[RecoveryTask] Recovered ${result.recovered} unfinished messages (${result.errors} marked as ERROR) for channel ${channelId}`
+      );
     }
   } catch (err) {
     logger.error(`[RecoveryTask] Failed to run recovery for channel ${channelId}: ${err}`);

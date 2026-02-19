@@ -163,7 +163,7 @@ export class ServerLogWebSocketHandler {
     });
 
     ws.on('error', (error) => {
-      logger.error('Server Log WebSocket error', error as Error);
+      logger.error('Server Log WebSocket error', error);
       this.handleClose(ws);
     });
 

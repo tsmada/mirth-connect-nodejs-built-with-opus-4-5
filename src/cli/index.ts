@@ -51,11 +51,7 @@ function createProgram(): Command {
     .name('mirth-cli')
     .description('CLI for monitoring and managing Mirth Connect')
     .version(VERSION, '-V, --version', 'Output the version number')
-    .option(
-      '--url <url>',
-      'Mirth Connect server URL',
-      ConfigManager.getServerUrl()
-    )
+    .option('--url <url>', 'Mirth Connect server URL', ConfigManager.getServerUrl())
     .option('-u, --user <username>', 'Username for authentication')
     .option('-p, --password <password>', 'Password for authentication')
     .option('--json', 'Output as JSON')
@@ -114,10 +110,7 @@ ${chalk.bold('Documentation:')}
 
   // Handle unknown commands
   program.on('command:*', () => {
-    console.error(
-      chalk.red('Unknown command:'),
-      program.args.join(' ')
-    );
+    console.error(chalk.red('Unknown command:'), program.args.join(' '));
     console.log();
     console.log('Run', chalk.cyan('mirth-cli --help'), 'for usage information.');
     process.exit(1);

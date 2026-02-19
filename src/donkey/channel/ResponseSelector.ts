@@ -51,22 +51,14 @@ for (let i = 0; i < RESPONSE_STATUS_PRECEDENCE.length; i++) {
  * Auto-responder interface for generating responses
  */
 export interface AutoResponder {
-  getResponse(
-    status: Status,
-    rawContent: string,
-    connectorMessage: ConnectorMessage
-  ): Response;
+  getResponse(status: Status, rawContent: string, connectorMessage: ConnectorMessage): Response;
 }
 
 /**
  * Default auto-responder that generates basic responses
  */
 export class DefaultAutoResponder implements AutoResponder {
-  getResponse(
-    status: Status,
-    _rawContent: string,
-    _connectorMessage: ConnectorMessage
-  ): Response {
+  getResponse(status: Status, _rawContent: string, _connectorMessage: ConnectorMessage): Response {
     switch (status) {
       case Status.RECEIVED:
         return new Response({
@@ -145,20 +137,12 @@ export class ResponseSelector {
 
     if (this.respondFromName === RESPONSE_AUTO_BEFORE) {
       // Assume a successful status since we're responding before processing
-      return this.autoResponder.getResponse(
-        Status.RECEIVED,
-        rawContent,
-        sourceMessage
-      );
+      return this.autoResponder.getResponse(Status.RECEIVED, rawContent, sourceMessage);
     }
 
     if (this.respondFromName === RESPONSE_SOURCE_TRANSFORMED) {
       // Use the status and content from the source connector message
-      return this.autoResponder.getResponse(
-        sourceMessage.getStatus(),
-        rawContent,
-        sourceMessage
-      );
+      return this.autoResponder.getResponse(sourceMessage.getStatus(), rawContent, sourceMessage);
     }
 
     if (this.respondFromName === RESPONSE_DESTINATIONS_COMPLETED) {

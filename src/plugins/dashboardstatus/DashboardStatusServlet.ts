@@ -54,9 +54,7 @@ dashboardStatusRouter.get('/channellog', async (req: Request, res: Response) => 
   try {
     const channelId = (req.query.channelId as string) || null;
     const fetchSize = parseInt(req.query.fetchSize as string) || 100;
-    const lastLogId = req.query.lastLogId
-      ? parseInt(req.query.lastLogId as string)
-      : undefined;
+    const lastLogId = req.query.lastLogId ? parseInt(req.query.lastLogId as string) : undefined;
 
     const logs = dashboardStatusController.getSerializableChannelLog(
       channelId,
@@ -79,9 +77,7 @@ dashboardStatusRouter.get('/channellog/:channelId', async (req: Request, res: Re
   try {
     const channelId = req.params.channelId as string;
     const fetchSize = parseInt(req.query.fetchSize as string) || 100;
-    const lastLogId = req.query.lastLogId
-      ? parseInt(req.query.lastLogId as string)
-      : undefined;
+    const lastLogId = req.query.lastLogId ? parseInt(req.query.lastLogId as string) : undefined;
 
     const logs = dashboardStatusController.getSerializableChannelLog(
       channelId,

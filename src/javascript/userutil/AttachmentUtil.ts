@@ -73,14 +73,7 @@ export class AttachmentUtil {
     charsetEncoding: string,
     binary: boolean
   ): Promise<Buffer> {
-    return this.reAttachMessageBytesEx(
-      raw,
-      connectorMessage,
-      charsetEncoding,
-      binary,
-      true,
-      false
-    );
+    return this.reAttachMessageBytesEx(raw, connectorMessage, charsetEncoding, binary, true, false);
   }
 
   /**
@@ -106,7 +99,7 @@ export class AttachmentUtil {
     if (binary) {
       // In binary mode, first decode the Base64, then replace tokens in the decoded content
       const decoded = Buffer.from(raw, 'base64');
-      const decodedString = decoded.toString(charsetEncoding as BufferEncoding || 'utf-8');
+      const decodedString = decoded.toString((charsetEncoding as BufferEncoding) || 'utf-8');
 
       if (!reattach) {
         // Just expand local tokens to expanded format
@@ -115,7 +108,7 @@ export class AttachmentUtil {
           connectorMessage.getChannelId(),
           connectorMessage.getMessageId()
         );
-        return Buffer.from(expanded, charsetEncoding as BufferEncoding || 'utf-8');
+        return Buffer.from(expanded, (charsetEncoding as BufferEncoding) || 'utf-8');
       }
 
       const reattached = await this.reAttachMessageInternal(
@@ -124,7 +117,7 @@ export class AttachmentUtil {
         connectorMessage.getMessageId(),
         localOnly
       );
-      return Buffer.from(reattached, charsetEncoding as BufferEncoding || 'utf-8');
+      return Buffer.from(reattached, (charsetEncoding as BufferEncoding) || 'utf-8');
     }
 
     if (!reattach) {
@@ -134,7 +127,7 @@ export class AttachmentUtil {
         connectorMessage.getChannelId(),
         connectorMessage.getMessageId()
       );
-      return Buffer.from(expanded, charsetEncoding as BufferEncoding || 'utf-8');
+      return Buffer.from(expanded, (charsetEncoding as BufferEncoding) || 'utf-8');
     }
 
     const reattached = await this.reAttachMessageInternal(
@@ -143,7 +136,7 @@ export class AttachmentUtil {
       connectorMessage.getMessageId(),
       localOnly
     );
-    return Buffer.from(reattached, charsetEncoding as BufferEncoding || 'utf-8');
+    return Buffer.from(reattached, (charsetEncoding as BufferEncoding) || 'utf-8');
   }
 
   /**
@@ -176,18 +169,12 @@ export class AttachmentUtil {
       // Called with (raw, connectorMessage)
       const raw = rawOrConnectorMessage;
       const msg = connectorMessage!;
-      return this.reAttachMessageInternal(
-        raw,
-        msg.getChannelId(),
-        msg.getMessageId(),
-        false
-      );
+      return this.reAttachMessageInternal(raw, msg.getChannelId(), msg.getMessageId(), false);
     }
 
     // Called with (connectorMessage)
     const msg = rawOrConnectorMessage;
-    const raw =
-      msg.getEncodedData?.() ?? msg.getRawData?.() ?? '';
+    const raw = msg.getEncodedData?.() ?? msg.getRawData?.() ?? '';
     return this.reAttachMessageInternal(raw, msg.getChannelId(), msg.getMessageId(), false);
   }
 
@@ -212,10 +199,7 @@ export class AttachmentUtil {
    * @param messageId - The ID of the message the attachments are associated with.
    * @returns A list of attachment IDs associated with the current channel / message.
    */
-  static async getMessageAttachmentIds(
-    channelId: string,
-    messageId: number
-  ): Promise<string[]>;
+  static async getMessageAttachmentIds(channelId: string, messageId: number): Promise<string[]>;
 
   static async getMessageAttachmentIds(
     connectorMessageOrChannelId: ImmutableConnectorMessage | string,
@@ -673,11 +657,7 @@ export class AttachmentUtil {
   /**
    * Expand local tokens to expanded format (for cross-channel reference).
    */
-  private static expandLocalTokens(
-    raw: string,
-    channelId: string,
-    messageId: number
-  ): string {
+  private static expandLocalTokens(raw: string, channelId: string, messageId: number): string {
     return raw.replace(ATTACHMENT_TOKEN_PATTERN, (_match, attachmentId) => {
       return `\${ATTACH:${channelId}:${messageId}:${attachmentId}}`;
     });
@@ -708,9 +688,7 @@ export class AttachmentUtil {
       // Sort by segment ID and concatenate
       segments.sort((a, b) => a.SEGMENT_ID - b.SEGMENT_ID);
 
-      const buffers = segments
-        .filter((s) => s.ATTACHMENT !== null)
-        .map((s) => s.ATTACHMENT!);
+      const buffers = segments.filter((s) => s.ATTACHMENT !== null).map((s) => s.ATTACHMENT!);
 
       let content = buffers.length > 0 ? Buffer.concat(buffers) : Buffer.alloc(0);
 

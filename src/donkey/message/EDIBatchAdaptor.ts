@@ -31,7 +31,7 @@ export class EDIBatchAdaptor implements BatchAdaptor {
     // Split on ISA segment boundaries using a lookahead so ISA is kept with each part.
     // The element delimiter follows ISA immediately (position 3), commonly '*' or '|'.
     const isaPattern = /(?=ISA[^A-Za-z0-9])/g;
-    const parts = raw.split(isaPattern).filter(part => part.trim().length > 0);
+    const parts = raw.split(isaPattern).filter((part) => part.trim().length > 0);
 
     for (const part of parts) {
       const trimmed = part.trim();

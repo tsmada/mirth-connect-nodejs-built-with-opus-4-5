@@ -29,7 +29,11 @@ import { DeltaDetector } from './git/DeltaDetector.js';
 import type { DeltaResult } from './git/DeltaDetector.js';
 import type { DependencyGraph } from './DependencySort.js';
 import { PromotionPipeline } from './promotion/PromotionPipeline.js';
-import type { PromotionRequest, PromotionResult, PromotionConfig } from './promotion/PromotionPipeline.js';
+import type {
+  PromotionRequest,
+  PromotionResult,
+  PromotionConfig,
+} from './promotion/PromotionPipeline.js';
 import { PromotionGate } from './promotion/PromotionGate.js';
 import type { ApprovalRecord } from './promotion/PromotionGate.js';
 import type { FileTreeEntry, SensitiveField, DecomposedChannel } from './types.js';
@@ -72,10 +76,7 @@ export class ArtifactController {
   static async initialize(repoPath: string): Promise<void> {
     ArtifactController.repoPath = repoPath;
     ArtifactController.gitClient = new GitClient(repoPath);
-    ArtifactController.syncService = new GitSyncService(
-      ArtifactController.gitClient,
-      repoPath
-    );
+    ArtifactController.syncService = new GitSyncService(ArtifactController.gitClient, repoPath);
 
     const isRepo = await ArtifactController.gitClient.isRepo();
     if (!isRepo) {
@@ -93,12 +94,9 @@ export class ArtifactController {
       ArtifactController.watcher.stop();
     }
 
-    ArtifactController.watcher = new GitWatcher(
-      ArtifactController.repoPath!,
-      async () => {
-        logger.info('[Artifact] File change detected in artifact repo');
-      }
-    );
+    ArtifactController.watcher = new GitWatcher(ArtifactController.repoPath!, async () => {
+      logger.info('[Artifact] File change detected in artifact repo');
+    });
 
     ArtifactController.watcher.start();
   }
@@ -133,10 +131,7 @@ export class ArtifactController {
     const decomposed = decompose(channelXml);
 
     if (options?.maskSecrets !== false) {
-      ArtifactController.sensitiveDetector.maskDecomposed(
-        decomposed,
-        decomposed.metadata.name
-      );
+      ArtifactController.sensitiveDetector.maskDecomposed(decomposed, decomposed.metadata.name);
     }
 
     return toFileTree(decomposed);
@@ -208,7 +203,7 @@ export class ArtifactController {
 
     return {
       direction: 'push',
-      channelsAffected: channelEntries.map(e => e.name),
+      channelsAffected: channelEntries.map((e) => e.name),
       commitHash,
       warnings: [],
       errors: [],
@@ -244,10 +239,13 @@ export class ArtifactController {
       let rawXml = assemble(decomposed);
       // Resolve ${secret:KEY} references from secrets providers
       try {
-        const { resolveSecretReferences } = await import('../secrets/integration/VariableResolverPlugin.js');
+        const { resolveSecretReferences } =
+          await import('../secrets/integration/VariableResolverPlugin.js');
         const secretResult = await resolveSecretReferences(rawXml);
         rawXml = secretResult.resolved;
-      } catch { /* secrets module not loaded */ }
+      } catch {
+        /* secrets module not loaded */
+      }
       const result = resolver.resolve(rawXml);
       if (result.unresolvedVars.length > 0) {
         warnings.push(`Unresolved variables: ${result.unresolvedVars.join(', ')}`);
@@ -261,9 +259,9 @@ export class ArtifactController {
   /**
    * Import all channels from the git repo.
    */
-  static async importAll(
-    options?: { environment?: string }
-  ): Promise<Array<{ name: string; xml: string; warnings: string[] }>> {
+  static async importAll(options?: {
+    environment?: string;
+  }): Promise<Array<{ name: string; xml: string; warnings: string[] }>> {
     ArtifactController.ensureInitialized();
 
     const syncService = ArtifactController.syncService!;
@@ -367,9 +365,7 @@ export class ArtifactController {
   /**
    * Commit and push to git.
    */
-  static async pushToGit(
-    options?: { message?: string }
-  ): Promise<SyncResult> {
+  static async pushToGit(options?: { message?: string }): Promise<SyncResult> {
     ArtifactController.ensureInitialized();
 
     const gitClient = ArtifactController.gitClient!;
@@ -401,9 +397,10 @@ export class ArtifactController {
   /**
    * Pull from git and optionally import channels.
    */
-  static async pullFromGit(
-    options?: { environment?: string; deploy?: boolean }
-  ): Promise<PullResult> {
+  static async pullFromGit(options?: {
+    environment?: string;
+    deploy?: boolean;
+  }): Promise<PullResult> {
     ArtifactController.ensureInitialized();
 
     const gitClient = ArtifactController.gitClient!;
@@ -420,8 +417,8 @@ export class ArtifactController {
       channels,
       syncResult: {
         direction: 'pull',
-        channelsAffected: channels.map(c => c.name),
-        warnings: channels.flatMap(c => c.warnings),
+        channelsAffected: channels.map((c) => c.name),
+        warnings: channels.flatMap((c) => c.warnings),
         errors: [],
       },
     };
@@ -510,7 +507,7 @@ export class ArtifactController {
     for (const dir of channelDirs) {
       try {
         const files = await syncService.readChannel(dir);
-        const yamlFile = files.find(f => f.path.endsWith('channel.yaml'));
+        const yamlFile = files.find((f) => f.path.endsWith('channel.yaml'));
         if (yamlFile) {
           const parsed = yaml.load(yamlFile.content) as Record<string, unknown> | undefined;
           channels.push({
@@ -537,12 +534,8 @@ export class ArtifactController {
     pending: ApprovalRecord[];
     history: ApprovalRecord[];
   }> {
-    const pending = ArtifactController.promotionApprovals.filter(
-      a => a.status === 'pending'
-    );
-    const history = ArtifactController.promotionApprovals.filter(
-      a => a.status !== 'pending'
-    );
+    const pending = ArtifactController.promotionApprovals.filter((a) => a.status === 'pending');
+    const history = ArtifactController.promotionApprovals.filter((a) => a.status !== 'pending');
     return { pending, history };
   }
 
@@ -579,18 +572,19 @@ export class ArtifactController {
    * Deploy changed artifacts (delta deploy).
    * Returns the list of channel names that need redeployment.
    */
-  static async deployDelta(
-    options?: { fromRef?: string; channels?: string[] }
-  ): Promise<DeployResult> {
+  static async deployDelta(options?: {
+    fromRef?: string;
+    channels?: string[];
+  }): Promise<DeployResult> {
     const delta = await ArtifactController.detectDelta(options?.fromRef);
 
-    let channelsToProcess = delta.changedChannels.map(c => c.channelName);
-    const cascaded = delta.cascadedChannels.map(c => c.channelName);
+    let channelsToProcess = delta.changedChannels.map((c) => c.channelName);
+    const cascaded = delta.cascadedChannels.map((c) => c.channelName);
     channelsToProcess = [...new Set([...channelsToProcess, ...cascaded])];
 
     if (options?.channels && options.channels.length > 0) {
       const requested = new Set(options.channels);
-      channelsToProcess = channelsToProcess.filter(c => requested.has(c));
+      channelsToProcess = channelsToProcess.filter((c) => requested.has(c));
     }
 
     return {
@@ -613,11 +607,22 @@ export class ArtifactController {
    * Convert a FileTreeEntry[] back into a DecomposedChannel structure.
    */
   private static filesToDecomposed(files: FileTreeEntry[]): DecomposedChannel {
-    let metadata: Record<string, unknown> = { id: '', name: '', version: '', revision: 0, enabled: true };
+    let metadata: Record<string, unknown> = {
+      id: '',
+      name: '',
+      version: '',
+      revision: 0,
+      enabled: true,
+    };
     const scripts: Record<string, string> = {};
     let source: Record<string, unknown> = {
-      name: 'Source', metaDataId: 0, transportName: 'Channel Reader',
-      mode: 'SOURCE', enabled: true, properties: {}, propertiesClass: '',
+      name: 'Source',
+      metaDataId: 0,
+      transportName: 'Channel Reader',
+      mode: 'SOURCE',
+      enabled: true,
+      properties: {},
+      propertiesClass: '',
     };
     const destinations = new Map<string, Record<string, unknown>>();
 
@@ -647,14 +652,22 @@ export class ArtifactController {
         if (destName) {
           if (!destinations.has(destName)) {
             destinations.set(destName, {
-              name: destName, metaDataId: 1, transportName: 'Channel Writer',
-              mode: 'DESTINATION', enabled: true, properties: {}, propertiesClass: '',
+              name: destName,
+              metaDataId: 1,
+              transportName: 'Channel Writer',
+              mode: 'DESTINATION',
+              enabled: true,
+              properties: {},
+              propertiesClass: '',
             });
           }
           if (file.path.endsWith('connector.yaml')) {
             const parsed = yaml.load(file.content);
             if (parsed && typeof parsed === 'object') {
-              destinations.set(destName, { ...destinations.get(destName)!, ...(parsed as Record<string, unknown>) });
+              destinations.set(destName, {
+                ...destinations.get(destName)!,
+                ...(parsed as Record<string, unknown>),
+              });
             }
           }
         }
@@ -662,7 +675,7 @@ export class ArtifactController {
     }
 
     // Read _raw.xml if present — the assembler needs this for lossless round-trip
-    const rawFile = files.find(f => f.path.endsWith('_raw.xml'));
+    const rawFile = files.find((f) => f.path.endsWith('_raw.xml'));
     const rawXml = rawFile?.content || '';
 
     return {
@@ -678,7 +691,10 @@ export class ArtifactController {
    * Convert a DecomposedChannel to the flat format used by ChannelDiff.
    */
   private static toFlat(decomposed: DecomposedChannel): DecomposedChannelFlat {
-    const destinations: Record<string, { connector: Record<string, unknown>; scripts: Record<string, string> }> = {};
+    const destinations: Record<
+      string,
+      { connector: Record<string, unknown>; scripts: Record<string, string> }
+    > = {};
 
     for (const [name, dest] of decomposed.destinations) {
       const destScripts: Record<string, string> = {};

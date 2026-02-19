@@ -14,12 +14,18 @@ import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
 import type { Message } from '../../model/Message.js';
-import { FilterTransformerExecutor, FilterTransformerScripts } from './FilterTransformerExecutor.js';
+import {
+  FilterTransformerExecutor,
+  FilterTransformerScripts,
+} from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
 import type { BatchAdaptor } from '../message/BatchAdaptor.js';
 import { dashboardStatusController } from '../../plugins/dashboardstatus/DashboardStatusController.js';
-import type { ConnectionStatusEvent, ConnectorCountEvent } from '../../plugins/dashboardstatus/DashboardStatusController.js';
+import type {
+  ConnectionStatusEvent,
+  ConnectorCountEvent,
+} from '../../plugins/dashboardstatus/DashboardStatusController.js';
 import { ConnectionStatusEventType } from '../../plugins/dashboardstatus/ConnectionLogItem.js';
 
 export interface SourceConnectorConfig {
@@ -173,10 +179,7 @@ export abstract class SourceConnector {
    * - onError: use dispatchConnectionEvent with error message
    * - onStop: DISCONNECTED
    */
-  protected dispatchConnectionEvent(
-    state: ConnectionStatusEventType,
-    message?: string
-  ): void {
+  protected dispatchConnectionEvent(state: ConnectionStatusEventType, message?: string): void {
     if (!this.channel) return;
     const event: ConnectionStatusEvent = {
       channelId: this.channel.getId(),
@@ -202,7 +205,9 @@ export abstract class SourceConnector {
     const event: ConnectorCountEvent = {
       channelId: this.channel.getId(),
       metadataId: 0,
-      state: increment ? ConnectionStatusEventType.CONNECTED : ConnectionStatusEventType.DISCONNECTED,
+      state: increment
+        ? ConnectionStatusEventType.CONNECTED
+        : ConnectionStatusEventType.DISCONNECTED,
       message,
       channelName: this.channel.getName(),
       connectorType: this.transportName,
@@ -316,7 +321,10 @@ export abstract class SourceConnector {
 
     // Set transformed content on connector message
     if (result.transformedData !== undefined) {
-      connectorMessage.setTransformedData(result.transformedData, result.transformedDataType ?? 'XML');
+      connectorMessage.setTransformedData(
+        result.transformedData,
+        result.transformedDataType ?? 'XML'
+      );
 
       // Java Mirth: FilterTransformerExecutor.java:142 — always set ENCODED content
       // For RAW serialization type, encoded = transformed

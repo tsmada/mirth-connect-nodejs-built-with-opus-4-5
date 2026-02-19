@@ -138,14 +138,11 @@ export async function upsertAlert(alert: AlertModel): Promise<void> {
 export async function updateAlert(alert: AlertModel): Promise<boolean> {
   const serialized = serializeAlertModel(alert);
 
-  const result = await execute(
-    'UPDATE ALERT SET NAME = :name, ALERT = :alertData WHERE ID = :id',
-    {
-      id: alert.id,
-      name: alert.name,
-      alertData: serialized,
-    }
-  );
+  const result = await execute('UPDATE ALERT SET NAME = :name, ALERT = :alertData WHERE ID = :id', {
+    id: alert.id,
+    name: alert.name,
+    alertData: serialized,
+  });
 
   return result.affectedRows > 0;
 }

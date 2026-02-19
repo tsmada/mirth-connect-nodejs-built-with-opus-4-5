@@ -76,9 +76,7 @@ export interface BatchScriptContext {
  * The script should return the next message from the batch,
  * or null/empty string when there are no more messages.
  */
-export type BatchScriptFunction = (
-  context: BatchScriptContext
-) => Promise<string | null>;
+export type BatchScriptFunction = (context: BatchScriptContext) => Promise<string | null>;
 
 /**
  * Create a BatchReader from a string
@@ -209,10 +207,7 @@ export class HL7V3BatchAdaptor {
   private batchScript: BatchScriptFunction | null = null;
   private batchSequenceId: number = 0;
 
-  constructor(
-    batchProperties?: Partial<HL7V3BatchProperties>,
-    sourceMap?: SourceMap
-  ) {
+  constructor(batchProperties?: Partial<HL7V3BatchProperties>, sourceMap?: SourceMap) {
     this.batchProperties = {
       ...getDefaultHL7V3BatchProperties(),
       ...batchProperties,
@@ -416,10 +411,7 @@ export function splitByDelimiter(source: string, delimiter: string): string[] {
  * @param rootElementName Optional root element name to filter by
  * @returns Array of XML messages
  */
-export function splitByXMLRoot(
-  source: string,
-  rootElementName?: string
-): string[] {
+export function splitByXMLRoot(source: string, rootElementName?: string): string[] {
   const messages: string[] = [];
 
   // Pattern to match complete XML elements

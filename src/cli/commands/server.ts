@@ -9,20 +9,14 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { ApiClient, ApiError } from '../lib/ApiClient.js';
 import { ConfigManager } from '../lib/ConfigManager.js';
-import {
-  OutputFormatter,
-  formatSystemInfo,
-  formatSystemStats,
-} from '../lib/OutputFormatter.js';
+import { OutputFormatter, formatSystemInfo, formatSystemStats } from '../lib/OutputFormatter.js';
 import { GlobalOptions } from '../types/index.js';
 
 /**
  * Register server commands
  */
 export function registerServerCommands(program: Command): void {
-  const serverCmd = program
-    .command('server')
-    .description('Server information and status commands');
+  const serverCmd = program.command('server').description('Server information and status commands');
 
   // ==========================================================================
   // server info
@@ -129,18 +123,14 @@ export function registerServerCommands(program: Command): void {
             )
           );
         } else {
-          console.log(
-            chalk.green('●') + ' ' + chalk.bold('Server Online')
-          );
+          console.log(chalk.green('●') + ' ' + chalk.bold('Server Online'));
           console.log();
           console.log(`  ${chalk.gray('URL:')}          ${serverUrl}`);
           console.log(`  ${chalk.gray('Latency:')}      ${latency}ms`);
           console.log(`  ${chalk.gray('Runtime:')}      ${systemInfo.jvmVersion}`);
           console.log();
           if (currentUser) {
-            console.log(
-              `  ${chalk.gray('Logged in as:')} ${chalk.cyan(currentUser.username)}`
-            );
+            console.log(`  ${chalk.gray('Logged in as:')} ${chalk.cyan(currentUser.username)}`);
           } else {
             console.log(`  ${chalk.gray('Logged in:')}    ${chalk.yellow('No')}`);
           }
@@ -227,8 +217,7 @@ export function registerServerCommands(program: Command): void {
           const barWidth = 40;
           const filledWidth = Math.round((memPercent / 100) * barWidth);
           const bar =
-            chalk.green('█'.repeat(filledWidth)) +
-            chalk.gray('░'.repeat(barWidth - filledWidth));
+            chalk.green('█'.repeat(filledWidth)) + chalk.gray('░'.repeat(barWidth - filledWidth));
 
           console.log();
           console.log(`  ${chalk.gray('Memory:')} [${bar}] ${memPercent.toFixed(1)}%`);

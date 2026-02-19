@@ -205,7 +205,8 @@ export class E4XTranspiler {
     });
 
     // Pattern for destructuring: for each (var [a, b] in expr)
-    const destructPattern = /for\s+each\s*\(\s*(var|let|const)\s+(\[[^\]]+\]|\{[^}]+\})\s+in\s+([^)]+)\)/g;
+    const destructPattern =
+      /for\s+each\s*\(\s*(var|let|const)\s+(\[[^\]]+\]|\{[^}]+\})\s+in\s+([^)]+)\)/g;
 
     code = this.replaceWithStringCheck(code, destructPattern, (_match, groups) => {
       const [_declType, destructure, collection] = groups;
@@ -309,16 +310,13 @@ export class E4XTranspiler {
       const before = result;
 
       // Match self-closing tags: <name attrs/>
-      result = result.replace(
-        /(<(\w+)(?:\s+[^>]*)?\/\s*>)/g,
-        (match, fullTag, _tagName) => {
-          // Check if this is inside a string
-          if (this.isInsideString(result, result.indexOf(match))) {
-            return match;
-          }
-          return `XMLProxy.create('${this.escapeForString(fullTag)}')`;
+      result = result.replace(/(<(\w+)(?:\s+[^>]*)?\/\s*>)/g, (match, fullTag, _tagName) => {
+        // Check if this is inside a string
+        if (this.isInsideString(result, result.indexOf(match))) {
+          return match;
         }
-      );
+        return `XMLProxy.create('${this.escapeForString(fullTag)}')`;
+      });
 
       // Match opening and closing tags with content
       // This regex is simplified - a full parser would be needed for complex cases
@@ -354,11 +352,15 @@ export class E4XTranspiler {
         // Handle embedded expressions
         const processedContent = this.convertEmbeddedToConcat(contentStr);
         const replacement = `XMLProxy.create('<${tagName}${attrStr}>' + ${processedContent} + '</${tagName}>')`;
-        return code.slice(0, match.index) + replacement + code.slice(match.index + fullMatch.length);
+        return (
+          code.slice(0, match.index) + replacement + code.slice(match.index + fullMatch.length)
+        );
       } else {
         // Simple content - just escape and wrap
         const replacement = `XMLProxy.create('${this.escapeForString(fullMatch)}')`;
-        return code.slice(0, match.index) + replacement + code.slice(match.index + fullMatch.length);
+        return (
+          code.slice(0, match.index) + replacement + code.slice(match.index + fullMatch.length)
+        );
       }
     }
 
@@ -470,7 +472,8 @@ export class E4XTranspiler {
     // LHS must start with msg, tmp, or xml (common XML variable names in Mirth scripts)
     // RHS must NOT be a numeric literal or string literal (those are normal +=)
     // Uses replaceWithStringCheck to skip matches inside string literals
-    code = this.replaceWithStringCheck(code,
+    code = this.replaceWithStringCheck(
+      code,
       /((?:msg|tmp|xml)\w*(?:\.\w+|\[['"][^'"]+['"]\])*)\s*\+=\s*([^;\n]+)/g,
       (_match, groups) => {
         const lhs = groups[0] ?? '';

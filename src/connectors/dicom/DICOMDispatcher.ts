@@ -126,8 +126,14 @@ export class DICOMDispatcher extends DestinationConnector {
     resolved.localPort = this.resolveVariables(resolved.localPort, connectorMessage);
 
     // Identity
-    resolved.applicationEntity = this.resolveVariables(resolved.applicationEntity, connectorMessage);
-    resolved.localApplicationEntity = this.resolveVariables(resolved.localApplicationEntity, connectorMessage);
+    resolved.applicationEntity = this.resolveVariables(
+      resolved.applicationEntity,
+      connectorMessage
+    );
+    resolved.localApplicationEntity = this.resolveVariables(
+      resolved.localApplicationEntity,
+      connectorMessage
+    );
 
     // Authentication
     resolved.username = this.resolveVariables(resolved.username, connectorMessage);
@@ -210,7 +216,7 @@ export class DICOMDispatcher extends DestinationConnector {
     this.dispatchConnectionEvent(ConnectionStatusEventType.WRITING, info);
 
     let connection: DicomConnection | null = null;
-    let tempFile: string | null = null;
+    const tempFile: string | null = null;
 
     // Java pattern: declare response variables upfront, default to QUEUED
     let responseData: string | null = null;
@@ -284,7 +290,10 @@ export class DICOMDispatcher extends DestinationConnector {
       responseError = `DICOM Sender: ${errorMessage}`;
 
       // CPC-W19-007: Dispatch ErrorEvent on send failure, matching Java line 283
-      this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED, `Error: ${errorMessage}`);
+      this.dispatchConnectionEvent(
+        ConnectionStatusEventType.DISCONNECTED,
+        `Error: ${errorMessage}`
+      );
     } finally {
       // Clean up connection
       if (connection) {
@@ -434,10 +443,16 @@ export class DICOMDispatcher extends DestinationConnector {
 
         if (group === 0x0008 && element === 0x0016) {
           // SOP Class UID
-          sopClassUid = data.toString('ascii', offset + 8, offset + 8 + length).replace(/\0/g, '').trim();
+          sopClassUid = data
+            .toString('ascii', offset + 8, offset + 8 + length)
+            .replace(/\0/g, '')
+            .trim();
         } else if (group === 0x0008 && element === 0x0018) {
           // SOP Instance UID
-          sopInstanceUid = data.toString('ascii', offset + 8, offset + 8 + length).replace(/\0/g, '').trim();
+          sopInstanceUid = data
+            .toString('ascii', offset + 8, offset + 8 + length)
+            .replace(/\0/g, '')
+            .trim();
         }
 
         offset += 8 + length;
@@ -474,7 +489,10 @@ export class DICOMDispatcher extends DestinationConnector {
    * CPC-W19-002: Wires all 16 dcmSnd config properties from Java
    * DICOMDispatcher.send() lines 154-231 to the connection params.
    */
-  private createConnection(sopClassUid: string, props?: DICOMDispatcherProperties): DicomConnection {
+  private createConnection(
+    sopClassUid: string,
+    props?: DICOMDispatcherProperties
+  ): DicomConnection {
     const p = props ?? this.properties;
     const params: Partial<AssociationParams> = {
       callingAE: p.localApplicationEntity || 'MIRTH',

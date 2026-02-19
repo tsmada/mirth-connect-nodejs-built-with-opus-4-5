@@ -212,7 +212,9 @@ export class ScriptBuilder {
     this.appendTransformerScript(builder, transformerSteps);
 
     // Execute filter then transformer in IIFE (matches Java: serialization is inside doTransform)
-    builder.push('(function() { if (doFilter() == true) { doTransform(); return true; } else { return false; } })();');
+    builder.push(
+      '(function() { if (doFilter() == true) { doTransform(); return true; } else { return false; } })();'
+    );
 
     return builder.join('\n');
   }
@@ -317,7 +319,9 @@ export class ScriptBuilder {
     // so we can restore it when the function doesn't explicitly return.
     builder.push('var __pp_original = message;');
     builder.push('var __pp_result = doPreprocess();');
-    builder.push('if (__pp_result !== undefined && __pp_result !== null) { message = __pp_result; } else { message = __pp_original; }');
+    builder.push(
+      'if (__pp_result !== undefined && __pp_result !== null) { message = __pp_result; } else { message = __pp_original; }'
+    );
 
     return builder.join('\n');
   }
@@ -749,14 +753,18 @@ function updateAttachment() {
     builder.push('  if (msg.hasSimpleContent()) { msg = msg.toXMLString(); }');
     builder.push("} else if (typeof msg !== 'undefined' && msg !== null) {");
     builder.push('  var toStringResult = Object.prototype.toString.call(msg);');
-    builder.push("  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { msg = JSON.stringify(msg); }");
+    builder.push(
+      "  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { msg = JSON.stringify(msg); }"
+    );
     builder.push('}');
     // Auto-serialize tmp (INDEPENDENT — NOT else-if from msg block)
     builder.push("if (typeof tmp === 'object' && typeof tmp.toXMLString === 'function') {");
     builder.push('  if (tmp.hasSimpleContent()) { tmp = tmp.toXMLString(); }');
     builder.push("} else if (typeof tmp !== 'undefined' && tmp !== null) {");
     builder.push('  var toStringResult = Object.prototype.toString.call(tmp);');
-    builder.push("  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { tmp = JSON.stringify(tmp); }");
+    builder.push(
+      "  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { tmp = JSON.stringify(tmp); }"
+    );
     builder.push('}');
   }
 

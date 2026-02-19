@@ -52,14 +52,9 @@ function createParser(): XMLParser {
     processEntities: false,
     // These elements can appear 0-N times; ensure consistent array handling
     isArray: (name: string) => {
-      return [
-        'connector',
-        'entry',
-        'string',
-        'rule',
-        'metaDataColumn',
-        'channelTag',
-      ].includes(name);
+      return ['connector', 'entry', 'string', 'rule', 'metaDataColumn', 'channelTag'].includes(
+        name
+      );
     },
   });
 }
@@ -139,16 +134,28 @@ export function toFileTree(decomposed: DecomposedChannel): FileTreeEntry[] {
     files.push({ path: 'scripts/undeploy.js', content: decomposed.scripts.undeploy, type: 'js' });
   }
   if (decomposed.scripts.preprocess && !isDefaultScript(decomposed.scripts.preprocess)) {
-    files.push({ path: 'scripts/preprocess.js', content: decomposed.scripts.preprocess, type: 'js' });
+    files.push({
+      path: 'scripts/preprocess.js',
+      content: decomposed.scripts.preprocess,
+      type: 'js',
+    });
   }
   if (decomposed.scripts.postprocess && !isDefaultScript(decomposed.scripts.postprocess)) {
-    files.push({ path: 'scripts/postprocess.js', content: decomposed.scripts.postprocess, type: 'js' });
+    files.push({
+      path: 'scripts/postprocess.js',
+      content: decomposed.scripts.postprocess,
+      type: 'js',
+    });
   }
 
   return files;
 }
 
-function addConnectorFiles(files: FileTreeEntry[], basePath: string, connector: ConnectorFiles): void {
+function addConnectorFiles(
+  files: FileTreeEntry[],
+  basePath: string,
+  connector: ConnectorFiles
+): void {
   // connector.yaml — connector properties (excluding scripts)
   const connectorYaml: Record<string, unknown> = {
     name: connector.name,
@@ -309,9 +316,12 @@ function extractMetadata(channel: Record<string, unknown>, version: string): Cha
   return meta;
 }
 
-function extractConnector(connectorXml: Record<string, unknown>, _channelVersion: string): ConnectorFiles {
+function extractConnector(
+  connectorXml: Record<string, unknown>,
+  _channelVersion: string
+): ConnectorFiles {
   const properties = connectorXml.properties as Record<string, unknown> | undefined;
-  const propertiesClass = properties?.['@_class'] as string || '';
+  const propertiesClass = (properties?.['@_class'] as string) || '';
   const propertiesVersion = properties?.['@_version'] as string | undefined;
 
   // Extract all properties except the class/version attributes
@@ -323,13 +333,21 @@ function extractConnector(connectorXml: Record<string, unknown>, _channelVersion
     transportName: String(connectorXml.transportName || ''),
     mode: String(connectorXml.mode || ''),
     enabled: connectorXml.enabled !== 'false',
-    waitForPrevious: connectorXml.waitForPrevious === 'true' ? true :
-      connectorXml.waitForPrevious === 'false' ? false : undefined,
+    waitForPrevious:
+      connectorXml.waitForPrevious === 'true'
+        ? true
+        : connectorXml.waitForPrevious === 'false'
+          ? false
+          : undefined,
     properties: cleanProps,
     propertiesClass,
     propertiesVersion,
-    transformer: extractTransformer(connectorXml.transformer as Record<string, unknown> | undefined),
-    responseTransformer: extractTransformer(connectorXml.responseTransformer as Record<string, unknown> | undefined),
+    transformer: extractTransformer(
+      connectorXml.transformer as Record<string, unknown> | undefined
+    ),
+    responseTransformer: extractTransformer(
+      connectorXml.responseTransformer as Record<string, unknown> | undefined
+    ),
     filter: extractFilter(connectorXml.filter as Record<string, unknown> | undefined),
   };
 }
@@ -341,7 +359,7 @@ function extractDestinations(
   const map = new Map<string, ConnectorFiles>();
   if (!destConnectors) return map;
 
-  let connectors = (destConnectors as Record<string, unknown>).connector;
+  let connectors = destConnectors.connector;
   if (!connectors) return map;
   if (!Array.isArray(connectors)) {
     connectors = [connectors];
@@ -382,7 +400,9 @@ function extractTransformer(
   if (!transformerXml) return undefined;
 
   const version = transformerXml['@_version'] as string | undefined;
-  const steps = extractTransformerSteps(transformerXml.elements as Record<string, unknown> | undefined);
+  const steps = extractTransformerSteps(
+    transformerXml.elements as Record<string, unknown> | undefined
+  );
 
   const data: TransformerData = {
     version,
@@ -411,7 +431,9 @@ function extractTransformer(
   return data;
 }
 
-function extractTransformerSteps(elements: Record<string, unknown> | undefined): TransformerStepData[] {
+function extractTransformerSteps(
+  elements: Record<string, unknown> | undefined
+): TransformerStepData[] {
   if (!elements) return [];
 
   const steps: TransformerStepData[] = [];

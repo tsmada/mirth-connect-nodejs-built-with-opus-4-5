@@ -66,10 +66,7 @@ export class SourceQueue extends ConnectorMessageQueue {
       }
 
       // Ensure no message gets polled at the same time from multiple threads
-      while (
-        connectorMessage !== null &&
-        this.checkedOut.has(connectorMessage.getMessageId())
-      ) {
+      while (connectorMessage !== null && this.checkedOut.has(connectorMessage.getMessageId())) {
         connectorMessage = this.pollFirstValue();
       }
     }

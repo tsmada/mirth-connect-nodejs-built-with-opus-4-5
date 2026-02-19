@@ -196,7 +196,7 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     scheme: FileScheme.FILE,
     host: '',
     port: undefined,
-    anonymous: true,       // Java default: true
+    anonymous: true, // Java default: true
     username: 'anonymous', // Java default: "anonymous"
     password: 'anonymous', // Java default: "anonymous"
     directory: '',
@@ -208,24 +208,24 @@ export function getDefaultFileReceiverProperties(): FileReceiverProperties {
     charsetEncoding: 'UTF-8',
     afterProcessingAction: AfterProcessingAction.NONE,
     moveToDirectory: '',
-    moveToFileName: '',              // Java default: ""
-    errorReadingAction: AfterProcessingAction.NONE,    // Java default: NONE
-    errorResponseAction: 'AFTER_PROCESSING',           // Java default: AFTER_PROCESSING
-    errorMoveToDirectory: '',        // Java default: ""
-    errorMoveToFileName: '',         // Java default: ""
+    moveToFileName: '', // Java default: ""
+    errorReadingAction: AfterProcessingAction.NONE, // Java default: NONE
+    errorResponseAction: 'AFTER_PROCESSING', // Java default: AFTER_PROCESSING
+    errorMoveToDirectory: '', // Java default: ""
+    errorMoveToFileName: '', // Java default: ""
     errorDirectory: '',
     errorAction: AfterProcessingAction.NONE,
-    checkFileAge: true,   // Java default: true
-    fileAge: 1000,        // Java default: 1000ms
-    fileSizeMinimum: '0',        // Java default: "0"
-    fileSizeMaximum: '',         // Java default: "" (no limit)
+    checkFileAge: true, // Java default: true
+    fileAge: 1000, // Java default: 1000ms
+    fileSizeMinimum: '0', // Java default: "0"
+    fileSizeMaximum: '', // Java default: "" (no limit)
     ignoreFileSizeMaximum: true, // Java default: true
     pollInterval: 5000,
     sortBy: FileSortBy.DATE,
     sortDescending: false,
     batchSize: 0, // 0 = unlimited
     passive: true,
-    secure: true,          // Java default: true (FTPS)
+    secure: true, // Java default: true (FTPS)
     validateConnection: true,
     timeout: 10000,
     maxRetryCount: 3,
@@ -241,24 +241,24 @@ export function getDefaultFileDispatcherProperties(): FileDispatcherProperties {
     scheme: FileScheme.FILE,
     host: '',
     port: undefined,
-    anonymous: true,       // Java default: true
+    anonymous: true, // Java default: true
     username: 'anonymous', // Java default: "anonymous"
     password: 'anonymous', // Java default: "anonymous"
     directory: '',
     outputPattern: 'output_${date:yyyyMMddHHmmss}_${UUID}.txt',
-    outputAppend: true,  // Java default: true (was false — CPC-DVM-007)
+    outputAppend: true, // Java default: true (was false — CPC-DVM-007)
     template: '',
     binary: false,
     charsetEncoding: 'UTF-8',
     errorOnExists: false,
-    temporary: false,       // Java default: false
+    temporary: false, // Java default: false
     tempFilename: '',
     passive: true,
-    secure: true,          // Java default: true (FTPS)
+    secure: true, // Java default: true (FTPS)
     validateConnection: true,
     timeout: 10000,
-    keepConnectionOpen: true,  // Java default: true (CPC-RCG-003)
-    maxIdleTime: 0,            // Java default: 0 (no eviction)
+    keepConnectionOpen: true, // Java default: true (CPC-RCG-003)
+    maxIdleTime: 0, // Java default: 0 (no eviction)
   };
 }
 
@@ -278,11 +278,7 @@ export function globToRegex(glob: string): RegExp {
 /**
  * Check if a filename matches a filter pattern
  */
-export function matchesFilter(
-  filename: string,
-  pattern: string,
-  isRegex: boolean
-): boolean {
+export function matchesFilter(filename: string, pattern: string, isRegex: boolean): boolean {
   if (!pattern || pattern === '*') {
     return true;
   }

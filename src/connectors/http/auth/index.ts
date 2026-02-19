@@ -55,6 +55,8 @@ export function createAuthenticator(properties: HttpAuthProperties): HttpAuthent
     case AuthType.JAVASCRIPT:
       return new JavaScriptAuthenticator(properties);
     default:
-      throw new Error(`Unsupported authentication type: ${(properties as { authType: string }).authType}`);
+      throw new Error(
+        `Unsupported authentication type: ${(properties as { authType: string }).authType}`
+      );
   }
 }

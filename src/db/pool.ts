@@ -181,8 +181,10 @@ export async function withRetry<T>(
       const errno = error?.errno ?? error?.code;
       if ((errno === 1213 || errno === 1205) && attempt < maxRetries) {
         const delay = 100 * Math.pow(2, attempt - 1); // 100, 200, 400ms
-        logger.warn(`Deadlock detected (errno ${errno}), retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        logger.warn(
+          `Deadlock detected (errno ${errno}), retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
         lastError = error;
         continue;
       }

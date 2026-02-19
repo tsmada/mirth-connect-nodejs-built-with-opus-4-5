@@ -10,7 +10,8 @@ export class AzureSecretsProvider implements SecretsProvider {
   }
 
   async initialize(): Promise<void> {
-    if (!this.vaultUrl) throw new Error('Azure Key Vault URL required (MIRTH_SECRETS_AZURE_VAULT_URL)');
+    if (!this.vaultUrl)
+      throw new Error('Azure Key Vault URL required (MIRTH_SECRETS_AZURE_VAULT_URL)');
     try {
       // @ts-expect-error -- optional peer dependency, installed by user
       const { SecretClient } = await import('@azure/keyvault-secrets');
@@ -18,7 +19,9 @@ export class AzureSecretsProvider implements SecretsProvider {
       const { DefaultAzureCredential } = await import('@azure/identity');
       this.client = new SecretClient(this.vaultUrl, new DefaultAzureCredential());
     } catch {
-      throw new Error('Azure SDK not installed. Run: npm install @azure/keyvault-secrets @azure/identity');
+      throw new Error(
+        'Azure SDK not installed. Run: npm install @azure/keyvault-secrets @azure/identity'
+      );
     }
   }
 

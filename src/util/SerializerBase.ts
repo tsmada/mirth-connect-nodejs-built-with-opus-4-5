@@ -53,7 +53,10 @@ export interface IMessageSerializer {
    * @param outboundSerializer - Optional outbound serializer for cross-format transformation
    * @returns The transformed message, or null if not supported
    */
-  transformWithoutSerializing(message: string, outboundSerializer?: IMessageSerializer): string | null;
+  transformWithoutSerializing(
+    message: string,
+    outboundSerializer?: IMessageSerializer
+  ): string | null;
 
   /**
    * Populate metadata map from a message.
@@ -155,7 +158,10 @@ export abstract class BaseSerializer implements IMessageSerializer {
     return true;
   }
 
-  transformWithoutSerializing(_message: string, _outboundSerializer?: IMessageSerializer): string | null {
+  transformWithoutSerializing(
+    _message: string,
+    _outboundSerializer?: IMessageSerializer
+  ): string | null {
     return null;
   }
 

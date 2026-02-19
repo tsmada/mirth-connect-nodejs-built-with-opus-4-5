@@ -16,10 +16,7 @@ import { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
 import { PeriodicExportingMetricReader, MeterProvider } from '@opentelemetry/sdk-metrics';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { metrics } from '@opentelemetry/api';
-import {
-  ATTR_SERVICE_NAME,
-  ATTR_SERVICE_VERSION,
-} from '@opentelemetry/semantic-conventions';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 
 const resource = resourceFromAttributes({
   [ATTR_SERVICE_NAME]: process.env['OTEL_SERVICE_NAME'] ?? 'mirth-connect-node',

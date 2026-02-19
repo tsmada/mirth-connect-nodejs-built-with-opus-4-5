@@ -251,10 +251,7 @@ async function getExtension(name: string): Promise<ExtensionMetaData | null> {
   await ensureExtensionTable();
 
   // Check database for overrides
-  const rows = await query<ExtensionRow>(
-    'SELECT * FROM EXTENSION WHERE NAME = :name',
-    { name }
-  );
+  const rows = await query<ExtensionRow>('SELECT * FROM EXTENSION WHERE NAME = :name', { name });
 
   // Find built-in extension
   const builtIn = getBuiltInExtensions().find((ext) => ext.name === name);
@@ -418,9 +415,7 @@ extensionRouter.get(
   async (_req: Request, res: Response) => {
     try {
       const extensions = await getAllExtensions();
-      const plugins = extensions.filter(
-        (ext) => !('type' in ext) || !('transportName' in ext)
-      );
+      const plugins = extensions.filter((ext) => !('type' in ext) || !('transportName' in ext));
       res.sendData(plugins);
     } catch (error) {
       logger.error('Get plugins error', error as Error);
@@ -491,10 +486,7 @@ extensionRouter.put(
       const { extensionName, enabled } = req.params as unknown as EnableParams;
       const isEnabled = enabled === 'true';
 
-      const success = await setExtensionEnabled(
-        decodeURIComponent(extensionName),
-        isEnabled
-      );
+      const success = await setExtensionEnabled(decodeURIComponent(extensionName), isEnabled);
 
       if (!success) {
         res.status(404).json({ error: 'Extension not found' });
@@ -520,8 +512,8 @@ extensionRouter.post(
   async (req: Request, res: Response) => {
     try {
       const extensionName = decodeURIComponent(req.params.extensionName as string);
-      const enabled = req.body?.enabled === 'true' || req.body?.enabled === true ||
-                       req.query.enabled === 'true';
+      const enabled =
+        req.body?.enabled === 'true' || req.body?.enabled === true || req.query.enabled === 'true';
 
       const success = await setExtensionEnabled(extensionName, enabled);
 
@@ -575,10 +567,7 @@ extensionRouter.put(
       const { extensionName } = req.params as unknown as ExtensionParams;
       const properties = req.body as Record<string, string>;
 
-      const success = await setExtensionProperties(
-        decodeURIComponent(extensionName),
-        properties
-      );
+      const success = await setExtensionProperties(decodeURIComponent(extensionName), properties);
 
       if (!success) {
         res.status(404).json({ error: 'Extension not found' });

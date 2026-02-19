@@ -68,7 +68,4 @@ export {
   SoapFaultError,
 } from './WebServiceDispatcher.js';
 
-export {
-  WebServiceReceiver,
-  WebServiceReceiverConfig,
-} from './WebServiceReceiver.js';
+export { WebServiceReceiver, WebServiceReceiverConfig } from './WebServiceReceiver.js';

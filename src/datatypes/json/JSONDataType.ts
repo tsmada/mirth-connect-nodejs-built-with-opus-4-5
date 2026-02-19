@@ -97,7 +97,11 @@ export class JSONDataType {
   fromXML(source: string): string | null {
     try {
       const result = xmlToJson(source);
-      return JSON.stringify(result, null, this.properties.prettyPrint ? this.properties.indentation : undefined);
+      return JSON.stringify(
+        result,
+        null,
+        this.properties.prettyPrint ? this.properties.indentation : undefined
+      );
     } catch {
       return null;
     }
@@ -183,11 +187,7 @@ export class JSONDataType {
   prettify(message: string, indentation?: number): string {
     try {
       const parsed = JSON.parse(message);
-      return JSON.stringify(
-        parsed,
-        null,
-        indentation ?? this.properties.indentation
-      );
+      return JSON.stringify(parsed, null, indentation ?? this.properties.indentation);
     } catch {
       return message;
     }

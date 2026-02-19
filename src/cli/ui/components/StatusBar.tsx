@@ -29,14 +29,9 @@ function formatElapsed(seconds: number): string {
 /**
  * Status bar component
  */
-export const StatusBar: FC<StatusBarProps> = ({
-  serverUrl,
-  channelCount,
-  lastUpdate,
-  message,
-}) => {
-  const [elapsed, setElapsed] = useState(
-    () => Math.max(0, Math.floor((Date.now() - lastUpdate.getTime()) / 1000))
+export const StatusBar: FC<StatusBarProps> = ({ serverUrl, channelCount, lastUpdate, message }) => {
+  const [elapsed, setElapsed] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - lastUpdate.getTime()) / 1000))
   );
 
   // Tick every second to keep the "Xs ago" display current
@@ -51,10 +46,10 @@ export const StatusBar: FC<StatusBarProps> = ({
     ? message.type === 'error'
       ? 'red'
       : message.type === 'success'
-      ? 'green'
-      : message.type === 'warning'
-      ? 'yellow'
-      : 'blue'
+        ? 'green'
+        : message.type === 'warning'
+          ? 'yellow'
+          : 'blue'
     : 'white';
 
   return React.createElement(

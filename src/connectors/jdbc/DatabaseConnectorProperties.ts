@@ -135,9 +135,7 @@ export interface DatabaseConnectionConfig {
  */
 export function parseJdbcUrl(url: string): DatabaseConnectionConfig | null {
   // Handle MySQL JDBC URL format: jdbc:mysql://host:port/database
-  const mysqlMatch = url.match(
-    /^jdbc:mysql:\/\/([^:\/]+)(?::(\d+))?\/([^?]+)(?:\?(.*))?$/i
-  );
+  const mysqlMatch = url.match(/^jdbc:mysql:\/\/([^:\/]+)(?::(\d+))?\/([^?]+)(?:\?(.*))?$/i);
 
   if (mysqlMatch) {
     const [, host, port, database] = mysqlMatch;

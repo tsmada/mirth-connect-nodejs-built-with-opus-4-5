@@ -237,10 +237,7 @@ export class MapperStep {
   /**
    * Generate pre-script for iterator processing
    */
-  getPreScript(
-    _loadFiles: boolean = false,
-    _ancestors: IteratorProperties[] = []
-  ): string {
+  getPreScript(_loadFiles: boolean = false, _ancestors: IteratorProperties[] = []): string {
     const identifier = convertIdentifier(this.variable);
     return `var _${identifier} = Lists.list();`;
   }
@@ -248,10 +245,7 @@ export class MapperStep {
   /**
    * Generate iteration script for batch processing
    */
-  getIterationScript(
-    _loadFiles: boolean = false,
-    _ancestors: IteratorProperties[] = []
-  ): string {
+  getIterationScript(_loadFiles: boolean = false, _ancestors: IteratorProperties[] = []): string {
     const regexArray = this.buildRegexArray();
     const mappingExpr = this.mapping || "''";
     const defaultExpr = this.defaultValue || "''";
@@ -275,10 +269,7 @@ export class MapperStep {
   /**
    * Generate post-script for iterator processing
    */
-  getPostScript(
-    _loadFiles: boolean = false,
-    _ancestors: IteratorProperties[] = []
-  ): string {
+  getPostScript(_loadFiles: boolean = false, _ancestors: IteratorProperties[] = []): string {
     const mapName = SCOPE_MAP_NAMES[this.scope] ?? SCOPE_MAP_NAMES[MapperScope.CHANNEL];
     const identifier = convertIdentifier(this.variable);
     return `${mapName}.put('${this.variable}', _${identifier}.toArray());`;
@@ -292,9 +283,7 @@ export class MapperStep {
       return 'new Array()';
     }
 
-    const pairs = this.replacements.map(
-      (r) => `new Array(${r.pattern}, ${r.replacement})`
-    );
+    const pairs = this.replacements.map((r) => `new Array(${r.pattern}, ${r.replacement})`);
     return `new Array(${pairs.join(',')})`;
   }
 

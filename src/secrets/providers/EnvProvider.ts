@@ -66,10 +66,7 @@ export class EnvProvider implements SecretsProvider {
    * Transformation: replace . with _, - with __, uppercase, prepend _MP_
    */
   private toMpEnvVar(key: string): string {
-    return '_MP_' + key
-      .replace(/-/g, '__')
-      .replace(/\./g, '_')
-      .toUpperCase();
+    return '_MP_' + key.replace(/-/g, '__').replace(/\./g, '_').toUpperCase();
   }
 
   /**
@@ -78,10 +75,6 @@ export class EnvProvider implements SecretsProvider {
    * Transformation: strip _MP_, replace __ with -, replace _ with ., lowercase
    */
   static mpEnvToKey(envVar: string): string {
-    return envVar
-      .replace(/^_MP_/, '')
-      .replace(/__/g, '-')
-      .replace(/_/g, '.')
-      .toLowerCase();
+    return envVar.replace(/^_MP_/, '').replace(/__/g, '-').replace(/_/g, '.').toLowerCase();
   }
 }

@@ -90,9 +90,7 @@ export interface HL7v2EncodingCharacters {
 /**
  * Extract encoding characters from an HL7 message
  */
-export function extractEncodingCharacters(
-  message: string
-): HL7v2EncodingCharacters {
+export function extractEncodingCharacters(message: string): HL7v2EncodingCharacters {
   const result: HL7v2EncodingCharacters = {
     fieldSeparator: HL7V2_DEFAULTS.FIELD_SEPARATOR,
     componentSeparator: HL7V2_DEFAULTS.COMPONENT_SEPARATOR,
@@ -106,11 +104,7 @@ export function extractEncodingCharacters(
   }
 
   const firstSegment = message.substring(0, 3).toUpperCase();
-  if (
-    firstSegment !== 'MSH' &&
-    firstSegment !== 'FHS' &&
-    firstSegment !== 'BHS'
-  ) {
+  if (firstSegment !== 'MSH' && firstSegment !== 'FHS' && firstSegment !== 'BHS') {
     return result;
   }
 
@@ -137,10 +131,7 @@ export function extractEncodingCharacters(
   }
 
   // Handle special case of ^~& with missing escape character (MIRTH-1544)
-  if (
-    message.length >= 8 &&
-    message.substring(4, 8) === '^~&' + result.fieldSeparator
-  ) {
+  if (message.length >= 8 && message.substring(4, 8) === '^~&' + result.fieldSeparator) {
     result.componentSeparator = '^';
     result.repetitionSeparator = '~';
     result.escapeCharacter = '\\';
@@ -154,18 +145,12 @@ export function extractEncodingCharacters(
  * Convert escape sequences in HL7 encoding characters string
  */
 export function unescapeSegmentDelimiter(delimiter: string): string {
-  return delimiter
-    .replace(/\\r/g, '\r')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t');
+  return delimiter.replace(/\\r/g, '\r').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 }
 
 /**
  * Convert segment delimiter to its escaped representation
  */
 export function escapeSegmentDelimiter(delimiter: string): string {
-  return delimiter
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n')
-    .replace(/\t/g, '\\t');
+  return delimiter.replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\t/g, '\\t');
 }

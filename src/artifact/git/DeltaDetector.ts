@@ -58,7 +58,13 @@ export interface DeltaOptions {
 
 // ─── Artifact Classification ─────────────────────────────────────
 
-export type ArtifactType = 'channel' | 'code_template' | 'group' | 'config' | 'environment' | 'unknown';
+export type ArtifactType =
+  | 'channel'
+  | 'code_template'
+  | 'group'
+  | 'config'
+  | 'environment'
+  | 'unknown';
 
 export interface ArtifactMapping {
   type: ArtifactType;
@@ -77,7 +83,6 @@ const ENVIRONMENTS_PREFIX = 'environments/';
 // ─── DeltaDetector ───────────────────────────────────────────────
 
 export class DeltaDetector {
-
   /**
    * Given a list of changed file paths (from git diff --name-only),
    * determine which Mirth artifacts are affected.
@@ -87,7 +92,10 @@ export class DeltaDetector {
 
     // Accumulate changes per channel (dedup by name)
     const channelMap = new Map<string, { files: string[]; sections: Set<string> }>();
-    const codeTemplateMap = new Map<string, { templateNames: Set<string>; libraryLevelChange: boolean }>();
+    const codeTemplateMap = new Map<
+      string,
+      { templateNames: Set<string>; libraryLevelChange: boolean }
+    >();
     const configChanges: ConfigChange[] = [];
     let environmentChanged = false;
 
@@ -190,14 +198,14 @@ export class DeltaDetector {
         cascadedChannels = DeltaDetector.findCascades(
           changedCodeTemplates,
           options.codeTemplateLibraries,
-          options.channelIdToName,
+          options.channelIdToName
         );
       }
 
       // Environment change → all channels cascade
       if (environmentChanged && options?.allChannelNames) {
-        const directlyChanged = new Set(changedChannels.map(c => c.channelName));
-        const alreadyCascaded = new Set(cascadedChannels.map(c => c.channelName));
+        const directlyChanged = new Set(changedChannels.map((c) => c.channelName));
+        const alreadyCascaded = new Set(cascadedChannels.map((c) => c.channelName));
         for (const name of options.allChannelNames) {
           if (!directlyChanged.has(name) && !alreadyCascaded.has(name)) {
             cascadedChannels.push({
@@ -210,13 +218,18 @@ export class DeltaDetector {
     }
 
     // Filter out cascaded channels that are already directly changed
-    const directNames = new Set(changedChannels.map(c => c.channelName));
-    cascadedChannels = cascadedChannels.filter(c => !directNames.has(c.channelName));
+    const directNames = new Set(changedChannels.map((c) => c.channelName));
+    cascadedChannels = cascadedChannels.filter((c) => !directNames.has(c.channelName));
     cascadedChannels.sort((a, b) => a.channelName.localeCompare(b.channelName));
 
     const totalAffected = changedChannels.length + cascadedChannels.length;
 
-    const summary = buildSummary(changedChannels, changedCodeTemplates, configChanges, cascadedChannels);
+    const summary = buildSummary(
+      changedChannels,
+      changedCodeTemplates,
+      configChanges,
+      cascadedChannels
+    );
 
     return {
       changedChannels,
@@ -296,9 +309,9 @@ export class DeltaDetector {
   static findCascades(
     changedTemplates: CodeTemplateChange[],
     libraries: Array<{ name: string; enabledChannelIds: string[] }>,
-    channelIdToName?: Map<string, string>,
+    channelIdToName?: Map<string, string>
   ): CascadedChannel[] {
-    const changedLibNames = new Set(changedTemplates.map(t => t.libraryName));
+    const changedLibNames = new Set(changedTemplates.map((t) => t.libraryName));
     const cascaded: CascadedChannel[] = [];
     const seen = new Set<string>();
 
@@ -330,16 +343,22 @@ export class DeltaDetector {
     // Header
     const parts: string[] = [];
     if (result.changedChannels.length > 0) {
-      parts.push(`${result.changedChannels.length} channel${result.changedChannels.length === 1 ? '' : 's'} changed`);
+      parts.push(
+        `${result.changedChannels.length} channel${result.changedChannels.length === 1 ? '' : 's'} changed`
+      );
     }
     if (result.cascadedChannels.length > 0) {
       parts.push(`${result.cascadedChannels.length} cascaded`);
     }
     if (result.changedCodeTemplates.length > 0) {
-      parts.push(`${result.changedCodeTemplates.length} code template${result.changedCodeTemplates.length === 1 ? '' : 's'} changed`);
+      parts.push(
+        `${result.changedCodeTemplates.length} code template${result.changedCodeTemplates.length === 1 ? '' : 's'} changed`
+      );
     }
     if (result.changedConfig.length > 0) {
-      parts.push(`${result.changedConfig.length} config file${result.changedConfig.length === 1 ? '' : 's'} changed`);
+      parts.push(
+        `${result.changedConfig.length} config file${result.changedConfig.length === 1 ? '' : 's'} changed`
+      );
     }
     if (parts.length === 0) {
       return 'Delta: No changes detected';
@@ -352,9 +371,7 @@ export class DeltaDetector {
       lines.push('Changed:');
       for (const ch of result.changedChannels) {
         const prefix = changeTypeSymbol(ch.changeType);
-        const detail = ch.sections.length > 0
-          ? ` (${ch.sections.join(', ')})`
-          : '';
+        const detail = ch.sections.length > 0 ? ` (${ch.sections.join(', ')})` : '';
         lines.push(`  ${prefix} channels/${ch.channelName}/${detail}`);
       }
     }
@@ -369,7 +386,7 @@ export class DeltaDetector {
     }
 
     // Config changes
-    const configOnly = result.changedConfig.filter(c => !c.file.startsWith(ENVIRONMENTS_PREFIX));
+    const configOnly = result.changedConfig.filter((c) => !c.file.startsWith(ENVIRONMENTS_PREFIX));
     if (configOnly.length > 0) {
       lines.push('');
       lines.push('Config:');
@@ -390,7 +407,13 @@ function normalizePath(filePath: string): string {
   let p = filePath.replace(/^\.\//, '').replace(/^\//, '');
   // Strip leading repo root prefix (e.g. "mirth-config/")
   // The canonical structure starts with channels/, code-templates/, etc.
-  const knownPrefixes = [CHANNELS_PREFIX, CODE_TEMPLATES_PREFIX, GROUPS_PREFIX, CONFIG_PREFIX, ENVIRONMENTS_PREFIX];
+  const knownPrefixes = [
+    CHANNELS_PREFIX,
+    CODE_TEMPLATES_PREFIX,
+    GROUPS_PREFIX,
+    CONFIG_PREFIX,
+    ENVIRONMENTS_PREFIX,
+  ];
   for (const prefix of knownPrefixes) {
     const idx = p.indexOf(prefix);
     if (idx > 0) {
@@ -428,9 +451,12 @@ function stripExtension(fileName: string): string {
 
 function changeTypeSymbol(changeType: 'added' | 'modified' | 'deleted'): string {
   switch (changeType) {
-    case 'added': return '+';
-    case 'modified': return '~';
-    case 'deleted': return '-';
+    case 'added':
+      return '+';
+    case 'modified':
+      return '~';
+    case 'deleted':
+      return '-';
   }
 }
 
@@ -438,7 +464,7 @@ function buildSummary(
   channels: ChannelChange[],
   codeTemplates: CodeTemplateChange[],
   config: ConfigChange[],
-  cascaded: CascadedChannel[],
+  cascaded: CascadedChannel[]
 ): string {
   const parts: string[] = [];
   if (channels.length > 0) {

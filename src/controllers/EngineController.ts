@@ -24,9 +24,16 @@ import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
 import { ensureChannelTables } from '../db/SchemaManager.js';
 import { getDonkeyInstance } from '../server/Mirth.js';
 import { RawMessage } from '../model/RawMessage.js';
-import { VmDispatcher, EngineController as IVmEngineController, DispatchResult } from '../connectors/vm/VmDispatcher.js';
+import {
+  VmDispatcher,
+  EngineController as IVmEngineController,
+  DispatchResult,
+} from '../connectors/vm/VmDispatcher.js';
 import { Status } from '../model/Status.js';
-import { dashboardStatusController, ConnectionStatusEvent } from '../plugins/dashboardstatus/DashboardStatusController.js';
+import {
+  dashboardStatusController,
+  ConnectionStatusEvent,
+} from '../plugins/dashboardstatus/DashboardStatusController.js';
 import { ConnectionStatusEventType } from '../plugins/dashboardstatus/ConnectionLogItem.js';
 import type { StateChangeEvent } from '../donkey/channel/Channel.js';
 import { isShadowMode, isChannelActive, isChannelPromoted } from '../cluster/ShadowMode.js';
@@ -47,7 +54,7 @@ interface DeploymentInfo {
   name: string;
   deployedDate: Date;
   deployedRevision?: number;
-  runtimeChannel: Channel;  // Runtime channel instance - source of truth for state
+  runtimeChannel: Channel; // Runtime channel instance - source of truth for state
 }
 
 /**
@@ -102,21 +109,24 @@ export function wireChannelToDashboard(runtimeChannel: Channel, channelName: str
   });
 
   // Individual connector state changes (with actual metaDataId)
-  runtimeChannel.on('connectorStateChange', (event: {
-    channelId: string;
-    channelName: string;
-    metaDataId: number;
-    connectorName: string;
-    state: DeployedState;
-  }) => {
-    const statusEvent: ConnectionStatusEvent = {
-      channelId: event.channelId,
-      metadataId: event.metaDataId,
-      state: deployedStateToConnectionStatus(event.state),
-      channelName: event.channelName,
-    };
-    dashboardStatusController.processEvent(statusEvent);
-  });
+  runtimeChannel.on(
+    'connectorStateChange',
+    (event: {
+      channelId: string;
+      channelName: string;
+      metaDataId: number;
+      connectorName: string;
+      state: DeployedState;
+    }) => {
+      const statusEvent: ConnectionStatusEvent = {
+        channelId: event.channelId,
+        metadataId: event.metaDataId,
+        state: deployedStateToConnectionStatus(event.state),
+        channelName: event.channelName,
+      };
+      dashboardStatusController.processEvent(statusEvent);
+    }
+  );
 
   // Message complete events (throttled to 1/second per channel)
   runtimeChannel.on('messageComplete', () => {
@@ -283,7 +293,9 @@ export class EngineController {
               dest.getFilterTransformerExecutor()!.setExecutor(channelExecutor);
             }
           }
-          logger.debug(`Injected ${codeTemplateScripts.length} code template(s) for ${channelConfig.name}`);
+          logger.debug(
+            `Injected ${codeTemplateScripts.length} code template(s) for ${channelConfig.name}`
+          );
         }
       } catch (ctError) {
         // Code template loading is non-fatal — log and continue
@@ -326,7 +338,9 @@ export class EngineController {
       try {
         await GlobalChannelMapStore.getInstance().loadChannelFromBackend(channelId);
       } catch (gcError) {
-        logger.warn(`Failed to load GlobalChannelMap for ${channelConfig.name}: ${String(gcError)}`);
+        logger.warn(
+          `Failed to load GlobalChannelMap for ${channelConfig.name}: ${String(gcError)}`
+        );
       }
 
       // Determine initial state from channel properties
@@ -352,7 +366,9 @@ export class EngineController {
         // Non-fatal — cluster visibility only
       }
 
-      logger.info(`Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`);
+      logger.info(
+        `Channel ${channelConfig.name} deployed with state ${runtimeChannel.getCurrentState()}`
+      );
     } catch (error) {
       logger.error(`Failed to deploy channel ${channelConfig.name}`, error as Error);
       deployedChannels.delete(channelId);
@@ -577,7 +593,9 @@ export class EngineController {
 
     // Shadow mode guard: block message dispatch to non-promoted channels
     if (isShadowMode() && !isChannelActive(channelId)) {
-      throw new Error(`Channel ${channelId} is in shadow mode and not promoted for message processing`);
+      throw new Error(
+        `Channel ${channelId} is in shadow mode and not promoted for message processing`
+      );
     }
 
     const message = await channel.dispatchRawMessage(rawMessage, sourceMapData);
@@ -604,7 +622,9 @@ export class EngineController {
 
     // Shadow mode guard: block message dispatch to non-promoted channels
     if (isShadowMode() && !isChannelActive(channelId)) {
-      throw new Error(`Channel ${channelId} is in shadow mode and not promoted for message processing`);
+      throw new Error(
+        `Channel ${channelId} is in shadow mode and not promoted for message processing`
+      );
     }
 
     const message = await channel.dispatchRawMessage(
@@ -657,7 +677,9 @@ export class EngineController {
 
     if (sourceConnector) {
       // Duck-type check for getListenerInfo method (not all connectors have it)
-      const connectorWithListener = sourceConnector as { getListenerInfo?: () => ListenerInfo | null };
+      const connectorWithListener = sourceConnector as {
+        getListenerInfo?: () => ListenerInfo | null;
+      };
       if (typeof connectorWithListener.getListenerInfo === 'function') {
         const info = connectorWithListener.getListenerInfo();
         if (info) {

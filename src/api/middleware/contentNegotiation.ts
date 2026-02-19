@@ -91,7 +91,10 @@ function detectRootName(data: unknown): string {
   const obj = data as Record<string, unknown>;
 
   // Detect channel object
-  if ('sourceConnector' in obj || ('id' in obj && 'name' in obj && ('revision' in obj || 'destinationConnectors' in obj))) {
+  if (
+    'sourceConnector' in obj ||
+    ('id' in obj && 'name' in obj && ('revision' in obj || 'destinationConnectors' in obj))
+  ) {
     return 'channel';
   }
 

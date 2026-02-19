@@ -19,11 +19,7 @@ export {
   getOfflineNodeIds,
 } from './ServerRegistry.js';
 export type { ClusterNode } from './ServerRegistry.js';
-export {
-  isQuorumEnabled,
-  hasQuorum,
-  getQuorumStatus,
-} from './QuorumCheck.js';
+export { isQuorumEnabled, hasQuorum, getQuorumStatus } from './QuorumCheck.js';
 export type { QuorumStatus } from './QuorumCheck.js';
 export {
   healthRouter,
@@ -34,11 +30,7 @@ export {
 } from './HealthCheck.js';
 export { SequenceAllocator } from './SequenceAllocator.js';
 export type { MapBackend } from './MapBackend.js';
-export {
-  InMemoryMapBackend,
-  DatabaseMapBackend,
-  RedisMapBackend,
-} from './MapBackend.js';
+export { InMemoryMapBackend, DatabaseMapBackend, RedisMapBackend } from './MapBackend.js';
 export {
   registerDeployment,
   unregisterDeployment,

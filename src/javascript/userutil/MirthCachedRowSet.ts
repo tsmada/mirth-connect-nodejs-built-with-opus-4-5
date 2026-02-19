@@ -268,7 +268,10 @@ export class MirthCachedRowSet {
     const lowerLabel = columnLabel.toLowerCase();
 
     for (const col of this.columns) {
-      if (col.columnLabel.toLowerCase() === lowerLabel || col.columnName.toLowerCase() === lowerLabel) {
+      if (
+        col.columnLabel.toLowerCase() === lowerLabel ||
+        col.columnName.toLowerCase() === lowerLabel
+      ) {
         return col.columnIndex;
       }
     }

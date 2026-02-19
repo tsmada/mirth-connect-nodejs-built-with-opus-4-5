@@ -98,10 +98,9 @@ shadowRouter.post('/promote', async (req: Request, res: Response) => {
       // Update D_SERVERS status from SHADOW to ONLINE
       try {
         const serverId = getServerId();
-        await execute(
-          `UPDATE D_SERVERS SET STATUS = 'ONLINE' WHERE SERVER_ID = :serverId`,
-          { serverId }
-        );
+        await execute(`UPDATE D_SERVERS SET STATUS = 'ONLINE' WHERE SERVER_ID = :serverId`, {
+          serverId,
+        });
       } catch (err) {
         logger.error('[Shadow] Failed to update D_SERVERS status', err as Error);
       }

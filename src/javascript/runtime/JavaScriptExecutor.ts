@@ -135,7 +135,9 @@ export class JavaScriptExecutor {
       const elapsed = Date.now() - startTime;
 
       if (elapsed > WALL_TIMEOUT_MS) {
-        logger.warn(`Script wall-clock timeout exceeded: ${elapsed}ms (limit: ${WALL_TIMEOUT_MS}ms). This may indicate blocking I/O in user script.`);
+        logger.warn(
+          `Script wall-clock timeout exceeded: ${elapsed}ms (limit: ${WALL_TIMEOUT_MS}ms). This may indicate blocking I/O in user script.`
+        );
       }
 
       return {
@@ -224,7 +226,10 @@ export class JavaScriptExecutor {
 
       if (transformedData !== undefined && transformedData !== null) {
         let transformedString: string;
-        if (typeof transformedData === 'object' && typeof (transformedData as any).toXMLString === 'function') {
+        if (
+          typeof transformedData === 'object' &&
+          typeof (transformedData as any).toXMLString === 'function'
+        ) {
           // XML object — call toXMLString() (Java: Context.toString handles this)
           transformedString = (transformedData as any).toXMLString();
         } else if (typeof transformedData === 'object' || Array.isArray(transformedData)) {
@@ -377,7 +382,10 @@ export class JavaScriptExecutor {
 
       let transformedString: string = '';
       if (transformedData !== undefined && transformedData !== null) {
-        if (typeof transformedData === 'object' && typeof (transformedData as any).toXMLString === 'function') {
+        if (
+          typeof transformedData === 'object' &&
+          typeof (transformedData as any).toXMLString === 'function'
+        ) {
           transformedString = (transformedData as any).toXMLString();
         } else if (typeof transformedData === 'object' || Array.isArray(transformedData)) {
           transformedString = JSON.stringify(transformedData);
@@ -497,7 +505,11 @@ export class JavaScriptExecutor {
     // 1. Execute global preprocessor first (if provided)
     if (globalScript && globalScript.trim()) {
       const globalResult = this.executePreprocessor(
-        globalScript, currentMessage, connectorMessage, scriptContext, options
+        globalScript,
+        currentMessage,
+        connectorMessage,
+        scriptContext,
+        options
       );
       if (!globalResult.success) {
         return globalResult; // Propagate error — channel preprocessor is not run
@@ -510,7 +522,11 @@ export class JavaScriptExecutor {
     // 2. Execute channel preprocessor with global result as input
     if (channelScript && channelScript.trim()) {
       return this.executePreprocessor(
-        channelScript, currentMessage, connectorMessage, scriptContext, options
+        channelScript,
+        currentMessage,
+        connectorMessage,
+        scriptContext,
+        options
       );
     }
 
@@ -542,7 +558,11 @@ export class JavaScriptExecutor {
     // 1. Execute channel postprocessor first
     if (channelScript && channelScript.trim()) {
       const channelResult = this.executePostprocessor(
-        channelScript, message, scriptContext, undefined, options
+        channelScript,
+        message,
+        scriptContext,
+        undefined,
+        options
       );
       if (!channelResult.success) {
         return channelResult; // Propagate error — global postprocessor is not run
@@ -553,7 +573,11 @@ export class JavaScriptExecutor {
     // 2. Execute global postprocessor with channel response
     if (globalScript && globalScript.trim()) {
       return this.executePostprocessor(
-        globalScript, message, scriptContext, channelResponse, options
+        globalScript,
+        message,
+        scriptContext,
+        channelResponse,
+        options
       );
     }
 

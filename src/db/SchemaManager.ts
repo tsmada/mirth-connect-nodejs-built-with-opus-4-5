@@ -11,7 +11,10 @@
 
 import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { getPool, transaction } from './pool.js';
-import { createChannelTables, channelTablesExist as donkeyChannelTablesExist } from './DonkeyDao.js';
+import {
+  createChannelTables,
+  channelTablesExist as donkeyChannelTablesExist,
+} from './DonkeyDao.js';
 import { getLogger, registerComponent } from '../logging/index.js';
 
 registerComponent('database', 'Database pool and queries');
@@ -47,7 +50,6 @@ interface TableExistsRow extends RowDataPacket {
 interface SchemaVersionRow extends RowDataPacket {
   VERSION: string;
 }
-
 
 /**
  * Detect operational mode based on environment or database state
@@ -286,7 +288,6 @@ export async function ensureCoreTables(): Promise<void> {
         PRIMARY KEY(GROUP_ID, ID)
       ) ENGINE=InnoDB
     `);
-
   });
 
   // Also create Node.js-only tables (safe to call separately or as part of ensureCoreTables)
@@ -409,9 +410,7 @@ export async function seedDefaults(): Promise<void> {
     }
 
     // Insert schema version (INSERT IGNORE for idempotency)
-    await connection.query(
-      `INSERT IGNORE INTO SCHEMA_INFO (VERSION) VALUES ('3.9.1')`
-    );
+    await connection.query(`INSERT IGNORE INTO SCHEMA_INFO (VERSION) VALUES ('3.9.1')`);
 
     // Insert default configuration values (INSERT IGNORE for idempotency)
     const defaultConfigs = [
@@ -439,10 +438,11 @@ export async function seedDefaults(): Promise<void> {
     ];
 
     for (const [groupId, id, script] of globalScripts) {
-      await connection.query(
-        `INSERT IGNORE INTO SCRIPT (GROUP_ID, ID, SCRIPT) VALUES (?, ?, ?)`,
-        [groupId, id, script]
-      );
+      await connection.query(`INSERT IGNORE INTO SCRIPT (GROUP_ID, ID, SCRIPT) VALUES (?, ?, ?)`, [
+        groupId,
+        id,
+        script,
+      ]);
     }
 
     logger.info('Default configuration seeded');

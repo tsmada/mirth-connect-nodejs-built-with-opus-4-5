@@ -35,20 +35,10 @@ export {
 } from './NCPDPProperties.js';
 
 // Reference data (lookup tables)
-export {
-  NCPDPReference,
-  getNCPDPReference,
-} from './NCPDPReference.js';
+export { NCPDPReference, getNCPDPReference } from './NCPDPReference.js';
 
 // Reader (NCPDP -> XML)
-export {
-  NCPDPReader,
-  parseNCPDPToXML,
-} from './NCPDPReader.js';
+export { NCPDPReader, parseNCPDPToXML } from './NCPDPReader.js';
 
 // Serializer (bidirectional conversion)
-export {
-  NCPDPSerializer,
-  convertNCPDPToXML,
-  convertXMLToNCPDP,
-} from './NCPDPSerializer.js';
+export { NCPDPSerializer, convertNCPDPToXML, convertXMLToNCPDP } from './NCPDPSerializer.js';

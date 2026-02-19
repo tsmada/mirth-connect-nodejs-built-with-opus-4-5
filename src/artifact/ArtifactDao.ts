@@ -68,9 +68,7 @@ export class ArtifactDao {
   /**
    * Insert a new sync record.
    */
-  static async insertSync(
-    record: Omit<SyncRecord, 'id' | 'syncedAt'>
-  ): Promise<string> {
+  static async insertSync(record: Omit<SyncRecord, 'id' | 'syncedAt'>): Promise<string> {
     const id = uuidv4();
     await execute(
       `INSERT INTO D_ARTIFACT_SYNC
@@ -95,10 +93,7 @@ export class ArtifactDao {
   /**
    * Get the most recent sync record for an artifact.
    */
-  static async getLastSync(
-    artifactType: string,
-    artifactId: string
-  ): Promise<SyncRecord | null> {
+  static async getLastSync(artifactType: string, artifactId: string): Promise<SyncRecord | null> {
     const rows = await query<SyncRow>(
       `SELECT * FROM D_ARTIFACT_SYNC
        WHERE ARTIFACT_TYPE = ? AND ARTIFACT_ID = ?
@@ -127,23 +122,16 @@ export class ArtifactDao {
          WHERE ARTIFACT_TYPE = ? AND ARTIFACT_ID = ?
          ORDER BY SYNCED_AT DESC`;
 
-    const params = limit
-      ? [artifactType, artifactId, limit]
-      : [artifactType, artifactId];
+    const params = limit ? [artifactType, artifactId, limit] : [artifactType, artifactId];
 
-    const rows = await query<SyncRow>(
-      sql,
-      params as unknown as Record<string, unknown>
-    );
+    const rows = await query<SyncRow>(sql, params as unknown as Record<string, unknown>);
     return rows.map(rowToRecord);
   }
 
   /**
    * Get all sync records for a specific git commit.
    */
-  static async getSyncsByCommit(
-    commitHash: string
-  ): Promise<SyncRecord[]> {
+  static async getSyncsByCommit(commitHash: string): Promise<SyncRecord[]> {
     const rows = await query<SyncRow>(
       `SELECT * FROM D_ARTIFACT_SYNC
        WHERE COMMIT_HASH = ?
@@ -158,10 +146,9 @@ export class ArtifactDao {
    * Returns the number of rows deleted.
    */
   static async deleteOldSyncs(olderThan: Date): Promise<number> {
-    const result = await execute(
-      `DELETE FROM D_ARTIFACT_SYNC WHERE SYNCED_AT < ?`,
-      [olderThan] as unknown as Record<string, unknown>
-    );
+    const result = await execute(`DELETE FROM D_ARTIFACT_SYNC WHERE SYNCED_AT < ?`, [
+      olderThan,
+    ] as unknown as Record<string, unknown>);
     return result.affectedRows;
   }
 }

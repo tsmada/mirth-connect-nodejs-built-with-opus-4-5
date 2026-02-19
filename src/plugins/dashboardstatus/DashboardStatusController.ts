@@ -118,7 +118,7 @@ export class DashboardStatusController extends EventEmitter {
 
     // Handle connector count events
     if ('increment' in event || 'maximum' in event) {
-      const countEvent = event as ConnectorCountEvent;
+      const countEvent = event;
 
       if (countEvent.maximum !== undefined) {
         this.maxConnectionMap.set(connectorId, countEvent.maximum);
@@ -167,12 +167,19 @@ export class DashboardStatusController extends EventEmitter {
     }
 
     // Create log entry
-    const logItem = createConnectionLogItem(this.nextLogId++, channelId, metadataId, eventType, message ?? '', {
-      serverId: this.serverId,
-      channelName: channelName ?? '',
-      connectorType: connectorType ?? '',
-      dateAdded: timestamp,
-    });
+    const logItem = createConnectionLogItem(
+      this.nextLogId++,
+      channelId,
+      metadataId,
+      eventType,
+      message ?? '',
+      {
+        serverId: this.serverId,
+        channelName: channelName ?? '',
+        connectorType: connectorType ?? '',
+        dateAdded: timestamp,
+      }
+    );
 
     // Add to channel-specific log
     let channelLog = this.connectorInfoLogs.get(channelId);
