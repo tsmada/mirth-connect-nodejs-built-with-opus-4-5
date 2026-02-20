@@ -103,6 +103,10 @@ import { XsltTransformer } from '../../plugins/xsltstep/XsltStep.js';
 // Response class (Java: com.mirth.connect.userutil.Response)
 import { Response } from '../../model/Response.js';
 
+// Java interop shims (real-world channels use Packages.java.*, StringUtils, etc.)
+import { createJavaNamespace, createPackagesNamespace, JAVA_STRING_SETUP_SCRIPT } from '../shims/JavaInterop.js';
+import { StringUtils } from '../shims/StringUtils.js';
+
 // Module-level secrets function setter (same pattern as VMRouter)
 let secretsFn: ((key: string) => string | undefined) | null = null;
 
@@ -233,6 +237,31 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
 
     // XSLT transformer for XsltStep plugin scripts
     XsltTransformer,
+
+    // Java interop shims — real-world Mirth channels use Packages.java.util.ArrayList, etc.
+    // These are lightweight Node.js implementations of the most common Java classes.
+    ...(() => {
+      const javaNamespace = createJavaNamespace();
+      const packagesNamespace = createPackagesNamespace(javaNamespace);
+      // Wire StringUtils into org.apache.commons.lang3 and legacy lang package
+      (packagesNamespace as Record<string, any>).org.apache.commons.lang3.StringUtils = StringUtils;
+      (packagesNamespace as Record<string, any>).org.apache.commons.lang.StringUtils = StringUtils;
+      return {
+        java: javaNamespace,
+        Packages: packagesNamespace,
+        StringUtils,
+      };
+    })(),
+
+    // importPackage / importClass shims (Rhino-specific, no-op in Node.js)
+    importPackage: function () {},
+    importClass: function () {},
+
+    // Java String.prototype setup script — executed inside VM context before user code
+    __javaStringSetup: JAVA_STRING_SETUP_SCRIPT,
+
+    // Buffer (needed by String.prototype.getBytes in the Java compat setup)
+    Buffer,
 
     // Console for debugging
     console,
