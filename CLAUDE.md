@@ -882,7 +882,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 8,151 passing** (356 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps)
+**Total Tests: 8,169 passing** (357 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps + 18 pipeline-lifecycle)
 
 ### Quick Validation Scripts
 
@@ -1882,9 +1882,9 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C + Real-World) |
 | Agents completed | 100+ (100%) |
 | Total commits | 200+ |
-| Lines added | 110,200+ |
-| Tests added | 4,280+ |
-| Total tests passing | 8,151 |
+| Lines added | 111,400+ |
+| Tests added | 4,298+ |
+| Total tests passing | 8,169 |
 
 ### Wave Summary
 
@@ -1913,7 +1913,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | 22 | 0 | ~400 | 13 | ~30 min | **Production Readiness + OTEL** (instrumentation.ts, metrics.ts, lifecycle wiring, K8s manifests, env validation) |
 | Phase C | 0 | ~26,000 | 1,518 | ~3 hrs | **Batch adaptors, AutoResponder, escape handler, coverage 62%→71%** |
 | Real-World | 2 | ~2,500 | 261 | ~30 min | **Real-World Gap Remediation** (E4X computed attrs/tags, Java interop shims, XMLProxy.child, VM cross-realm fix) |
-| **Total** | **100+** | **~110,200** | **4,280** | **~30 hrs** | |
+| Pipeline | 0 | ~1,200 | 18 | ~30 min | **Pipeline Lifecycle Integration Tests** (13 scenarios, real VM execution, full dispatchRawMessage flow) |
+| **Total** | **100+** | **~111,400** | **4,298** | **~30.5 hrs** | |
 
 ### Components Ported
 
@@ -3054,6 +3055,53 @@ Research from nextgenhealthcare/connect-examples, RSNA, SwissTPH, AWS samples, a
 - 261 new tests (6 test suites), 8,151 total tests passing
 - Plan: `plans/real-world-javascript-runtime-gaps.md`
 
+### Pipeline Lifecycle Integration Tests (2026-02-20)
+
+**Fills the critical testing gap: no prior test sent a message through the full `Channel.dispatchRawMessage()` pipeline with real V8 VM execution at every stage.**
+
+Existing tests fell into two non-overlapping categories: (1) `Channel.test.ts` — full pipeline orchestration but **mocked** `JavaScriptExecutor`; (2) `RealWorldPatterns.test.ts` — real JavaScript in V8 VM but tested **individual script types** in isolation. If a scope variable was incorrectly wired between stages, both test categories passed — but production channels would break silently.
+
+**Architecture:**
+- **Real** `JavaScriptExecutor`, `ScriptBuilder`, `ScopeBuilder`, `E4XTranspiler` (no mocks for JS execution)
+- **Mocked only** `DonkeyDao` and `pool` (no MySQL dependency)
+- `TestSourceConnector` with `testDispatch()` and `TestDestinationConnector` with configurable send behavior
+- `PipelineTestHarness` with fluent configuration API and automatic singleton reset
+
+**13 Scenarios (18 tests):**
+
+| Scenario | Status Tested | What It Verifies |
+|----------|---------------|------------------|
+| 1. Happy path | T → S | PID.5.1 extraction via XMLProxy, channelMap write, destination send |
+| 2. Source filter reject | F | Filter returns false → FILTERED, no destinations created |
+| 3. Partial dest filtering | T, S, F | Dest 1 accepts, Dest 2 rejects — mixed status |
+| 4. Send error | E | Destination throws → ERROR, postprocessor still runs |
+| 5. Queue-enabled error | Q | Queue-enabled + send error → QUEUED (not ERROR) |
+| 6. Response transformer | S | Response data in scope, channelMap write from response transformer |
+| 7. Preprocessor return | T | Modified message propagates, null return preserves original |
+| 8. Postprocessor Response | S | `$r('d1')` accessible via merged ConnectorMessage, Response object returned |
+| 9. Deploy/undeploy | — | GlobalMap set on `channel.start()`, cleared on `channel.stop()` |
+| 10. Global+channel scripts | T | Global pre runs before channel pre; channel post before global post |
+| 11. E4X end-to-end | T, S | E4X transpilation + XML operations in real VM |
+| 12. DestinationSet | T, S, F | `destinationSet.remove('Dest 2')` → Dest 2 FILTERED |
+| 13. Map propagation | T, S | Pre→source→dest→post: channelMap, globalMap, configMap, responseMap |
+
+**Key architectural discoveries during test development:**
+1. **Connector wiring order**: `setSourceConnector()` MUST be called BEFORE `setFilterTransformer()` — `setChannel()` creates a new executor that overwrites scripts
+2. **Postprocessor scope isolation**: `getMergedConnectorMessage()` creates a NEW ConnectorMessage with *copied* maps — postprocessor channelMap writes are ephemeral
+3. **XML comment stripping**: fast-xml-parser discards `<!-- ... -->` during data type serialization
+
+**Key files:**
+
+| File | Lines | Tests | Purpose |
+|------|-------|-------|---------|
+| `tests/integration/pipeline/PipelineLifecycle.test.ts` | ~650 | 18 | Main test file — 13 describe blocks |
+| `tests/integration/pipeline/helpers/PipelineTestHarness.ts` | ~290 | — | Channel factory with fluent API |
+| `tests/integration/pipeline/helpers/ScriptFixtures.ts` | ~260 | — | Reusable JavaScript script snippets |
+| **Total** | **~1,200** | **18** | |
+
+- 18 new tests (1 test suite), 8,169 total tests passing
+- Plan: `plans/pipeline-lifecycle-integration-tests.md`
+
 ### Completion Status
 
 All Waves 1-22, Phase C, and Real-World Gaps are complete. The porting project has reached production-ready status:
@@ -3075,6 +3123,7 @@ All Waves 1-22, Phase C, and Real-World Gaps are complete. The porting project h
 - ✅ **Role-Based Authorization (P0 Fix)** — `RoleBasedAuthorizationController` replaces always-true `DefaultAuthorizationController`. 4 predefined roles (admin, manager, operator, monitor), PERSON.ROLE column migration, 60s role cache with invalidation, `MIRTH_AUTH_MODE` env var for fallback (53 tests)
 - ✅ **OpenAPI 3.1 Spec Generation** — Zod schemas + `@asteasolutions/zod-to-openapi` for TypeScript-native spec generation. 22 schemas, 48 paths across 5 servlets, build-time generator (`npm run openapi:generate`), dev-mode Swagger UI at `/api-docs` (42 tests)
 - ✅ **Real-World JavaScript Runtime Gaps** — 12 gaps from 20+ GitHub Mirth channels: E4X computed attributes/tags/empty XMLList, Java interop shims (URL, SimpleDateFormat, ArrayList, HashMap, StringBuffer, System, StringUtils, MirthMap locking), XMLProxy.child(), cross-realm VM prototype fix (261 tests, 39 integration tests from real GitHub code)
+- ✅ **Pipeline Lifecycle Integration Tests** — 18 tests across 13 scenarios exercising the full `dispatchRawMessage()` pipeline with real V8 VM execution (E4X transpilation, scope construction, script building). Fills the gap between mocked-executor unit tests and isolated-VM integration tests. Covers: filter/transform, ERROR/QUEUED status, response transformers, preprocessor/postprocessor, deploy/undeploy, global+channel script chaining, E4X end-to-end, DestinationSet fan-out, and full map propagation.
 
 ### Role-Based Authorization Controller
 
@@ -3172,7 +3221,7 @@ Comprehensive audit performed across 9 dimensions. **Verdict: PRODUCTION READY.*
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
-| **Test Suite** | PASS | 7,890 tests / 350 suites / 0 failures / ~57s |
+| **Test Suite** | PASS | 8,169 tests / 357 suites / 0 failures / ~57s |
 | **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
 | **Code Quality** | WARN | 4,500 ESLint issues — all Prettier formatting, zero logic bugs |
 | **Dependencies** | PASS | 33 npm audit findings — all in jest dev dependencies, 0 in production |
