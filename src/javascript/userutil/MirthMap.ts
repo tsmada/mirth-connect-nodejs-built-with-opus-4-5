@@ -333,6 +333,37 @@ export class GlobalMap extends MirthMap {
   }
 
   /**
+   * Lock key for thread-safe access (no-op in Node.js — single-threaded).
+   * Java: ConcurrentHashMap-backed lock in globalMap.
+   */
+  lock(_key: string): void {
+    // No-op: Node.js is single-threaded, no lock needed
+  }
+
+  /**
+   * Unlock key (no-op in Node.js).
+   */
+  unlock(_key: string): void {
+    // No-op
+  }
+
+  /**
+   * Synchronous containsKey (same as containsKey in Node.js).
+   * Java: Used inside lock/unlock blocks for thread-safe initialization.
+   */
+  containsKeySync(key: string): boolean {
+    return this.containsKey(key);
+  }
+
+  /**
+   * Synchronous put (same as put in Node.js).
+   * Java: Used inside lock/unlock blocks for thread-safe initialization.
+   */
+  putSync(key: string, value: unknown): unknown {
+    return this.put(key, value);
+  }
+
+  /**
    * Reset for testing
    */
   static resetInstance(): void {
