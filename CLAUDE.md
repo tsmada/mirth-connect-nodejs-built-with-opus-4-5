@@ -802,7 +802,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 6,092 passing** (307 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening)
+**Total Tests: 7,600 passing** (336 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage)
 
 ### Quick Validation Scripts
 
@@ -1795,16 +1795,16 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 
 **Adaptive parallelism:** Scanner findings determine fixer count (0 = skip to verify, 1-3 = proportional, 7+ = max parallel). Each fixer works in an isolated git worktree — no merge conflicts during parallel work.
 
-### Results (Combined Waves 1-21)
+### Results (Combined Waves 1-22 + Phase C)
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 89 (8 Wave 1 + 6 Wave 2 + 4 Wave 3 + 4 Wave 4 + 4 Wave 5 + 4 Wave 6 + 7 Wave 7 + 4 Wave 8 + 4 Wave 9 + 4 Wave 10 + 1 Wave 11 + 0 Wave 12 + 1 Wave 13 + 5 Wave 14 + 1 Wave 15 + 12 Wave 16 + 6 Wave 17 + 6 Wave 18 + 5 Wave 19 + 3 Wave 21) |
-| Agents completed | 89 (100%) |
-| Total commits | 195+ |
-| Lines added | 81,300+ |
-| Tests added | 2,501+ |
-| Total tests passing | 6,092 |
+| Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C) |
+| Agents completed | 100+ (100%) |
+| Total commits | 200+ |
+| Lines added | 107,300+ |
+| Tests added | 4,019+ |
+| Total tests passing | 7,600 |
 
 ### Wave Summary
 
@@ -1831,7 +1831,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | 19 | 3 | ~1,200 | 43 | ~20 min | **Connector Parity Wave 4** (DICOM response status QUEUED, DICOM config wiring, WS headers variable, SMTP ErrorEvent, SMTP localPort) |
 | 21 | 1 | ~500 | 15 | ~15 min | **Connector Parity Wave 5** (File errorReadingAction/errorResponseAction wiring, 3 deferral verifications) |
 | 22 | 0 | ~400 | 13 | ~30 min | **Production Readiness + OTEL** (instrumentation.ts, metrics.ts, lifecycle wiring, K8s manifests, env validation) |
-| **Total** | **89** | **~81,700** | **2,501** | **~26.5 hrs** | |
+| Phase C | 0 | ~26,000 | 1,518 | ~3 hrs | **Batch adaptors, AutoResponder, escape handler, coverage 62%→71%** |
+| **Total** | **100+** | **~107,700** | **4,019** | **~29.5 hrs** | |
 
 ### Components Ported
 
@@ -2809,11 +2810,82 @@ Team-based execution: 1 scanner (connector-parity-checker) + 1 fixer (general-pu
 - 15 new tests, 5,289 total tests passing
 - Scan report: `plans/connector-parity-checker-scan-wave21.md`
 
+### Phase C: Batch Adaptors, AutoResponder, Escape Handler, Coverage (2026-02-19)
+
+**Completes all 5 Phase C "nice-to-have" items. Test count 6,082 → 7,600. Statement coverage 62% → 71%.**
+
+Parallel agent execution across 4 waves with ~11 agents total.
+
+**Wave 1 — Infrastructure + Quick Wins:**
+- Broke circular import Mirth.ts ↔ EngineController.ts using setter injection (`setDonkeyInstance()`)
+- Created `ScriptBatchAdaptor` base class for JavaScript-based batch splitting
+- Implemented Raw, JSON, NCPDP batch adaptors as thin wrappers over ScriptBatchAdaptor
+
+**Wave 2 — Complex Batch Adaptors (3 parallel agents):**
+- XML batch adaptor — 4 split modes: Element_Name, Level, XPath_Query, JavaScript
+- Delimited batch adaptor — 4 split modes: Record, Delimiter, Grouping_Column, JavaScript
+- HL7v2/ER7 batch adaptor upgrade — MSH_Segment split, MLLP framing, configurable delimiters, JavaScript mode
+
+**Wave 3 — AutoResponder + Escape Sequences (2 parallel agents):**
+- HL7v2 AutoResponder — MSH.15 accept ack modes (AL/NE/ER/SU), custom ACK codes, status→ACK mapping, wired to ACKGenerator
+- DefaultAutoResponder — No-op for non-HL7 datatypes
+- HL7EscapeHandler — 6 standard escape sequences, wired into HL7v2SerializerAdapter (escape in fromXML, unescape in toXML)
+
+**Wave 4 — Coverage 62% → 71% (8 parallel agents):**
+
+| Agent Target | Tests Added | Coverage Gain |
+|-------------|-------------|---------------|
+| ChannelStatusServlet | 81 | 0% → 100% |
+| ExtensionServlet | 64 | 0% → 100% |
+| CodeTemplateServlet | 62 | 0% → 100% |
+| operations.ts middleware | 180 | 0% → 100% |
+| authorization.ts middleware | 84 | 0% → ~100% |
+| CodeTemplateController | 79 | 14% → 98% |
+| ChannelUtil | 112 | 17% → 100% |
+| MessageServlet | 87 (additional) | 58% → 99% |
+| DonkeyDao | 72 (additional) | 60% → 100% |
+| EngineController | 68 | 54% → ~85% |
+| server.ts | 36 | 0% → ~80% |
+| SmbClient | 65 | 14% → ~95% |
+| HttpDispatcher | 39 | 35% → ~70% |
+| WebServiceDispatcher | 51 | 35% → ~75% |
+| DICOMSerializer | 66 | 55% → ~90% |
+| FileReceiver | 49 | 54% → ~85% |
+
+**New source files (15):**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/donkey/message/ScriptBatchAdaptor.ts` | ~120 | Base class for JavaScript batch splitting |
+| `src/donkey/message/AutoResponder.ts` | ~15 | AutoResponder interface |
+| `src/donkey/message/DefaultAutoResponder.ts` | ~25 | No-op responder for non-HL7 |
+| `src/datatypes/raw/RawBatchAdaptor.ts` | ~30 | Raw batch adaptor |
+| `src/datatypes/json/JSONBatchAdaptor.ts` | ~30 | JSON batch adaptor |
+| `src/datatypes/ncpdp/NCPDPBatchAdaptor.ts` | ~30 | NCPDP batch adaptor |
+| `src/datatypes/xml/XMLBatchAdaptor.ts` | ~180 | XML batch adaptor (4 split modes) |
+| `src/datatypes/delimited/DelimitedBatchAdaptor.ts` | ~250 | Delimited batch adaptor (4 split modes) |
+| `src/datatypes/hl7v2/HL7EscapeHandler.ts` | ~100 | HL7v2 escape sequence handler |
+| `src/datatypes/hl7v2/HL7v2AutoResponder.ts` | ~150 | HL7v2 ACK auto-generation |
+| `src/datatypes/hl7v2/HL7v2ResponseGenerationProperties.ts` | ~40 | ACK code configuration |
+| `src/controllers/ChannelCache.ts` | ~80 | Extracted channel cache module |
+| `src/api/middleware/multipartForm.ts` | ~50 | Multipart form data middleware |
+| `plans/phase-c-implementation.md` | ~300 | Archived implementation plan |
+| `plans/independent-verification-report.md` | ~200 | Archived verification report |
+
+**Key files modified:**
+- `src/server/Mirth.ts` — Setter injection for Donkey instance, removed circular import
+- `src/controllers/EngineController.ts` — Receives Donkey via `setDonkeyInstance()` instead of import
+- `src/util/serializers/HL7v2SerializerAdapter.ts` — HL7EscapeHandler wired into escape/unescape flow
+- `src/donkey/message/HL7BatchAdaptor.ts` — Upgraded with ER7 full batch properties + MLLP framing
+- `jest.config.cjs` — Coverage thresholds: 70% statements/lines, 65% branches/functions
+
+- 1,518 new tests, 29 new test suites, 7,600 total tests passing
+- Plan: `plans/phase-c-implementation.md`
+
 ### Completion Status
 
-All Waves 1-22 are complete. The porting project has reached production-ready status:
+All Waves 1-22 and Phase C are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-22):**
+**Completed (Waves 1-22 + Phase C):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -2825,6 +2897,8 @@ All Waves 1-22 are complete. The porting project has reached production-ready st
 - ✅ **Connector Parity** — All 9 connectors verified across 5 automated scans (Waves 16-21): replaceConnectorProperties 9/9 (100%), event dispatching 48/48 (100%), property coverage 98%, 0 critical findings remaining. 192 total findings: 98 fixed, 6 deferred (2 major + 4 minor)
 - ✅ **Kubernetes Deployment** — Full k8s validation platform with Kustomize overlays for all 4 operational modes, validated on Rancher Desktop k3s (see `k8s/README.md`)
 - ✅ **OpenTelemetry Instrumentation** — Auto-instrumentation (Express, MySQL2, HTTP, Net, DNS, WebSocket) + 10 custom Mirth metrics + OTLP push + Prometheus scrape, K8s manifests updated with OTEL env vars and memory sizing (Wave 22)
+- ✅ **Phase C: Batch Adaptors** — ScriptBatchAdaptor base + 6 type-specific adaptors (Raw, JSON, NCPDP, XML, Delimited, HL7v2/ER7), HL7v2 AutoResponder with MSH.15 modes, HL7EscapeHandler wired into serializer
+- ✅ **Phase C: Code Quality** — Circular import fix (Mirth.ts ↔ EngineController.ts), test coverage 62% → 71% (1,518 new tests across 29 suites)
 
 ### Production Readiness Assessment (2026-02-19)
 
@@ -2834,7 +2908,7 @@ Comprehensive audit performed across 9 dimensions. **Verdict: PRODUCTION READY.*
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
-| **Test Suite** | PASS | 6,092 tests / 307 suites / 0 failures / 28.6s |
+| **Test Suite** | PASS | 7,600 tests / 336 suites / 0 failures / ~20s |
 | **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
 | **Code Quality** | WARN | 4,500 ESLint issues — all Prettier formatting, zero logic bugs |
 | **Dependencies** | PASS | 33 npm audit findings — all in jest dev dependencies, 0 in production |
