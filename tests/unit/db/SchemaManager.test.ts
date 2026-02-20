@@ -245,12 +245,16 @@ describe('SchemaManager', () => {
       await ensureNodeJsTables();
 
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(mockConnection.query).toHaveBeenCalledTimes(6);
+      // 6 CREATE TABLE + 1 ALTER TABLE PERSON ADD COLUMN ROLE
+      expect(mockConnection.query).toHaveBeenCalledTimes(7);
 
       for (const tableName of NODE_JS_TABLES) {
         const found = queriedSql.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${tableName}`));
         expect(found).toBe(true);
       }
+      // Verify ROLE column migration
+      const roleAlter = queriedSql.some(sql => sql.includes('ALTER TABLE PERSON') && sql.includes('ROLE'));
+      expect(roleAlter).toBe(true);
     });
 
     it('should be idempotent (calling twice does not error)', async () => {
@@ -266,8 +270,8 @@ describe('SchemaManager', () => {
       await ensureNodeJsTables();
 
       expect(mockTransaction).toHaveBeenCalledTimes(2);
-      // Each call creates 6 tables
-      expect(mockConnection.query).toHaveBeenCalledTimes(12);
+      // Each call: 6 CREATE TABLE + 1 ALTER TABLE PERSON = 7 queries
+      expect(mockConnection.query).toHaveBeenCalledTimes(14);
     });
   });
 

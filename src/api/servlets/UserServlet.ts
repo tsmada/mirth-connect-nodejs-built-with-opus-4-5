@@ -18,7 +18,8 @@ import {
   isUserLoggedIn,
   hashPassword,
 } from '../middleware/auth.js';
-import { authorize } from '../middleware/authorization.js';
+import { authorize, getAuthorizationController } from '../middleware/authorization.js';
+import { RoleBasedAuthorizationController } from '../middleware/RoleBasedAuthorizationController.js';
 import {
   USER_GET,
   USER_GET_ALL,
@@ -93,6 +94,7 @@ userRouter.post('/_login', loginLimiter, async (req: Request, res: Response) => 
     const user: User = {
       id: personRow.ID,
       username: personRow.USERNAME,
+      role: personRow.ROLE ?? 'admin',
       firstName: personRow.FIRSTNAME,
       lastName: personRow.LASTNAME,
       organization: personRow.ORGANIZATION,
@@ -265,6 +267,7 @@ userRouter.post(
         phoneNumber: userData.phoneNumber || '',
         description: userData.description || '',
         industry: userData.industry || '',
+        role: userData.role,
       });
 
       res.status(201).end();
@@ -302,7 +305,16 @@ userRouter.put(
         phoneNumber: userData.phoneNumber,
         description: userData.description,
         industry: userData.industry,
+        role: userData.role,
       });
+
+      // Clear role cache if role was updated
+      if (userData.role !== undefined) {
+        const controller = getAuthorizationController();
+        if (controller instanceof RoleBasedAuthorizationController) {
+          controller.clearRoleCache(userId);
+        }
+      }
 
       res.status(204).end();
     } catch (error) {
@@ -543,6 +555,7 @@ function personRowToUser(row: MirthDao.PersonRow): User {
   return {
     id: row.ID,
     username: row.USERNAME,
+    role: row.ROLE ?? 'admin',
     firstName: row.FIRSTNAME,
     lastName: row.LASTNAME,
     organization: row.ORGANIZATION,

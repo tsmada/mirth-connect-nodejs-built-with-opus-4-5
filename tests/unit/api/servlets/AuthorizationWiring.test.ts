@@ -445,7 +445,7 @@ describe('UserServlet authorization', () => {
   const source = readSource(path.join(SERVLET_DIR, 'UserServlet.ts'));
 
   it('imports authorize middleware', () => {
-    expect(source).toContain("import { authorize }");
+    expect(source).toContain("import { authorize");
   });
 
   it('imports all required operation constants', () => {

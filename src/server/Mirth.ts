@@ -47,6 +47,8 @@ import {
   GlobalChannelMapStore,
   ConfigurationMap,
 } from '../javascript/userutil/MirthMap.js';
+import { setAuthorizationController } from '../api/middleware/authorization.js';
+import { RoleBasedAuthorizationController } from '../api/middleware/RoleBasedAuthorizationController.js';
 
 registerComponent('server', 'Server lifecycle');
 const logger = getLogger('server');
@@ -210,6 +212,9 @@ export class Mirth {
       // Create Node.js-only tables (safe in shared DB — Java Mirth ignores unknown tables)
       await ensureNodeJsTables();
     }
+
+    // Wire authorization controller based on MIRTH_AUTH_MODE
+    await this.initializeAuthorizationController();
 
     // Initialize dashboard status controller with server ID
     const serverId = await ConfigurationController.getServerId();
@@ -473,6 +478,31 @@ export class Mirth {
 
   getDonkey(): Donkey | null {
     return this.donkey;
+  }
+
+  /**
+   * Initialize authorization controller based on MIRTH_AUTH_MODE env var.
+   * - 'role-based' (default): RoleBasedAuthorizationController with predefined roles
+   * - 'permissive': DefaultAuthorizationController (allows everything — backward compat)
+   */
+  private async initializeAuthorizationController(): Promise<void> {
+    const authMode = process.env['MIRTH_AUTH_MODE'] ?? 'role-based';
+
+    if (authMode === 'permissive') {
+      if (process.env['NODE_ENV'] === 'production') {
+        logger.warn(
+          'SECURITY WARNING: MIRTH_AUTH_MODE=permissive — ALL authenticated users have ALL permissions. ' +
+            'Set MIRTH_AUTH_MODE=role-based (default) for production use.'
+        );
+      }
+      logger.info('Authorization mode: permissive (all operations allowed)');
+      // DefaultAuthorizationController is already set at module load
+      return;
+    }
+
+    const controller = new RoleBasedAuthorizationController();
+    setAuthorizationController(controller);
+    logger.info('Authorization mode: role-based (predefined roles)');
   }
 
   /**

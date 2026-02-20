@@ -1,0 +1,4022 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mirth Connect API",
+    "version": "3.9.0",
+    "description": "Node.js Mirth Connect REST API — compatible with Mirth Connect Administrator.\n\nThis API provides full channel management, message processing, user authentication, and monitoring capabilities. All endpoints (except health checks and login) require authentication.",
+    "license": {
+      "name": "MPL-2.0",
+      "url": "https://www.mozilla.org/en-US/MPL/2.0/"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8081",
+      "description": "Local development"
+    },
+    {
+      "url": "http://localhost:8080",
+      "description": "Default production port"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Readiness, liveness, and startup probes (no auth required)"
+    },
+    {
+      "name": "Users",
+      "description": "User authentication and management"
+    },
+    {
+      "name": "Channels",
+      "description": "Channel CRUD operations"
+    },
+    {
+      "name": "Engine",
+      "description": "Channel deployment operations"
+    },
+    {
+      "name": "Channel Status",
+      "description": "Channel lifecycle operations (start, stop, pause, resume)"
+    },
+    {
+      "name": "Messages",
+      "description": "Message search, retrieval, processing, and attachments"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "JSESSIONID",
+        "description": "Session cookie set after login via POST /api/users/_login"
+      },
+      "sessionHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Session-ID",
+        "description": "Alternative session ID passed as header"
+      }
+    },
+    "schemas": {
+      "HealthCheck": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "error"
+            ]
+          },
+          "uptime": {
+            "type": "number"
+          },
+          "version": {
+            "type": "string"
+          },
+          "shadowMode": {
+            "type": "boolean"
+          },
+          "clusterEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "LoginStatus": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "SUCCESS_GRACE_PERIOD",
+              "FAIL",
+              "FAIL_LOCKED_OUT",
+              "FAIL_EXPIRED"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "updatedUsername": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error type or short message"
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error message"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "User ID (auto-generated)"
+          },
+          "username": {
+            "type": "string",
+            "description": "Unique username"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "manager",
+              "operator",
+              "monitor"
+            ],
+            "description": "User role for RBAC"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "organization": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phoneNumber": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "lastLogin": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp"
+          },
+          "gracePeriodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "strikeCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ]
+      },
+      "CreateUser": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "description": "Defaults to \"admin\" if omitted"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "manager",
+              "operator",
+              "monitor"
+            ]
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "organization": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phoneNumber": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "UpdateUser": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "organization": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phoneNumber": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "manager",
+              "operator",
+              "monitor"
+            ]
+          }
+        }
+      },
+      "Channel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "sourceConnector": {
+            "$ref": "#/components/schemas/Connector"
+          },
+          "destinationConnectors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Connector"
+            }
+          },
+          "preprocessingScript": {
+            "type": "string"
+          },
+          "postprocessingScript": {
+            "type": "string"
+          },
+          "deployScript": {
+            "type": "string"
+          },
+          "undeployScript": {
+            "type": "string"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/ChannelProperties"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "revision",
+          "enabled",
+          "sourceConnector",
+          "destinationConnectors",
+          "properties"
+        ]
+      },
+      "Connector": {
+        "type": "object",
+        "properties": {
+          "metaDataId": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "transportName": {
+            "type": "string",
+            "description": "Transport type (e.g., HTTP Listener, Channel Writer, TCP Sender)"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "filter": {
+            "$ref": "#/components/schemas/FilterConfig"
+          },
+          "transformer": {
+            "$ref": "#/components/schemas/TransformerConfig"
+          },
+          "responseTransformer": {
+            "$ref": "#/components/schemas/TransformerConfig"
+          },
+          "waitForPrevious": {
+            "type": "boolean"
+          },
+          "queueEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "metaDataId",
+          "name",
+          "enabled",
+          "transportName",
+          "properties"
+        ]
+      },
+      "FilterConfig": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FilterRule"
+            }
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      },
+      "FilterRule": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sequenceNumber": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "AND",
+              "OR",
+              "NONE"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "sequenceNumber",
+          "enabled",
+          "operator",
+          "type"
+        ]
+      },
+      "TransformerConfig": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransformerStep"
+            }
+          },
+          "inboundDataType": {
+            "type": "string"
+          },
+          "outboundDataType": {
+            "type": "string"
+          },
+          "inboundProperties": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "outboundProperties": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      },
+      "TransformerStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sequenceNumber": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "sequenceNumber",
+          "enabled",
+          "type"
+        ]
+      },
+      "ChannelProperties": {
+        "type": "object",
+        "properties": {
+          "clearGlobalChannelMap": {
+            "type": "boolean"
+          },
+          "messageStorageMode": {
+            "type": "string"
+          },
+          "encryptData": {
+            "type": "boolean"
+          },
+          "removeContentOnCompletion": {
+            "type": "boolean"
+          },
+          "removeOnlyFilteredOnCompletion": {
+            "type": "boolean"
+          },
+          "removeAttachmentsOnCompletion": {
+            "type": "boolean"
+          },
+          "initialState": {
+            "type": "string",
+            "enum": [
+              "DEPLOYING",
+              "UNDEPLOYING",
+              "STARTING",
+              "STARTED",
+              "PAUSING",
+              "PAUSED",
+              "STOPPING",
+              "STOPPED",
+              "SYNCING",
+              "UNKNOWN"
+            ]
+          },
+          "storeAttachments": {
+            "type": "boolean"
+          },
+          "metaDataColumns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetaDataColumnConfig"
+            }
+          },
+          "attachmentProperties": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "properties": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "resourceIds": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MetaDataColumnConfig": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "mappingName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "mappingName"
+        ]
+      },
+      "ChannelSummary": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "undeployed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channelId"
+        ]
+      },
+      "DashboardStatus": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "DEPLOYING",
+              "UNDEPLOYING",
+              "STARTING",
+              "STARTED",
+              "PAUSING",
+              "PAUSED",
+              "STOPPING",
+              "STOPPED",
+              "SYNCING",
+              "UNKNOWN"
+            ]
+          },
+          "deployedRevisionDelta": {
+            "type": "integer"
+          },
+          "deployedDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/ChannelStatistics"
+          },
+          "childStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardStatus"
+            }
+          },
+          "metaDataId": {
+            "type": "integer"
+          },
+          "queueEnabled": {
+            "type": "boolean"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "waitForPrevious": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channelId",
+          "name",
+          "state",
+          "statistics"
+        ]
+      },
+      "ChannelStatistics": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "integer"
+          },
+          "sent": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "integer"
+          },
+          "filtered": {
+            "type": "integer"
+          },
+          "queued": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "received",
+          "sent",
+          "error",
+          "filtered",
+          "queued"
+        ]
+      },
+      "DashboardChannelInfo": {
+        "type": "object",
+        "properties": {
+          "dashboardStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardStatus"
+            }
+          },
+          "remainingChannelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "dashboardStatuses",
+          "remainingChannelIds"
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "integer"
+          },
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string"
+          },
+          "receivedDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "processed": {
+            "type": "boolean"
+          },
+          "originalId": {
+            "type": "integer"
+          },
+          "importId": {
+            "type": "integer"
+          },
+          "connectorMessages": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConnectorMessage"
+            }
+          }
+        },
+        "required": [
+          "messageId",
+          "channelId",
+          "serverId",
+          "receivedDate",
+          "processed",
+          "connectorMessages"
+        ]
+      },
+      "ConnectorMessage": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "integer"
+          },
+          "metaDataId": {
+            "type": "integer"
+          },
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channelName": {
+            "type": "string"
+          },
+          "connectorName": {
+            "type": "string"
+          },
+          "receivedDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "R",
+              "F",
+              "T",
+              "S",
+              "Q",
+              "E",
+              "P"
+            ],
+            "description": "R=RECEIVED, F=FILTERED, T=TRANSFORMED, S=SENT, Q=QUEUED, E=ERROR, P=PENDING"
+          },
+          "sendAttempts": {
+            "type": "integer"
+          },
+          "sendDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "responseDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "errorCode": {
+            "type": "integer"
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MessageContent"
+            }
+          }
+        },
+        "required": [
+          "messageId",
+          "metaDataId",
+          "channelId",
+          "connectorName",
+          "receivedDate",
+          "status",
+          "sendAttempts"
+        ]
+      },
+      "MessageContent": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 15
+          },
+          "content": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "encrypted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contentType",
+          "content",
+          "dataType",
+          "encrypted"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Readiness probe",
+        "description": "Returns 200 when ready to accept traffic, 503 during shutdown. No auth required.",
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheck"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is shutting down"
+          }
+        }
+      }
+    },
+    "/api/health/live": {
+      "get": {
+        "summary": "Liveness probe",
+        "description": "Always returns 200. Used by orchestrators to detect crashed processes.",
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheck"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/startup": {
+      "get": {
+        "summary": "Startup probe",
+        "description": "Returns 200 after channels are deployed. Used by orchestrators for slow-start.",
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service has started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheck"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is still starting"
+          }
+        }
+      }
+    },
+    "/api/users/_login": {
+      "post": {
+        "summary": "Login",
+        "description": "Authenticate with username and password. Returns session cookie.",
+        "tags": [
+          "Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login result (check status field for SUCCESS/FAIL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or locked account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many login attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/_logout": {
+      "post": {
+        "summary": "Logout",
+        "description": "Destroy current session and clear session cookie.",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Logged out successfully"
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "summary": "Get all users",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create user",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created"
+          },
+          "400": {
+            "description": "Username is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "User already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/current": {
+      "get": {
+        "summary": "Get current user",
+        "description": "Returns the currently authenticated user.",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{userIdOrName}": {
+      "get": {
+        "summary": "Get user by ID or username",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "User ID (integer) or username (string)"
+            },
+            "required": true,
+            "description": "User ID (integer) or username (string)",
+            "name": "userIdOrName",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{userId}": {
+      "put": {
+        "summary": "Update user",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "User ID"
+            },
+            "required": true,
+            "description": "User ID",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "User updated"
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete user",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "User ID"
+            },
+            "required": true,
+            "description": "User ID",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "User deleted"
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{userId}/password": {
+      "put": {
+        "summary": "Update user password",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "User ID"
+            },
+            "required": true,
+            "description": "User ID",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Empty array if valid, or array of requirement violations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Password requirements not met",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{userId}/loggedIn": {
+      "get": {
+        "summary": "Check if user is logged in",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "User ID"
+            },
+            "required": true,
+            "description": "User ID",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/_checkPassword": {
+      "post": {
+        "summary": "Check password against requirements",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Array of requirement violations (empty if valid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{userId}/preferences": {
+      "get": {
+        "summary": "Get user preferences",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preference map",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update user preferences",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Preferences updated"
+          }
+        }
+      }
+    },
+    "/api/channels": {
+      "get": {
+        "summary": "Get channels",
+        "description": "Get all channels or filter by IDs.",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "Filter by channel ID(s)"
+            },
+            "required": false,
+            "description": "Filter by channel ID(s)",
+            "name": "channelId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only return polling channels"
+            },
+            "required": false,
+            "description": "Only return polling channels",
+            "name": "pollingOnly",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "includeCodeTemplateLibraries",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Channel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create channel",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Update if exists"
+            },
+            "required": false,
+            "description": "Update if exists",
+            "name": "override",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Channel"
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Channel created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Channel name is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Channel already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_getChannels": {
+      "post": {
+        "summary": "Get channels by IDs (POST)",
+        "description": "POST alternative for large ID sets.",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "pollingOnly",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "includeCodeTemplateLibraries",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Channel list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Channel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/idsAndNames": {
+      "get": {
+        "summary": "Get channel ID-to-name map",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map of channel UUIDs to channel names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}": {
+      "get": {
+        "summary": "Get channel by ID",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "includeCodeTemplateLibraries",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "string",
+                  "description": "Raw channel XML"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update channel",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Skip revision check"
+            },
+            "required": false,
+            "description": "Skip revision check",
+            "name": "override",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Channel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Update result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Channel has been modified (revision mismatch)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete channel",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel deleted"
+          },
+          "404": {
+            "description": "Channel not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_getSummary": {
+      "post": {
+        "summary": "Get channel summaries",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "ignoreNewChannels",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "revision"
+                  ]
+                },
+                "description": "Map of channelId → { revision } for cached channels"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Channel summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/connectorNames": {
+      "get": {
+        "summary": "Get connector names",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map of metaDataId to connector name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/metaDataColumns": {
+      "get": {
+        "summary": "Get metadata columns",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata column definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetaDataColumnConfig"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_redeployAll": {
+      "post": {
+        "summary": "Redeploy all channels",
+        "tags": [
+          "Engine"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Return errors instead of 204 on failure"
+            },
+            "required": false,
+            "description": "Return errors instead of 204 on failure",
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "All channels redeployed"
+          },
+          "500": {
+            "description": "Deployment error (only when returnErrors=true)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_deploy": {
+      "post": {
+        "summary": "Deploy a channel",
+        "tags": [
+          "Engine"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel deployed"
+          },
+          "500": {
+            "description": "Deployment error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_deploy": {
+      "post": {
+        "summary": "Deploy multiple channels",
+        "description": "Deploy channels by ID list. Accepts JSON array or XML set format.",
+        "tags": [
+          "Engine"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels deployed"
+          },
+          "500": {
+            "description": "Deployment errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "channelId": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "channelId",
+                          "error"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "errors"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_undeploy": {
+      "post": {
+        "summary": "Undeploy a channel",
+        "tags": [
+          "Engine"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel undeployed"
+          },
+          "500": {
+            "description": "Undeployment error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_undeploy": {
+      "post": {
+        "summary": "Undeploy multiple channels",
+        "tags": [
+          "Engine"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels undeployed"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/status": {
+      "get": {
+        "summary": "Get channel status",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel dashboard status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/statuses": {
+      "get": {
+        "summary": "Get all channel statuses",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "required": false,
+            "name": "channelId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "filter",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "includeUndeployed",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard status list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DashboardStatus"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/statuses/initial": {
+      "get": {
+        "summary": "Get initial dashboard channel info",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Number of channels to fetch (default 100)"
+            },
+            "required": false,
+            "description": "Number of channels to fetch (default 100)",
+            "name": "fetchSize",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "filter",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard channel info with remaining channel IDs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardChannelInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_start": {
+      "post": {
+        "summary": "Start a channel",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel started"
+          },
+          "500": {
+            "description": "Operation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_start": {
+      "post": {
+        "summary": "Start multiple channels",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels started"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_stop": {
+      "post": {
+        "summary": "Stop a channel",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel stoped"
+          },
+          "500": {
+            "description": "Operation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_stop": {
+      "post": {
+        "summary": "Stop multiple channels",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels stoped"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_halt": {
+      "post": {
+        "summary": "Halt (force stop) a channel",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel halt (force stop)ed"
+          },
+          "500": {
+            "description": "Operation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_halt": {
+      "post": {
+        "summary": "Halt (force stop) multiple channels",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels halt (force stop)ed"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_pause": {
+      "post": {
+        "summary": "Pause a channel",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel pauseed"
+          },
+          "500": {
+            "description": "Operation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_pause": {
+      "post": {
+        "summary": "Pause multiple channels",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels pauseed"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/_resume": {
+      "post": {
+        "summary": "Resume a channel",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Channel resumeed"
+          },
+          "500": {
+            "description": "Operation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/_resume": {
+      "post": {
+        "summary": "Resume multiple channels",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Channels resumeed"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/connector/{metaDataId}/_start": {
+      "post": {
+        "summary": "Start a connector",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Connector metadata ID"
+            },
+            "required": true,
+            "description": "Connector metadata ID",
+            "name": "metaDataId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Connector started"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/connector/{metaDataId}/_stop": {
+      "post": {
+        "summary": "Stop a connector",
+        "tags": [
+          "Channel Status"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Connector metadata ID"
+            },
+            "required": true,
+            "description": "Connector metadata ID",
+            "name": "metaDataId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "returnErrors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Connector stopped"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages": {
+      "get": {
+        "summary": "Search messages",
+        "description": "Search messages with filter criteria. Query parameters map to MessageFilter fields.",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "minMessageId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "maxMessageId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "startDate",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "endDate",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "textSearch",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "textSearchRegex",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "Filter by status (R, F, T, S, Q, E, P)"
+            },
+            "required": false,
+            "description": "Filter by status (R, F, T, S, Q, E, P)",
+            "name": "statuses",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "required": false,
+            "name": "includedMetaDataIds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Page size (default 20)"
+            },
+            "required": false,
+            "description": "Page size (default 20)",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "includeContent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "attachment",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "error",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated message list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Message"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "messages",
+                    "total",
+                    "offset",
+                    "limit"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Process a new message",
+        "description": "Submit a raw message for processing by the channel.",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+                "description": "Raw message content"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rawData": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rawData"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message ID of processed message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/{messageId}": {
+      "get": {
+        "summary": "Get message by ID",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Message ID"
+            },
+            "required": true,
+            "description": "Message ID",
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a message",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Message deleted"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/count": {
+      "get": {
+        "summary": "Get message count",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "minMessageId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "maxMessageId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "startDate",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "endDate",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "textSearch",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "required": false,
+            "name": "statuses",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/maxMessageId": {
+      "get": {
+        "summary": "Get max message ID",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Maximum message ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/{messageId}/_reprocess": {
+      "post": {
+        "summary": "Reprocess a message",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Replace original message"
+            },
+            "required": false,
+            "description": "Replace original message",
+            "name": "replace",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "filterDestinations",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "required": false,
+            "name": "metaDataId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Message reprocessed"
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/{messageId}/content/{metaDataId}/{contentType}": {
+      "get": {
+        "summary": "Get message content",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "metaDataId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Content type number (1-15)"
+            },
+            "required": true,
+            "description": "Content type number (1-15)",
+            "name": "contentType",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageContent"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Content not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/{messageId}/attachments": {
+      "get": {
+        "summary": "Get message attachments",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "size": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages/{messageId}/attachments/{attachmentId}": {
+      "get": {
+        "summary": "Get attachment content",
+        "tags": [
+          "Messages"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "sessionHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel UUID",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            },
+            "required": true,
+            "description": "Channel UUID",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "attachmentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "content"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Attachment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

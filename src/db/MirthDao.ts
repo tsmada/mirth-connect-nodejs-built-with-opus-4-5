@@ -28,6 +28,7 @@ export interface PersonRow extends RowDataPacket {
   USERNAME: string;
   PASSWORD: string | null; // Hashed password from PERSON_PASSWORD table
   SALT: string | null; // Not used in Mirth 3.9 - password includes salt
+  ROLE: string | null; // User role (admin, manager, operator, monitor)
   FIRSTNAME: string;
   LASTNAME: string;
   ORGANIZATION: string;
@@ -197,12 +198,14 @@ export async function createPerson(person: {
   phoneNumber: string;
   description: string;
   industry: string;
+  role?: string;
 }): Promise<number> {
   // Insert into PERSON table (no password column)
+  const role = person.role || 'monitor'; // Default to least-privilege for new users
   const result = await execute(
-    `INSERT INTO PERSON (USERNAME, FIRSTNAME, LASTNAME, ORGANIZATION, EMAIL, PHONENUMBER, DESCRIPTION, INDUSTRY, LOGGED_IN, STRIKE_COUNT)
-     VALUES (:username, :firstName, :lastName, :organization, :email, :phoneNumber, :description, :industry, 0, 0)`,
-    person
+    `INSERT INTO PERSON (USERNAME, FIRSTNAME, LASTNAME, ORGANIZATION, EMAIL, PHONENUMBER, DESCRIPTION, INDUSTRY, ROLE, LOGGED_IN, STRIKE_COUNT)
+     VALUES (:username, :firstName, :lastName, :organization, :email, :phoneNumber, :description, :industry, :role, 0, 0)`,
+    { ...person, role }
   );
 
   const personId = result.insertId;
@@ -229,6 +232,7 @@ export async function updatePerson(
     phoneNumber: string;
     description: string;
     industry: string;
+    role: string;
   }>
 ): Promise<void> {
   const fields: string[] = [];
@@ -261,6 +265,10 @@ export async function updatePerson(
   if (updates.industry !== undefined) {
     fields.push('INDUSTRY = :industry');
     params.industry = updates.industry;
+  }
+  if (updates.role !== undefined) {
+    fields.push('ROLE = :role');
+    params.role = updates.role;
   }
 
   if (fields.length > 0) {

@@ -79,10 +79,10 @@ Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
-| **Test Suite** | PASS | 6,092 tests / 307 suites / 0 failures |
+| **Test Suite** | PASS | 7,689 tests / 334 suites / 0 failures |
 | **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
 | **Dependencies** | PASS | Zero production dependency vulnerabilities |
-| **Security** | PASS | Parameterized SQL, auth on all routes, VM sandbox, rate limiting |
+| **Security** | PASS | Parameterized SQL, role-based authorization (4 roles, 35+ permissions), VM sandbox, rate limiting |
 | **Implementation** | PASS | 10/10 connectors, 9/9 data types, 20 servlets (199 routes), complete pipeline |
 | **Operational** | PASS | K8s probes, graceful shutdown, connection pooling, OTEL instrumentation |
 | **Parity** | PASS | Verified by 5 automated connector scans + 3 JS runtime scans |
@@ -106,7 +106,7 @@ Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase
 ### Security
 
 - All database queries use parameterized placeholders (dynamic table names validated via UUID regex whitelist)
-- All API routes protected by `authMiddleware` (public exceptions: health probes, login, version)
+- **Role-based authorization** with 4 predefined roles (admin, manager, operator, monitor) enforced on every API route via `authorize()` middleware. The `MIRTH_AUTH_MODE` env var supports `role-based` (default) or `permissive` (backward-compatible allow-all).
 - Zero `eval()` usage — user scripts execute in `vm.createContext()` sandbox with timer functions disabled
 - Global API rate limit (100 req/min/IP, configurable) + login-specific limit (10 req/min/IP)
 - Request body size limits (10MB API, 50MB connectors)
@@ -139,6 +139,8 @@ Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase
 | Clustering | Commercial plugin (JGroups) | Built-in, free (DB polling or Redis) |
 | Log control | Restart + XML edit | Runtime API, per-component debug |
 | CLI | Java GUI only | Full terminal CLI with interactive dashboard |
+| API Docs | None (manual) | OpenAPI 3.1 spec with Swagger UI (`/api-docs`) |
+| Authorization | Custom role/permission CRUD | 4 predefined roles, zero config needed |
 
 ### Known Deferrals (15 total — non-blocking)
 
@@ -151,7 +153,8 @@ Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase
 | **Connectors** | HTTP, TCP/MLLP, JDBC, File/SFTP/S3, VM, SMTP, JMS, WebService (SOAP), DICOM |
 | **Data Types** | HL7v2 (ACK generation), XML, JSON, Raw, Delimited, EDI/X12, HL7v3 (CDA), NCPDP, DICOM |
 | **JavaScript** | E4X transpilation (incl. attribute write, XML append, filter predicates, wildcards), Mirth scope variables ($c, $s, $g, $r, etc.), ScriptBuilder helpers (type coercion, auto-serialization), VMRouter, DestinationSet, FileUtil, HTTPUtil, DICOMUtil, XmlUtil, JsonUtil, MessageHeaders, MessageParameters |
-| **API** | Full REST API compatible with Mirth Administrator (20 servlets, 199 routes) with message import/export and attachments |
+| **API** | Full REST API compatible with Mirth Administrator (20 servlets, 199 routes) with message import/export, attachments, and [OpenAPI 3.1 spec](docs/openapi.json) |
+| **Authorization** | Role-based access control with 4 predefined roles (admin, manager, operator, monitor), 35+ permissions, configurable via `MIRTH_AUTH_MODE` |
 | **Logging** | Centralized Winston-based logging with per-component debug control, runtime log level API, text/JSON output, file rotation |
 | **Plugins** | Code Templates, Data Pruner, XSLT, JavaScriptRule, JavaScriptStep, Mapper, MessageBuilder, ServerLog, DashboardStatus |
 | **CLI Tool** | Terminal-based monitor and management utility |
@@ -211,6 +214,9 @@ LOG_LEVEL=INFO                                    # TRACE, DEBUG, INFO, WARN, ER
 # LOG_FORMAT=text                                 # text (human) or json (structured)
 # LOG_FILE=/var/log/mirth/server.log              # Optional file transport
 # LOG_TIMESTAMP_FORMAT=mirth                      # mirth (Java-style) or iso
+
+# Authorization (role-based by default)
+# MIRTH_AUTH_MODE=role-based          # role-based (enforced) or permissive (allow-all)
 
 # Shadow Mode (optional — for safe Java → Node.js takeover)
 # MIRTH_SHADOW_MODE=true              # Deploy channels read-only, promote one-by-one
@@ -324,6 +330,20 @@ See the full [CLI Reference](docs/cli-reference.md) for all commands, options, k
 
 The REST API mirrors the Mirth Connect Server API with 20 fully-implemented servlets (199 routes) including Node.js-only extensions for clustering, logging, shadow mode, tracing, and artifact management. See the full [API Reference](docs/api-reference.md).
 
+### OpenAPI 3.1 Specification
+
+A machine-readable OpenAPI 3.1 spec is generated from Zod schemas, covering 48 paths across 6 servlet groups (Health, Users, Channels, Engine, Channel Status, Messages) with 22 component schemas. The spec enables automated client SDK generation, API documentation, and contract testing.
+
+```bash
+# Generate spec (build-time)
+npm run openapi:generate          # → docs/openapi.json
+
+# Dev-mode Swagger UI (auto-mounted when NODE_ENV !== 'production')
+# Visit http://localhost:8081/api-docs
+```
+
+The generated spec is at [`docs/openapi.json`](docs/openapi.json).
+
 ## JavaScript Runtime
 
 Full E4X transpilation (including attribute write, XML append, filter predicates, wildcards, named property deletion), Mirth scope variables ($c, $s, $g, $r, $cfg, etc.), ScriptBuilder with Java-parity helper functions (type coercion, auto-serialization, validate replacement), and 34 userutil classes injected into script scope. Verified via 3 automated js-runtime-checker scans across 10 bug categories. See the full [JavaScript Runtime Reference](docs/javascript-runtime.md).
@@ -335,22 +355,23 @@ Full E4X transpilation (including attribute write, XML append, filter predicates
 | `npm run build` | Compile TypeScript |
 | `npm run dev` | Development server with hot reload |
 | `npm start` | Production server |
-| `npm test` | Run test suite (6,092 tests) |
+| `npm test` | Run test suite (7,689 tests) |
 | `npm run test:coverage` | Generate coverage report |
 | `npm run lint` | Check code style |
 | `npm run typecheck` | Type check without compiling |
+| `npm run openapi:generate` | Generate OpenAPI 3.1 spec to `docs/openapi.json` |
 
 See the full [Development Guide](docs/development-guide.md) for project structure, test organization, and code quality tools.
 
 ## Testing & Validation
 
-**6,092 tests passing** across 307 test suites (2,559 core + 417 artifact + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
+**7,689 tests passing** across 334 test suites (2,559 core + 417 artifact + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C + 89 auth/OpenAPI). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
 
 ### Validation Tiers
 
 | Tier | What | Count | Purpose |
 |------|------|-------|---------|
-| Unit Tests | Jest test suites | 6,092 tests / 307 suites | Component-level correctness |
+| Unit Tests | Jest test suites | 7,689 tests / 334 suites | Component-level correctness |
 | Parity Scans | Automated agents | 5 connector + 3 JS runtime scans | Java-to-Node.js fidelity |
 | Java Comparison | Side-by-side validation | Priority 0-6 scenarios | Behavioral equivalence |
 | K8s Functional | Deep validation suite | 7 phases, 12 DV channels | Production resilience |
@@ -404,6 +425,7 @@ When deploying to production, review these settings to harden security and relia
 
 | Variable | Default | Production Recommendation |
 |----------|---------|--------------------------|
+| `MIRTH_AUTH_MODE` | `role-based` | `role-based` enforces 4-role RBAC. `permissive` allows all (warns in production). |
 | `CORS_ORIGINS` | `*` (all origins) | Set to specific admin UI origins: `https://mirth-admin.example.com` |
 | `MIRTH_API_RATE_LIMIT` | `100` | Requests per minute per IP. Adjust based on expected API traffic. Health endpoints are exempt. |
 | `NODE_ENV` | `development` | Set to `production` to suppress stack traces in error responses |

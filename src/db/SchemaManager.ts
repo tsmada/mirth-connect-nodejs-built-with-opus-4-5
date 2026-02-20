@@ -197,6 +197,7 @@ export async function ensureCoreTables(): Promise<void> {
         PHONE_NUMBER VARCHAR(40),
         DESCRIPTION VARCHAR(255),
         INDUSTRY VARCHAR(255),
+        ROLE VARCHAR(50) DEFAULT 'admin',
         LAST_LOGIN TIMESTAMP NULL DEFAULT NULL,
         GRACE_PERIOD_START TIMESTAMP NULL DEFAULT NULL,
         STRIKE_COUNT INTEGER NOT NULL DEFAULT 0,
@@ -307,6 +308,21 @@ export async function ensureCoreTables(): Promise<void> {
  */
 export async function ensureNodeJsTables(): Promise<void> {
   await transaction(async (connection) => {
+    // Migrate PERSON table: add ROLE column if not present (takeover mode compatibility)
+    // Default to 'admin' so existing users retain full access
+    try {
+      await connection.query(
+        `ALTER TABLE PERSON ADD COLUMN ROLE VARCHAR(50) DEFAULT 'admin'`
+      );
+      logger.info('Added ROLE column to PERSON table');
+    } catch (err: unknown) {
+      // Column already exists (MySQL error 1060: Duplicate column name)
+      const mysqlErr = err as { code?: string };
+      if (mysqlErr.code !== 'ER_DUP_FIELDNAME') {
+        throw err;
+      }
+    }
+
     // D_CHANNELS - Channel ID to local channel ID mapping
     await connection.query(`
       CREATE TABLE IF NOT EXISTS D_CHANNELS (

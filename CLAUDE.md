@@ -802,7 +802,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 7,600 passing** (336 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage)
+**Total Tests: 7,689 passing** (334 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI)
 
 ### Quick Validation Scripts
 
@@ -1804,7 +1804,7 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Total commits | 200+ |
 | Lines added | 107,300+ |
 | Tests added | 4,019+ |
-| Total tests passing | 7,600 |
+| Total tests passing | 7,689 |
 
 ### Wave Summary
 
@@ -2899,8 +2899,98 @@ All Waves 1-22 and Phase C are complete. The porting project has reached product
 - ✅ **OpenTelemetry Instrumentation** — Auto-instrumentation (Express, MySQL2, HTTP, Net, DNS, WebSocket) + 10 custom Mirth metrics + OTLP push + Prometheus scrape, K8s manifests updated with OTEL env vars and memory sizing (Wave 22)
 - ✅ **Phase C: Batch Adaptors** — ScriptBatchAdaptor base + 6 type-specific adaptors (Raw, JSON, NCPDP, XML, Delimited, HL7v2/ER7), HL7v2 AutoResponder with MSH.15 modes, HL7EscapeHandler wired into serializer
 - ✅ **Phase C: Code Quality** — Circular import fix (Mirth.ts ↔ EngineController.ts), test coverage 62% → 71% (1,518 new tests across 29 suites)
+- ✅ **Role-Based Authorization (P0 Fix)** — `RoleBasedAuthorizationController` replaces always-true `DefaultAuthorizationController`. 4 predefined roles (admin, manager, operator, monitor), PERSON.ROLE column migration, 60s role cache with invalidation, `MIRTH_AUTH_MODE` env var for fallback (53 tests)
+- ✅ **OpenAPI 3.1 Spec Generation** — Zod schemas + `@asteasolutions/zod-to-openapi` for TypeScript-native spec generation. 22 schemas, 48 paths across 5 servlets, build-time generator (`npm run openapi:generate`), dev-mode Swagger UI at `/api-docs` (42 tests)
 
-### Production Readiness Assessment (2026-02-19)
+### Role-Based Authorization Controller
+
+**P0 Security Fix**: The `DefaultAuthorizationController` allowed ALL operations for ALL authenticated users. Replaced with `RoleBasedAuthorizationController` using 4 predefined roles with fixed permission sets.
+
+#### Predefined Roles
+
+| Role | Description | Key Permissions |
+|------|-------------|----------------|
+| `admin` | Full access (default for existing users) | ALL 35+ permissions |
+| `manager` | Channel and configuration management | channels (all), code templates, global scripts, config map, tags, alerts, extensions, server settings |
+| `operator` | Day-to-day operations | channels (view), start/stop, deploy/undeploy, dashboard, messages (view+reprocess), events (view) |
+| `monitor` | Read-only monitoring | dashboard, channels (view), messages (view), events (view), server settings (view) |
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIRTH_AUTH_MODE` | `role-based` | `role-based` (enforced) or `permissive` (backward-compatible allow-all) |
+
+In production (`NODE_ENV=production`), `permissive` mode logs a warning on every startup.
+
+#### Database Migration
+
+`ALTER TABLE PERSON ADD COLUMN IF NOT EXISTS ROLE VARCHAR(50) DEFAULT 'admin'` — runs in `ensureNodeJsTables()`. Existing users default to `admin` (full access). New users created without an explicit role default to `monitor` (least privilege).
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/api/middleware/RoleBasedAuthorizationController.ts` | Role→permission mapping, role cache (60s TTL), DB lookup |
+| `src/api/middleware/authorization.ts` | `AuthorizationController` interface (unchanged) |
+| `src/api/middleware/permissions.ts` | 35+ permission constants (unchanged) |
+| `src/api/middleware/operations.ts` | 150+ operation→permission registry (unchanged) |
+| `src/api/servlets/UserServlet.ts` | Role in CRUD, cache clearing on role change |
+| `src/db/MirthDao.ts` | ROLE column in SELECT/INSERT/UPDATE |
+| `src/db/SchemaManager.ts` | PERSON.ROLE column migration |
+| `src/server/Mirth.ts` | Wires RoleBasedAuthorizationController at startup |
+| `tests/unit/api/RoleBasedAuthorizationController.test.ts` | 53 tests |
+
+### OpenAPI 3.1 Spec Generation
+
+TypeScript-native OpenAPI 3.1 specification generated from Zod schemas via `@asteasolutions/zod-to-openapi`. Covers the 5 highest-traffic servlets (Channel, User, Message, Engine, ChannelStatus) with 48 registered paths and 22 component schemas.
+
+#### Usage
+
+```bash
+# Generate spec (build-time)
+npm run openapi:generate          # → docs/openapi.json
+
+# Dev-mode Swagger UI (auto-mounted when NODE_ENV !== 'production')
+# GET /api-docs                   # Swagger UI
+# GET /api-docs/spec              # Raw JSON spec
+```
+
+#### Architecture
+
+```
+src/api/openapi/
+├── schemas.ts      # 22 Zod schemas with .openapi() metadata
+├── registry.ts     # 48 route registrations (method, path, request/response schemas)
+├── generator.ts    # Build-time script: generates docs/openapi.json
+├── serve.ts        # Dev-mode Swagger UI mount (disabled in production)
+└── index.ts        # Barrel exports
+```
+
+#### Registered Servlets
+
+| Servlet | Paths | Key Schemas |
+|---------|-------|-------------|
+| Health | 3 | HealthCheck |
+| Users | 12 | User, CreateUser, UpdateUser, LoginRequest, LoginStatus |
+| Channels | 9 | Channel, ChannelSummary, MetaDataColumnConfig |
+| Engine | 5 | (uses Channel schemas) |
+| Channel Status | 12 | DashboardStatus, DashboardChannelInfo, ChannelStatistics |
+| Messages | 7 | Message, ConnectorMessage, MessageContent |
+| **Total** | **48** | **22 schemas** |
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/api/openapi/schemas.ts` | Zod schemas mirroring `src/api/models/` interfaces |
+| `src/api/openapi/registry.ts` | Route registration with security, tags, request/response schemas |
+| `src/api/openapi/generator.ts` | Build-time spec generation to `docs/openapi.json` |
+| `src/api/openapi/serve.ts` | `getOpenApiSpec()` + `mountOpenApiDocs(app)` for dev mode |
+| `docs/openapi.json` | Generated OpenAPI 3.1 spec |
+| `tests/unit/api/openapi.test.ts` | 42 tests (structure, schemas, routes, determinism, serve module) |
+
+### Production Readiness Assessment (2026-02-20)
 
 Comprehensive audit performed across 9 dimensions. **Verdict: PRODUCTION READY.**
 
@@ -2908,7 +2998,7 @@ Comprehensive audit performed across 9 dimensions. **Verdict: PRODUCTION READY.*
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
-| **Test Suite** | PASS | 7,600 tests / 336 suites / 0 failures / ~20s |
+| **Test Suite** | PASS | 7,689 tests / 334 suites / 0 failures / ~35s |
 | **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
 | **Code Quality** | WARN | 4,500 ESLint issues — all Prettier formatting, zero logic bugs |
 | **Dependencies** | PASS | 33 npm audit findings — all in jest dev dependencies, 0 in production |
@@ -2923,7 +3013,7 @@ Comprehensive audit performed across 9 dimensions. **Verdict: PRODUCTION READY.*
 | Check | Result | Detail |
 |-------|--------|--------|
 | SQL Injection | PASS | All queries parameterized. Dynamic table names validated via UUID regex whitelist (`DonkeyDao.validateChannelId()`) |
-| Auth Coverage | PASS | All API routes behind `authMiddleware`. Public: `/api/health/*`, login, version only |
+| Auth Coverage | PASS | All API routes behind `authMiddleware` + `authorize()`. Role-based authorization (4 roles, 35+ permissions). Public: `/api/health/*`, login, version only |
 | eval() | PASS | Zero `eval()`. User scripts in `vm.createContext()` sandbox with `setTimeout`/`setInterval`/`setImmediate`/`queueMicrotask` set to `undefined` |
 | Rate Limiting | PASS | Global: 100 req/min/IP (`MIRTH_API_RATE_LIMIT`). Login: 10 req/min/IP. Body: 10MB API, 50MB connectors |
 | Secrets | PASS | Zero hardcoded production secrets. All from env vars |
