@@ -243,6 +243,12 @@ export class Mirth {
       logger.warn(
         'Cluster mode: session store is in-memory. Sessions will not be shared across instances. Consider a shared session store for production.'
       );
+      if (!clusterConfig.clusterSecret) {
+        logger.warn(
+          'MIRTH_CLUSTER_SECRET not set. Inter-node dispatch (/api/internal/dispatch) is unauthenticated. ' +
+            'Set MIRTH_CLUSTER_SECRET to a shared secret for secure inter-instance communication.'
+        );
+      }
     }
 
     // Wire GlobalMap and GlobalChannelMap to database backend for persistent $g/$gc
