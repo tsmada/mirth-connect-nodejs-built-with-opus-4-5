@@ -227,9 +227,10 @@ describe('SchemaManager', () => {
       'D_CLUSTER_EVENTS',
       'D_GLOBAL_MAP',
       'D_ARTIFACT_SYNC',
+      'D_POLLING_LEASES',
     ];
 
-    it('should create all 6 Node.js-only tables', async () => {
+    it('should create all 7 Node.js-only tables', async () => {
       const queriedSql: string[] = [];
       const mockConnection = {
         query: jest.fn<(sql: string) => Promise<unknown>>().mockImplementation(async (sql: string) => {
@@ -245,8 +246,8 @@ describe('SchemaManager', () => {
       await ensureNodeJsTables();
 
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      // 6 CREATE TABLE + 1 ALTER TABLE PERSON ADD COLUMN ROLE
-      expect(mockConnection.query).toHaveBeenCalledTimes(7);
+      // 7 CREATE TABLE + 1 ALTER TABLE PERSON ADD COLUMN ROLE + 1 ALTER TABLE D_GLOBAL_MAP ADD VERSION
+      expect(mockConnection.query).toHaveBeenCalledTimes(9);
 
       for (const tableName of NODE_JS_TABLES) {
         const found = queriedSql.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${tableName}`));
@@ -270,8 +271,8 @@ describe('SchemaManager', () => {
       await ensureNodeJsTables();
 
       expect(mockTransaction).toHaveBeenCalledTimes(2);
-      // Each call: 6 CREATE TABLE + 1 ALTER TABLE PERSON = 7 queries
-      expect(mockConnection.query).toHaveBeenCalledTimes(14);
+      // Each call: 7 CREATE TABLE + 1 ALTER TABLE PERSON + 1 ALTER TABLE D_GLOBAL_MAP = 9 queries
+      expect(mockConnection.query).toHaveBeenCalledTimes(18);
     });
   });
 

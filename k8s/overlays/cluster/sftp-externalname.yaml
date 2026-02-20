@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sftp
+  namespace: mirth-cluster
+  labels:
+    app: sftp
+    app.kubernetes.io/part-of: mirth-connect
+spec:
+  type: ExternalName
+  externalName: sftp.mirth-infra.svc.cluster.local

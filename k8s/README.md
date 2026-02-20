@@ -26,10 +26,17 @@ kubectl apply -k k8s/overlays/cluster/      # 3 replicas, horizontal scaling
 ./k8s/scripts/run-k6.sh api-load
 ./k8s/scripts/run-k6.sh mllp-load
 
-# 5. Run side-by-side benchmark (Java Mirth vs Node.js Mirth)
+# 5. Run PDF attachment stress test (10MB payloads + HPA scaling)
+./k8s/scripts/run-pdf-stress-test.sh
+
+# 6. Run polling coordination validation (SFTP lease exclusivity)
+./k8s/scripts/run-polling-validation.sh
+./k8s/scripts/run-polling-k6.sh --test both
+
+# 7. Run side-by-side benchmark (Java Mirth vs Node.js Mirth)
 ./k8s/scripts/run-benchmark.sh
 
-# 6. Cleanup
+# 8. Cleanup
 ./k8s/scripts/teardown.sh
 ```
 
@@ -39,7 +46,8 @@ kubectl apply -k k8s/overlays/cluster/      # 3 replicas, horizontal scaling
 k8s/
   Dockerfile                         # Multi-stage Node.js Mirth image
   base/                              # Shared infra (mirth-infra namespace)
-    mysql-statefulset.yaml           # MySQL 8.0 + PVC
+    mysql-statefulset.yaml           # MySQL 8.0 + PVC (tuned: 3Gi limit, 2 CPU)
+    mysql-configmap.yaml             # InnoDB tuning (1G buffer pool, 256M redo log)
     java-mirth-deployment.yaml       # nextgenhealthcare/connect:3.9
     mailhog-deployment.yaml          # Mock SMTP (port 1025)
     activemq-deployment.yaml         # JMS broker (STOMP 61613)
@@ -51,16 +59,22 @@ k8s/
     standalone/                      # MIRTH_MODE=standalone, separate MySQL
     takeover/                        # MIRTH_MODE=takeover, shared DB
     shadow/                          # MIRTH_SHADOW_MODE=true
-    cluster/                         # 3 replicas, MIRTH_CLUSTER_ENABLED=true
+    cluster/                         # 2+ replicas, HPA auto-scaling
+      node-mirth-hpa.yaml           # HPA: CPU@60%, memory@75%, min 2 / max 6
     benchmark/                       # Side-by-side Java vs Node.js benchmark
   benchmark-channels/                # Channel XML templates (PORT_PLACEHOLDER)
     http-echo.xml                    # HTTP Echo channel
     json-transform.xml               # JSON Transform channel
     hl7-http.xml                     # HL7 via HTTP channel
   k6/
-    configmap.yaml                   # k6 test scripts
+    configmap.yaml                   # k6 test scripts (API + MLLP)
+    configmap-pdf.yaml               # PDF attachment stress test script
+    configmap-polling.yaml           # Polling coordination + failover scripts
+    pdf-attachment-load.js           # Standalone k6 PDF test (10MB base64 payloads)
     job-api-load.yaml                # REST API throughput test
     job-mllp-load.yaml               # HL7 message load test
+    job-polling-coordination.yaml    # Polling lease exclusivity load test
+    job-polling-failover.yaml        # Polling failover under load test
     job-benchmark.yaml               # Side-by-side benchmark Job
     scripts/                         # k6 JavaScript test files
       benchmark-api.js               # REST API comparison
@@ -75,6 +89,9 @@ k8s/
     port-forward.sh                  # Expose infra services locally
     run-k6.sh                        # Launch k6 Job + tail logs
     run-benchmark.sh                 # Side-by-side benchmark orchestrator
+    run-pdf-stress-test.sh           # PDF attachment stress test + HPA monitor
+    run-polling-validation.sh        # Polling coordination validation orchestrator
+    run-polling-k6.sh               # Polling k6 load test orchestrator
 ```
 
 ## Namespace Strategy
@@ -85,7 +102,7 @@ k8s/
 | `mirth-standalone` | Node.js Mirth + separate MySQL | Fresh DB testing |
 | `mirth-takeover` | Node.js Mirth (ExternalName → infra MySQL) | Shared DB testing |
 | `mirth-shadow` | Node.js Mirth in shadow mode | Progressive cutover testing |
-| `mirth-cluster` | 3x Node.js Mirth replicas | Horizontal scaling testing |
+| `mirth-cluster` | 2-6x Node.js Mirth replicas + HPA | Horizontal scaling + auto-scaling testing |
 | `mirth-benchmark` | Node.js Mirth + separate MySQL | Side-by-side benchmark |
 | `mirth-k6` | k6 load test Jobs | Performance testing |
 
@@ -127,16 +144,29 @@ curl -X POST http://localhost:8080/api/system/shadow/promote \
   -H "Content-Type: application/json" -d '{"channelId":"..."}'
 ```
 
-### Horizontal Scaling
+### Horizontal Scaling + HPA
 ```bash
 kubectl apply -k k8s/overlays/cluster/
-# Verify 3 different serverIds
+# Verify different serverIds
 for i in {1..6}; do curl -s http://localhost:8080/api/health | jq .serverId; done
 
-# Scale test
+# Manual scale test
 kubectl scale -n mirth-cluster deployment/node-mirth --replicas=2
 kubectl scale -n mirth-cluster deployment/node-mirth --replicas=4
 ```
+
+The cluster overlay includes an HPA (`node-mirth-hpa.yaml`) with `autoscaling/v2`:
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Min replicas | 2 | Always at least 2 pods |
+| Max replicas | 6 | Upper bound |
+| CPU target | 60% utilization | Primary scale trigger |
+| Memory target | 75% utilization | Secondary scale trigger |
+| Scale-up | 2 pods/60s, 30s stabilization | Aggressive — respond quickly to load |
+| Scale-down | 1 pod/120s, 120s stabilization | Conservative — avoid flapping |
+
+**Prerequisite:** `metrics-server` must be running (`kubectl top nodes` should work). Rancher Desktop includes it by default.
 
 ### Kitchen Sink + k6 Load Test
 ```bash
@@ -147,6 +177,112 @@ kubectl scale -n mirth-cluster deployment/node-mirth --replicas=4
 ./k8s/scripts/run-k6.sh api-load    # REST API throughput
 ./k8s/scripts/run-k6.sh mllp-load   # HL7 message load via HTTP gateway
 ```
+
+### PDF Attachment Stress Test (Large Payloads)
+
+Sends 10MB base64-encoded PDF attachments (~13.33MB after encoding) to stress V8 heap, GC pressure, MySQL I/O, and HPA scaling:
+
+```bash
+# Full run: deploy HPA + apply configmap + run k6 + monitor HPA
+./k8s/scripts/run-pdf-stress-test.sh
+
+# Quick mode (shorter test duration)
+./k8s/scripts/run-pdf-stress-test.sh --quick
+
+# Skip HPA deploy (already applied)
+./k8s/scripts/run-pdf-stress-test.sh --skip-deploy
+```
+
+**VU Profile (7 stages, ~7 minutes):**
+
+| Stage | Duration | VUs | Purpose |
+|-------|----------|-----|---------|
+| Warmup | 30s | 1→3 | Establish baseline |
+| Steady | 120s | 5 | Sustained large-payload throughput |
+| Ramp to peak | 30s | 5→10 | Trigger HPA scale-up |
+| Hold peak | 120s | 10 | Sustained peak |
+| Spike | 30s | 10→15 | Push past comfortable limits |
+| Hold spike | 60s | 15 | Maximum pressure |
+| Recovery | 30s | 15→0 | Verify pods stay healthy |
+
+**Results (2026-02-20, Rancher Desktop k3s, 6 CPU / 24Gi):**
+
+| Metric | Value |
+|--------|-------|
+| Messages processed | 642 |
+| Error rate | **0.00%** |
+| Payload per message | 13.33 MB (base64) |
+| Total data sent | 8.36 GB |
+| Throughput | 1.52 iterations/s |
+| Median latency | 1,539 ms |
+| p95 latency | 5,210 ms |
+| p99 latency | 15,247 ms |
+| Max latency | 22,148 ms |
+| Peak VUs | 15 |
+| Pod restarts | **0** |
+
+**HPA Scaling Timeline:**
+
+| Time | CPU | Replicas | MySQL Memory |
+|------|-----|----------|-------------|
+| T+0:00 | 8% | 2 | 552 Mi |
+| T+1:00 | 53% | 2 | 1,371 Mi |
+| T+2:00 | 71% | 2→3 | 2,026 Mi |
+| T+3:00 | 42% | 3 | 2,453 Mi |
+| T+5:00 | 43% | 3 | 2,890 Mi |
+| T+7:00 | 18% | 3→2 | 3,019 Mi |
+| T+8:00 | 7% | 2 | 2,263 Mi |
+
+**Key observations:**
+- HPA correctly scaled 2→3 pods when CPU exceeded 60% target
+- HPA correctly scaled back 3→2 after load subsided
+- Zero pod restarts — V8 handled 13MB string allocations efficiently (max 312 Mi per pod)
+- MySQL was the true bottleneck — peaked at 3,019 Mi / 3 Gi limit (requires tuned InnoDB config)
+- Node.js pods stayed under 400 Mi memory despite massive payload sizes
+
+### Polling Coordination Validation (SFTP Lease Exclusivity)
+
+Validates that the `PollingLeaseManager` correctly enforces exclusive polling when multiple pods deploy the same SFTP/File polling channels. Uses an SFTP server in `mirth-infra`, 4 purpose-built polling channels (PC01-PC04), and a `DV_POLL_AUDIT` database table for verification.
+
+```bash
+# Full validation: deploy channels + run 15-check script + SQL verification
+./k8s/scripts/run-polling-validation.sh
+
+# k6 coordination load test (5 VUs seeding files for 3 minutes)
+./k8s/scripts/run-polling-k6.sh --test coordination
+
+# k6 failover load test (pod kill at T+60s during continuous seeding)
+./k8s/scripts/run-polling-k6.sh --test failover
+
+# Run both k6 tests
+./k8s/scripts/run-polling-k6.sh --test both
+```
+
+**How it works:**
+1. PC03 (HTTP Listener on port 8120) accepts JSON `{fileName, content}` and writes files to SFTP
+2. PC01 (SFTP poller, 2s interval) and PC02 (SFTP poller, 500ms interval) compete for leases
+3. Only the lease-holding pod's poller is active — standby pods run destinations but not source
+4. Each processed file is recorded in `DV_POLL_AUDIT` with `SERVER_ID`
+5. SQL verification checks for cross-server duplicate processing (should be 0)
+
+**Polling Channels:**
+
+| Channel | Source | Purpose |
+|---------|--------|---------|
+| PC01 | SFTP File Reader (`*.hl7`, 2s poll) | Exclusive polling + MOVE after process |
+| PC02 | SFTP File Reader (`*.json`, 500ms poll) | High-frequency lease renewal stress |
+| PC03 | HTTP Listener (port 8120) | File seeder — k6 injection point |
+| PC04 | Local FILE Reader (`*.dat`, 3s poll) | Shared hostPath volume coordination |
+
+**Results (2026-02-20, Rancher Desktop k3s, 2-pod cluster):**
+
+| Test | Files | Error Rate | Cross-Server Dupes | Duration |
+|------|-------|------------|-------------------|----------|
+| Validation script | 15 seeded | 0% | **0** | ~5 min |
+| k6 coordination | 441 seeded | **0.00%** | **0** | 3m00s |
+| k6 failover | 159 seeded | **0.00%** | **0** | 3m31s |
+
+**Failover behavior:** When the lease-holding pod is killed, the standby pod detects the expired lease and acquires it within <10s (worst-case: 2×TTL = 30s at default 15s TTL). Continuous file seeding is uninterrupted — the LoadBalancer routes seed requests to surviving pods.
 
 ## Infrastructure Access
 
@@ -161,7 +297,7 @@ Primary services are exposed via LoadBalancer. For secondary services:
 # SFTP:     localhost:2222
 ```
 
-## Validation Results (2026-02-15)
+## Validation Results (2026-02-15, Polling 2026-02-20)
 
 All scenarios validated on Rancher Desktop k3s (Apple Silicon, k3s v1.27.1):
 
@@ -174,6 +310,7 @@ All scenarios validated on Rancher Desktop k3s (Apple Silicon, k3s v1.27.1):
 | Scale-Down (3 to 2) | PASS | Graceful OFFLINE deregistration via SIGTERM |
 | Scale-Up (2 to 4 to 3) | PASS | Instant ONLINE registration for new pods |
 | Java Mirth Coexistence | PASS | Both engines sharing MySQL (18 tables), no interference |
+| Polling Coordination | PASS | 15/15 checks, 0 cross-server dupes, <10s failover (2026-02-20) |
 
 ### Coexistence Details
 
@@ -359,6 +496,9 @@ Tested on Rancher Desktop k3s, Apple Silicon (ARM64). Both engines running nativ
 | `benchmark-api.js` | REST API | warmup 5→steady 10→peak 25 VU | ~5.5 min |
 | `benchmark-hl7.js` | HL7 messages | warmup 3→load 10 VU | ~3 min |
 | `benchmark-json.js` | JSON transforms | warmup 3→load 10 VU | ~3 min |
+| `pdf-attachment-load.js` | PDF stress | warmup 3→steady 5→peak 10→spike 15 VU | ~7 min |
+| `polling-coordination-load.js` | Polling coordination | warmup 1→moderate 3→high 5→sustain→drain | ~3 min |
+| `polling-failover-load.js` | Polling failover | warmup 1→steady 2→post-failover 2→drain | ~3.5 min |
 
 ### Benchmark Channels
 
@@ -367,6 +507,23 @@ Tested on Rancher Desktop k3s, Apple Silicon (ARM64). Both engines running nativ
 | HTTP Echo | 7080 | 7090 | HTTP ingestion + JS transformer + DB persistence |
 | JSON Transform | 7081 | 7091 | JSON parsing + field mapping + XML output |
 | HL7 via HTTP | 7082 | 7092 | HL7v2 parsing + ACK generation + serialization |
+
+## MySQL Tuning for Large Payloads
+
+The default MySQL configuration is tuned for large-payload workloads (10MB+ base64 PDF attachments stored as LONGTEXT in `D_MC` tables). Key settings in `base/mysql-configmap.yaml`:
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `innodb_buffer_pool_size` | 1G | Accommodates concurrent LONGTEXT write buffering |
+| `innodb_log_file_size` | 256M | Larger redo logs for big transaction writes |
+| `innodb_log_buffer_size` | 64M | Avoids log flush stalls during large inserts |
+| `innodb_flush_log_at_trx_commit` | 2 | OS-cached fsync (1s durability window) — reduces I/O |
+| `max_allowed_packet` | 64M | Required for 13MB+ base64 payloads |
+| `max_connections` | 100 | Prevents memory exhaustion from too many concurrent connections |
+
+**Resource limits** (`base/mysql-statefulset.yaml`): 1Gi request / 3Gi limit memory, 500m / 2 CPU. The 3Gi limit accommodates: 1G buffer pool + 64M max_allowed_packet + per-connection sort/join buffers × max_connections.
+
+**Warning:** With the original 1Gi memory limit, concurrent 13MB LONGTEXT writes caused MySQL OOMKill (exit code 137), cascading into Mirth pod self-fencing. See lesson #52 in CLAUDE.md.
 
 ## Rebuilding the Image
 

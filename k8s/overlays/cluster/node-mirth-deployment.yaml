@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/part-of: mirth-connect
     mirth-mode: cluster
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: node-mirth
@@ -71,6 +71,9 @@ spec:
               name: dv-http-chain
             - containerPort: 6675
               name: dv-mllp-heavy
+            # Polling validation channel ports
+            - containerPort: 8120
+              name: http-seed
           env:
             - name: MIRTH_MODE
               value: "standalone"
@@ -90,6 +93,8 @@ spec:
               value: "mirth"
             - name: DB_PASSWORD
               value: "mirth"
+            - name: DB_NAME
+              value: "mirthdb"
             - name: MIRTH_SERVER_ID
               valueFrom:
                 fieldRef:
@@ -99,6 +104,8 @@ spec:
                 secretKeyRef:
                   name: cluster-secret
                   key: MIRTH_CLUSTER_SECRET
+            - name: CORS_ORIGINS
+              value: "http://node-mirth:8080,http://node-mirth.mirth-cluster.svc.cluster.local:8080,http://localhost:8080,http://localhost:8081"
             - name: OTEL_SERVICE_NAME
               value: "mirth-connect-node"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -113,11 +120,13 @@ spec:
           volumeMounts:
             - name: mirth-tmp
               mountPath: /tmp/mirth-ks
+            - name: mirth-shared
+              mountPath: /tmp/mirth-shared
           startupProbe:
             httpGet:
               path: /api/health/startup
               port: 8080
-            failureThreshold: 30
+            failureThreshold: 60
             periodSeconds: 5
           readinessProbe:
             httpGet:
@@ -131,11 +140,20 @@ spec:
             periodSeconds: 15
           resources:
             requests:
+              # Tuned for single-node Rancher Desktop (4 CPU / 16Gi).
+              # Low requests allow HPA to schedule more pods; limits allow bursting.
               memory: "512Mi"
-              cpu: "200m"
+              cpu: "250m"
             limits:
-              memory: "1Gi"
-              cpu: "1000m"
+              # Raised for large-payload processing (10MB+ PDF attachments).
+              # At 10 concurrent 13MB messages, V8 heap needs ~256MB just for
+              # payload strings + GC headroom. 2Gi gives comfortable margin.
+              memory: "2Gi"
+              cpu: "2000m"
       volumes:
         - name: mirth-tmp
           emptyDir: {}
+        - name: mirth-shared
+          hostPath:
+            path: /tmp/mirth-shared
+            type: DirectoryOrCreate

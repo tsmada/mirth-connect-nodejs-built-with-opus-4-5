@@ -29,6 +29,7 @@ export {
   isStartupComplete,
 } from './HealthCheck.js';
 export { SequenceAllocator } from './SequenceAllocator.js';
+export { ChannelMutex } from './ChannelMutex.js';
 export type { MapBackend } from './MapBackend.js';
 export { InMemoryMapBackend, DatabaseMapBackend, RedisMapBackend } from './MapBackend.js';
 export {
@@ -58,3 +59,22 @@ export {
   isChannelActive,
   resetShadowMode,
 } from './ShadowMode.js';
+export {
+  initTakeoverPollingGuard,
+  isPollingAllowedInTakeover,
+  enableTakeoverPolling,
+  disableTakeoverPolling,
+  getTakeoverPollingEnabled,
+  resetTakeoverPollingGuard,
+} from './TakeoverPollingGuard.js';
+export {
+  acquireLease,
+  renewLease,
+  releaseLease,
+  releaseAllLeases,
+  startLeaseRenewal,
+  stopLeaseRenewal,
+  stopAllLeaseRenewals,
+  getAllLeases,
+} from './PollingLeaseManager.js';
+export type { LeaseInfo } from './PollingLeaseManager.js';

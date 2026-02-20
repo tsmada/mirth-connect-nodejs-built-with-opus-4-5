@@ -135,6 +135,15 @@ export abstract class SourceConnector {
   }
 
   /**
+   * Whether this source connector uses polling to acquire messages.
+   * Override to return true in File and Database receivers.
+   * Used by Channel to determine if cluster lease coordination is needed.
+   */
+  isPollingConnector(): boolean {
+    return false;
+  }
+
+  /**
    * Get the current deployed state of this connector.
    * Matches Java Mirth Connector.getCurrentState()
    */

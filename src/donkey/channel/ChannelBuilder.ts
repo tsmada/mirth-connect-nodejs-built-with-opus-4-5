@@ -57,6 +57,7 @@ import { JavaScriptReceiver } from '../../connectors/js/JavaScriptReceiver.js';
 import { JavaScriptDispatcher } from '../../connectors/js/JavaScriptDispatcher.js';
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 import { DefaultResponseValidator } from '../message/ResponseValidator.js';
+import { compileTransformerStep, compileFilterRule } from '../../javascript/runtime/StepCompiler.js';
 
 export interface BuildChannelOptions {
   globalPreprocessorScript?: string;
@@ -1320,10 +1321,22 @@ function extractFilterRules(filter: unknown): ScriptFilterRule[] {
       if (!item || typeof item !== 'object') continue;
       const rule = item as Record<string, unknown>;
       if (rule.enabled === false || String(rule.enabled) === 'false') continue;
-      if (!rule.script) continue; // Skip rules without script (e.g., incomplete rule builder rules)
+
+      // Try inline script first (JavaScriptRule), then compile structured rules (RuleBuilderRule)
+      let script: string | undefined;
+      if (rule.script) {
+        script = String(rule.script);
+      } else {
+        const compiled = compileFilterRule(className, rule);
+        if (compiled) {
+          script = compiled;
+        }
+      }
+      if (!script) continue; // Unknown rule type without script — skip
+
       rules.push({
         name: String(rule.name || ''),
-        script: String(rule.script),
+        script,
         operator: (String(rule.operator) === 'OR' ? 'OR' : 'AND') as 'AND' | 'OR',
         enabled: true,
       });
@@ -1371,10 +1384,22 @@ function extractTransformerSteps(transformer: unknown): ScriptTransformerStep[] 
       if (!item || typeof item !== 'object') continue;
       const step = item as Record<string, unknown>;
       if (step.enabled === false || String(step.enabled) === 'false') continue;
-      if (!step.script) continue; // Skip steps without compiled script
+
+      // Try inline script first (JavaScriptStep), then compile structured steps (Mapper, MessageBuilder, XSLT)
+      let script: string | undefined;
+      if (step.script) {
+        script = String(step.script);
+      } else {
+        const compiled = compileTransformerStep(className, step);
+        if (compiled) {
+          script = compiled;
+        }
+      }
+      if (!script) continue; // Unknown step type without script — skip
+
       steps.push({
         name: String(step.name || ''),
-        script: String(step.script),
+        script,
         enabled: true,
       });
     }

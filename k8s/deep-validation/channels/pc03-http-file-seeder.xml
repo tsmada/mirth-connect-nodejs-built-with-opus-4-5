@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel version="3.9.1">
+  <id>pc000003-0003-0003-0003-000000000003</id>
+  <nextMetaDataId>2</nextMetaDataId>
+  <name>PC03 HTTP File Seeder</name>
+  <description>Polling Coordination PC03: HTTP Listener on port 8120. Receives JSON with fileName and content, writes to SFTP input directory. k6 injection point for seeding test files.</description>
+  <revision>1</revision>
+  <sourceConnector version="3.9.1">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <transportName>HTTP Listener</transportName>
+    <properties class="com.mirth.connect.connectors.http.HttpReceiverProperties" version="3.9.1">
+      <pluginProperties/>
+      <listenerConnectorProperties version="3.9.1">
+        <host>0.0.0.0</host>
+        <port>8120</port>
+      </listenerConnectorProperties>
+      <sourceConnectorProperties version="3.9.1">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+      <xmlBody>false</xmlBody>
+      <parseMultipart>true</parseMultipart>
+      <includeMetadata>false</includeMetadata>
+      <binaryMimeTypes>application/.*(?!json|xml)</binaryMimeTypes>
+      <binaryMimeTypesRegex>true</binaryMimeTypesRegex>
+      <responseContentType>application/json</responseContentType>
+      <responseDataTypeBinary>false</responseDataTypeBinary>
+      <responseStatusCode></responseStatusCode>
+      <responseHeaders class="linked-hash-map"/>
+      <charset>UTF-8</charset>
+      <contextPath>/seed</contextPath>
+      <timeout>30000</timeout>
+      <staticResources/>
+    </properties>
+    <transformer version="3.9.1">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>Extract File Info</name>
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[// Parse JSON body to extract fileName and content
+var body = JSON.parse(connectorMessage.getRawData());
+$c('seedFileName', body.fileName || ('test-' + Date.now() + '.hl7'));
+$c('seedContent', body.content || connectorMessage.getRawData());]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+      </elements>
+      <inboundDataType>RAW</inboundDataType>
+      <outboundDataType>RAW</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+    </transformer>
+    <filter version="3.9.1">
+      <elements/>
+    </filter>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="3.9.1">
+      <metaDataId>1</metaDataId>
+      <name>SFTP File Writer</name>
+      <transportName>File Writer</transportName>
+      <properties class="com.mirth.connect.connectors.file.FileDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>true</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+        </destinationConnectorProperties>
+        <scheme>SFTP</scheme>
+        <schemeProperties>
+          <host>/input</host>
+          <sftpSchemeProperties>
+            <hostKeyChecking>no</hostKeyChecking>
+            <passwordAuth>true</passwordAuth>
+            <keyAuth>false</keyAuth>
+          </sftpSchemeProperties>
+        </schemeProperties>
+        <host>sftp</host>
+        <port>22</port>
+        <outputPattern>${seedFileName}</outputPattern>
+        <anonymous>false</anonymous>
+        <username>nodeuser</username>
+        <password>nodepass</password>
+        <timeout>10000</timeout>
+        <secure>false</secure>
+        <passive>true</passive>
+        <validateConnection>true</validateConnection>
+        <outputAppend>false</outputAppend>
+        <errorOnExists>false</errorOnExists>
+        <temporary>false</temporary>
+        <binary>false</binary>
+        <charsetEncoding>UTF-8</charsetEncoding>
+        <template>${seedContent}</template>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      </transformer>
+      <filter version="3.9.1">
+        <elements/>
+      </filter>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      </responseTransformer>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>// No preprocessing</preprocessingScript>
+  <postprocessingScript>// No postprocessing</postprocessingScript>
+  <deployScript>// No deploy script</deployScript>
+  <undeployScript>// No undeploy script</undeployScript>
+  <properties version="3.9.1">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>false</storeAttachments>
+    <tags class="linked-hash-set">
+      <string>polling-validation</string>
+    </tags>
+    <metaDataColumns/>
+    <archiveEnabled>false</archiveEnabled>
+  </properties>
+</channel>

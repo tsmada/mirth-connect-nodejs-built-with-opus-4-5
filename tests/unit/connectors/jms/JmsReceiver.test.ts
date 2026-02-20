@@ -162,7 +162,7 @@ describe('JmsReceiver', () => {
         expect.any(Function),
         expect.objectContaining({
           durableSubscription: true,
-          subscriptionName: 'my-durable-sub',
+          subscriptionName: expect.stringMatching(/^my-durable-sub-/),
         })
       );
     });

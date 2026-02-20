@@ -376,6 +376,20 @@ export async function ensureNodeJsTables(): Promise<void> {
       ) ENGINE=InnoDB
     `);
 
+    // Add VERSION column to D_GLOBAL_MAP for optimistic locking (CAS semantics)
+    try {
+      await connection.query(
+        `ALTER TABLE D_GLOBAL_MAP ADD COLUMN VERSION BIGINT NOT NULL DEFAULT 0`
+      );
+      logger.info('Added VERSION column to D_GLOBAL_MAP table');
+    } catch (err: unknown) {
+      // Column already exists (MySQL error 1060: Duplicate column name)
+      const mysqlErr = err as { code?: string };
+      if (mysqlErr.code !== 'ER_DUP_FIELDNAME') {
+        throw err;
+      }
+    }
+
     // D_ARTIFACT_SYNC - Git artifact sync tracking (Node.js-only)
     await connection.query(`
       CREATE TABLE IF NOT EXISTS D_ARTIFACT_SYNC (
@@ -391,6 +405,19 @@ export async function ensureNodeJsTables(): Promise<void> {
         ENVIRONMENT VARCHAR(50),
         INDEX idx_artifact (ARTIFACT_TYPE, ARTIFACT_ID),
         INDEX idx_commit (COMMIT_HASH)
+      ) ENGINE=InnoDB
+    `);
+
+    // D_POLLING_LEASES - Exclusive polling lease for clustered source connectors (Node.js-only)
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS D_POLLING_LEASES (
+        CHANNEL_ID VARCHAR(36) NOT NULL PRIMARY KEY,
+        SERVER_ID VARCHAR(255) NOT NULL,
+        ACQUIRED_AT TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        RENEWED_AT TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        EXPIRES_AT TIMESTAMP NOT NULL,
+        INDEX idx_polling_server (SERVER_ID),
+        INDEX idx_polling_expires (EXPIRES_AT)
       ) ENGINE=InnoDB
     `);
   });

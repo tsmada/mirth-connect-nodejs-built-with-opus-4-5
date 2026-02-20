@@ -13,10 +13,10 @@ resources:
   - mailhog-service.yaml
   - activemq-deployment.yaml
   - activemq-service.yaml
+  - sftp-deployment.yaml
+  - sftp-service.yaml
   # Images not yet pulled:
   # - castlemock-deployment.yaml
   # - castlemock-service.yaml
   # - orthanc-deployment.yaml
   # - orthanc-service.yaml
-  # - sftp-deployment.yaml
-  # - sftp-service.yaml

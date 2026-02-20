@@ -11,6 +11,7 @@
 import { RowDataPacket } from 'mysql2/promise';
 import { getPool, withRetry } from '../db/pool.js';
 import { sequenceTable } from '../db/DonkeyDao.js';
+import { ChannelMutex } from './ChannelMutex.js';
 
 interface SequenceBlock {
   nextId: number; // Next ID to return
@@ -20,6 +21,7 @@ interface SequenceBlock {
 export class SequenceAllocator {
   private blocks: Map<string, SequenceBlock> = new Map();
   private blockSize: number;
+  private mutex = new ChannelMutex();
 
   constructor(blockSize: number = 100) {
     this.blockSize = blockSize;
@@ -28,14 +30,23 @@ export class SequenceAllocator {
   /**
    * Get the next message ID for a channel.
    * Allocates a new block from the DB if the current block is exhausted.
+   *
+   * Wrapped with a per-channel mutex to prevent the race where two concurrent
+   * callers both see an exhausted block, both await allocateBlock(), and the
+   * second overwrites the first's freshly allocated block.
    */
   async allocateId(channelId: string): Promise<number> {
-    let block = this.blocks.get(channelId);
-    if (!block || block.nextId >= block.maxId) {
-      block = await this.allocateBlock(channelId);
-      this.blocks.set(channelId, block);
+    const release = await this.mutex.acquire(channelId);
+    try {
+      let block = this.blocks.get(channelId);
+      if (!block || block.nextId >= block.maxId) {
+        block = await this.allocateBlock(channelId);
+        this.blocks.set(channelId, block);
+      }
+      return block.nextId++;
+    } finally {
+      release();
     }
-    return block.nextId++;
   }
 
   /**

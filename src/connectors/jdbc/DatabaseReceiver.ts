@@ -74,6 +74,8 @@ export class DatabaseReceiver extends SourceConnector {
     };
   }
 
+  override isPollingConnector(): boolean { return true; }
+
   /**
    * Get the connector properties
    */

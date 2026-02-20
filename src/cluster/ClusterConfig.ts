@@ -21,6 +21,10 @@ export interface ClusterConfiguration {
   heartbeatTimeout: number;
   /** Message ID block allocation size (MIRTH_CLUSTER_SEQUENCE_BLOCK, default 100) */
   sequenceBlockSize: number;
+  /** Polling coordination mode: 'exclusive' (one instance) or 'all' (every instance) */
+  pollingMode: 'exclusive' | 'all';
+  /** Polling lease TTL in ms (MIRTH_CLUSTER_LEASE_TTL, default 30000) */
+  leaseTtl: number;
 }
 
 import { getServerId } from './ClusterIdentity.js';
@@ -54,6 +58,10 @@ export function getClusterConfig(): ClusterConfiguration {
     heartbeatInterval: parseNumber(process.env['MIRTH_CLUSTER_HEARTBEAT_INTERVAL'], 10000),
     heartbeatTimeout: parseNumber(process.env['MIRTH_CLUSTER_HEARTBEAT_TIMEOUT'], 30000),
     sequenceBlockSize: parseNumber(process.env['MIRTH_CLUSTER_SEQUENCE_BLOCK'], 100),
+    pollingMode:
+      (process.env['MIRTH_CLUSTER_POLLING_MODE'] as 'exclusive' | 'all') ||
+      (parseBoolean(process.env['MIRTH_CLUSTER_ENABLED'], false) ? 'exclusive' : 'all'),
+    leaseTtl: parseNumber(process.env['MIRTH_CLUSTER_LEASE_TTL'], 30000),
   };
 
   return cachedConfig;

@@ -241,6 +241,14 @@ export class JmsReceiver extends SourceConnector {
       await this.handleMessage(message);
     };
 
+    // For durable topic subscriptions, append SERVER_ID to prevent
+    // duplicate delivery when multiple cluster instances subscribe
+    let subName = this.properties.subscriptionName || undefined;
+    if (subName && this.properties.durableTopic) {
+      const { getServerId } = await import('../../cluster/ClusterIdentity.js');
+      subName = `${subName}-${getServerId()}`;
+    }
+
     this.subscriptionId = await this.jmsClient.subscribe(
       this.properties.destinationName,
       this.properties.topic,
@@ -249,7 +257,7 @@ export class JmsReceiver extends SourceConnector {
         selector: this.properties.selector || undefined,
         acknowledgeMode: this.properties.acknowledgeMode,
         durableSubscription: this.properties.durableTopic,
-        subscriptionName: this.properties.subscriptionName || undefined,
+        subscriptionName: subName,
         prefetchCount: this.properties.prefetchCount,
       }
     );

@@ -1,0 +1,155 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-mirth
+  namespace: mirth-cluster-takeover
+  labels:
+    app: node-mirth
+    app.kubernetes.io/part-of: mirth-connect
+    mirth-mode: cluster-takeover
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: node-mirth
+  template:
+    metadata:
+      labels:
+        app: node-mirth
+        mirth-mode: cluster-takeover
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: node-mirth
+          image: node-mirth:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http-api
+            - containerPort: 6670
+              name: mllp-adt
+            - containerPort: 6671
+              name: mllp-e4x
+            - containerPort: 6672
+              name: mllp-batch
+            - containerPort: 8090
+              name: http-gateway
+            - containerPort: 8091
+              name: http-completion
+            - containerPort: 8092
+              name: http-soap
+            - containerPort: 8093
+              name: http-xml
+            - containerPort: 8094
+              name: http-hl7
+            - containerPort: 8095
+              name: http-json
+            - containerPort: 8096
+              name: http-multi
+            - containerPort: 8097
+              name: http-api-verify
+            - containerPort: 8098
+              name: http-converter
+            - containerPort: 8099
+              name: http-global
+            - containerPort: 8100
+              name: http-metadata
+            - containerPort: 8101
+              name: http-response
+            - containerPort: 8102
+              name: http-e4x-stress
+            - containerPort: 11112
+              name: dicom-scp
+            # Deep validation channel ports
+            - containerPort: 8110
+              name: dv-http-adt
+            - containerPort: 8111
+              name: dv-http-json
+            - containerPort: 8112
+              name: dv-http-err
+            - containerPort: 8113
+              name: dv-http-chain
+            - containerPort: 6675
+              name: dv-mllp-heavy
+            # Polling coordination test port
+            - containerPort: 8120
+              name: http-seed
+          env:
+            - name: MIRTH_MODE
+              value: "takeover"
+            - name: MIRTH_CLUSTER_ENABLED
+              value: "true"
+            - name: PORT
+              value: "8080"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DB_HOST
+              value: "mysql"
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_USER
+              value: "mirth"
+            - name: DB_PASSWORD
+              value: "mirth"
+            - name: DB_NAME
+              value: "mirthdb"
+            - name: MIRTH_SERVER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MIRTH_CLUSTER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cluster-secret
+                  key: MIRTH_CLUSTER_SECRET
+            - name: CORS_ORIGINS
+              value: "http://node-mirth:8080,http://node-mirth.mirth-cluster-takeover.svc.cluster.local:8080,http://localhost:8080,http://localhost:8081"
+            - name: OTEL_SERVICE_NAME
+              value: "mirth-connect-node"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4318"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=cluster-takeover"
+            - name: MIRTH_OTEL_PROMETHEUS_PORT
+              value: "9464"
+          envFrom:
+            - configMapRef:
+                name: node-mirth-config
+          volumeMounts:
+            - name: mirth-shared
+              mountPath: /tmp/mirth-shared
+          startupProbe:
+            httpGet:
+              path: /api/health/startup
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8080
+            periodSeconds: 15
+          resources:
+            requests:
+              # Tuned for single-node Rancher Desktop (4 CPU / 16Gi).
+              # Low requests allow HPA to schedule more pods; limits allow bursting.
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              # Raised for large-payload processing (10MB+ PDF attachments).
+              # At 10 concurrent 13MB messages, V8 heap needs ~256MB just for
+              # payload strings + GC headroom. 2Gi gives comfortable margin.
+              memory: "2Gi"
+              cpu: "2000m"
+      volumes:
+        - name: mirth-shared
+          hostPath:
+            path: /tmp/mirth-shared
+            type: DirectoryOrCreate

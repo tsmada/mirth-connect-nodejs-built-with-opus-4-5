@@ -310,9 +310,9 @@ export class E4XTranspiler {
       const before = result;
 
       // Match self-closing tags: <name attrs/>
-      result = result.replace(/(<(\w+)(?:\s+[^>]*)?\/\s*>)/g, (match, fullTag, _tagName) => {
-        // Check if this is inside a string
-        if (this.isInsideString(result, result.indexOf(match))) {
+      result = result.replace(/(<(\w+)(?:\s+[^>]*)?\/\s*>)/g, (match, fullTag, _tagName, offset) => {
+        // Check if this is inside a string — use offset from callback, not indexOf
+        if (this.isInsideString(result, offset)) {
           return match;
         }
         return `XMLProxy.create('${this.escapeForString(fullTag)}')`;
@@ -338,11 +338,15 @@ export class E4XTranspiler {
     // Find XML-like tags that aren't in strings
     // Pattern: <tagname ...>content</tagname>
 
-    // This is a simplified approach - look for matching open/close tags
-    const tagPattern = /<(\w+)(\s+[^>]*)?>([^]*?)<\/\1>/;
-    const match = tagPattern.exec(code);
+    // Use global regex so we can skip matches inside strings and continue searching
+    const tagPattern = /<(\w+)(\s+[^>]*)?>([^]*?)<\/\1>/g;
+    let match: RegExpExecArray | null;
 
-    if (match && !this.isInsideString(code, match.index)) {
+    while ((match = tagPattern.exec(code)) !== null) {
+      if (this.isInsideString(code, match.index)) {
+        continue; // Skip this match, try next one
+      }
+
       const [fullMatch, tagName, attrs, content] = match;
       const attrStr = attrs || '';
       const contentStr = content || '';
@@ -371,14 +375,32 @@ export class E4XTranspiler {
    * Convert {expr} in XML to string concatenation
    */
   private convertEmbeddedToConcat(content: string): string {
-    // Split on { and }
+    // Split on { and } — must track string literals inside expressions
+    // to avoid premature brace closing on e.g. format("value}")
     const parts: string[] = [];
     let inExpr = false;
     let current = '';
     let braceDepth = 0;
+    let inString: string | null = null;
+    let escaped = false;
 
     for (let i = 0; i < content.length; i++) {
-      const char = content[i];
+      const char = content[i]!;
+
+      // Handle escape sequences inside strings
+      if (escaped) { escaped = false; current += char; continue; }
+      if (inString !== null && char === '\\') { escaped = true; current += char; continue; }
+
+      // Handle string delimiters (only track when inside expressions)
+      if (inExpr && inString === null && (char === '"' || char === "'" || char === '`')) {
+        inString = char; current += char; continue;
+      }
+      if (inExpr && inString !== null && char === inString) {
+        inString = null; current += char; continue;
+      }
+
+      // Skip brace counting when inside a string literal
+      if (inString !== null) { current += char; continue; }
 
       if (char === '{' && !inExpr) {
         if (current) {
@@ -431,7 +453,7 @@ export class E4XTranspiler {
   private transpileAttributes(code: string): string {
     // WRITE: .@attr = value → .setAttr('attr', value)
     // Must come BEFORE read rule. Must not match == or != or === or !==
-    code = code.replace(/\.@(\w+)\s*=\s*(?!=)([^;,\n\)]+)/g, ".setAttr('$1', $2)");
+    code = code.replace(/\.@(\w+)\s*=\s*(?!=)([^;,\n)]+?)\s*(?=[;,\n)]|$)/gm, ".setAttr('$1', $2)");
 
     // READ: .@identifier
     code = code.replace(/\.@(\w+)/g, ".attr('$1')");
@@ -598,6 +620,7 @@ export class E4XTranspiler {
     return str
       .replace(/\\/g, '\\\\')
       .replace(/'/g, "\\'")
+      .replace(/`/g, '\\`')
       .replace(/\n/g, '\\n')
       .replace(/\r/g, '\\r')
       .replace(/\t/g, '\\t');

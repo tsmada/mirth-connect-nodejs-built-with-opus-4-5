@@ -1,0 +1,7 @@
+{
+  "id": "13.1",
+  "name": "Combined Cluster + Takeover Polling",
+  "priority": 6,
+  "type": "cluster-takeover-polling",
+  "k8sOverlay": "cluster-takeover"
+}

@@ -63,11 +63,15 @@ spec:
             timeoutSeconds: 5
           resources:
             requests:
-              memory: 512Mi
-              cpu: 250m
-            limits:
+              # Raised for PDF stress test — concurrent 13MB LONGTEXT writes
+              # need substantial innodb buffer pool + sort/temp memory.
               memory: 1Gi
-              cpu: "1"
+              cpu: 500m
+            limits:
+              # 3Gi accommodates: 768M innodb_buffer_pool + 64M max_allowed_packet
+              # + per-connection sort/join buffers × max_connections.
+              memory: 3Gi
+              cpu: "2"
           volumeMounts:
             - name: mysql-data
               mountPath: /var/lib/mysql

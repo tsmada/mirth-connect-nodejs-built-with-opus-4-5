@@ -167,6 +167,10 @@ export class Channel extends EventEmitter {
   private sourceQueueAbortController: AbortController | null = null;
   private sourceQueuePromise: Promise<void> | null = null;
 
+  // Polling lease coordination for cluster mode
+  private pollingLeaseHeld = false;
+  private leaseRetryTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(config: ChannelConfig) {
     super(); // Initialize EventEmitter
     this.id = config.id;
@@ -393,6 +397,95 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Determine if this channel's polling source connector should start.
+   *
+   * Checks two guards in order:
+   * 1. Takeover guard — blocks polling in takeover mode unless explicitly enabled
+   * 2. Cluster lease — ensures only one instance polls per channel
+   *
+   * Non-polling connectors (HTTP, TCP, VM, JMS queues) always return true.
+   */
+  private async shouldStartPollingSource(): Promise<boolean> {
+    if (!this.sourceConnector?.isPollingConnector()) return true;
+
+    // Takeover mode guard — blocks polling unless explicitly enabled per-channel
+    const { isPollingAllowedInTakeover } = await import('../../cluster/TakeoverPollingGuard.js');
+    if (!isPollingAllowedInTakeover(this.id, this.name)) {
+      logger.info(
+        `[${this.name}] Takeover mode: polling blocked (Java Mirth may be polling). ` +
+        `Enable with: MIRTH_TAKEOVER_POLL_CHANNELS=${this.id} or API call`
+      );
+      return false;  // No retry timer — operator must explicitly enable
+    }
+
+    // Cluster lease coordination (between Node.js instances)
+    const config = getClusterConfig();
+    if (!config.clusterEnabled || config.pollingMode === 'all') return true;
+
+    const { acquireLease, startLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+    const acquired = await acquireLease(this.id, this.serverId, config.leaseTtl);
+    this.pollingLeaseHeld = acquired;
+
+    if (acquired) {
+      // Start renewal timer at TTL/2
+      startLeaseRenewal(this.id, this.serverId, config.leaseTtl);
+      logger.info(`[${this.name}] Polling lease acquired`);
+    } else {
+      logger.info(
+        `[${this.name}] Polling lease held by another instance — source connector on standby`
+      );
+      // Start retry timer — try to acquire lease periodically
+      this.startLeaseRetryTimer();
+    }
+
+    return acquired;
+  }
+
+  /**
+   * Start a background timer to periodically retry acquiring the polling lease.
+   * When the lease is acquired, starts the source connector.
+   */
+  private startLeaseRetryTimer(): void {
+    if (this.leaseRetryTimer) return; // Already running
+
+    const config = getClusterConfig();
+    this.leaseRetryTimer = setInterval(async () => {
+      try {
+        const { acquireLease, startLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+        const acquired = await acquireLease(this.id, this.serverId, config.leaseTtl);
+        if (acquired) {
+          this.pollingLeaseHeld = true;
+          startLeaseRenewal(this.id, this.serverId, config.leaseTtl);
+          this.stopLeaseRetryTimer();
+
+          // Start the source connector now that we have the lease
+          if (this.sourceConnector && !this.sourceConnector.isRunning()) {
+            logger.info(`[${this.name}] Polling lease acquired — starting source connector`);
+            await this.sourceConnector.start();
+
+            // Start source queue processing if in async mode
+            if (!this.sourceConnector.getRespondAfterProcessing()) {
+              this.sourceQueue = new SourceQueue();
+              this.sourceQueue.setDataSource(this.createInMemoryQueueDataSource());
+              this.sourceQueue.fillBuffer();
+              this.startSourceQueueProcessing();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error(`[${this.name}] Lease retry failed: ${err}`);
+      }
+    }, config.leaseTtl);
+  }
+
+  private stopLeaseRetryTimer(): void {
+    if (this.leaseRetryTimer) {
+      clearInterval(this.leaseRetryTimer);
+      this.leaseRetryTimer = null;
+    }
+  }
+
+  /**
    * Start the channel and all of its connectors.
    *
    * Implements proper rollback on partial failure - if any connector fails to start,
@@ -459,21 +552,28 @@ export class Channel extends EventEmitter {
         }
       }
 
-      // Start source connector last
+      // Start source connector last (with polling lease check)
       if (this.sourceConnector) {
-        await this.sourceConnector.start();
-        startedConnectors.push(this.sourceConnector);
+        const shouldStartPolling = await this.shouldStartPollingSource();
+        if (shouldStartPolling) {
+          await this.sourceConnector.start();
+          startedConnectors.push(this.sourceConnector);
 
-        // Start source queue processing if in async mode
-        if (!this.sourceConnector.getRespondAfterProcessing()) {
-          this.sourceQueue = new SourceQueue();
-          // Provide an in-memory data source so the queue's size tracking works.
-          // setDataSource calls invalidate(), so we fillBuffer() to clear that state
-          // and initialize size to 0 before any add() calls.
-          this.sourceQueue.setDataSource(this.createInMemoryQueueDataSource());
-          this.sourceQueue.fillBuffer();
-          this.startSourceQueueProcessing();
+          // Start source queue processing if in async mode
+          if (!this.sourceConnector.getRespondAfterProcessing()) {
+            this.sourceQueue = new SourceQueue();
+            // Provide an in-memory data source so the queue's size tracking works.
+            // setDataSource calls invalidate(), so we fillBuffer() to clear that state
+            // and initialize size to 0 before any add() calls.
+            this.sourceQueue.setDataSource(this.createInMemoryQueueDataSource());
+            this.sourceQueue.fillBuffer();
+            this.startSourceQueueProcessing();
+          }
         }
+        // If shouldStartPolling is false:
+        // - Takeover mode: no retry timer (operator must enable)
+        // - Cluster mode: lease retry timer already started by shouldStartPollingSource()
+        // - Channel is still STARTED (destinations can receive VM-routed messages)
       }
 
       this.updateCurrentState(DeployedState.STARTED);
@@ -517,6 +617,19 @@ export class Channel extends EventEmitter {
 
     try {
       this.updateCurrentState(DeployedState.STOPPING);
+
+      // Stop lease retry timer and release polling lease
+      this.stopLeaseRetryTimer();
+      if (this.pollingLeaseHeld) {
+        try {
+          const { releaseLease, stopLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+          stopLeaseRenewal(this.id);
+          await releaseLease(this.id, this.serverId);
+          this.pollingLeaseHeld = false;
+        } catch (err) {
+          logger.error(`[${this.name}] Failed to release polling lease: ${err}`);
+        }
+      }
 
       // Stop source queue processing before stopping source connector
       await this.stopSourceQueueProcessing();
@@ -1030,15 +1143,16 @@ export class Channel extends EventEmitter {
           }
         }
 
-        // sourceMap: early INSERT in Transaction 2 for crash recovery (PC-MJM-001)
+        // sourceMap: upsert in Transaction 2 for crash recovery (PC-MJM-001)
         // Java's StorageManager persists sourceMap here so it survives mid-pipeline crashes.
-        // The end-of-pipeline storeContent() upsert will update it with the final version.
+        // Must use storeContent (upsert) because Transaction 1's insertConnectorMessage
+        // may have already INSERTed SOURCE_MAP when storeMaps option is set.
         if (this.storageSettings.storeMaps) {
           const srcMap = sourceMessage.getSourceMap();
           if (srcMap.size > 0) {
             const mapSnapshot = Object.fromEntries(srcMap);
             txn2Ops.push((conn) =>
-              insertContent(
+              storeContent(
                 this.id,
                 messageId,
                 0,
@@ -1850,13 +1964,15 @@ export class Channel extends EventEmitter {
           }
         }
 
-        // sourceMap: early INSERT in Transaction 2 for crash recovery (PC-MJM-001)
+        // sourceMap: upsert in Transaction 2 for crash recovery (PC-MJM-001)
+        // Must use storeContent (upsert) because Transaction 1's insertConnectorMessage
+        // may have already INSERTed SOURCE_MAP when storeMaps option is set.
         if (this.storageSettings.storeMaps) {
           const srcMap = sourceMessage.getSourceMap();
           if (srcMap.size > 0) {
             const mapSnapshot = Object.fromEntries(srcMap);
             txn2Ops.push((conn) =>
-              insertContent(
+              storeContent(
                 this.id,
                 messageId,
                 0,

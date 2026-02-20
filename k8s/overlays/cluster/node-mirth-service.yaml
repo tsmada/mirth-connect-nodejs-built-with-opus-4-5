@@ -82,3 +82,7 @@ spec:
     - name: dv-mllp-heavy
       port: 6675
       targetPort: 6675
+    # Polling validation channel ports
+    - name: http-seed
+      port: 8120
+      targetPort: 8120

@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-polling-coordination
+  namespace: mirth-k6
+  labels:
+    app: k6
+    test: polling-coordination
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600  # 10 minute safety timeout
+  template:
+    metadata:
+      labels:
+        app: k6
+        test: polling-coordination
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: k6
+        image: grafana/k6:latest
+        command: ['k6', 'run', '/scripts/polling-coordination-load.js']
+        env:
+        - name: MIRTH_URL
+          value: "http://node-mirth.mirth-cluster.svc.cluster.local"
+        - name: SEED_PORT
+          value: "8120"
+        - name: API_PORT
+          value: "8080"
+        - name: API_USER
+          value: "admin"
+        - name: API_PASS
+          value: "admin"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "1"
+      volumes:
+      - name: scripts
+        configMap:
+          name: k6-polling-scripts

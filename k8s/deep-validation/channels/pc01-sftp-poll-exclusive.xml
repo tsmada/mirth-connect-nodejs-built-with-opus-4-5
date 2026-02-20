@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel version="3.9.1">
+  <id>pc000001-0001-0001-0001-000000000001</id>
+  <nextMetaDataId>2</nextMetaDataId>
+  <name>PC01 SFTP Poll Exclusive</name>
+  <description>Polling Coordination PC01: SFTP File Reader with exclusive lease. Polls /home/nodeuser/input for *.hl7, moves to /home/nodeuser/output after processing. Writes audit trail to DV_POLL_AUDIT.</description>
+  <revision>1</revision>
+  <sourceConnector version="3.9.1">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <transportName>File Reader</transportName>
+    <properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="3.9.1">
+      <pluginProperties/>
+      <sourceConnectorProperties version="3.9.1">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+      <scheme>SFTP</scheme>
+      <schemeProperties>
+        <host>/input</host>
+        <sftpSchemeProperties>
+          <hostKeyChecking>no</hostKeyChecking>
+          <passwordAuth>true</passwordAuth>
+          <keyAuth>false</keyAuth>
+        </sftpSchemeProperties>
+      </schemeProperties>
+      <host>sftp</host>
+      <port>22</port>
+      <fileFilter>*.hl7</fileFilter>
+      <inputPattern>*.hl7</inputPattern>
+      <regex>false</regex>
+      <directoryRecursion>false</directoryRecursion>
+      <ignoreDot>true</ignoreDot>
+      <anonymous>false</anonymous>
+      <username>nodeuser</username>
+      <password>nodepass</password>
+      <timeout>10000</timeout>
+      <secure>false</secure>
+      <passive>true</passive>
+      <validateConnection>true</validateConnection>
+      <afterProcessingAction>MOVE</afterProcessingAction>
+      <moveToDirectory>/output</moveToDirectory>
+      <moveToFileName></moveToFileName>
+      <errorReadingAction>NONE</errorReadingAction>
+      <errorResponseAction>AFTER_PROCESSING</errorResponseAction>
+      <checkFileAge>true</checkFileAge>
+      <fileAge>1000</fileAge>
+      <fileSizeMinimum>0</fileSizeMinimum>
+      <fileSizeMaximum></fileSizeMaximum>
+      <ignoreFileSizeMaximum>true</ignoreFileSizeMaximum>
+      <sortBy>date</sortBy>
+      <binary>false</binary>
+      <charsetEncoding>UTF-8</charsetEncoding>
+      <pollConnectorProperties version="3.9.1">
+        <pollingType>INTERVAL</pollingType>
+        <pollingFrequency>2000</pollingFrequency>
+        <pollOnStart>true</pollOnStart>
+        <cronJobs/>
+      </pollConnectorProperties>
+    </properties>
+    <transformer version="3.9.1">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="3.9.1">
+          <name>Record Server ID</name>
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script><![CDATA[// Record which server processed this file
+// $g('serverId') is populated by the Node.js engine at startup from MIRTH_SERVER_ID
+var serverId = String($g('serverId') || 'unknown');
+$s.put('processedBy', serverId);
+$c('serverIdValue', serverId);
+$c('sourceFileName', sourceMap.get('originalFilename') || $('originalFilename') || 'unknown');
+// channelId is a scope variable injected by ScopeBuilder — put it in channelMap
+// so the JDBC destination's resolveParameters() can find it via ${channelId}
+$c('channelId', channelId);]]></script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+      </elements>
+      <inboundDataType>RAW</inboundDataType>
+      <outboundDataType>RAW</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+    </transformer>
+    <filter version="3.9.1">
+      <elements/>
+    </filter>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="3.9.1">
+      <metaDataId>1</metaDataId>
+      <name>JDBC Audit Writer</name>
+      <transportName>Database Writer</transportName>
+      <properties class="com.mirth.connect.connectors.jdbc.DatabaseDispatcherProperties" version="3.9.1">
+        <pluginProperties/>
+        <destinationConnectorProperties version="3.9.1">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>true</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+        </destinationConnectorProperties>
+        <driver>mysql</driver>
+        <url>jdbc:mysql://mysql:3306/mirthdb</url>
+        <username>mirth</username>
+        <password>mirth</password>
+        <query><![CDATA[INSERT INTO DV_POLL_AUDIT (FILE_NAME, CHANNEL_ID, SERVER_ID)
+VALUES (${sourceFileName}, ${channelId}, ${serverIdValue})]]></query>
+        <useScript>false</useScript>
+      </properties>
+      <transformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      </transformer>
+      <filter version="3.9.1">
+        <elements/>
+      </filter>
+      <responseTransformer version="3.9.1">
+        <elements/>
+        <inboundDataType>RAW</inboundDataType>
+        <outboundDataType>RAW</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.raw.RawDataTypeProperties"/>
+      </responseTransformer>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>// No preprocessing</preprocessingScript>
+  <postprocessingScript>// No postprocessing</postprocessingScript>
+  <deployScript>// No deploy script</deployScript>
+  <undeployScript>// No undeploy script</undeployScript>
+  <properties version="3.9.1">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>false</storeAttachments>
+    <tags class="linked-hash-set">
+      <string>polling-validation</string>
+    </tags>
+    <metaDataColumns/>
+    <archiveEnabled>false</archiveEnabled>
+  </properties>
+</channel>

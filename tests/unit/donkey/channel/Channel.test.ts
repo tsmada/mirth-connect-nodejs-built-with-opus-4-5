@@ -1735,7 +1735,7 @@ describe('Channel', () => {
   });
 
   describe('SOURCE_MAP persistence (PC-MJM-001)', () => {
-    it('should write SOURCE_MAP early in Transaction 2 via insertContent for crash recovery', async () => {
+    it('should use storeContent (upsert) for SOURCE_MAP in Transaction 2 to avoid duplicate key', async () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
@@ -1744,28 +1744,39 @@ describe('Channel', () => {
       const sourceMap = new Map<string, unknown>([['traceId', '12345']]);
       await channel.dispatchRawMessage('<test/>', sourceMap);
 
-      // insertContent should include a SOURCE_MAP write in Transaction 2
+      // storeContent (upsert) should be used for SOURCE_MAP in Transaction 2
+      // to avoid duplicate key errors when Transaction 1's insertConnectorMessage
+      // already INSERTed SOURCE_MAP with storeMaps option
+      const storeContentMock = storeContent as jest.Mock;
+      const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
+        (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
+      );
+      // At least 1 storeContent call for SOURCE_MAP (Transaction 2 + end-of-pipeline)
+      expect(sourceMapStoreCalls.length).toBeGreaterThanOrEqual(1);
+
+      // insertContent should NOT be called for SOURCE_MAP (would cause duplicate key)
       const insertContentMock = insertContent as jest.Mock;
       const sourceMapInsertCalls = insertContentMock.mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
       );
-      expect(sourceMapInsertCalls.length).toBeGreaterThanOrEqual(1);
+      expect(sourceMapInsertCalls.length).toBe(0);
 
       await channel.stop();
     });
 
-    it('should use storeContent for final SOURCE_MAP upsert at end of pipeline', async () => {
+    it('should use storeContent for all SOURCE_MAP writes throughout pipeline', async () => {
       await channel.start();
 
       const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
       await channel.dispatchRawMessage('<test/>', sourceMap);
 
-      // storeContent should be called for SOURCE_MAP (final upsert at end of pipeline)
+      // storeContent should be called for SOURCE_MAP (Transaction 2 upsert + final upsert)
       const storeContentMock = storeContent as jest.Mock;
       const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
       );
-      expect(sourceMapStoreCalls.length).toBe(1);
+      // 2 storeContent calls: one in Transaction 2, one at end of pipeline
+      expect(sourceMapStoreCalls.length).toBe(2);
 
       await channel.stop();
     });

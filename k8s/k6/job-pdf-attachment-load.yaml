@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-pdf-attachment-load
+  namespace: mirth-k6
+  labels:
+    app: k6
+    test: pdf-attachment-load
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800  # 30 minute safety timeout
+  template:
+    metadata:
+      labels:
+        app: k6
+        test: pdf-attachment-load
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: k6
+        image: grafana/k6:latest
+        command: ['k6', 'run', '/scripts/pdf-attachment-load.js']
+        env:
+        - name: MIRTH_URL
+          value: "http://node-mirth.mirth-cluster.svc.cluster.local"
+        - name: HTTP_PORT
+          value: "8095"
+        - name: PDF_SIZE_MB
+          value: "10"
+        # Override durations for different test profiles:
+        # Quick smoke test: RAMP=10s, HOLD=30s, PEAK=30s (~2.5 min)
+        # Standard test:    RAMP=30s, HOLD=120s, PEAK=120s (~7 min)
+        # Extended soak:    RAMP=60s, HOLD=300s, PEAK=300s (~15 min)
+        - name: RAMP_DURATION
+          value: "30s"
+        - name: HOLD_DURATION
+          value: "120s"
+        - name: PEAK_DURATION
+          value: "120s"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            # k6 needs substantial memory to hold 10MB+ payloads in flight
+            # At 15 VUs × ~13MB per payload = ~195MB just for payloads
+            # Plus k6 runtime overhead, metrics, HTTP client buffers
+            memory: "4Gi"
+            cpu: "2"
+      volumes:
+      - name: scripts
+        configMap:
+          name: k6-pdf-scripts

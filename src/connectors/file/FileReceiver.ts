@@ -73,6 +73,8 @@ export class FileReceiver extends SourceConnector {
     };
   }
 
+  override isPollingConnector(): boolean { return true; }
+
   /**
    * Get the connector properties
    */

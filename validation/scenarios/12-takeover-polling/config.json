@@ -1,0 +1,7 @@
+{
+  "id": "12.1",
+  "name": "Takeover Mode Polling Guard",
+  "priority": 6,
+  "type": "takeover-polling",
+  "k8sOverlay": "takeover"
+}

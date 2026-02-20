@@ -194,6 +194,22 @@ export class Mirth {
       logger.info('Use mirth-cli shadow promote <channel> to activate channels');
     }
 
+    // Initialize takeover polling guard (blocks polling connectors in takeover mode by default)
+    const { initTakeoverPollingGuard } = await import('../cluster/TakeoverPollingGuard.js');
+    initTakeoverPollingGuard();
+    if (this.detectedMode === 'takeover') {
+      const { getTakeoverPollingEnabled } = await import('../cluster/TakeoverPollingGuard.js');
+      const enabled = getTakeoverPollingEnabled();
+      if (enabled.size > 0) {
+        logger.info(`Takeover mode: polling enabled for ${enabled.size} channels via MIRTH_TAKEOVER_POLL_CHANNELS`);
+      } else {
+        logger.warn(
+          'Takeover mode: all polling connectors (File, Database) are blocked by default. ' +
+          'Enable per-channel with MIRTH_TAKEOVER_POLL_CHANNELS env var or mirth-cli polling enable <channel>'
+        );
+      }
+    }
+
     if (this.detectedMode === 'standalone') {
       logger.info('Standalone mode: ensuring core tables exist...');
       await ensureCoreTables();
@@ -263,6 +279,9 @@ export class Mirth {
       (channelId) => new DatabaseMapBackend('gcm:' + channelId)
     );
     await GlobalMap.getInstance().loadFromBackend();
+    // Inject server identity into GlobalMap so user scripts can access it via $g('serverId')
+    // Java Mirth exposes this via java.lang.System.getenv() which is unavailable in Node.js VM
+    GlobalMap.getInstance().put('serverId', serverId);
     logger.info('GlobalMap database backend initialized');
 
     // Load ConfigurationMap ($cfg) from database
@@ -372,6 +391,15 @@ export class Mirth {
 
     // Signal health checks to return 503
     setShuttingDown(true);
+
+    // Release all polling leases and stop renewal timers
+    try {
+      const { stopAllLeaseRenewals, releaseAllLeases } = await import('../cluster/PollingLeaseManager.js');
+      stopAllLeaseRenewals();
+      await releaseAllLeases(getClusterConfig().serverId);
+    } catch {
+      // Best-effort — DB pool may be closing
+    }
 
     // Stop data pruner before stopping channels
     await dataPrunerController.shutdown();

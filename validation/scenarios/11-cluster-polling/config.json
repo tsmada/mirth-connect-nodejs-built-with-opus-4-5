@@ -1,0 +1,8 @@
+{
+  "id": "11.1",
+  "name": "Cluster Polling Lease Exclusivity",
+  "priority": 6,
+  "type": "cluster-polling",
+  "k8sOverlay": "cluster",
+  "minReplicas": 2
+}

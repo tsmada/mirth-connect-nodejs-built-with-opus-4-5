@@ -2,26 +2,28 @@
 # Launch a k6 load test Job by name and tail its logs until completion.
 #
 # Usage: run-k6.sh <test-name>
-#   test-name: "api-load" or "mllp-load"
+#   test-name: "api-load", "mllp-load", or "pdf-attachment-load"
 #
 # Examples:
-#   run-k6.sh api-load    # Run API load test
-#   run-k6.sh mllp-load   # Run MLLP load test
+#   run-k6.sh api-load              # Run API load test
+#   run-k6.sh mllp-load             # Run MLLP load test
+#   run-k6.sh pdf-attachment-load   # Run PDF attachment stress test (~10MB payloads)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$SCRIPT_DIR/.."
 
-TEST_NAME="${1:?Usage: run-k6.sh <test-name> (api-load or mllp-load)}"
+TEST_NAME="${1:?Usage: run-k6.sh <test-name> (api-load, mllp-load, or pdf-attachment-load)}"
 NAMESPACE="mirth-k6"
 JOB_NAME="k6-${TEST_NAME}"
 
 # Validate test name
 case "$TEST_NAME" in
-  api-load|mllp-load)
+  api-load|mllp-load|pdf-attachment-load)
     ;;
   *)
-    echo "ERROR: Unknown test name '$TEST_NAME'. Must be 'api-load' or 'mllp-load'." >&2
+    echo "ERROR: Unknown test name '$TEST_NAME'." >&2
+    echo "  Valid options: api-load, mllp-load, pdf-attachment-load" >&2
     exit 1
     ;;
 esac
@@ -45,7 +47,13 @@ fi
 # Ensure k6 namespace and ConfigMap are applied
 echo "Applying k6 namespace and scripts ConfigMap..."
 kubectl apply -f "$K8S_DIR/k6/namespace.yaml"
-kubectl apply -f "$K8S_DIR/k6/configmap.yaml"
+
+# Apply the appropriate ConfigMap based on test type
+if [[ "$TEST_NAME" == "pdf-attachment-load" ]]; then
+  kubectl apply -f "$K8S_DIR/k6/configmap-pdf.yaml"
+else
+  kubectl apply -f "$K8S_DIR/k6/configmap.yaml"
+fi
 
 # Apply the k6 Job manifest
 JOB_MANIFEST="$K8S_DIR/k6/job-${TEST_NAME}.yaml"
@@ -59,9 +67,15 @@ fi
 echo "Applying Job manifest: $JOB_MANIFEST"
 kubectl apply -f "$JOB_MANIFEST"
 
-# Wait for the Job pod to be created
-echo "Waiting for k6 pod to start..."
-TIMEOUT=60
+# PDF test needs more time to generate the 10MB blob during k6 init
+if [[ "$TEST_NAME" == "pdf-attachment-load" ]]; then
+  TIMEOUT=120
+  echo "Waiting for k6 pod to start (extended timeout for PDF blob generation)..."
+else
+  TIMEOUT=60
+  echo "Waiting for k6 pod to start..."
+fi
+
 ELAPSED=0
 POD_NAME=""
 while [[ $ELAPSED -lt $TIMEOUT ]]; do
@@ -88,6 +102,14 @@ fi
 
 echo "Pod: $POD_NAME (phase: $POD_PHASE)"
 echo ""
+
+# For PDF test, show HPA status if available
+if [[ "$TEST_NAME" == "pdf-attachment-load" ]]; then
+  echo "--- HPA Status (pre-test) ---"
+  kubectl get hpa -n mirth-cluster 2>/dev/null || echo "  (no HPA configured)"
+  echo ""
+fi
+
 echo "--- k6 output ---"
 
 # Tail logs until the pod completes
@@ -96,6 +118,17 @@ kubectl logs -n "$NAMESPACE" "$POD_NAME" --follow 2>/dev/null || true
 # Wait for Job completion and report status
 echo ""
 echo "--- Test complete ---"
+
+# For PDF test, show HPA status after test
+if [[ "$TEST_NAME" == "pdf-attachment-load" ]]; then
+  echo ""
+  echo "--- HPA Status (post-test) ---"
+  kubectl get hpa -n mirth-cluster 2>/dev/null || echo "  (no HPA configured)"
+  echo ""
+  echo "--- Mirth Pod Status ---"
+  kubectl get pods -n mirth-cluster -l app=node-mirth -o wide 2>/dev/null || true
+  echo ""
+fi
 
 # Check Job status
 JOB_STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" \

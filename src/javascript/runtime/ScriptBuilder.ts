@@ -426,35 +426,62 @@ export class ScriptBuilder {
    * Append map shortcut functions
    */
   private appendMapFunctions(builder: string[]): void {
+    // In Java Mirth's Rhino, $c/$s/$g etc. are Java-wrapped Map objects in the scope.
+    // The generated script defines function $c(key, value) {...} which in Rhino coexists
+    // with the scope object. In V8's vm.createContext(), the function declaration OVERRIDES
+    // the scope property, breaking $c.put(), $s.put() etc. which many channels use.
+    //
+    // Fix: after each function declaration, copy Java-compatible Map methods (put, get,
+    // containsKey, remove, clear, size, isEmpty, keySet, values, entrySet) from the
+    // underlying scope map object onto the function, so both calling conventions work:
+    //   $c('key', value)        — function call
+    //   $c.put('key', value)    — method call (Java Mirth compat)
+
+    // Helper: copy map methods onto a function from its backing map variable
+    builder.push(
+      'function __copyMapMethods(fn, map) { ' +
+        "var methods = ['put','get','containsKey','remove','clear','size','isEmpty','keySet','values','entrySet','getMap','toObject']; " +
+        'for (var i = 0; i < methods.length; i++) { ' +
+        '  if (typeof map[methods[i]] === "function") { fn[methods[i]] = map[methods[i]].bind(map); } ' +
+        '} ' +
+        'return fn; }'
+    );
+
     // Connector map
     builder.push(
       'function $co(key, value) { if (arguments.length === 1) { return connectorMap.get(key); } else { return connectorMap.put(key, value); } }'
     );
+    builder.push('if (typeof connectorMap !== "undefined") { __copyMapMethods($co, connectorMap); }');
 
     // Channel map
     builder.push(
       'function $c(key, value) { if (arguments.length === 1) { return channelMap.get(key); } else { return channelMap.put(key, value); } }'
     );
+    builder.push('if (typeof channelMap !== "undefined") { __copyMapMethods($c, channelMap); }');
 
     // Source map
     builder.push(
       'function $s(key, value) { if (arguments.length === 1) { return sourceMap.get(key); } else { return sourceMap.put(key, value); } }'
     );
+    builder.push('if (typeof sourceMap !== "undefined") { __copyMapMethods($s, sourceMap); }');
 
     // Global channel map
     builder.push(
       'function $gc(key, value) { if (arguments.length === 1) { return globalChannelMap.get(key); } else { return globalChannelMap.put(key, value); } }'
     );
+    builder.push('if (typeof globalChannelMap !== "undefined") { __copyMapMethods($gc, globalChannelMap); }');
 
     // Global map
     builder.push(
       'function $g(key, value) { if (arguments.length === 1) { return globalMap.get(key); } else { return globalMap.put(key, value); } }'
     );
+    builder.push('if (typeof globalMap !== "undefined") { __copyMapMethods($g, globalMap); }');
 
     // Configuration map
     builder.push(
       'function $cfg(key, value) { if (arguments.length === 1) { return configurationMap.get(key); } else { return configurationMap.put(key, value); } }'
     );
+    builder.push('if (typeof configurationMap !== "undefined") { __copyMapMethods($cfg, configurationMap); }');
 
     // Secrets (read-only, direct vault access)
     builder.push(
@@ -465,6 +492,7 @@ export class ScriptBuilder {
     builder.push(
       'function $r(key, value) { if (arguments.length === 1) { return responseMap.get(key); } else { return responseMap.put(key, value); } }'
     );
+    builder.push('if (typeof responseMap !== "undefined") { __copyMapMethods($r, responseMap); }');
   }
 
   /**
@@ -495,48 +523,35 @@ function validate(mapping, defaultValue, replacement) {
 `);
 
     // $ function - shortcut for getting mapped values (Java lookup order)
+    // No try/catch — matches Java's JavaScriptBuilder.java which cascades without
+    // error handling. Backend errors (e.g., database-backed map failures) must
+    // propagate to the user script, not be silently swallowed.
     builder.push(`
 function $(string) {
-  try {
-    if (typeof responseMap !== 'undefined' && responseMap.containsKey(string)) {
-      return responseMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof connectorMap !== 'undefined' && connectorMap.containsKey(string)) {
-      return connectorMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof channelMap !== 'undefined' && channelMap.containsKey(string)) {
-      return channelMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof sourceMap !== 'undefined' && sourceMap.containsKey(string)) {
-      return sourceMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof globalChannelMap !== 'undefined' && globalChannelMap.containsKey(string)) {
-      return globalChannelMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof globalMap !== 'undefined' && globalMap.containsKey(string)) {
-      return globalMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof configurationMap !== 'undefined' && configurationMap.containsKey(string)) {
-      return configurationMap.get(string);
-    }
-  } catch (e) {}
-  try {
-    if (typeof resultMap !== 'undefined' && resultMap.containsKey(string)) {
-      return resultMap.get(string);
-    }
-  } catch (e) {}
+  if (typeof responseMap !== 'undefined' && responseMap.containsKey(string)) {
+    return responseMap.get(string);
+  }
+  if (typeof connectorMap !== 'undefined' && connectorMap.containsKey(string)) {
+    return connectorMap.get(string);
+  }
+  if (typeof channelMap !== 'undefined' && channelMap.containsKey(string)) {
+    return channelMap.get(string);
+  }
+  if (typeof sourceMap !== 'undefined' && sourceMap.containsKey(string)) {
+    return sourceMap.get(string);
+  }
+  if (typeof globalChannelMap !== 'undefined' && globalChannelMap.containsKey(string)) {
+    return globalChannelMap.get(string);
+  }
+  if (typeof globalMap !== 'undefined' && globalMap.containsKey(string)) {
+    return globalMap.get(string);
+  }
+  if (typeof configurationMap !== 'undefined' && configurationMap.containsKey(string)) {
+    return configurationMap.get(string);
+  }
+  if (typeof resultMap !== 'undefined' && resultMap.containsKey(string)) {
+    return resultMap.get(string);
+  }
   return '';
 }
 `);
@@ -748,9 +763,10 @@ function updateAttachment() {
    * In Node.js, XMLProxy objects have toXMLString(); for plain objects/arrays we JSON.stringify.
    */
   private appendAutoSerialization(builder: string[]): void {
-    // Auto-serialize msg
-    builder.push("if (typeof msg === 'object' && typeof msg.toXMLString === 'function') {");
-    builder.push('  if (msg.hasSimpleContent()) { msg = msg.toXMLString(); }');
+    // Auto-serialize msg — always call toXMLString() for XML objects (matches Java:
+    // Context.toString(scope.get("msg")) always serializes, regardless of hasSimpleContent)
+    builder.push("if (typeof msg === 'object' && msg !== null && typeof msg.toXMLString === 'function') {");
+    builder.push("  msg = msg.toXMLString();");
     builder.push("} else if (typeof msg !== 'undefined' && msg !== null) {");
     builder.push('  var toStringResult = Object.prototype.toString.call(msg);');
     builder.push(
@@ -758,8 +774,8 @@ function updateAttachment() {
     );
     builder.push('}');
     // Auto-serialize tmp (INDEPENDENT — NOT else-if from msg block)
-    builder.push("if (typeof tmp === 'object' && typeof tmp.toXMLString === 'function') {");
-    builder.push('  if (tmp.hasSimpleContent()) { tmp = tmp.toXMLString(); }');
+    builder.push("if (typeof tmp === 'object' && tmp !== null && typeof tmp.toXMLString === 'function') {");
+    builder.push("  tmp = tmp.toXMLString();");
     builder.push("} else if (typeof tmp !== 'undefined' && tmp !== null) {");
     builder.push('  var toStringResult = Object.prototype.toString.call(tmp);');
     builder.push(

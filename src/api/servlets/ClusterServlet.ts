@@ -10,6 +10,13 @@ import { Router, Request, Response } from 'express';
 import { getClusterConfig } from '../../cluster/ClusterConfig.js';
 import { getClusterNodes } from '../../cluster/ServerRegistry.js';
 import { getDeployedChannels } from '../../cluster/ChannelRegistry.js';
+import { getAllLeases } from '../../cluster/PollingLeaseManager.js';
+import {
+  enableTakeoverPolling,
+  disableTakeoverPolling,
+  getTakeoverPollingEnabled,
+  isPollingAllowedInTakeover,
+} from '../../cluster/TakeoverPollingGuard.js';
 
 export const clusterRouter = Router();
 
@@ -77,6 +84,100 @@ clusterRouter.get('/nodes', async (_req: Request, res: Response) => {
         startedAt: n.startedAt,
       }))
     );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/system/cluster/leases
+ *
+ * Returns all active polling leases across all channels.
+ */
+clusterRouter.get('/leases', async (_req: Request, res: Response) => {
+  try {
+    const leases = await getAllLeases();
+    res.json({ leases });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/system/cluster/polling
+ *
+ * Returns takeover polling guard status and lease info.
+ */
+clusterRouter.get('/polling', async (_req: Request, res: Response) => {
+  try {
+    const config = getClusterConfig();
+    const enabledChannels = Array.from(getTakeoverPollingEnabled());
+    const leases = await getAllLeases();
+
+    res.json({
+      mode: process.env['MIRTH_MODE'] || 'auto',
+      clusterEnabled: config.clusterEnabled,
+      pollingMode: config.pollingMode,
+      leaseTtl: config.leaseTtl,
+      enabledChannels,
+      leases,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/system/cluster/polling/enable
+ *
+ * Enable polling for a channel in takeover mode.
+ * Body: { channelId: string }
+ */
+clusterRouter.post('/polling/enable', (req: Request, res: Response) => {
+  try {
+    const { channelId } = req.body as { channelId?: string };
+    if (!channelId) {
+      res.status(400).json({ error: 'channelId is required' });
+      return;
+    }
+
+    enableTakeoverPolling(channelId);
+
+    res.json({
+      channelId,
+      pollingEnabled: true,
+      allowed: isPollingAllowedInTakeover(channelId),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/system/cluster/polling/disable
+ *
+ * Disable polling for a channel in takeover mode.
+ * Body: { channelId: string }
+ */
+clusterRouter.post('/polling/disable', (req: Request, res: Response) => {
+  try {
+    const { channelId } = req.body as { channelId?: string };
+    if (!channelId) {
+      res.status(400).json({ error: 'channelId is required' });
+      return;
+    }
+
+    disableTakeoverPolling(channelId);
+
+    res.json({
+      channelId,
+      pollingEnabled: false,
+      allowed: isPollingAllowedInTakeover(channelId),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });

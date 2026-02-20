@@ -64,6 +64,12 @@ interface GlobalMapRow extends RowDataPacket {
   MAP_VALUE: string | null;
 }
 
+interface VersionedMapRow extends RowDataPacket {
+  MAP_KEY: string;
+  MAP_VALUE: string | null;
+  VERSION: number;
+}
+
 /**
  * Database-backed map using the D_GLOBAL_MAP table.
  *
@@ -107,9 +113,9 @@ export class DatabaseMapBackend implements MapBackend {
     const pool = getPool();
     const serialized = JSON.stringify(value);
     await pool.execute(
-      `INSERT INTO D_GLOBAL_MAP (SCOPE, MAP_KEY, MAP_VALUE)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE MAP_VALUE = VALUES(MAP_VALUE)`,
+      `INSERT INTO D_GLOBAL_MAP (SCOPE, MAP_KEY, MAP_VALUE, VERSION)
+       VALUES (?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE MAP_VALUE = VALUES(MAP_VALUE), VERSION = VERSION + 1`,
       [this.scope, key, serialized]
     );
   }
@@ -157,6 +163,62 @@ export class DatabaseMapBackend implements MapBackend {
       [this.scope, key]
     );
     return rows.length > 0;
+  }
+
+  /**
+   * Get a value along with its version for optimistic locking.
+   * Returns undefined if key doesn't exist.
+   */
+  async getWithVersion(key: string): Promise<{ value: unknown; version: number } | undefined> {
+    const pool = getPool();
+    const [rows] = await pool.query<VersionedMapRow[]>(
+      'SELECT MAP_VALUE, VERSION FROM D_GLOBAL_MAP WHERE SCOPE = ? AND MAP_KEY = ?',
+      [this.scope, key]
+    );
+    if (rows.length === 0) return undefined;
+    const raw = rows[0]!.MAP_VALUE;
+    const version = rows[0]!.VERSION;
+    if (raw === null) return { value: undefined, version };
+    try {
+      return { value: JSON.parse(raw), version };
+    } catch {
+      return { value: raw, version };
+    }
+  }
+
+  /**
+   * Set a value only if the current version matches (CAS — Compare And Swap).
+   * Returns true if the update succeeded, false if the version didn't match
+   * (another writer modified the value since we read it).
+   * For new keys (no existing row), use expectedVersion = -1.
+   */
+  async setIfVersion(key: string, value: unknown, expectedVersion: number): Promise<boolean> {
+    const pool = getPool();
+    const serialized = JSON.stringify(value);
+
+    if (expectedVersion === -1) {
+      // Insert new key — fails if key already exists
+      try {
+        await pool.execute(
+          `INSERT INTO D_GLOBAL_MAP (SCOPE, MAP_KEY, MAP_VALUE, VERSION)
+           VALUES (?, ?, ?, 0)`,
+          [this.scope, key, serialized]
+        );
+        return true;
+      } catch (err: unknown) {
+        const mysqlErr = err as { code?: string };
+        if (mysqlErr.code === 'ER_DUP_ENTRY') return false;
+        throw err;
+      }
+    }
+
+    // Update existing key only if version matches
+    const [result] = await pool.execute(
+      `UPDATE D_GLOBAL_MAP SET MAP_VALUE = ?, VERSION = VERSION + 1
+       WHERE SCOPE = ? AND MAP_KEY = ? AND VERSION = ?`,
+      [serialized, this.scope, key, expectedVersion]
+    );
+    return (result as { affectedRows: number }).affectedRows > 0;
   }
 }
 

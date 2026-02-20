@@ -208,8 +208,8 @@ describe('ScriptBuilder Parity Fixes', () => {
       const body = extractDoTransform(script);
 
       // Count the msg and tmp serialization blocks — they should be separate if-blocks
-      const msgSerialize = body.indexOf("typeof msg === 'object' && typeof msg.toXMLString");
-      const tmpSerialize = body.indexOf("typeof tmp === 'object' && typeof tmp.toXMLString");
+      const msgSerialize = body.indexOf("typeof msg === 'object' && msg !== null && typeof msg.toXMLString");
+      const tmpSerialize = body.indexOf("typeof tmp === 'object' && tmp !== null && typeof tmp.toXMLString");
       expect(msgSerialize).toBeGreaterThan(0);
       expect(tmpSerialize).toBeGreaterThan(0);
       // tmp block starts as a new `if`, not connected to msg block via else-if
@@ -230,7 +230,7 @@ describe('ScriptBuilder Parity Fixes', () => {
       expect(script).toContain('JSON.stringify(tmp)');
     });
 
-    it('should use hasSimpleContent() guard for XML serialization', () => {
+    it('should always serialize XML via toXMLString (no hasSimpleContent guard)', () => {
       const script = builder.generateFilterTransformerScript(
         [],
         [],
@@ -239,8 +239,10 @@ describe('ScriptBuilder Parity Fixes', () => {
         false
       );
 
-      expect(script).toContain('msg.hasSimpleContent()');
-      expect(script).toContain('tmp.hasSimpleContent()');
+      // hasSimpleContent guard was removed — Java always serializes XML
+      expect(script).not.toContain('hasSimpleContent');
+      expect(script).toContain('msg = msg.toXMLString()');
+      expect(script).toContain('tmp = tmp.toXMLString()');
     });
 
     it('should use Object.prototype.toString.call for type detection', () => {

@@ -97,6 +97,9 @@ import { MessageParameters } from '../userutil/MessageParameters.js';
 // ACK generation (Java: com.mirth.connect.server.userutil.ACKGenerator)
 import { ACKGenerator } from '../../util/ACKGenerator.js';
 
+// XSLT transformer for XsltStep plugin (Java: javax.xml.transform)
+import { XsltTransformer } from '../../plugins/xsltstep/XsltStep.js';
+
 // Response class (Java: com.mirth.connect.userutil.Response)
 import { Response } from '../../model/Response.js';
 
@@ -227,6 +230,9 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
 
     // Serializer factory (Java: importPackage, used by data type scripts)
     SerializerFactory,
+
+    // XSLT transformer for XsltStep plugin scripts
+    XsltTransformer,
 
     // Console for debugging
     console,

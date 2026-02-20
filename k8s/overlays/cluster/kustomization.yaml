@@ -4,8 +4,10 @@ namespace: mirth-cluster
 resources:
   - namespace.yaml
   - mysql-externalname.yaml
+  - sftp-externalname.yaml
   - node-mirth-deployment.yaml
   - node-mirth-service.yaml
   - node-mirth-configmap.yaml
   - cluster-secret.yaml
   - node-mirth-pdb.yaml
+  - node-mirth-hpa.yaml
