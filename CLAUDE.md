@@ -882,7 +882,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 7,890 passing** (350 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling)
+**Total Tests: 8,151 passing** (356 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps)
 
 ### Quick Validation Scripts
 
@@ -1879,12 +1879,12 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C) |
+| Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C + Real-World) |
 | Agents completed | 100+ (100%) |
 | Total commits | 200+ |
-| Lines added | 107,300+ |
-| Tests added | 4,019+ |
-| Total tests passing | 7,890 |
+| Lines added | 110,200+ |
+| Tests added | 4,280+ |
+| Total tests passing | 8,151 |
 
 ### Wave Summary
 
@@ -1912,7 +1912,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | 21 | 1 | ~500 | 15 | ~15 min | **Connector Parity Wave 5** (File errorReadingAction/errorResponseAction wiring, 3 deferral verifications) |
 | 22 | 0 | ~400 | 13 | ~30 min | **Production Readiness + OTEL** (instrumentation.ts, metrics.ts, lifecycle wiring, K8s manifests, env validation) |
 | Phase C | 0 | ~26,000 | 1,518 | ~3 hrs | **Batch adaptors, AutoResponder, escape handler, coverage 62%→71%** |
-| **Total** | **100+** | **~107,700** | **4,019** | **~29.5 hrs** | |
+| Real-World | 2 | ~2,500 | 261 | ~30 min | **Real-World Gap Remediation** (E4X computed attrs/tags, Java interop shims, XMLProxy.child, VM cross-realm fix) |
+| **Total** | **100+** | **~110,200** | **4,280** | **~30 hrs** | |
 
 ### Components Ported
 
@@ -2495,6 +2496,21 @@ The `replace()` callback in JavaScript receives the match offset as a positional
 **58. E4X `processXMLTag` Non-Global Regex + Early Return Is a Silent Skip Pattern**
 The `processXMLTag` method used a non-global regex (`exec()` always starts at index 0) and returned unchanged if the first match was inside a string. The outer `while(changed)` loop then exited — silently skipping ALL subsequent XML tags even if they were outside strings. Fix: use a global regex with `while(exec())` + `continue` for in-string matches. This is the same bug *class* as lesson #55 (silent skip) but in the transpiler rather than the extractor. Both share the trait that no error is thrown — the code simply doesn't process what it should.
 
+**59. Cross-Realm VM Prototype Mismatch When Passing Built-in Constructors to vm.createContext()**
+When `vm.createContext(scope)` receives explicit built-in constructors (`String`, `Object`, `Array`, `Date`, `JSON`, etc.) from the outer Node.js realm, they **override** the VM context's own builtins. This causes a critical prototype mismatch: string literals inside the VM use the **context's own String** for auto-boxing, but `String.prototype` in scope refers to the **outer realm's** prototype. Patching `String.prototype.equals = ...` modifies the outer prototype, which has no effect on string operations inside the VM. The same cross-realm issue affects `instanceof` — objects created via outer-realm constructors (e.g., `new Date()` in TypeScript shim code) are not `instanceof` the VM's own constructors. The fix is simple: do NOT pass built-in constructors into the scope object. `vm.createContext()` provides its own complete set of builtins automatically. Only pass non-builtin values (`parseInt`, `parseFloat`, custom classes, etc.):
+```typescript
+// ❌ Wrong — outer realm's String overrides VM's own String
+const scope = { String, Object, Array, Date, JSON, ... };
+vm.createContext(scope);
+// String.prototype.equals = ... patches outer prototype, not VM's
+
+// ✅ Correct — let VM provide its own builtins
+const scope = { parseInt, parseFloat, customClass, ... };
+vm.createContext(scope);
+// String.prototype.equals = ... now patches VM's own prototype ✓
+```
+This bug was discovered during real-world integration testing (39 test channels from GitHub). It was invisible to prior automated scanning because the scanning agents compare method inventories and scope variable lists — they don't execute scripts in a real VM context. The cross-realm mismatch only manifests at runtime when a script calls a patched prototype method on a string literal.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -2994,11 +3010,55 @@ Parallel agent execution across 4 waves with ~11 agents total.
 - 1,518 new tests, 29 new test suites, 7,600 total tests passing
 - Plan: `plans/phase-c-implementation.md`
 
+### Real-World JavaScript Runtime Gap Remediation (2026-02-20)
+
+**Discovered and fixed 12 real-world gaps (3 E4X transpiler + 8 Java interop + 1 XMLProxy) from 20+ GitHub Mirth channel sources, plus a critical cross-realm VM prototype bug found during integration testing.**
+
+Research from nextgenhealthcare/connect-examples, RSNA, SwissTPH, AWS samples, and community gists identified JavaScript patterns that no prior automated scanning wave exercised — because all prior testing used synthetic test cases.
+
+2 parallel agents in git worktrees + sequential integration testing:
+
+| Agent | Branch | Scope | Tests | Duration |
+|-------|--------|-------|-------|----------|
+| e4x-fixer | `fix/e4x-computed-attrs` | E4X computed attrs (A1), computed tag names (A2), empty XMLList (A3), XMLProxy .child() (C1) | ~60 | ~10 min |
+| shim-builder | `fix/java-interop-shims` | Java interop shims (B1-B8): URL, SimpleDateFormat, ArrayList, HashMap, StringBuffer, System, StringUtils, MirthMap lock/unlock | ~120 | ~10 min |
+| integration | (merged main) | 39 real-world pattern tests, cross-realm VM fix, XMLProxy deleteAt fix | 39 | ~10 min |
+
+**Key fixes:**
+
+| Category | Gaps Fixed | Key Changes |
+|----------|-----------|-------------|
+| E4X Transpiler | 3 (A1-A3) | Computed XML attributes `<tag attr={var}/>`, computed tag names `<{expr}>`, empty XMLList `<></>` |
+| Java Interop | 8 (B1-B8) | `java.net.URL`, `SimpleDateFormat`, `ArrayList/HashMap/LinkedHashMap/HashSet`, `StringBuffer/StringBuilder`, `System`, `StringUtils` (Apache Commons), `globalMap.lock()/unlock()` |
+| XMLProxy | 1 (C1) | `.child(nameOrIndex)` method with Proxy trap registration |
+| VM Runtime | 1 (critical) | Cross-realm prototype mismatch — removed built-in constructors from `buildBasicScope()` scope (see lesson #59) |
+| XMLProxy Delete | 1 | Reference-based `deleteAt()` for `children()` access pattern |
+
+**New source files:**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/javascript/shims/JavaInterop.ts` | ~450 | Java namespace shims (URL, SimpleDateFormat, ArrayList, HashMap, etc.) |
+| `src/javascript/shims/StringUtils.ts` | ~100 | Apache Commons Lang3 StringUtils polyfill |
+| `tests/unit/javascript/e4x/E4XTranspiler.computed.test.ts` | ~150 | Computed attr/tag/XMLList unit tests |
+| `tests/unit/javascript/shims/JavaInterop.test.ts` | ~200 | Java interop shim unit tests |
+| `tests/unit/javascript/e4x/XMLProxy.child.test.ts` | ~60 | .child() method tests |
+| `tests/integration/real-world-channels/RealWorldPatterns.test.ts` | ~830 | 39 real-world pattern integration tests |
+
+**Key files modified:**
+- `src/javascript/e4x/E4XTranspiler.ts` — Computed attribute/tag name transpilation, empty XMLList
+- `src/javascript/e4x/XMLProxy.ts` — `.child()` method, reference-based `deleteAt()`, `removeNodeByReference()`
+- `src/javascript/runtime/ScopeBuilder.ts` — Removed built-in constructors from scope (cross-realm fix), inject java namespace + StringUtils + String.prototype extensions
+- `src/javascript/runtime/JavaScriptExecutor.ts` — Cross-realm error handling (`message` property check vs `instanceof Error`)
+- `src/javascript/userutil/MirthMap.ts` — `lock()`/`unlock()`/`containsKeySync()`/`putSync()` concurrency stubs
+
+- 261 new tests (6 test suites), 8,151 total tests passing
+- Plan: `plans/real-world-javascript-runtime-gaps.md`
+
 ### Completion Status
 
-All Waves 1-22 and Phase C are complete. The porting project has reached production-ready status:
+All Waves 1-22, Phase C, and Real-World Gaps are complete. The porting project has reached production-ready status:
 
-**Completed (Waves 1-22 + Phase C):**
+**Completed (Waves 1-22 + Phase C + Real-World Gaps):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
 - ✅ 11/11 Connectors (HTTP, TCP, MLLP, File, SFTP, S3, JDBC, VM, SMTP, JMS, WebService, DICOM)
 - ✅ 9/9 Data Types (HL7v2, XML, JSON, Raw, Delimited, EDI, HL7v3, NCPDP, DICOM)
@@ -3014,6 +3074,7 @@ All Waves 1-22 and Phase C are complete. The porting project has reached product
 - ✅ **Phase C: Code Quality** — Circular import fix (Mirth.ts ↔ EngineController.ts), test coverage 62% → 71% (1,518 new tests across 29 suites)
 - ✅ **Role-Based Authorization (P0 Fix)** — `RoleBasedAuthorizationController` replaces always-true `DefaultAuthorizationController`. 4 predefined roles (admin, manager, operator, monitor), PERSON.ROLE column migration, 60s role cache with invalidation, `MIRTH_AUTH_MODE` env var for fallback (53 tests)
 - ✅ **OpenAPI 3.1 Spec Generation** — Zod schemas + `@asteasolutions/zod-to-openapi` for TypeScript-native spec generation. 22 schemas, 48 paths across 5 servlets, build-time generator (`npm run openapi:generate`), dev-mode Swagger UI at `/api-docs` (42 tests)
+- ✅ **Real-World JavaScript Runtime Gaps** — 12 gaps from 20+ GitHub Mirth channels: E4X computed attributes/tags/empty XMLList, Java interop shims (URL, SimpleDateFormat, ArrayList, HashMap, StringBuffer, System, StringUtils, MirthMap locking), XMLProxy.child(), cross-realm VM prototype fix (261 tests, 39 integration tests from real GitHub code)
 
 ### Role-Based Authorization Controller
 
