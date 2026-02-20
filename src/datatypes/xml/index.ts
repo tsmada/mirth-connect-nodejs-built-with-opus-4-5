@@ -13,3 +13,10 @@ export {
   extractXMLMetaData,
   stripNamespaces,
 } from './XMLDataType.js';
+
+export {
+  XMLBatchAdaptor,
+  XMLBatchAdaptorFactory,
+  XMLSplitType,
+  type XMLBatchProperties,
+} from './XMLBatchAdaptor.js';

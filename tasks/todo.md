@@ -2,20 +2,56 @@
 
 ## Current Status (2026-02-19)
 
-- **Tests**: 6,092 passing (307 test suites)
-- **Waves 1-22**: Complete (see CLAUDE.md for full wave summaries)
-- **Production readiness**: PASS — comprehensive audit completed 2026-02-19 (see CLAUDE.md § Production Readiness Assessment)
-- **Connector parity**: 9/9 connectors verified, 0 critical findings, 5 minor deferrals
-- **JS runtime parity**: Full parity across 8 waves of fixes, verified by 3 automated scans, 10 minor deferrals (0 major)
-- **Operational modes**: Takeover, standalone, auto-detect all working
-- **K8s deployment**: Validated on Rancher Desktop k3s in all 4 modes
-- **Security**: Auth on all routes, parameterized SQL, VM sandbox, rate limiting, zero production vulnerabilities
+- **Tests**: 7,598 total (7,598 passing + 22 e2e CLI rate-limit flakes), 336 test suites
+- **Waves 1-22 + Phase C**: Complete (see CLAUDE.md for full wave summaries)
+- **Independent Verification**: **GO** — All Phase A + Phase B remediation complete. 6 scanner agents ran full audits (see `plans/independent-verification-report.md`)
+- **Connector parity**: 9/9 connectors verified, 0 new findings (6th scan confirms Wave 21 baseline)
+- **JS runtime parity**: Full parity verified, 0 new findings (4th scan confirms Wave 15 baseline)
+- **Serializer parity**: All critical/major findings resolved (DICOM isSerializationRequired, metadata no-op, batch adaptors ported in Phase C)
+- **API parity**: All critical/major findings resolved (UsageServlet path, Extension stubs, multipart form data, DELETE /_removeAll)
+- **Pipeline parity**: All critical/major findings resolved (D_MS flush, updateSourceMap, content removal, PENDING status, storeMetaData)
+- **Subtle bugs**: All critical/major findings resolved (global scripts wired, connector start/stop, cache refresh)
+- **Security**: All 5 dimensions PASS — auth, SQL injection, VM sandbox, secrets, password handling
+- **Operational**: All 4 dimensions PASS — shutdown, health probes, error handling, logging
 - **Type safety**: `tsc --noEmit` zero errors under strict mode
-- **Logger migration**: Core engine fully migrated (0 console calls in donkey, connectors, API, plugins, cluster)
+- **Test coverage**: 70.88% statements, 71.58% lines (thresholds met — Phase C complete)
 
 ---
 
-## Remaining Work
+## Required Remediation (Pre-Production)
+
+**Phase A — Must-Fix (COMPLETE)**
+
+- [x] **SBF-INIT-001 (Critical)**: Wire `executePreprocessorScripts()`/`executePostprocessorScripts()` in Channel.ts — global scripts loaded via EngineController → ChannelBuilder → Channel
+- [x] **SPC-ISG-001 (Critical)**: Change DICOM `isSerializationRequired()` from `true` to `false` in `DICOMSerializerAdapter.ts`
+- [x] **SPC-MEG-001 (Critical)**: Make `populateMetaData()` a no-op for XML, JSON, Delimited, HL7V3, DICOM, Raw adapters
+- [x] **PC-MJM-001 (Critical)**: Add sourceMap persistence to Transaction 2 via `insertContent()` in Channel.ts (both sync and async paths)
+- [x] **APC-ME-001 (Critical)**: Add `POST /usageData/_generate` endpoint to UsageServlet.ts
+- [x] **APC-ME-002/003 (Critical)**: Add Extension `_install`/`_uninstall` 501 stubs to ExtensionServlet.ts
+
+**Phase B — Fix Before Takeover Mode (COMPLETE)**
+
+- [x] **PC-MPS-001 (Critical)**: Wired D_MS statistics flush — `statsAccumulator.flush()` called on periodic timer + channel stop + undeploy
+- [x] **PC-MTB-001 (Critical)**: Added `removeOnlyFilteredOnCompletion` content removal path with async lock in Channel.ts
+- [x] **PC-MPS-004 (Major)**: Added PENDING status commit before response transformer execution
+- [x] **PC-MJM-002 (Major)**: Added `storeMetaData()` INSERT...ON DUPLICATE KEY UPDATE for queue retry metadata persistence
+- [x] **APC-ME-004 (Major)**: Added `DELETE /_removeAll` per-channel endpoint to MessageServlet.ts
+- [x] **APC-SE-001 (Major)**: Analyzed — no change needed. Export endpoints correctly use `res.json()` (format predetermined by writerType, not Accept header)
+- [x] **APC-PM-002/003/004 (Major)**: Added `multipartFormMiddleware()` for 3 bulk update endpoints (ChannelStatistics, ChannelGroup, CodeTemplate)
+- [x] **SBF-STUB-001 (Major)**: Implemented `startConnector()`/`stopConnector()` in EngineController — source + destination + queue processing
+- [x] **SBF-STALE-001 (Major)**: Extracted ChannelCache module, wired `refreshChannelCache()` after all channel CRUD operations in ChannelServlet
+
+**Phase C — Nice-to-Have (COMPLETE)**
+
+- [x] Port 7 missing batch adaptors (HL7v2, XML, JSON, Raw, Delimited, NCPDP) — ScriptBatchAdaptor base + 6 type-specific adaptors
+- [x] Port HL7v2 AutoResponder (wire to ACKGenerator) — MSH.15 accept ack modes, custom ACK codes, DefaultAutoResponder
+- [x] Add HL7v2 escape sequence handling in non-strict parser — HL7EscapeHandler wired into HL7v2SerializerAdapter
+- [x] Break circular import Mirth.ts ↔ EngineController.ts — setter injection pattern (setDonkeyInstance)
+- [x] Raise test coverage from 62% to 70% — 70.88% statements, 71.58% lines (1,499 new tests)
+
+---
+
+## Existing Deferrals
 
 Everything below is **non-blocking for production**. These are edge-case gaps, optional enhancements, and protocol features that most deployments don't use.
 
@@ -76,13 +112,35 @@ Remaining internal `console.*` calls (~35) are in `src/javascript/userutil/` (de
 
 ---
 
-## Recently Completed (This Session)
+## Recently Completed (Verification Sessions 1-3)
 
-1. **Deadlock retry** — Wrapped all `FOR UPDATE` transactions with `withRetry()` (3 retries, exponential backoff)
-2. **Auth ESLint fix** — Added `RedisClient` interface, eliminated 38 unsafe-* errors (0 errors remaining)
-3. **Servlet tests** — 180 new tests across ChannelServlet (51), EngineServlet (22), UserServlet (49), ConfigurationServlet (58)
-4. **Route ordering bug** — Fixed `DELETE /_removeAllMessages` being caught by `DELETE /:channelId`
-5. **Doc rot cleanup** — Updated CLAUDE.md + todo.md: archiver integration status, resolved deferrals, logger migration status
+**Session 1:**
+1. Deadlock retry — Wrapped all `FOR UPDATE` transactions with `withRetry()` (3 retries, exponential backoff)
+2. Auth ESLint fix — Added `RedisClient` interface, eliminated 38 unsafe-* errors
+3. Servlet tests — 180 new tests across ChannelServlet (51), EngineServlet (22), UserServlet (49), ConfigurationServlet (58)
+4. Route ordering bug — Fixed `DELETE /_removeAllMessages` being caught by `DELETE /:channelId`
+5. Doc rot cleanup — Updated CLAUDE.md + todo.md
+
+**Session 2 (Phase A + Phase B critical):**
+6. **SBF-INIT-001** — Wired global pre/postprocessor scripts into Channel.ts pipeline
+7. **SPC-ISG-001** — Changed DICOM isSerializationRequired to false
+8. **SPC-MEG-001** — Made populateMetaData no-op for XML, JSON, Delimited, HL7V3, DICOM, Raw
+9. **PC-MJM-001** — Added sourceMap persistence to Transaction 2
+10. **APC-ME-001** — Added POST /usageData/_generate endpoint
+11. **APC-ME-002/003** — Added Extension _install/_uninstall 501 stubs
+12. **PC-MPS-001** — Wired D_MS statistics flush (timer + stop + undeploy)
+13. **PC-MTB-001** — Added removeOnlyFilteredOnCompletion content removal
+14. **PC-MPS-004** — Added PENDING status commit before response transformer
+15. **PC-MJM-002** — Added storeMetaData() upsert for queue retry
+16. **APC-ME-004** — Added DELETE /_removeAll per-channel endpoint
+
+**Session 3 (Phase B major):**
+17. **APC-SE-001** — Analyzed: no change needed (export endpoints use predetermined format)
+18. **APC-PM-002/003/004** — Added multipartFormMiddleware for 3 bulk update endpoints
+19. **SBF-STUB-001** — Implemented startConnector/stopConnector with full connector lifecycle
+20. **SBF-STALE-001** — Extracted ChannelCache module, wired refresh after CRUD operations
+21. Fixed SerializerFactory.test.ts to match Phase A populateMetaData no-op changes
+22. Fixed AuthorizationWiring.test.ts for multipartFormMiddleware route chain
 
 ---
 

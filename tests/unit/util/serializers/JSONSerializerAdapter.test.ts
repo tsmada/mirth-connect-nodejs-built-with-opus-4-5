@@ -85,28 +85,18 @@ describe('JSONSerializerAdapter', () => {
   });
 
   describe('getMetaDataFromMessage', () => {
-    it('returns map with mirth_type=JSON', () => {
+    it('returns empty Map (Java JSONSerializer.populateMetaData is a no-op)', () => {
       const meta = serializer.getMetaDataFromMessage('{"key":"value"}');
-      expect(meta.get('mirth_type')).toBe('JSON');
-    });
-
-    it('returns mirth_type=JSON regardless of content', () => {
-      const meta = serializer.getMetaDataFromMessage('invalid json');
-      expect(meta.get('mirth_type')).toBe('JSON');
-    });
-
-    it('only contains mirth_type key', () => {
-      const meta = serializer.getMetaDataFromMessage('{}');
-      expect(meta.size).toBe(1);
-      expect(meta.has('mirth_type')).toBe(true);
+      expect(meta).toBeInstanceOf(Map);
+      expect(meta.size).toBe(0);
     });
   });
 
   describe('populateMetaData', () => {
-    it('sets mirth_type to JSON in the provided map', () => {
+    it('is a no-op (matches Java JSONSerializer)', () => {
       const map = new Map<string, unknown>();
       serializer.populateMetaData('{"key":"value"}', map);
-      expect(map.get('mirth_type')).toBe('JSON');
+      expect(map.size).toBe(0);
     });
   });
 

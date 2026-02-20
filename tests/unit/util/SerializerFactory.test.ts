@@ -221,10 +221,10 @@ describe('SerializerFactory', () => {
       expect(serializer.fromXML(xml)).toBe(xml);
     });
 
-    it('should return mirth_ prefixed metadata', () => {
+    it('should return empty metadata (Java XMLSerializer.populateMetaData is a no-op)', () => {
       const metadata = serializer.getMetaDataFromMessage('<root/>');
-      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
-      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.size).toBe(0);
     });
   });
 
@@ -259,9 +259,10 @@ describe('SerializerFactory', () => {
       expect(serializer.isSerializationRequired()).toBe(false);
     });
 
-    it('should return mirth_type metadata', () => {
+    it('should return empty metadata (Java JSONSerializer.populateMetaData is a no-op)', () => {
       const metadata = serializer.getMetaDataFromMessage('{}');
-      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.size).toBe(0);
     });
   });
 
@@ -339,11 +340,10 @@ describe('SerializerFactory', () => {
       expect(xml).not.toBeNull();
     });
 
-    it('should return mirth_ prefixed metadata', () => {
+    it('should return empty metadata (Java HL7V3Serializer.populateMetaData is a no-op)', () => {
       const metadata = serializer.getMetaDataFromMessage('<ClinicalDocument/>');
       expect(metadata).toBeInstanceOf(Map);
-      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
-      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.size).toBe(0);
     });
   });
 
@@ -377,15 +377,14 @@ describe('SerializerFactory', () => {
       serializer = SerializerFactory.getSerializer('DICOM')!;
     });
 
-    it('should require serialization (DICOM needs binary-to-XML)', () => {
-      expect(serializer.isSerializationRequired()).toBe(true);
+    it('should not require serialization (matches Java DICOMSerializer)', () => {
+      expect(serializer.isSerializationRequired()).toBe(false);
     });
 
-    it('should return mirth_ prefixed metadata', () => {
+    it('should return empty metadata (Java DICOMSerializer.populateMetaData is a no-op)', () => {
       const metadata = serializer.getMetaDataFromMessage('');
       expect(metadata).toBeInstanceOf(Map);
-      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
-      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      expect(metadata.size).toBe(0);
     });
   });
 

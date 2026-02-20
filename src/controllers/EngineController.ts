@@ -19,10 +19,11 @@ import {
   createDashboardStatus,
 } from '../api/models/DashboardStatus.js';
 import { ChannelController } from './ChannelController.js';
+import { ConfigurationController } from './ConfigurationController.js';
 import { Channel } from '../donkey/channel/Channel.js';
 import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
 import { ensureChannelTables } from '../db/SchemaManager.js';
-import { getDonkeyInstance } from '../server/Mirth.js';
+import type { Donkey } from '../donkey/Donkey.js';
 import { RawMessage } from '../model/RawMessage.js';
 import {
   VmDispatcher,
@@ -44,6 +45,18 @@ import { createJavaScriptExecutor } from '../javascript/runtime/JavaScriptExecut
 
 registerComponent('engine', 'Channel deploy/start/stop');
 const logger = getLogger('engine');
+
+// Setter injection: breaks circular import with Mirth.ts
+// Mirth.ts calls setDonkeyInstance() after creating the Donkey engine
+let donkeyInstanceRef: Donkey | null = null;
+
+/**
+ * Set the global Donkey engine reference.
+ * Called by Mirth.ts during startup to break the circular import.
+ */
+export function setDonkeyInstance(d: Donkey): void {
+  donkeyInstanceRef = d;
+}
 
 /**
  * Deployment metadata for a channel.
@@ -279,8 +292,22 @@ export class EngineController {
     logger.debug(`Channel tables verified for ${channelConfig.name}`);
 
     try {
+      // Load global scripts for preprocessor/postprocessor chaining (SBF-INIT-001)
+      let globalPreprocessorScript: string | undefined;
+      let globalPostprocessorScript: string | undefined;
+      try {
+        const globalScripts = await ConfigurationController.getGlobalScripts();
+        globalPreprocessorScript = globalScripts.Preprocessor || undefined;
+        globalPostprocessorScript = globalScripts.Postprocessor || undefined;
+      } catch (gsError) {
+        logger.warn(`Failed to load global scripts for ${channelConfig.name}: ${String(gsError)}`);
+      }
+
       // Build runtime channel with connectors
-      const runtimeChannel = buildChannel(channelConfig);
+      const runtimeChannel = buildChannel(channelConfig, {
+        globalPreprocessorScript,
+        globalPostprocessorScript,
+      });
 
       // Fetch code templates for this channel and create a per-channel executor
       try {
@@ -323,9 +350,8 @@ export class EngineController {
       runtimeChannel.updateCurrentState(DeployedState.DEPLOYING);
 
       // Register with Donkey engine (if available)
-      const donkey = getDonkeyInstance();
-      if (donkey && !donkey.getChannel(channelId)) {
-        await donkey.deployChannel(runtimeChannel);
+      if (donkeyInstanceRef && !donkeyInstanceRef.getChannel(channelId)) {
+        await donkeyInstanceRef.deployChannel(runtimeChannel);
       }
 
       // Store deployment info (state comes from runtimeChannel.currentState)
@@ -418,10 +444,9 @@ export class EngineController {
     messageCompleteLastEmit.delete(channelId);
 
     // Remove from Donkey engine (prevents stale channel reference on redeploy)
-    const donkey = getDonkeyInstance();
-    if (donkey && donkey.getChannel(channelId)) {
+    if (donkeyInstanceRef && donkeyInstanceRef.getChannel(channelId)) {
       try {
-        await donkey.undeployChannel(channelId);
+        await donkeyInstanceRef.undeployChannel(channelId);
       } catch {
         // Channel may already be removed — safe to ignore
       }
@@ -535,25 +560,74 @@ export class EngineController {
   }
 
   /**
-   * Start a connector
+   * Start a specific connector within a deployed channel.
+   * metaDataId 0 = source connector, 1+ = destination connector.
+   * Matches Java DonkeyEngineController.startConnector().
    */
   static async startConnector(channelId: string, metaDataId: number): Promise<void> {
     const deployment = deployedChannels.get(channelId);
     if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
-    logger.info(`Connector ${metaDataId} on channel ${deployment.name} started`);
+
+    const { runtimeChannel, name } = deployment;
+
+    if (metaDataId === 0) {
+      // Source connector
+      const source = runtimeChannel.getSourceConnector();
+      if (!source) {
+        throw new Error(`No source connector on channel ${name}`);
+      }
+      await source.start();
+      logger.info(`Source connector on channel ${name} started`);
+    } else {
+      // Destination connector
+      const dest = runtimeChannel
+        .getDestinationConnectors()
+        .find((d) => d.getMetaDataId() === metaDataId);
+      if (!dest) {
+        throw new Error(`Destination connector ${metaDataId} not found on channel ${name}`);
+      }
+      await dest.start();
+      if (dest.isQueueEnabled()) {
+        dest.startQueueProcessing();
+      }
+      logger.info(`Destination connector ${metaDataId} on channel ${name} started`);
+    }
   }
 
   /**
-   * Stop a connector
+   * Stop a specific connector within a deployed channel.
+   * metaDataId 0 = source connector, 1+ = destination connector.
+   * Matches Java DonkeyEngineController.stopConnector().
    */
   static async stopConnector(channelId: string, metaDataId: number): Promise<void> {
     const deployment = deployedChannels.get(channelId);
     if (!deployment) {
       throw new Error(`Channel not deployed: ${channelId}`);
     }
-    logger.info(`Connector ${metaDataId} on channel ${deployment.name} stopped`);
+
+    const { runtimeChannel, name } = deployment;
+
+    if (metaDataId === 0) {
+      // Source connector
+      const source = runtimeChannel.getSourceConnector();
+      if (!source) {
+        throw new Error(`No source connector on channel ${name}`);
+      }
+      await source.stop();
+      logger.info(`Source connector on channel ${name} stopped`);
+    } else {
+      // Destination connector
+      const dest = runtimeChannel
+        .getDestinationConnectors()
+        .find((d) => d.getMetaDataId() === metaDataId);
+      if (!dest) {
+        throw new Error(`Destination connector ${metaDataId} not found on channel ${name}`);
+      }
+      await dest.stop();
+      logger.info(`Destination connector ${metaDataId} on channel ${name} stopped`);
+    }
   }
 
   /**

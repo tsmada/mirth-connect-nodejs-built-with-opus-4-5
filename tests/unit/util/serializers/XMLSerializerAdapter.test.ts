@@ -56,30 +56,18 @@ describe('XMLSerializerAdapter', () => {
   });
 
   describe('populateMetaData', () => {
-    it('sets mirth_version to 1.0 and mirth_type to XML-Message', () => {
+    it('is a no-op (matches Java XMLSerializer)', () => {
       const map = new Map<string, unknown>();
       serializer.populateMetaData(SIMPLE_XML, map);
-
-      expect(map.get('mirth_version')).toBe('1.0');
-      expect(map.get('mirth_type')).toBe('XML-Message');
-    });
-
-    it('does not set mirth_source (XML has no source concept)', () => {
-      const map = new Map<string, unknown>();
-      serializer.populateMetaData(SIMPLE_XML, map);
-
-      expect(map.has('mirth_source')).toBe(false);
+      expect(map.size).toBe(0);
     });
   });
 
   describe('getMetaDataFromMessage', () => {
-    it('returns Map with mirth_version and mirth_type', () => {
+    it('returns empty Map (Java XMLSerializer.populateMetaData is a no-op)', () => {
       const result = serializer.getMetaDataFromMessage(SIMPLE_XML);
-
       expect(result).toBeInstanceOf(Map);
-      expect(result.get('mirth_version')).toBe('1.0');
-      expect(result.get('mirth_type')).toBe('XML-Message');
-      expect(result.size).toBe(2);
+      expect(result.size).toBe(0);
     });
   });
 

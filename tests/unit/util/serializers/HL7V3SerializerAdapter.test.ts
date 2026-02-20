@@ -44,31 +44,16 @@ describe('HL7V3SerializerAdapter', () => {
     expect(result).toBe(SIMPLE_HL7V3);
   });
 
-  test('getMetaDataFromMessage returns mirth_type and mirth_version', () => {
+  test('getMetaDataFromMessage returns empty Map (Java HL7V3Serializer.populateMetaData is a no-op)', () => {
     const metadata = adapter.getMetaDataFromMessage(SAMPLE_HL7V3);
-
-    // version is always 3.0 for HL7v3
-    expect(metadata.get('mirth_version')).toBe('3.0');
-    // type is the root element QName
-    expect(metadata.get('mirth_type')).toBe('PRPA_IN201301UV02');
-
-    // Must NOT use bare keys (the standalone HL7V3Serializer uses bare keys — adapter fixes this)
-    expect(metadata.has('version')).toBe(false);
-    expect(metadata.has('type')).toBe(false);
+    expect(metadata).toBeInstanceOf(Map);
+    expect(metadata.size).toBe(0);
   });
 
-  test('getMetaDataFromMessage extracts CDA root element', () => {
-    const metadata = adapter.getMetaDataFromMessage(SIMPLE_HL7V3);
-    expect(metadata.get('mirth_type')).toBe('ClinicalDocument');
-    expect(metadata.get('mirth_version')).toBe('3.0');
-  });
-
-  test('populateMetaData writes mirth_ prefixed keys', () => {
+  test('populateMetaData is a no-op (matches Java HL7V3Serializer)', () => {
     const map = new Map<string, unknown>();
     adapter.populateMetaData(SAMPLE_HL7V3, map);
-
-    expect(map.get('mirth_version')).toBe('3.0');
-    expect(map.get('mirth_type')).toBe('PRPA_IN201301UV02');
+    expect(map.size).toBe(0);
   });
 
   test('transformWithoutSerializing returns null by default', () => {

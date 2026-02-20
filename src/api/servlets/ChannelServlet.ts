@@ -24,6 +24,7 @@ import {
   MESSAGE_REMOVE_ALL,
 } from '../middleware/operations.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
+import { refreshChannelCache } from '../../controllers/ChannelCache.js';
 
 registerComponent('api', 'REST API server');
 const logger = getLogger('api');
@@ -245,6 +246,7 @@ channelRouter.post(
             channelData,
             rawXml
           );
+          refreshChannelCache().catch(() => {});
           res.sendData(success);
           return;
         }
@@ -254,6 +256,7 @@ channelRouter.post(
 
       // Create channel - preserve raw XML if available
       const success = await ChannelController.createChannelWithXml(channelData, rawXml);
+      refreshChannelCache().catch(() => {});
       res.sendData(success, success ? 201 : 500);
     } catch (error) {
       logger.error('Create channel error', error as Error);
@@ -288,6 +291,7 @@ channelRouter.put(
       }
 
       const success = await ChannelController.updateChannel(channelId, channelData);
+      refreshChannelCache().catch(() => {});
       res.sendData(success);
     } catch (error) {
       logger.error('Update channel error', error as Error);
@@ -374,6 +378,7 @@ channelRouter.delete(
       }
 
       await ChannelController.deleteChannel(channelId);
+      refreshChannelCache().catch(() => {});
       res.status(204).end();
     } catch (error) {
       logger.error('Delete channel error', error as Error);
@@ -402,6 +407,7 @@ channelRouter.delete(
         await ChannelController.deleteChannel(id as string);
       }
 
+      refreshChannelCache().catch(() => {});
       res.status(204).end();
     } catch (error) {
       logger.error('Delete channels error', error as Error);
@@ -429,6 +435,7 @@ channelRouter.post(
         await ChannelController.deleteChannel(id);
       }
 
+      refreshChannelCache().catch(() => {});
       res.status(204).end();
     } catch (error) {
       logger.error('Remove channels error', error as Error);

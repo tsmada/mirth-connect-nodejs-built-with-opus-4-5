@@ -35,3 +35,6 @@ export {
 
 // Metadata extraction
 export { HL7v2MetaData, extractMetaData, extractMetaDataFromXML } from './HL7v2MetaData.js';
+
+// Escape sequence handling
+export { HL7EscapeHandler } from './HL7EscapeHandler.js';

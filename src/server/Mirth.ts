@@ -15,7 +15,7 @@ import { startServer } from '../api/server.js';
 import { initPool, closePool } from '../db/pool.js';
 import { initEncryptorFromEnv } from '../db/Encryptor.js';
 import { ChannelController } from '../controllers/ChannelController.js';
-import { EngineController } from '../controllers/EngineController.js';
+import { EngineController, setDonkeyInstance } from '../controllers/EngineController.js';
 import type { Server } from 'http';
 import {
   setEngineController as setVmRouterEngineController,
@@ -73,12 +73,14 @@ export function getMirthInstance(): Mirth | null {
   return mirthInstance;
 }
 
-// Synchronous caches for ChannelUtil channel controller adapter.
-// Populated once at startup by refreshChannelUtilCache().
-let channelNameCache: string[] = [];
-let channelIdCache: string[] = [];
-const channelCacheById = new Map<string, { id: string; name: string }>();
-const channelCacheByName = new Map<string, { id: string; name: string }>();
+// Synchronous channel cache — shared module used by ChannelUtil adapters and ChannelServlet
+import {
+  refreshChannelCache,
+  getChannelNames as getCachedChannelNames,
+  getChannelIds as getCachedChannelIds,
+  getChannelById as getCachedChannelById,
+  getChannelByName as getCachedChannelByName,
+} from '../controllers/ChannelCache.js';
 
 export type OperationalMode = 'takeover' | 'standalone' | 'auto';
 
@@ -215,7 +217,8 @@ export class Mirth {
 
     // Initialize Donkey engine
     this.donkey = new Donkey();
-    donkeyInstance = this.donkey; // Expose globally for EngineController
+    donkeyInstance = this.donkey; // Expose globally (legacy — prefer setDonkeyInstance)
+    setDonkeyInstance(this.donkey); // Setter injection — breaks circular import
     await this.donkey.start();
 
     // Start REST API server
@@ -539,33 +542,30 @@ export class Mirth {
       // --- Channel controller adapter ---
       setChannelUtilChannelController({
         getChannelNames(): string[] {
-          // Synchronous — we cache the last result; caller is inside a VM script.
-          // Fallback: return empty array (channels load asynchronously).
-          return channelNameCache;
+          // Synchronous — backed by shared ChannelCache; caller is inside a VM script.
+          return getCachedChannelNames();
         },
         getChannelIds(): string[] {
-          return channelIdCache;
+          return getCachedChannelIds();
         },
         getChannelById(channelId: string) {
-          const entry = channelCacheById.get(channelId);
-          return entry ?? null;
+          return getCachedChannelById(channelId);
         },
         getChannelByName(channelName: string) {
-          const entry = channelCacheByName.get(channelName);
-          return entry ?? null;
+          return getCachedChannelByName(channelName);
         },
         getDeployedChannels(_channelIds: string[] | null) {
           const ids = EC.getDeployedChannelIds();
           const result: { id: string; name: string }[] = [];
           for (const id of ids) {
-            const ch = channelCacheById.get(id);
+            const ch = getCachedChannelById(id);
             if (ch) result.push(ch);
           }
           return result;
         },
         getDeployedChannelById(channelId: string) {
           if (!EC.isDeployed(channelId)) return null;
-          return channelCacheById.get(channelId) ?? null;
+          return getCachedChannelById(channelId);
         },
         getDeployedChannelByName(channelName: string) {
           const lookup = EC.getDeployedChannelByName(channelName);
@@ -708,23 +708,10 @@ export class Mirth {
 
   /**
    * Refresh the synchronous channel cache used by ChannelUtil adapters.
-   * Called once at startup after channels are loaded from the database.
+   * Delegates to the shared ChannelCache module (also called by ChannelServlet after CRUD).
    */
   private async refreshChannelUtilCache(): Promise<void> {
-    try {
-      const allChannels = await ChannelController.getAllChannels();
-      channelNameCache = allChannels.map((c) => c.name);
-      channelIdCache = allChannels.map((c) => c.id);
-      channelCacheById.clear();
-      channelCacheByName.clear();
-      for (const ch of allChannels) {
-        const entry = { id: ch.id, name: ch.name };
-        channelCacheById.set(ch.id, entry);
-        channelCacheByName.set(ch.name, entry);
-      }
-    } catch {
-      // Non-fatal — cache remains empty
-    }
+    await refreshChannelCache();
   }
 
   /**

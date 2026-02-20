@@ -34,3 +34,11 @@ export {
   DelimitedMetaData,
   extractDelimitedMetaData,
 } from './DelimitedDataType.js';
+
+// Batch Adaptor
+export {
+  DelimitedBatchAdaptor,
+  DelimitedBatchAdaptorFactory,
+  DelimitedBatchProperties,
+  DelimitedSplitType,
+} from './DelimitedBatchAdaptor.js';

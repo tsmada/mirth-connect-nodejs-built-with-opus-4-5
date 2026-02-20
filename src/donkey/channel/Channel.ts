@@ -53,8 +53,10 @@ import {
   getStatistics,
   pruneMessageContent,
   pruneMessageAttachments,
+  deleteMessageContentByMetaDataIds,
   insertCustomMetaData,
   getConnectorMessageStatuses,
+  updateStatistics,
 } from '../../db/DonkeyDao.js';
 import { transaction, withRetry } from '../../db/pool.js';
 import { StatisticsAccumulator } from './StatisticsAccumulator.js';
@@ -73,6 +75,8 @@ export interface ChannelConfig {
   enabled: boolean;
   preprocessorScript?: string;
   postprocessorScript?: string;
+  globalPreprocessorScript?: string;
+  globalPostprocessorScript?: string;
   deployScript?: string;
   undeployScript?: string;
   storageSettings?: StorageSettings;
@@ -113,6 +117,8 @@ export class Channel extends EventEmitter {
   // Scripts
   private preprocessorScript?: string;
   private postprocessorScript?: string;
+  private globalPreprocessorScript?: string;
+  private globalPostprocessorScript?: string;
   private deployScript?: string;
   private undeployScript?: string;
 
@@ -153,6 +159,9 @@ export class Channel extends EventEmitter {
   // Count of persistence failures (DB transaction errors) for observability
   private persistenceFailureCount = 0;
 
+  // Lock to prevent concurrent content removal for the same message (Java: removeContentLock)
+  private removeContentLock = new Set<number>();
+
   // Source queue for async processing mode (respondAfterProcessing=false)
   private sourceQueue: SourceQueue | null = null;
   private sourceQueueAbortController: AbortController | null = null;
@@ -166,6 +175,8 @@ export class Channel extends EventEmitter {
     this.enabled = config.enabled;
     this.preprocessorScript = config.preprocessorScript;
     this.postprocessorScript = config.postprocessorScript;
+    this.globalPreprocessorScript = config.globalPreprocessorScript;
+    this.globalPostprocessorScript = config.globalPostprocessorScript;
     this.deployScript = config.deployScript;
     this.undeployScript = config.undeployScript;
     this.storageSettings = config.storageSettings ?? new StorageSettings();
@@ -306,6 +317,33 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Initialize D_MS statistics rows for all connectors.
+   * Java Mirth's Channel.start() calls dao.addStatistics() to create initial rows
+   * for source (metaDataId=0) and each destination (metaDataId=1..N).
+   * Without this, D_MS tables remain empty until the first message is processed,
+   * causing the Admin dashboard to show no statistics for deployed channels.
+   */
+  private async initializeStatistics(): Promise<void> {
+    try {
+      if (this.tablesExist === null) {
+        this.tablesExist = await channelTablesExist(this.id);
+      }
+      if (!this.tablesExist) return;
+
+      const serverId = this.serverId;
+      // Create initial zero-count rows for source and each destination.
+      // Uses INSERT ON DUPLICATE KEY UPDATE with count=0, so existing rows
+      // are untouched (adding 0 is a no-op).
+      await updateStatistics(this.id, 0, serverId, Status.RECEIVED, 0);
+      for (let i = 0; i < this.destinationConnectors.length; i++) {
+        await updateStatistics(this.id, i + 1, serverId, Status.RECEIVED, 0);
+      }
+    } catch (err) {
+      logger.error(`[${this.name}] Failed to initialize statistics: ${err}`);
+    }
+  }
+
+  /**
    * Load accumulated statistics from the D_MS table.
    * Called during start() so dashboard counters survive restarts.
    * Matches Java Mirth Statistics.loadFromDatabase() pattern.
@@ -381,6 +419,9 @@ export class Channel extends EventEmitter {
       if (this.deployScript) {
         await this.executeScript(this.deployScript, 'deploy');
       }
+
+      // Initialize D_MS rows for all connectors (Java: dao.addStatistics)
+      await this.initializeStatistics();
 
       // Load accumulated statistics from DB so dashboard counters survive restarts
       await this.loadStatisticsFromDb();
@@ -680,6 +721,63 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Remove content/attachments after message completion.
+   * Matches Java Mirth's Channel.finishMessage() content removal logic (lines 1950-2092):
+   *
+   * - removeOnlyFilteredOnCompletion=true: only remove content for FILTERED destinations
+   *   (uses deleteMessageContentByMetaDataIds for selective removal)
+   * - removeOnlyFilteredOnCompletion=false: remove ALL content when all destinations terminal
+   *   (uses pruneMessageContent for bulk removal)
+   * - removeAttachmentsOnCompletion: remove all attachments unconditionally
+   *
+   * Uses per-message lock (Java: removeContentLock) to prevent concurrent removal.
+   */
+  private async removeCompletedMessageContent(messageId: number): Promise<void> {
+    if (
+      !this.storageSettings.removeContentOnCompletion &&
+      !this.storageSettings.removeAttachmentsOnCompletion
+    ) {
+      return;
+    }
+
+    // Per-message lock to prevent concurrent removal (Java: removeContentLock)
+    if (this.removeContentLock.has(messageId)) return;
+    this.removeContentLock.add(messageId);
+
+    try {
+      if (this.storageSettings.removeContentOnCompletion) {
+        if (this.storageSettings.removeOnlyFilteredOnCompletion) {
+          // Selective removal: only remove content for FILTERED destinations
+          const statuses = await getConnectorMessageStatuses(this.id, messageId);
+          const filteredMetaDataIds: number[] = [];
+          for (const [metaDataId, status] of statuses) {
+            if (metaDataId === 0) continue; // Skip source connector
+            if (status === Status.FILTERED) {
+              filteredMetaDataIds.push(metaDataId);
+            }
+          }
+          if (filteredMetaDataIds.length > 0) {
+            await deleteMessageContentByMetaDataIds(this.id, messageId, filteredMetaDataIds);
+          }
+        } else {
+          // Full removal: remove all content when all destinations are terminal
+          if (await this.allDestinationsTerminal(messageId)) {
+            await pruneMessageContent(this.id, [messageId]);
+          }
+        }
+      }
+
+      if (this.storageSettings.removeAttachmentsOnCompletion) {
+        await pruneMessageAttachments(this.id, [messageId]);
+      }
+    } catch (err) {
+      logger.error(`[${this.name}] Content removal error for message ${messageId}: ${err}`);
+    } finally {
+      this.removeContentLock.delete(messageId);
+    }
+  }
+
+  /**
    * Dispatch a raw message through the channel pipeline
    */
   async dispatchRawMessage(
@@ -831,9 +929,9 @@ export class Channel extends EventEmitter {
     }
 
     try {
-      // Execute preprocessor
+      // Execute preprocessor (global + channel chained)
       let processedData = rawData;
-      if (this.preprocessorScript) {
+      if (this.preprocessorScript || this.globalPreprocessorScript) {
         processedData = await this.executePreprocessor(rawData, sourceMessage);
         sourceMessage.setContent({
           contentType: ContentType.PROCESSED_RAW,
@@ -932,7 +1030,27 @@ export class Channel extends EventEmitter {
           }
         }
 
-        // sourceMap: no early INSERT — written once at end of pipeline (PC-MJM-001)
+        // sourceMap: early INSERT in Transaction 2 for crash recovery (PC-MJM-001)
+        // Java's StorageManager persists sourceMap here so it survives mid-pipeline crashes.
+        // The end-of-pipeline storeContent() upsert will update it with the final version.
+        if (this.storageSettings.storeMaps) {
+          const srcMap = sourceMessage.getSourceMap();
+          if (srcMap.size > 0) {
+            const mapSnapshot = Object.fromEntries(srcMap);
+            txn2Ops.push((conn) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.SOURCE_MAP,
+                JSON.stringify(mapSnapshot),
+                'JSON',
+                false,
+                conn
+              )
+            );
+          }
+        }
 
         // Custom metadata after source transformer
         if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
@@ -1349,8 +1467,8 @@ export class Channel extends EventEmitter {
         );
       }
 
-      // Execute postprocessor (runs outside transaction — errors caught separately)
-      if (this.postprocessorScript) {
+      // Execute postprocessor (channel + global chained, runs outside transaction)
+      if (this.postprocessorScript || this.globalPostprocessorScript) {
         try {
           await this.executePostprocessor(message);
         } catch (postError) {
@@ -1397,26 +1515,11 @@ export class Channel extends EventEmitter {
       message.setProcessed(true);
       txn4Ops.push((conn) => updateMessageProcessed(this.id, messageId, true, conn));
 
-      // Content/attachment removal — only if all destinations are in terminal state
-      if (this.storageSettings.removeContentOnCompletion) {
-        if (
-          !this.storageSettings.removeOnlyFilteredOnCompletion ||
-          sourceMessage.getStatus() === Status.FILTERED
-        ) {
-          if (await this.allDestinationsTerminal(messageId)) {
-            txn4Ops.push(async () => {
-              await pruneMessageContent(this.id, [messageId]);
-            });
-          }
-        }
-      }
-      if (this.storageSettings.removeAttachmentsOnCompletion) {
-        txn4Ops.push(async () => {
-          await pruneMessageAttachments(this.id, [messageId]);
-        });
-      }
-
       await this.persistInTransaction(txn4Ops);
+
+      // Content/attachment removal — runs after transaction commit, with per-message lock
+      // (Java: Channel.finishMessage() lines 1950-2092, separate transaction)
+      await this.removeCompletedMessageContent(messageId);
     } catch (error) {
       this.statsAccumulator.reset();
       sourceMessage.setStatus(Status.ERROR);
@@ -1494,13 +1597,17 @@ export class Channel extends EventEmitter {
     rawData: string,
     connectorMessage: ConnectorMessage
   ): Promise<string> {
-    if (!this.preprocessorScript) {
+    if (!this.preprocessorScript && !this.globalPreprocessorScript) {
       return rawData;
     }
 
     const context = this.getScriptContext();
-    const result = this.executor.executePreprocessor(
-      this.preprocessorScript,
+
+    // Use chained global + channel execution (SBF-INIT-001)
+    // Order: global first → channel second (global result feeds into channel)
+    const result = this.executor.executePreprocessorScripts(
+      this.preprocessorScript ?? null,
+      this.globalPreprocessorScript ?? null,
       rawData,
       connectorMessage,
       context
@@ -1514,15 +1621,23 @@ export class Channel extends EventEmitter {
   }
 
   /**
-   * Execute the postprocessor script
+   * Execute the postprocessor script (channel + global chained)
    */
   private async executePostprocessor(message: Message): Promise<void> {
-    if (!this.postprocessorScript) {
+    if (!this.postprocessorScript && !this.globalPostprocessorScript) {
       return;
     }
 
     const context = this.getScriptContext();
-    const result = this.executor.executePostprocessor(this.postprocessorScript, message, context);
+
+    // Use chained channel + global execution (SBF-INIT-001)
+    // Order: channel first → global second (channel's Response feeds into global)
+    const result = this.executor.executePostprocessorScripts(
+      this.postprocessorScript ?? null,
+      this.globalPostprocessorScript ?? null,
+      message,
+      context
+    );
 
     if (!result.success) {
       throw result.error ?? new Error('Postprocessor script failed');
@@ -1637,9 +1752,9 @@ export class Channel extends EventEmitter {
     sourceMessage.getSourceMap().delete('__rawData');
 
     try {
-      // Execute preprocessor
+      // Execute preprocessor (global + channel chained)
       let processedData = rawData;
-      if (this.preprocessorScript) {
+      if (this.preprocessorScript || this.globalPreprocessorScript) {
         const queueDataType = this.sourceConnector?.getInboundDataType() ?? 'RAW';
         processedData = await this.executePreprocessor(rawData, sourceMessage);
         sourceMessage.setContent({
@@ -1735,7 +1850,25 @@ export class Channel extends EventEmitter {
           }
         }
 
-        // sourceMap: no early INSERT — written once at end of pipeline (PC-MJM-001)
+        // sourceMap: early INSERT in Transaction 2 for crash recovery (PC-MJM-001)
+        if (this.storageSettings.storeMaps) {
+          const srcMap = sourceMessage.getSourceMap();
+          if (srcMap.size > 0) {
+            const mapSnapshot = Object.fromEntries(srcMap);
+            txn2Ops.push((conn) =>
+              insertContent(
+                this.id,
+                messageId,
+                0,
+                ContentType.SOURCE_MAP,
+                JSON.stringify(mapSnapshot),
+                'JSON',
+                false,
+                conn
+              )
+            );
+          }
+        }
 
         if (this.storageSettings.storeCustomMetaData && this.metaDataColumns.length > 0) {
           const metaData = setMetaDataMap(sourceMessage, this.metaDataColumns);
@@ -2128,7 +2261,7 @@ export class Channel extends EventEmitter {
         );
       }
 
-      if (this.postprocessorScript) {
+      if (this.postprocessorScript || this.globalPostprocessorScript) {
         try {
           await this.executePostprocessor(message);
         } catch (postError) {
@@ -2172,26 +2305,10 @@ export class Channel extends EventEmitter {
       message.setProcessed(true);
       txn4Ops.push((conn) => updateMessageProcessed(this.id, messageId, true, conn));
 
-      // Content/attachment removal — only if all destinations are in terminal state
-      if (this.storageSettings.removeContentOnCompletion) {
-        if (
-          !this.storageSettings.removeOnlyFilteredOnCompletion ||
-          sourceMessage.getStatus() === Status.FILTERED
-        ) {
-          if (await this.allDestinationsTerminal(messageId)) {
-            txn4Ops.push(async () => {
-              await pruneMessageContent(this.id, [messageId]);
-            });
-          }
-        }
-      }
-      if (this.storageSettings.removeAttachmentsOnCompletion) {
-        txn4Ops.push(async () => {
-          await pruneMessageAttachments(this.id, [messageId]);
-        });
-      }
-
       await this.persistInTransaction(txn4Ops);
+
+      // Content/attachment removal — runs after transaction commit, with per-message lock
+      await this.removeCompletedMessageContent(messageId);
     } catch (error) {
       this.statsAccumulator.reset();
       sourceMessage.setStatus(Status.ERROR);

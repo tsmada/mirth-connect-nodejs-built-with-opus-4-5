@@ -14,6 +14,8 @@
  * - POST /extensions/:extensionName/_setEnabled - Enable/disable (Java Mirth POST variant)
  * - GET /extensions/:extensionName/properties - Get properties
  * - PUT /extensions/:extensionName/properties - Set properties
+ * - POST /extensions/_install - Install extension (501 stub)
+ * - POST /extensions/_uninstall - Uninstall extension (501 stub)
  */
 
 import { Router, Request, Response } from 'express';
@@ -421,6 +423,31 @@ extensionRouter.get(
       logger.error('Get plugins error', error as Error);
       res.status(500).json({ error: 'Failed to get plugins' });
     }
+  }
+);
+
+/**
+ * POST /extensions/_install
+ * Install extension (not supported in Node.js — returns 501)
+ * Java Mirth installs JAR-based plugins; Node.js has built-in connectors only.
+ */
+extensionRouter.post(
+  '/_install',
+  authorize({ operation: EXTENSION_SET_ENABLED }),
+  (_req: Request, res: Response) => {
+    res.status(501).json({ error: 'Extension installation is not supported in Node.js Mirth' });
+  }
+);
+
+/**
+ * POST /extensions/_uninstall
+ * Uninstall extension (not supported in Node.js — returns 501)
+ */
+extensionRouter.post(
+  '/_uninstall',
+  authorize({ operation: EXTENSION_SET_ENABLED }),
+  (_req: Request, res: Response) => {
+    res.status(501).json({ error: 'Extension uninstallation is not supported in Node.js Mirth' });
   }
 );
 

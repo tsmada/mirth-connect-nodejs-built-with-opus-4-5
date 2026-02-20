@@ -6,10 +6,6 @@
  */
 import { DelimitedSerializerAdapter } from '../../../../src/util/serializers/DelimitedSerializerAdapter.js';
 import { NCPDPSerializerAdapter } from '../../../../src/util/serializers/NCPDPSerializerAdapter.js';
-import {
-  TYPE_VARIABLE_MAPPING,
-  VERSION_VARIABLE_MAPPING,
-} from '../../../../src/model/DefaultMetaData.js';
 
 describe('Delimited isSerializationRequired parity (SPC-W3-008)', () => {
   test('returns false with default/empty properties', () => {
@@ -106,26 +102,18 @@ describe('Delimited isSerializationRequired parity (SPC-W3-008)', () => {
 });
 
 describe('Delimited metadata parity (SPC-W3-009)', () => {
-  test('populateMetaData sets mirth_type to delimited (lowercase)', () => {
+  test('populateMetaData is a no-op (matches Java DelimitedSerializer)', () => {
     const adapter = new DelimitedSerializerAdapter();
     const map = new Map<string, unknown>();
     adapter.populateMetaData('a,b,c', map);
-    expect(map.get(TYPE_VARIABLE_MAPPING)).toBe('delimited');
+    expect(map.size).toBe(0);
   });
 
-  test('populateMetaData sets mirth_version to empty string', () => {
-    const adapter = new DelimitedSerializerAdapter();
-    const map = new Map<string, unknown>();
-    adapter.populateMetaData('a,b,c', map);
-    expect(map.get(VERSION_VARIABLE_MAPPING)).toBe('');
-  });
-
-  test('getMetaDataFromMessage returns both mirth_type and mirth_version', () => {
+  test('getMetaDataFromMessage returns empty Map (Java DelimitedSerializer.populateMetaData is a no-op)', () => {
     const adapter = new DelimitedSerializerAdapter();
     const metadata = adapter.getMetaDataFromMessage('a,b,c');
-    expect(metadata.get(TYPE_VARIABLE_MAPPING)).toBe('delimited');
-    expect(metadata.get(VERSION_VARIABLE_MAPPING)).toBe('');
-    expect(metadata.size).toBe(2);
+    expect(metadata).toBeInstanceOf(Map);
+    expect(metadata.size).toBe(0);
   });
 });
 

@@ -1,8 +1,4 @@
 import { DICOMSerializerAdapter } from '../../../../src/util/serializers/DICOMSerializerAdapter.js';
-import {
-  TYPE_VARIABLE_MAPPING,
-  VERSION_VARIABLE_MAPPING,
-} from '../../../../src/model/DefaultMetaData.js';
 
 describe('DICOMSerializerAdapter', () => {
   let adapter: DICOMSerializerAdapter;
@@ -18,8 +14,8 @@ describe('DICOMSerializerAdapter', () => {
   });
 
   describe('isSerializationRequired', () => {
-    it('returns true (DICOM needs binary-to-XML conversion)', () => {
-      expect(adapter.isSerializationRequired()).toBe(true);
+    it('returns false (matches Java DICOMSerializer)', () => {
+      expect(adapter.isSerializationRequired()).toBe(false);
     });
   });
 
@@ -83,28 +79,18 @@ describe('DICOMSerializerAdapter', () => {
   });
 
   describe('getMetaDataFromMessage', () => {
-    it('returns Map with mirth_type and mirth_version keys', () => {
+    it('returns empty Map (Java DICOMSerializer.populateMetaData is a no-op)', () => {
       const metadata = adapter.getMetaDataFromMessage('');
       expect(metadata).toBeInstanceOf(Map);
-      expect(metadata.has(TYPE_VARIABLE_MAPPING)).toBe(true);
-      expect(metadata.get(TYPE_VARIABLE_MAPPING)).toBe('DICOM');
-      expect(metadata.has(VERSION_VARIABLE_MAPPING)).toBe(true);
-    });
-
-    it('does not use unprefixed base keys', () => {
-      const metadata = adapter.getMetaDataFromMessage('');
-      expect(metadata.has('type')).toBe(false);
-      expect(metadata.has('version')).toBe(false);
+      expect(metadata.size).toBe(0);
     });
   });
 
   describe('populateMetaData', () => {
-    it('populates map with mirth_ prefixed keys', () => {
+    it('is a no-op (matches Java DICOMSerializer)', () => {
       const map = new Map<string, unknown>();
       adapter.populateMetaData('', map);
-      expect(map.has(TYPE_VARIABLE_MAPPING)).toBe(true);
-      expect(map.get(TYPE_VARIABLE_MAPPING)).toBe('DICOM');
-      expect(map.has(VERSION_VARIABLE_MAPPING)).toBe(true);
+      expect(map.size).toBe(0);
     });
   });
 

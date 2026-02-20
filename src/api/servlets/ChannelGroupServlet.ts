@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query, execute } from '../../db/pool.js';
 import { RowDataPacket } from 'mysql2';
 import { authorize } from '../middleware/authorization.js';
+import { multipartFormMiddleware } from '../middleware/multipartForm.js';
 import { CHANNEL_GROUP_GET, CHANNEL_GROUP_UPDATE } from '../middleware/operations.js';
 import { getLogger, registerComponent } from '../../logging/index.js';
 
@@ -239,6 +240,7 @@ channelGroupRouter.post(
  */
 channelGroupRouter.post(
   '/_bulkUpdate',
+  multipartFormMiddleware(),
   authorize({ operation: CHANNEL_GROUP_UPDATE }),
   async (req: Request, res: Response) => {
     try {

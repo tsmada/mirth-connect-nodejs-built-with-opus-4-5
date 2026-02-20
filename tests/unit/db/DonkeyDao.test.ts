@@ -7,6 +7,14 @@ jest.mock('../../../src/db/pool.js', () => ({
   withRetry: jest.fn((fn: any) => fn()),
 }));
 
+// Mock the Encryptor module
+const mockEncrypt = jest.fn((s: string) => `encrypted:${s}`);
+const mockDecrypt = jest.fn((s: string) => s.replace('encrypted:', ''));
+jest.mock('../../../src/db/Encryptor.js', () => ({
+  isEncryptionEnabled: jest.fn(() => false),
+  getEncryptor: jest.fn(() => ({ encrypt: mockEncrypt, decrypt: mockDecrypt })),
+}));
+
 import {
   resetStatistics,
   resetMessage,
@@ -38,18 +46,53 @@ import {
   connectorMessageTable,
   contentTable,
   statisticsTable,
+  validateChannelId,
+  attachmentTable,
+  sequenceTable,
+  registerChannel,
+  unregisterChannel,
+  createChannelTables,
+  dropChannelTables,
+  getNextMessageId,
+  getContent,
+  getMessage,
+  getConnectorMessages,
+  addChannelStatistics,
+  getStatistics,
+  getContentBatch,
+  getAttachmentsBatch,
+  getLocalChannelIds,
+  getLocalChannelId,
+  channelTablesExist,
+  getMessagesToPrune,
+  pruneMessageContent,
+  pruneMessageAttachments,
+  pruneConnectorMessages,
+  pruneMessages,
+  getMessageCountBeforeDate,
+  getAttachmentIds,
+  getAttachments,
+  getAttachment,
+  insertAttachment,
+  updateAttachment,
+  deleteAttachment,
+  deleteMessage,
+  getMessages,
 } from '../../../src/db/DonkeyDao.js';
-import { getPool } from '../../../src/db/pool.js';
+import { getPool, transaction } from '../../../src/db/pool.js';
+import { isEncryptionEnabled } from '../../../src/db/Encryptor.js';
 import { ContentType } from '../../../src/model/ContentType.js';
 import { Status } from '../../../src/model/Status.js';
 
 const mockGetPool = getPool as jest.MockedFunction<typeof getPool>;
+const mockTransaction = transaction as jest.MockedFunction<typeof transaction>;
 
-// Helpers: create a mock pool with execute and query methods
+// Helpers: create a mock pool with execute, query, and getConnection methods
 function createMockPool() {
   return {
     execute: jest.fn<() => Promise<unknown>>().mockResolvedValue([{ affectedRows: 0 }]),
     query: jest.fn<() => Promise<unknown>>().mockResolvedValue([[]]),
+    getConnection: jest.fn<() => Promise<unknown>>().mockResolvedValue(null),
   };
 }
 
@@ -788,6 +831,978 @@ describe('DonkeyDao', () => {
       mockPool.execute.mockRejectedValue(otherError);
 
       await expect(addMetaDataColumn(TEST_CHANNEL, 'Bad')).rejects.toThrow('Connection lost');
+    });
+  });
+
+  // ==========================================================================
+  // Additional table name helpers
+  // ==========================================================================
+  describe('additional table name helpers', () => {
+    it('attachmentTable should produce correct name', () => {
+      expect(attachmentTable(TEST_CHANNEL)).toBe(`D_MA${CH}`);
+    });
+
+    it('sequenceTable should produce correct name', () => {
+      expect(sequenceTable(TEST_CHANNEL)).toBe(`D_MSQ${CH}`);
+    });
+
+    it('validateChannelId should reject SQL injection attempts', () => {
+      expect(() => validateChannelId('DROP TABLE--')).toThrow('Invalid channel ID format');
+      expect(() => validateChannelId("'; DROP TABLE")).toThrow('Invalid channel ID format');
+    });
+
+    it('validateChannelId should accept valid UUIDs and return underscore-replaced', () => {
+      const result = validateChannelId(TEST_CHANNEL);
+      expect(result).toBe(CH);
+    });
+  });
+
+  // ==========================================================================
+  // registerChannel
+  // ==========================================================================
+  describe('registerChannel', () => {
+    it('should create D_CHANNELS table, insert channel, and return local ID', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+      mockPool.query.mockResolvedValue([[{ LOCAL_CHANNEL_ID: 42 }]]);
+
+      const result = await registerChannel(TEST_CHANNEL);
+
+      expect(result).toBe(42);
+      expect(mockPool.execute).toHaveBeenCalledTimes(2); // CREATE TABLE + INSERT IGNORE
+      expect(mockPool.query).toHaveBeenCalledTimes(1); // SELECT
+      const createCall = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(createCall[0]).toContain('CREATE TABLE IF NOT EXISTS D_CHANNELS');
+      const insertCall = mockPool.execute.mock.calls[1] as unknown as [string, unknown[]];
+      expect(insertCall[0]).toContain('INSERT IGNORE INTO D_CHANNELS');
+      expect(insertCall[1]).toEqual([TEST_CHANNEL]);
+    });
+  });
+
+  // ==========================================================================
+  // unregisterChannel
+  // ==========================================================================
+  describe('unregisterChannel', () => {
+    it('should delete channel from D_CHANNELS', async () => {
+      await unregisterChannel(TEST_CHANNEL);
+
+      expect(mockPool.execute).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM D_CHANNELS WHERE CHANNEL_ID'),
+        [TEST_CHANNEL]
+      );
+    });
+  });
+
+  // ==========================================================================
+  // createChannelTables
+  // ==========================================================================
+  describe('createChannelTables', () => {
+    it('should create all 7 tables plus indexes within a transaction', async () => {
+      const mockConn = createMockConn();
+      mockTransaction.mockImplementation(async (cb: any) => cb(mockConn));
+
+      await createChannelTables(TEST_CHANNEL);
+
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      // 7 CREATE TABLE + 1 INSERT IGNORE (sequence init) + 3 CREATE INDEX = 11
+      expect(mockConn.query.mock.calls.length).toBeGreaterThanOrEqual(8);
+
+      const calls = mockConn.query.mock.calls as unknown as [string][];
+      // Verify key tables are created
+      const allSql = calls.map((c) => c[0]).join(' ');
+      expect(allSql).toContain(`D_M${CH}`);
+      expect(allSql).toContain(`D_MM${CH}`);
+      expect(allSql).toContain(`D_MC${CH}`);
+      expect(allSql).toContain(`D_MA${CH}`);
+      expect(allSql).toContain(`D_MS${CH}`);
+      expect(allSql).toContain(`D_MSQ${CH}`);
+      expect(allSql).toContain(`D_MCM${CH}`);
+    });
+
+    it('should silently ignore index creation errors', async () => {
+      const mockConn = createMockConn();
+      // Make index creation fail for the 3 CREATE INDEX calls
+      let callCount = 0;
+      mockConn.query.mockImplementation(async () => {
+        callCount++;
+        // Calls 9, 10, 11 are CREATE INDEX (after 7 CREATE TABLE + 1 INSERT IGNORE)
+        if (callCount >= 9) throw new Error('Duplicate key name');
+        return [[]];
+      });
+      mockTransaction.mockImplementation(async (cb: any) => cb(mockConn));
+
+      // Should NOT throw despite index creation errors
+      await expect(createChannelTables(TEST_CHANNEL)).resolves.toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // dropChannelTables
+  // ==========================================================================
+  describe('dropChannelTables', () => {
+    it('should drop all 7 tables within a transaction', async () => {
+      const mockConn = createMockConn();
+      mockTransaction.mockImplementation(async (cb: any) => cb(mockConn));
+
+      await dropChannelTables(TEST_CHANNEL);
+
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockConn.query).toHaveBeenCalledTimes(7);
+      const calls = mockConn.query.mock.calls as unknown as [string][];
+      for (const call of calls) {
+        expect(call[0]).toMatch(/^DROP TABLE IF EXISTS/);
+      }
+    });
+  });
+
+  // ==========================================================================
+  // getNextMessageId
+  // ==========================================================================
+  describe('getNextMessageId', () => {
+    it('should get current ID, increment, and return current', async () => {
+      const mockConn = {
+        beginTransaction: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        commit: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        rollback: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        release: jest.fn(),
+        query: jest.fn<() => Promise<unknown>>().mockResolvedValue([[{ LOCAL_CHANNEL_ID: 5 }]]),
+      };
+      mockPool.getConnection = jest.fn<() => Promise<unknown>>().mockResolvedValue(mockConn) as any;
+
+      const result = await getNextMessageId(TEST_CHANNEL);
+
+      expect(result).toBe(5);
+      expect(mockConn.beginTransaction).toHaveBeenCalled();
+      expect(mockConn.commit).toHaveBeenCalled();
+      expect(mockConn.release).toHaveBeenCalled();
+      // First query: SELECT ... FOR UPDATE, second: UPDATE
+      expect(mockConn.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should rollback and release on error', async () => {
+      const mockConn = {
+        beginTransaction: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        commit: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        rollback: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        release: jest.fn(),
+        query: jest.fn<() => Promise<unknown>>().mockRejectedValue(new Error('deadlock')),
+      };
+      mockPool.getConnection = jest.fn<() => Promise<unknown>>().mockResolvedValue(mockConn) as any;
+
+      await expect(getNextMessageId(TEST_CHANNEL)).rejects.toThrow('deadlock');
+      expect(mockConn.rollback).toHaveBeenCalled();
+      expect(mockConn.release).toHaveBeenCalled();
+    });
+
+    it('should default to 1 when no rows exist', async () => {
+      const mockConn = {
+        beginTransaction: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        commit: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        rollback: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        release: jest.fn(),
+        query: jest.fn<() => Promise<unknown>>().mockResolvedValue([[]]),
+      };
+      mockPool.getConnection = jest.fn<() => Promise<unknown>>().mockResolvedValue(mockConn) as any;
+
+      const result = await getNextMessageId(TEST_CHANNEL);
+      expect(result).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // insertContent - encryption branches
+  // ==========================================================================
+  describe('insertContent - encryption branches', () => {
+    it('should store as plaintext when encrypted=true but no encryptor configured', async () => {
+      // isEncryptionEnabled() returns false by default
+      await insertContent(TEST_CHANNEL, 1, 0, ContentType.RAW, 'data', 'HL7V2', true);
+
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      // IS_ENCRYPTED should be 0 because no real encryptor configured
+      expect(call[1]![5]).toBe(0);
+    });
+
+    it('should encrypt content when encryption is enabled', async () => {
+      (isEncryptionEnabled as jest.Mock).mockReturnValueOnce(true);
+
+      await insertContent(TEST_CHANNEL, 1, 0, ContentType.RAW, 'secret', 'HL7V2', true);
+
+      expect(mockEncrypt).toHaveBeenCalledWith('secret');
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      // Content should be encrypted, IS_ENCRYPTED should be 1
+      expect(call[1]![3]).toBe('encrypted:secret');
+      expect(call[1]![5]).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // storeContent - encryption branches
+  // ==========================================================================
+  describe('storeContent - encryption branches', () => {
+    it('should fall back to plaintext when encrypted=true but no encryptor', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      await storeContent(TEST_CHANNEL, 1, 0, ContentType.RAW, 'data', 'HL7V2', true);
+
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      // IS_ENCRYPTED should be 0
+      expect(call[1]![2]).toBe(0);
+    });
+
+    it('should encrypt content when encryption is enabled', async () => {
+      (isEncryptionEnabled as jest.Mock).mockReturnValueOnce(true);
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      await storeContent(TEST_CHANNEL, 1, 0, ContentType.RAW, 'secret', 'HL7V2', true);
+
+      expect(mockEncrypt).toHaveBeenCalledWith('secret');
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      // Content should be encrypted, IS_ENCRYPTED should be 1
+      expect(call[1]![0]).toBe('encrypted:secret');
+      expect(call[1]![2]).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // insertConnectorMessage - connectorMap and responseMap branches
+  // ==========================================================================
+  describe('insertConnectorMessage - all map branches', () => {
+    it('should store connectorMap when non-empty', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      const connectorMap = new Map<string, unknown>([['key', 'val']]);
+      await insertConnectorMessage(TEST_CHANNEL, 1, 0, 'Source', new Date(), Status.RECEIVED, 0, {
+        storeMaps: { connectorMap },
+      });
+
+      // 1 INSERT + 1 storeContent for connectorMap
+      expect(mockPool.execute.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('should store responseMap when non-empty', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      const responseMap = new Map<string, unknown>([['resp', 'ok']]);
+      await insertConnectorMessage(TEST_CHANNEL, 1, 0, 'Source', new Date(), Status.RECEIVED, 0, {
+        storeMaps: { responseMap },
+      });
+
+      expect(mockPool.execute.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  // ==========================================================================
+  // updateErrors - postProcessorError branch
+  // ==========================================================================
+  describe('updateErrors - postProcessorError', () => {
+    it('should store postProcessorError with POSTPROCESSOR_ERROR content type', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      await updateErrors(TEST_CHANNEL, 1, 0, undefined, 'post error');
+
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[1]).toContain(ContentType.POSTPROCESSOR_ERROR);
+    });
+  });
+
+  // ==========================================================================
+  // updateMaps - channelMap and responseMap branches
+  // ==========================================================================
+  describe('updateMaps - all map branches', () => {
+    it('should store channelMap when non-empty', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      const channelMap = new Map<string, unknown>([['ch', 'val']]);
+      await updateMaps(TEST_CHANNEL, 1, 0, undefined, channelMap);
+
+      expect(mockPool.execute).toHaveBeenCalled();
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[1]).toContain(ContentType.CHANNEL_MAP);
+    });
+
+    it('should store responseMap when non-empty', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+      const responseMap = new Map<string, unknown>([['resp', 'ok']]);
+      await updateMaps(TEST_CHANNEL, 1, 0, undefined, undefined, responseMap);
+
+      expect(mockPool.execute).toHaveBeenCalled();
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[1]).toContain(ContentType.RESPONSE_MAP);
+    });
+
+    it('should skip empty maps', async () => {
+      await updateMaps(TEST_CHANNEL, 1, 0, new Map(), new Map(), new Map());
+
+      expect(mockPool.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // getContent
+  // ==========================================================================
+  describe('getContent', () => {
+    it('should return content row when found', async () => {
+      const fakeRow = {
+        MESSAGE_ID: 1,
+        METADATA_ID: 0,
+        CONTENT_TYPE: 1,
+        CONTENT: 'MSH|test',
+        DATA_TYPE: 'HL7V2',
+        IS_ENCRYPTED: 0,
+      };
+      mockPool.query.mockResolvedValue([[fakeRow]]);
+
+      const result = await getContent(TEST_CHANNEL, 1, 0, ContentType.RAW);
+
+      expect(result).toEqual(fakeRow);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MC${CH}`);
+      expect(call[1]).toEqual([1, 0, ContentType.RAW]);
+    });
+
+    it('should return null when not found', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      const result = await getContent(TEST_CHANNEL, 99, 0, ContentType.RAW);
+
+      expect(result).toBeNull();
+    });
+
+    it('should decrypt encrypted content', async () => {
+      const fakeRow = {
+        MESSAGE_ID: 1,
+        METADATA_ID: 0,
+        CONTENT_TYPE: 1,
+        CONTENT: 'encrypted-data',
+        DATA_TYPE: 'HL7V2',
+        IS_ENCRYPTED: 1,
+      };
+      mockPool.query.mockResolvedValue([[fakeRow]]);
+
+      const result = await getContent(TEST_CHANNEL, 1, 0, ContentType.RAW);
+
+      expect(result).not.toBeNull();
+      // IS_ENCRYPTED should be set to 0 after decryption
+      expect(result!.IS_ENCRYPTED).toBe(0);
+    });
+
+    it('should handle decrypt failure gracefully and return row unchanged', async () => {
+      const fakeRow = {
+        MESSAGE_ID: 1,
+        METADATA_ID: 0,
+        CONTENT_TYPE: 1,
+        CONTENT: 'corrupt-data',
+        DATA_TYPE: 'HL7V2',
+        IS_ENCRYPTED: 1,
+      };
+      mockPool.query.mockResolvedValue([[fakeRow]]);
+      mockDecrypt.mockImplementationOnce(() => { throw new Error('Bad decrypt'); });
+
+      const result = await getContent(TEST_CHANNEL, 1, 0, ContentType.RAW);
+
+      // Should return the row without crashing (content unchanged)
+      expect(result).not.toBeNull();
+      expect(result!.CONTENT).toBe('corrupt-data');
+    });
+  });
+
+  // ==========================================================================
+  // getMessage
+  // ==========================================================================
+  describe('getMessage', () => {
+    it('should return message row when found', async () => {
+      const fakeRow = { ID: 42, SERVER_ID: 'srv', RECEIVED_DATE: new Date(), PROCESSED: 1 };
+      mockPool.query.mockResolvedValue([[fakeRow]]);
+
+      const result = await getMessage(TEST_CHANNEL, 42);
+
+      expect(result).toEqual(fakeRow);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_M${CH}`);
+      expect(call[1]).toEqual([42]);
+    });
+
+    it('should return null when not found', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      const result = await getMessage(TEST_CHANNEL, 999);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // getConnectorMessages
+  // ==========================================================================
+  describe('getConnectorMessages', () => {
+    it('should return connector messages ordered by METADATA_ID', async () => {
+      const fakeRows = [
+        { MESSAGE_ID: 1, METADATA_ID: 0, STATUS: 'R' },
+        { MESSAGE_ID: 1, METADATA_ID: 1, STATUS: 'S' },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getConnectorMessages(TEST_CHANNEL, 1);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MM${CH}`);
+      expect(call[0]).toContain('ORDER BY METADATA_ID');
+      expect(call[1]).toEqual([1]);
+    });
+
+    it('should return empty array when none found', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      const result = await getConnectorMessages(TEST_CHANNEL, 999);
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ==========================================================================
+  // addChannelStatistics
+  // ==========================================================================
+  describe('addChannelStatistics', () => {
+    it('should batch update statistics sorted by metaDataId (0 first)', async () => {
+      const stats = new Map<number, Map<Status, number>>();
+      stats.set(1, new Map([[Status.SENT, 5]]));
+      stats.set(0, new Map([[Status.RECEIVED, 10]]));
+
+      await addChannelStatistics(TEST_CHANNEL, 'srv', stats);
+
+      // metaDataId 0 should be processed first (sorted)
+      expect(mockPool.execute).toHaveBeenCalledTimes(2);
+      const firstCall = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(firstCall[1]![0]).toBe(0); // metaDataId 0 first
+      const secondCall = mockPool.execute.mock.calls[1] as unknown as [string, unknown[]];
+      expect(secondCall[1]![0]).toBe(1); // then metaDataId 1
+    });
+
+    it('should handle multiple statuses per metaDataId', async () => {
+      const stats = new Map<number, Map<Status, number>>();
+      stats.set(0, new Map([
+        [Status.RECEIVED, 10],
+        [Status.ERROR, 2],
+      ]));
+
+      await addChannelStatistics(TEST_CHANNEL, 'srv', stats);
+
+      expect(mockPool.execute).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ==========================================================================
+  // getStatistics
+  // ==========================================================================
+  describe('getStatistics', () => {
+    it('should return statistics rows', async () => {
+      const fakeRows = [
+        { METADATA_ID: 0, SERVER_ID: 'srv', RECEIVED: 10, FILTERED: 2, TRANSFORMED: 0, PENDING: 0, SENT: 8, ERROR: 0 },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getStatistics(TEST_CHANNEL);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string];
+      expect(call[0]).toContain(`D_MS${CH}`);
+    });
+  });
+
+  // ==========================================================================
+  // getContentBatch
+  // ==========================================================================
+  describe('getContentBatch', () => {
+    it('should return empty array for empty messageIds', async () => {
+      const result = await getContentBatch(TEST_CHANNEL, []);
+
+      expect(result).toEqual([]);
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should batch query content rows', async () => {
+      const fakeRows = [
+        { MESSAGE_ID: 1, METADATA_ID: 0, CONTENT_TYPE: 1, CONTENT: 'data', DATA_TYPE: 'HL7V2', IS_ENCRYPTED: 0 },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getContentBatch(TEST_CHANNEL, [1, 2]);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MC${CH}`);
+      expect(call[0]).toContain('IN (?, ?)');
+      expect(call[1]).toEqual([1, 2]);
+    });
+  });
+
+  // ==========================================================================
+  // getAttachmentsBatch
+  // ==========================================================================
+  describe('getAttachmentsBatch', () => {
+    it('should return empty array for empty messageIds', async () => {
+      const result = await getAttachmentsBatch(TEST_CHANNEL, []);
+
+      expect(result).toEqual([]);
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should batch query attachment rows', async () => {
+      const fakeRows = [
+        { ID: 'att-1', MESSAGE_ID: 1, TYPE: 'application/pdf', SEGMENT_ID: 0, ATTACHMENT: Buffer.from('data') },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getAttachmentsBatch(TEST_CHANNEL, [1, 2, 3]);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[0]).toContain('IN (?, ?, ?)');
+      expect(call[0]).toContain('ORDER BY ID, SEGMENT_ID');
+      expect(call[1]).toEqual([1, 2, 3]);
+    });
+  });
+
+  // ==========================================================================
+  // getLocalChannelIds
+  // ==========================================================================
+  describe('getLocalChannelIds', () => {
+    it('should return map from D_CHANNELS table', async () => {
+      mockPool.query.mockResolvedValue([[
+        { CHANNEL_ID: 'ch-1', LOCAL_CHANNEL_ID: 1 },
+        { CHANNEL_ID: 'ch-2', LOCAL_CHANNEL_ID: 2 },
+      ]]);
+
+      const result = await getLocalChannelIds();
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(2);
+      expect(result.get('ch-1')).toBe(1);
+      expect(result.get('ch-2')).toBe(2);
+    });
+
+    it('should fall back to information_schema when D_CHANNELS does not exist', async () => {
+      // First call throws (D_CHANNELS doesn't exist), second returns table names
+      mockPool.query
+        .mockRejectedValueOnce(new Error('Table does not exist'))
+        .mockResolvedValueOnce([[
+          { TABLE_NAME: 'D_Ma1b2c3d4_e5f6_7890_abcd_ef1234567890' },
+        ]]);
+
+      const result = await getLocalChannelIds();
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(1);
+      expect(result.get('a1b2c3d4-e5f6-7890-abcd-ef1234567890')).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // getLocalChannelId
+  // ==========================================================================
+  describe('getLocalChannelId', () => {
+    it('should return local ID when channel exists', async () => {
+      mockPool.query.mockResolvedValue([[
+        { CHANNEL_ID: TEST_CHANNEL, LOCAL_CHANNEL_ID: 42 },
+      ]]);
+
+      const result = await getLocalChannelId(TEST_CHANNEL);
+
+      expect(result).toBe(42);
+    });
+
+    it('should return null when channel not found', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      const result = await getLocalChannelId('nonexistent-00-0000-0000-000000000000');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // channelTablesExist
+  // ==========================================================================
+  describe('channelTablesExist', () => {
+    it('should return true when table exists', async () => {
+      mockPool.query.mockResolvedValue([[{ TABLE_NAME: `D_M${CH}` }]]);
+
+      const result = await channelTablesExist(TEST_CHANNEL);
+
+      expect(result).toBe(true);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain('information_schema.TABLES');
+      expect(call[1]).toEqual([`D_M${CH}`]);
+    });
+
+    it('should return false when table does not exist', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      const result = await channelTablesExist(TEST_CHANNEL);
+
+      expect(result).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // getMessagesToPrune
+  // ==========================================================================
+  describe('getMessagesToPrune', () => {
+    it('should query messages before date threshold with limit', async () => {
+      const threshold = new Date('2024-01-01');
+      const fakeRows = [{ messageId: 1, receivedDate: new Date() }];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getMessagesToPrune(TEST_CHANNEL, threshold, 100);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_M${CH}`);
+      expect(call[0]).toContain('RECEIVED_DATE < ?');
+      expect(call[0]).toContain('PROCESSED = 1');
+      expect(call[0]).toContain('LIMIT ?');
+      expect(call[1]).toEqual([threshold, 100]);
+    });
+
+    it('should skip incomplete when skipIncomplete=false', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      await getMessagesToPrune(TEST_CHANNEL, new Date(), 100, undefined, false);
+
+      const call = mockPool.query.mock.calls[0] as unknown as [string];
+      expect(call[0]).not.toContain('PROCESSED = 1');
+    });
+
+    it('should filter by skipStatuses', async () => {
+      mockPool.query.mockResolvedValue([[]]);
+
+      await getMessagesToPrune(TEST_CHANNEL, new Date(), 50, ['Q', 'P']);
+
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain('NOT EXISTS');
+      expect(call[0]).toContain('STATUS IN (?, ?)');
+      expect(call[1]).toContain('Q');
+      expect(call[1]).toContain('P');
+    });
+  });
+
+  // ==========================================================================
+  // pruneMessageContent
+  // ==========================================================================
+  describe('pruneMessageContent', () => {
+    it('should return 0 for empty messageIds', async () => {
+      const result = await pruneMessageContent(TEST_CHANNEL, []);
+
+      expect(result).toBe(0);
+      expect(mockPool.execute).not.toHaveBeenCalled();
+    });
+
+    it('should delete content for specified messages', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 5 }]);
+
+      const result = await pruneMessageContent(TEST_CHANNEL, [1, 2, 3]);
+
+      expect(result).toBe(5);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MC${CH}`);
+      expect(call[0]).toContain('IN (?, ?, ?)');
+      expect(call[1]).toEqual([1, 2, 3]);
+    });
+  });
+
+  // ==========================================================================
+  // pruneMessageAttachments
+  // ==========================================================================
+  describe('pruneMessageAttachments', () => {
+    it('should return 0 for empty messageIds', async () => {
+      const result = await pruneMessageAttachments(TEST_CHANNEL, []);
+
+      expect(result).toBe(0);
+      expect(mockPool.execute).not.toHaveBeenCalled();
+    });
+
+    it('should delete attachments for specified messages', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 3 }]);
+
+      const result = await pruneMessageAttachments(TEST_CHANNEL, [1, 2]);
+
+      expect(result).toBe(3);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[0]).toContain('IN (?, ?)');
+    });
+  });
+
+  // ==========================================================================
+  // pruneConnectorMessages
+  // ==========================================================================
+  describe('pruneConnectorMessages', () => {
+    it('should return 0 for empty messageIds', async () => {
+      const result = await pruneConnectorMessages(TEST_CHANNEL, []);
+
+      expect(result).toBe(0);
+      expect(mockPool.execute).not.toHaveBeenCalled();
+    });
+
+    it('should delete connector messages for specified messages', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 4 }]);
+
+      const result = await pruneConnectorMessages(TEST_CHANNEL, [10, 20]);
+
+      expect(result).toBe(4);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MM${CH}`);
+      expect(call[0]).toContain('IN (?, ?)');
+    });
+  });
+
+  // ==========================================================================
+  // pruneMessages
+  // ==========================================================================
+  describe('pruneMessages', () => {
+    it('should return 0 for empty messageIds', async () => {
+      const result = await pruneMessages(TEST_CHANNEL, []);
+
+      expect(result).toBe(0);
+    });
+
+    it('should delete from all tables in correct order within transaction', async () => {
+      const mockConn = createMockConn();
+      mockConn.execute.mockResolvedValue([{ affectedRows: 2 }]);
+      mockTransaction.mockImplementation(async (cb: any) => cb(mockConn));
+
+      const result = await pruneMessages(TEST_CHANNEL, [1, 2]);
+
+      expect(result).toBe(2);
+      expect(mockConn.execute).toHaveBeenCalledTimes(5); // content, attachments, custom metadata, connector messages, messages
+      const calls = mockConn.execute.mock.calls as unknown as [string, unknown[]][];
+      expect(calls[0]![0]).toContain(`D_MC${CH}`);
+      expect(calls[1]![0]).toContain(`D_MA${CH}`);
+      expect(calls[2]![0]).toContain(`D_MCM${CH}`);
+      expect(calls[3]![0]).toContain(`D_MM${CH}`);
+      expect(calls[4]![0]).toContain(`D_M${CH}`);
+    });
+  });
+
+  // ==========================================================================
+  // getMessageCountBeforeDate
+  // ==========================================================================
+  describe('getMessageCountBeforeDate', () => {
+    it('should return count of messages before date', async () => {
+      mockPool.query.mockResolvedValue([[{ count: 42 }]]);
+      const threshold = new Date('2024-06-01');
+
+      const result = await getMessageCountBeforeDate(TEST_CHANNEL, threshold);
+
+      expect(result).toBe(42);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_M${CH}`);
+      expect(call[0]).toContain('RECEIVED_DATE < ?');
+      expect(call[1]).toEqual([threshold]);
+    });
+
+    it('should return 0 when no messages', async () => {
+      mockPool.query.mockResolvedValue([[{ count: 0 }]]);
+
+      const result = await getMessageCountBeforeDate(TEST_CHANNEL, new Date());
+
+      expect(result).toBe(0);
+    });
+  });
+
+  // ==========================================================================
+  // Attachment methods
+  // ==========================================================================
+  describe('getAttachmentIds', () => {
+    it('should return distinct attachment IDs', async () => {
+      mockPool.query.mockResolvedValue([[{ ID: 'att-1' }, { ID: 'att-2' }]]);
+
+      const result = await getAttachmentIds(TEST_CHANNEL, 1);
+
+      expect(result).toEqual(['att-1', 'att-2']);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain('DISTINCT ID');
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[1]).toEqual([1]);
+    });
+  });
+
+  describe('getAttachments', () => {
+    it('should return all attachments for a message', async () => {
+      const fakeRows = [
+        { ID: 'att-1', MESSAGE_ID: 1, TYPE: 'text/plain', SEGMENT_ID: 0, ATTACHMENT: Buffer.from('data') },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getAttachments(TEST_CHANNEL, 1);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[0]).toContain('ORDER BY ID, SEGMENT_ID');
+    });
+  });
+
+  describe('getAttachment', () => {
+    it('should return attachment segments by ID', async () => {
+      const fakeRows = [
+        { ID: 'att-1', MESSAGE_ID: 1, TYPE: 'text/plain', SEGMENT_ID: 0, ATTACHMENT: Buffer.from('data') },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getAttachment(TEST_CHANNEL, 1, 'att-1');
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[0]).toContain('WHERE MESSAGE_ID = ? AND ID = ?');
+      expect(call[0]).toContain('ORDER BY SEGMENT_ID');
+      expect(call[1]).toEqual([1, 'att-1']);
+    });
+  });
+
+  describe('insertAttachment', () => {
+    it('should insert attachment with segment 0', async () => {
+      await insertAttachment(TEST_CHANNEL, 1, 'att-1', 'application/pdf', Buffer.from('content'));
+
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[0]).toContain('INSERT INTO');
+      expect(call[1]).toEqual(['att-1', 1, 'application/pdf', Buffer.from('content')]);
+    });
+  });
+
+  describe('updateAttachment', () => {
+    it('should delete existing segments then insert new', async () => {
+      await updateAttachment(TEST_CHANNEL, 1, 'att-1', 'text/plain', Buffer.from('new'));
+
+      // First execute: DELETE existing, second: INSERT new
+      expect(mockPool.execute).toHaveBeenCalledTimes(2);
+      const deleteCall = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(deleteCall[0]).toContain('DELETE FROM');
+      expect(deleteCall[0]).toContain(`D_MA${CH}`);
+      expect(deleteCall[1]).toEqual([1, 'att-1']);
+
+      const insertCall = mockPool.execute.mock.calls[1] as unknown as [string, unknown[]];
+      expect(insertCall[0]).toContain('INSERT INTO');
+    });
+  });
+
+  describe('deleteAttachment', () => {
+    it('should delete attachment and return affected rows', async () => {
+      mockPool.execute.mockResolvedValue([{ affectedRows: 2 }]);
+
+      const result = await deleteAttachment(TEST_CHANNEL, 1, 'att-1');
+
+      expect(result).toBe(2);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain('DELETE FROM');
+      expect(call[0]).toContain(`D_MA${CH}`);
+      expect(call[1]).toEqual([1, 'att-1']);
+    });
+  });
+
+  // ==========================================================================
+  // deleteMessage (single)
+  // ==========================================================================
+  describe('deleteMessage', () => {
+    it('should delete from all 5 tables in transaction', async () => {
+      const mockConn = createMockConn();
+      mockTransaction.mockImplementation(async (cb: any) => cb(mockConn));
+
+      await deleteMessage(TEST_CHANNEL, 42);
+
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(mockConn.execute).toHaveBeenCalledTimes(5);
+      const calls = mockConn.execute.mock.calls as unknown as [string, unknown[]][];
+      // Order: content, attachments, custom metadata, connector messages, messages
+      expect(calls[0]![0]).toContain(`D_MC${CH}`);
+      expect(calls[1]![0]).toContain(`D_MA${CH}`);
+      expect(calls[2]![0]).toContain(`D_MCM${CH}`);
+      expect(calls[3]![0]).toContain(`D_MM${CH}`);
+      expect(calls[4]![0]).toContain(`D_M${CH}`);
+      // All should have messageId 42
+      for (const call of calls) {
+        expect(call[1]).toEqual([42]);
+      }
+    });
+  });
+
+  // ==========================================================================
+  // getMessages (bulk)
+  // ==========================================================================
+  describe('getMessages', () => {
+    it('should return empty array for empty messageIds', async () => {
+      const result = await getMessages(TEST_CHANNEL, []);
+
+      expect(result).toEqual([]);
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('should return messages by IDs ordered by ID', async () => {
+      const fakeRows = [
+        { ID: 1, SERVER_ID: 'srv', RECEIVED_DATE: new Date(), PROCESSED: 1 },
+        { ID: 5, SERVER_ID: 'srv', RECEIVED_DATE: new Date(), PROCESSED: 1 },
+      ];
+      mockPool.query.mockResolvedValue([fakeRows]);
+
+      const result = await getMessages(TEST_CHANNEL, [1, 5]);
+
+      expect(result).toEqual(fakeRows);
+      const call = mockPool.query.mock.calls[0] as unknown as [string, unknown[]];
+      expect(call[0]).toContain(`D_M${CH}`);
+      expect(call[0]).toContain('IN (?, ?)');
+      expect(call[0]).toContain('ORDER BY ID');
+      expect(call[1]).toEqual([1, 5]);
+    });
+  });
+
+  // ==========================================================================
+  // statusToColumn (tested indirectly via updateStatistics)
+  // ==========================================================================
+  describe('statusToColumn (via updateStatistics)', () => {
+    it('should map RECEIVED to RECEIVED column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.RECEIVED);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toContain('RECEIVED');
+    });
+
+    it('should map FILTERED to FILTERED column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.FILTERED);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toMatch(/FILTERED[\s\S]*VALUES/);
+    });
+
+    it('should map TRANSFORMED to TRANSFORMED column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.TRANSFORMED);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toMatch(/TRANSFORMED[\s\S]*VALUES/);
+    });
+
+    it('should map SENT to SENT column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.SENT);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toMatch(/\bSENT\b[\s\S]*VALUES/);
+    });
+
+    it('should map QUEUED to SENT column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.QUEUED);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toMatch(/\bSENT\b[\s\S]*VALUES/);
+    });
+
+    it('should map ERROR to ERROR column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.ERROR);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toMatch(/\bERROR\b[\s\S]*VALUES/);
+    });
+
+    it('should map PENDING to PENDING column', async () => {
+      await updateStatistics(TEST_CHANNEL, 0, 'srv', Status.PENDING);
+      const call = mockPool.execute.mock.calls[0] as unknown as [string];
+      expect(call[0]).toMatch(/PENDING[\s\S]*VALUES/);
     });
   });
 });

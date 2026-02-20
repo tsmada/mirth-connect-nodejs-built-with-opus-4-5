@@ -81,9 +81,8 @@ jest.mock('../../../src/db/SchemaManager', () => ({
   ensureChannelTables: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../../src/server/Mirth', () => ({
-  getDonkeyInstance: jest.fn().mockReturnValue(null),
-}));
+// Note: EngineController no longer imports from Mirth.ts (circular import broken).
+// donkeyInstanceRef defaults to null, which is the desired state for shadow tests.
 
 jest.mock('../../../src/plugins/dashboardstatus/DashboardStatusController', () => ({
   dashboardStatusController: {

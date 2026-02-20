@@ -58,10 +58,15 @@ import { JavaScriptDispatcher } from '../../connectors/js/JavaScriptDispatcher.j
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 import { DefaultResponseValidator } from '../message/ResponseValidator.js';
 
+export interface BuildChannelOptions {
+  globalPreprocessorScript?: string;
+  globalPostprocessorScript?: string;
+}
+
 /**
  * Build a runtime Channel from a channel configuration
  */
-export function buildChannel(channelConfig: ChannelModel): Channel {
+export function buildChannel(channelConfig: ChannelModel, options?: BuildChannelOptions): Channel {
   // Build StorageSettings from channel properties' messageStorageMode
   const channelProps = channelConfig.properties;
   const storageMode = parseMessageStorageMode(channelProps?.messageStorageMode);
@@ -93,6 +98,8 @@ export function buildChannel(channelConfig: ChannelModel): Channel {
     enabled: channelConfig.enabled ?? true,
     preprocessorScript: channelConfig.preprocessingScript,
     postprocessorScript: channelConfig.postprocessingScript,
+    globalPreprocessorScript: options?.globalPreprocessorScript,
+    globalPostprocessorScript: options?.globalPostprocessorScript,
     deployScript: channelConfig.deployScript,
     undeployScript: channelConfig.undeployScript,
     storageSettings,

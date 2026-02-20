@@ -14,7 +14,6 @@
  */
 
 import { BaseSerializer } from '../SerializerBase.js';
-import { TYPE_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class JSONSerializerAdapter extends BaseSerializer {
   getDataType(): string {
@@ -57,9 +56,10 @@ export class JSONSerializerAdapter extends BaseSerializer {
   }
 
   /**
-   * Populates metadata with type='JSON'.
+   * Java JSONSerializer.populateMetaData() is a no-op.
+   * Metadata is only provided via getMetaDataFromMessage().
    */
-  override populateMetaData(_message: string, map: Map<string, unknown>): void {
-    map.set(TYPE_VARIABLE_MAPPING, 'JSON');
+  override populateMetaData(_message: string, _map: Map<string, unknown>): void {
+    // no-op — matches Java
   }
 }

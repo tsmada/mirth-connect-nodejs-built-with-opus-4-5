@@ -589,7 +589,7 @@ describe('CodeTemplateServlet authorization', () => {
   });
 
   it('has authorize on POST /codeTemplateLibraries/_bulkUpdate', () => {
-    expect(source).toContain("codeTemplateRouter.post('/codeTemplateLibraries/_bulkUpdate', authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE })");
+    expect(source).toContain("codeTemplateRouter.post('/codeTemplateLibraries/_bulkUpdate', multipartFormMiddleware(), authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE })");
   });
 
   it('has no routes without authorize middleware', () => {

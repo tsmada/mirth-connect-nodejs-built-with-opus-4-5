@@ -557,6 +557,58 @@ messageRouter.get(
 );
 
 /**
+ * DELETE /channels/:channelId/messages/_removeAll
+ * Remove all messages for a channel (Java Admin GUI endpoint).
+ * Ported from MessageServletInterface.removeAllMessages().
+ *
+ * MUST be registered before DELETE /:messageId to prevent Express
+ * from matching "_removeAll" as a messageId parameter.
+ *
+ * Query params:
+ *   restartRunningChannels (boolean, default false) — stop channel, remove messages, restart
+ *   clearStatistics (boolean, default true) — reset D_MS counters
+ */
+messageRouter.delete(
+  '/_removeAll',
+  authorize({ operation: MESSAGE_REMOVE_ALL, checkAuthorizedChannelId: 'channelId' }),
+  async (req: Request, res: Response) => {
+    try {
+      const channelId = getChannelId(req);
+      const clearStatistics = req.query.clearStatistics !== 'false';
+
+      const exists = await messageTablesExist(channelId);
+      if (!exists) {
+        res.status(404).json({ error: 'Channel not found or has no messages' });
+        return;
+      }
+
+      const pool = getPool();
+
+      // Delete all messages and related data
+      await pool.execute(`TRUNCATE TABLE ${contentTable(channelId)}`);
+      await pool.execute(`TRUNCATE TABLE ${attachmentTable(channelId)}`);
+      await pool.execute(`TRUNCATE TABLE ${connectorMessageTable(channelId)}`);
+      await pool.execute(`TRUNCATE TABLE ${messageTable(channelId)}`);
+
+      // Clear statistics if requested
+      if (clearStatistics) {
+        try {
+          await pool.execute(`UPDATE ${statisticsTable(channelId)} SET
+            RECEIVED = 0, FILTERED = 0, TRANSFORMED = 0, PENDING = 0, SENT = 0, ERROR = 0`);
+        } catch {
+          // Statistics table might not exist
+        }
+      }
+
+      res.status(204).end();
+    } catch (error) {
+      logger.error('Remove all messages error', error as Error);
+      res.status(500).json({ error: 'Failed to remove messages' });
+    }
+  }
+);
+
+/**
  * DELETE /channels/:channelId/messages/:messageId
  * Delete a single message
  */

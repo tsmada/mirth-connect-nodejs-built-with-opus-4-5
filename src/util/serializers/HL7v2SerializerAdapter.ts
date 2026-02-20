@@ -14,6 +14,7 @@ import {
   HL7v2DeserializationProperties,
 } from '../SerializerBase.js';
 import { extractMetaData } from '../../datatypes/hl7v2/HL7v2MetaData.js';
+import { HL7EscapeHandler } from '../../datatypes/hl7v2/HL7EscapeHandler.js';
 import {
   SOURCE_VARIABLE_MAPPING,
   TYPE_VARIABLE_MAPPING,
@@ -24,9 +25,9 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
   private readonly fieldDelimiter: string;
   private readonly componentDelimiter: string;
   private readonly repetitionDelimiter: string;
-  // @ts-expect-error - Reserved for future use in escape sequence handling
   private readonly escapeChar: string;
   private readonly subcomponentDelimiter: string;
+  private readonly escapeHandler: HL7EscapeHandler;
 
   constructor(
     serializationProps: HL7v2SerializationProperties = {},
@@ -39,6 +40,17 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
     this.repetitionDelimiter = '~';
     this.escapeChar = '\\';
     this.subcomponentDelimiter = '&';
+    this.escapeHandler = new HL7EscapeHandler(
+      this.escapeChar,
+      this.fieldDelimiter,
+      this.componentDelimiter,
+      this.repetitionDelimiter,
+      this.subcomponentDelimiter
+    );
+  }
+
+  getEscapeHandler(): HL7EscapeHandler {
+    return this.escapeHandler;
   }
 
   getDataType(): string {
@@ -241,7 +253,7 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
       } else if (typeof fieldData === 'object' && !Array.isArray(fieldData)) {
         fields.push(this.xmlToField(fieldData as Record<string, unknown>));
       } else {
-        fields.push(String(fieldData));
+        fields.push(this.escapeHL7(String(fieldData)));
       }
     }
 
@@ -266,7 +278,7 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
         if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           components.push(this.xmlToSubcomponents(value as Record<string, unknown>));
         } else {
-          components.push(String(value ?? ''));
+          components.push(this.escapeHL7(String(value ?? '')));
         }
       } else {
         components.push('');
@@ -290,7 +302,7 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
     for (let i = 1; i <= maxSub; i++) {
       const found = Object.entries(data).find(([key]) => key.endsWith(`.${i}`));
       if (found) {
-        subcomponents.push(String(found[1] ?? ''));
+        subcomponents.push(this.escapeHL7(String(found[1] ?? '')));
       } else {
         subcomponents.push('');
       }
@@ -300,11 +312,19 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
   }
 
   private escapeXml(str: string): string {
-    return str
+    // Unescape HL7 escape sequences first (\F\ → |, \S\ → ^, etc.)
+    // so that XML text nodes contain literal characters
+    const unescaped = this.escapeHandler.unescape(str);
+    return unescaped
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  /** Escape HL7 special characters in an XML-extracted value for ER7 output. */
+  private escapeHL7(str: string): string {
+    return this.escapeHandler.escape(str);
   }
 }

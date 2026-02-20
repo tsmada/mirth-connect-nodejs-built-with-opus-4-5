@@ -9,6 +9,7 @@
  *
  * Endpoints:
  * - GET /usageData - Get usage data
+ * - POST /usageData/_generate - Generate fresh usage data
  */
 
 import { Router, Request, Response } from 'express';
@@ -178,6 +179,24 @@ usageRouter.get(
     } catch (error) {
       logger.error('Get usage data error', error as Error);
       res.status(500).json({ error: 'Failed to get usage data' });
+    }
+  }
+);
+
+/**
+ * POST /usageData/_generate
+ * Generate fresh usage data (matches Java UsageServletInterface)
+ */
+usageRouter.post(
+  '/_generate',
+  authorize({ operation: USAGE_GET_DATA }),
+  async (_req: Request, res: Response) => {
+    try {
+      const usageData = await getUsageData();
+      res.sendData(usageData);
+    } catch (error) {
+      logger.error('Generate usage data error', error as Error);
+      res.status(500).json({ error: 'Failed to generate usage data' });
     }
   }
 );

@@ -31,6 +31,7 @@ jest.mock('../../../../src/db/DonkeyDao.js', () => ({
   getStatistics: jest.fn().mockResolvedValue([]),
   pruneMessageContent: jest.fn().mockResolvedValue(0),
   pruneMessageAttachments: jest.fn().mockResolvedValue(0),
+  deleteMessageContentByMetaDataIds: jest.fn().mockResolvedValue(0),
   insertCustomMetaData: jest.fn().mockResolvedValue(undefined),
   getConnectorMessageStatuses: jest.fn().mockResolvedValue(new Map()),
 }));
@@ -52,7 +53,7 @@ import {
   updateConnectorMessageStatus, updateMessageProcessed,
   updateStatistics, updateErrors, updateMaps, updateResponseMap, updateSendAttempts,
   getNextMessageId, channelTablesExist, getStatistics,
-  pruneMessageContent, pruneMessageAttachments,
+  pruneMessageContent, pruneMessageAttachments, deleteMessageContentByMetaDataIds,
   insertCustomMetaData, getConnectorMessageStatuses,
 } from '../../../../src/db/DonkeyDao';
 import { StorageSettings } from '../../../../src/donkey/channel/StorageSettings';
@@ -1499,6 +1500,43 @@ describe('Channel', () => {
 
       await channel.stop();
     });
+
+    it('should initialize D_MS rows for source and destinations on start (PC-MPS-001)', async () => {
+      (getStatistics as jest.Mock).mockResolvedValue([]);
+      (updateStatistics as jest.Mock).mockClear();
+
+      await channel.start();
+
+      // Should create initial zero-count rows for source (metaDataId=0) and destination (metaDataId=1)
+      expect(updateStatistics).toHaveBeenCalledWith(
+        'test-channel-1',
+        0,                   // source
+        expect.any(String),  // serverId
+        'R',                 // Status.RECEIVED
+        0                    // zero-count initialization
+      );
+      expect(updateStatistics).toHaveBeenCalledWith(
+        'test-channel-1',
+        1,                   // destination
+        expect.any(String),  // serverId
+        'R',                 // Status.RECEIVED
+        0                    // zero-count initialization
+      );
+
+      await channel.stop();
+    });
+
+    it('should skip D_MS initialization when tables do not exist', async () => {
+      (channelTablesExist as jest.Mock).mockResolvedValue(false);
+      (updateStatistics as jest.Mock).mockClear();
+
+      await channel.start();
+
+      // No initialization calls when tables don't exist
+      expect(updateStatistics).not.toHaveBeenCalled();
+
+      await channel.stop();
+    });
   });
 
   describe('persistBatch (transaction boundaries)', () => {
@@ -1586,7 +1624,7 @@ describe('Channel', () => {
       expect(pruneMessageContent).toHaveBeenCalledWith('cleanup-test', [expect.any(Number)]);
     });
 
-    it('should NOT delete content when removeOnlyFilteredOnCompletion is true and message was not filtered', async () => {
+    it('should NOT delete content when removeOnlyFilteredOnCompletion is true and no destinations filtered', async () => {
       const settings = new StorageSettings();
       settings.removeContentOnCompletion = true;
       settings.removeOnlyFilteredOnCompletion = true;
@@ -1604,11 +1642,56 @@ describe('Channel', () => {
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
       (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      // Destination has SENT status, not FILTERED
+      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(new Map([
+        [0, Status.TRANSFORMED],
+        [1, Status.SENT],
+      ]));
 
       await noCleanupChannel.dispatchRawMessage('<test/>');
       await noCleanupChannel.stop();
 
-      // Source message ends up TRANSFORMED (not FILTERED), so content should NOT be pruned
+      // No filtered destinations, so neither bulk nor selective removal should happen
+      expect(pruneMessageContent).not.toHaveBeenCalled();
+      expect(deleteMessageContentByMetaDataIds).not.toHaveBeenCalled();
+    });
+
+    it('should selectively remove content only for FILTERED destinations (PC-MTB-001)', async () => {
+      const settings = new StorageSettings();
+      settings.removeContentOnCompletion = true;
+      settings.removeOnlyFilteredOnCompletion = true;
+
+      const selectiveChannel = new Channel({
+        id: 'selective-test',
+        name: 'Selective Test',
+        enabled: true,
+        storageSettings: settings,
+      });
+      selectiveChannel.setSourceConnector(new TestSourceConnector());
+      selectiveChannel.addDestinationConnector(new TestDestinationConnector(1));
+      selectiveChannel.addDestinationConnector(new TestDestinationConnector(2));
+
+      await selectiveChannel.start();
+      jest.clearAllMocks();
+      (channelTablesExist as jest.Mock).mockResolvedValue(true);
+      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      // Destination 1 is FILTERED, destination 2 is SENT
+      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(new Map([
+        [0, Status.TRANSFORMED],
+        [1, Status.FILTERED],
+        [2, Status.SENT],
+      ]));
+
+      await selectiveChannel.dispatchRawMessage('<test/>');
+      await selectiveChannel.stop();
+
+      // Should selectively remove content for metadata ID 1 (FILTERED) only
+      expect(deleteMessageContentByMetaDataIds).toHaveBeenCalledWith(
+        'selective-test',
+        expect.any(Number),
+        [1]  // Only the FILTERED destination's metaDataId
+      );
+      // Should NOT use bulk removal
       expect(pruneMessageContent).not.toHaveBeenCalled();
     });
 
@@ -1651,24 +1734,8 @@ describe('Channel', () => {
     });
   });
 
-  describe('SOURCE_MAP single write (Phase 0C — consolidated)', () => {
-    it('should use storeContent for SOURCE_MAP at end of pipeline (single write)', async () => {
-      await channel.start();
-
-      const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
-      await channel.dispatchRawMessage('<test/>', sourceMap);
-
-      // storeContent should be called for SOURCE_MAP (single write at end of pipeline)
-      const storeContentMock = storeContent as jest.Mock;
-      const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
-        (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
-      );
-      expect(sourceMapStoreCalls.length).toBe(1);
-
-      await channel.stop();
-    });
-
-    it('should NOT write SOURCE_MAP early in Transaction 2 (consolidated to single write)', async () => {
+  describe('SOURCE_MAP persistence (PC-MJM-001)', () => {
+    it('should write SOURCE_MAP early in Transaction 2 via insertContent for crash recovery', async () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
@@ -1677,7 +1744,23 @@ describe('Channel', () => {
       const sourceMap = new Map<string, unknown>([['traceId', '12345']]);
       await channel.dispatchRawMessage('<test/>', sourceMap);
 
-      // storeContent calls for SOURCE_MAP should be exactly 1 (only the final write)
+      // insertContent should include a SOURCE_MAP write in Transaction 2
+      const insertContentMock = insertContent as jest.Mock;
+      const sourceMapInsertCalls = insertContentMock.mock.calls.filter(
+        (call: unknown[]) => call[3] === ContentType.SOURCE_MAP
+      );
+      expect(sourceMapInsertCalls.length).toBeGreaterThanOrEqual(1);
+
+      await channel.stop();
+    });
+
+    it('should use storeContent for final SOURCE_MAP upsert at end of pipeline', async () => {
+      await channel.start();
+
+      const sourceMap = new Map<string, unknown>([['key1', 'value1']]);
+      await channel.dispatchRawMessage('<test/>', sourceMap);
+
+      // storeContent should be called for SOURCE_MAP (final upsert at end of pipeline)
       const storeContentMock = storeContent as jest.Mock;
       const sourceMapStoreCalls = storeContentMock.mock.calls.filter(
         (call: unknown[]) => call[3] === ContentType.SOURCE_MAP

@@ -1,10 +1,9 @@
 /**
  * DICOM serializer adapter for SerializerFactory integration.
  *
- * Wraps the standalone DICOMSerializer and translates base metadata keys
- * to use the standard mirth_ prefix (mirth_type, mirth_version).
- * DICOM-specific additive keys (sopClassUid, patientName, modality, etc.)
- * are kept as-is since they extend beyond Java's DefaultMetaData.
+ * Wraps the standalone DICOMSerializer for toXML/fromXML delegation.
+ * populateMetaData() is a no-op (matches Java); metadata is only
+ * provided via getMetaDataFromMessage() inherited from BaseSerializer.
  */
 
 import {
@@ -14,7 +13,6 @@ import {
 } from '../SerializerBase.js';
 import { DICOMSerializer } from '../../datatypes/dicom/DICOMSerializer.js';
 import { DICOMDataTypeProperties } from '../../datatypes/dicom/DICOMDataTypeProperties.js';
-import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class DICOMSerializerAdapter extends BaseSerializer {
   private readonly delegate: DICOMSerializer;
@@ -40,33 +38,20 @@ export class DICOMSerializerAdapter extends BaseSerializer {
   }
 
   /**
-   * DICOM requires serialization — binary data must be converted to/from XML.
+   * Java DICOMSerializer.isSerializationRequired() returns false.
+   * DICOM data flows through the pipeline as-is (base64 binary); the
+   * toXML/fromXML methods are only called when the pipeline explicitly
+   * requests serialization (e.g., for transformer access).
    */
   isSerializationRequired(): boolean {
-    return true;
+    return false;
   }
 
   /**
-   * Populate metadata map from a DICOM message (base64-encoded binary).
-   *
-   * Base keys (type, version) are translated to mirth_ prefix.
-   * DICOM-specific keys (sopClassUid, patientName, modality, etc.) are
-   * kept as additive metadata that doesn't exist in Java's DefaultMetaData.
+   * Java DICOMSerializer.populateMetaData() is a no-op.
+   * Metadata is only provided via getMetaDataFromMessage().
    */
-  populateMetaData(message: string, map: Map<string, unknown>): void {
-    const raw = this.delegate.getMetaDataFromMessage(message);
-
-    // Base keys with mirth_ prefix
-    map.set(TYPE_VARIABLE_MAPPING, raw.type || 'DICOM');
-    map.set(VERSION_VARIABLE_MAPPING, raw.version || '');
-
-    // DICOM-specific additive keys
-    if (raw.sopClassUid) map.set('sopClassUid', raw.sopClassUid);
-    if (raw.sopInstanceUid) map.set('sopInstanceUid', raw.sopInstanceUid);
-    if (raw.patientName) map.set('patientName', raw.patientName);
-    if (raw.patientId) map.set('patientId', raw.patientId);
-    if (raw.studyInstanceUid) map.set('studyInstanceUid', raw.studyInstanceUid);
-    if (raw.seriesInstanceUid) map.set('seriesInstanceUid', raw.seriesInstanceUid);
-    if (raw.modality) map.set('modality', raw.modality);
+  populateMetaData(_message: string, _map: Map<string, unknown>): void {
+    // no-op — matches Java
   }
 }

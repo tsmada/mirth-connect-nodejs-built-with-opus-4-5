@@ -5,7 +5,8 @@
  * wrapped data in CDATA without any CSV/pipe/tab parsing. This adapter properly
  * delegates to DelimitedDataType for full delimited-text-to-XML conversion.
  *
- * Metadata keys use DefaultMetaData constants (mirth_type) for D_MCM compatibility.
+ * populateMetaData() is a no-op (matches Java); metadata is only
+ * provided via getMetaDataFromMessage() inherited from BaseSerializer.
  */
 
 import {
@@ -14,7 +15,6 @@ import {
   DeserializationProperties,
 } from '../SerializerBase.js';
 import { DelimitedDataType } from '../../datatypes/delimited/DelimitedDataType.js';
-import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export class DelimitedSerializerAdapter extends BaseSerializer {
   private readonly dataType: DelimitedDataType;
@@ -69,8 +69,8 @@ export class DelimitedSerializerAdapter extends BaseSerializer {
     }
   }
 
-  override populateMetaData(_message: string, map: Map<string, unknown>): void {
-    map.set(VERSION_VARIABLE_MAPPING, '');
-    map.set(TYPE_VARIABLE_MAPPING, 'delimited');
+  override populateMetaData(_message: string, _map: Map<string, unknown>): void {
+    // Java DelimitedSerializer.populateMetaData() is a no-op.
+    // Metadata is only provided via getMetaDataFromMessage().
   }
 }

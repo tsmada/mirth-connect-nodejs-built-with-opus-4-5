@@ -17,6 +17,7 @@ import { RowDataPacket } from 'mysql2';
 import { getPool } from '../../db/pool.js';
 import { statisticsTable } from '../../db/DonkeyDao.js';
 import { authorize } from '../middleware/authorization.js';
+import { multipartFormMiddleware } from '../middleware/multipartForm.js';
 import {
   CHANNEL_STATS_GET,
   CHANNEL_STATS_GET_ALL,
@@ -273,6 +274,7 @@ channelStatisticsRouter.get(
  */
 channelStatisticsRouter.post(
   '/statistics/_getStatistics',
+  multipartFormMiddleware(),
   authorize({ operation: CHANNEL_STATS_GET_ALL }),
   async (req: Request, res: Response) => {
     try {

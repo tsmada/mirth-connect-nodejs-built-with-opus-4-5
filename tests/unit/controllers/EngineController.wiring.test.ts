@@ -73,18 +73,10 @@ jest.mock('../../../src/db/SchemaManager', () => ({
   ensureChannelTables: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Mock Donkey instance
+// Mock Donkey instance — injected via setDonkeyInstance after import
 const mockDonkeyDeployChannel = jest.fn().mockResolvedValue(undefined);
 const mockDonkeyUndeployChannel = jest.fn().mockResolvedValue(undefined);
 const mockDonkeyGetChannel = jest.fn();
-
-jest.mock('../../../src/server/Mirth', () => ({
-  getDonkeyInstance: jest.fn(() => ({
-    deployChannel: mockDonkeyDeployChannel,
-    undeployChannel: mockDonkeyUndeployChannel,
-    getChannel: mockDonkeyGetChannel,
-  })),
-}));
 
 // Mock ShadowMode
 jest.mock('../../../src/cluster/ShadowMode', () => ({
@@ -140,11 +132,17 @@ jest.mock('../../../src/logging/index', () => ({
 }));
 
 // Import AFTER mocks are set up
-import { EngineController } from '../../../src/controllers/EngineController';
+import { EngineController, setDonkeyInstance } from '../../../src/controllers/EngineController';
 
 describe('EngineController wiring fixes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Inject mock Donkey via setter (replaces circular import)
+    setDonkeyInstance({
+      deployChannel: mockDonkeyDeployChannel,
+      undeployChannel: mockDonkeyUndeployChannel,
+      getChannel: mockDonkeyGetChannel,
+    } as any);
     // Reset the deployed channels by undeploying everything
     // (The module maintains internal state across tests)
     mockGetCurrentState.mockReturnValue(DeployedState.STOPPED);
@@ -281,6 +279,94 @@ describe('EngineController wiring fixes', () => {
     it('should return an empty Set when no channels deployed', () => {
       const ids = EngineController.getDeployedChannelIds();
       expect(ids.size).toBe(0);
+    });
+  });
+
+  describe('SBF-STUB-001: startConnector/stopConnector', () => {
+    const mockSourceStart = jest.fn().mockResolvedValue(undefined);
+    const mockSourceStop = jest.fn().mockResolvedValue(undefined);
+    const mockDestStart = jest.fn().mockResolvedValue(undefined);
+    const mockDestStop = jest.fn().mockResolvedValue(undefined);
+    const mockStartQueueProcessing = jest.fn();
+
+    beforeEach(async () => {
+      // Configure mock source connector
+      mockGetSourceConnector.mockReturnValue({
+        start: mockSourceStart,
+        stop: mockSourceStop,
+      });
+
+      // Configure mock destination connector with metaDataId 1
+      mockGetDestinationConnectors.mockReturnValue([
+        {
+          getMetaDataId: () => 1,
+          start: mockDestStart,
+          stop: mockDestStop,
+          isQueueEnabled: () => false,
+          startQueueProcessing: mockStartQueueProcessing,
+        },
+      ]);
+
+      // Deploy a channel
+      await EngineController.deployChannel('test-channel-id');
+    });
+
+    afterEach(async () => {
+      mockDonkeyGetChannel.mockReturnValue({ getId: () => 'test-channel-id' });
+      await EngineController.undeployChannel('test-channel-id');
+      mockSourceStart.mockClear();
+      mockSourceStop.mockClear();
+      mockDestStart.mockClear();
+      mockDestStop.mockClear();
+      mockStartQueueProcessing.mockClear();
+    });
+
+    it('should start the source connector (metaDataId 0)', async () => {
+      await EngineController.startConnector('test-channel-id', 0);
+      expect(mockSourceStart).toHaveBeenCalled();
+    });
+
+    it('should stop the source connector (metaDataId 0)', async () => {
+      await EngineController.stopConnector('test-channel-id', 0);
+      expect(mockSourceStop).toHaveBeenCalled();
+    });
+
+    it('should start a destination connector by metaDataId', async () => {
+      await EngineController.startConnector('test-channel-id', 1);
+      expect(mockDestStart).toHaveBeenCalled();
+    });
+
+    it('should stop a destination connector by metaDataId', async () => {
+      await EngineController.stopConnector('test-channel-id', 1);
+      expect(mockDestStop).toHaveBeenCalled();
+    });
+
+    it('should start queue processing for queue-enabled destinations', async () => {
+      mockGetDestinationConnectors.mockReturnValue([
+        {
+          getMetaDataId: () => 1,
+          start: mockDestStart,
+          stop: mockDestStop,
+          isQueueEnabled: () => true,
+          startQueueProcessing: mockStartQueueProcessing,
+        },
+      ]);
+
+      await EngineController.startConnector('test-channel-id', 1);
+      expect(mockDestStart).toHaveBeenCalled();
+      expect(mockStartQueueProcessing).toHaveBeenCalled();
+    });
+
+    it('should throw for non-deployed channel', async () => {
+      await expect(
+        EngineController.startConnector('non-existent', 0)
+      ).rejects.toThrow('Channel not deployed');
+    });
+
+    it('should throw for non-existent destination metaDataId', async () => {
+      await expect(
+        EngineController.startConnector('test-channel-id', 99)
+      ).rejects.toThrow('Destination connector 99 not found');
     });
   });
 });

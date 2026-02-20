@@ -38,19 +38,16 @@ describe('DelimitedSerializerAdapter', () => {
     expect(result).toContain('Boston');
   });
 
-  test('getMetaDataFromMessage returns mirth_type: delimited', () => {
+  test('getMetaDataFromMessage returns empty Map (Java DelimitedSerializer.populateMetaData is a no-op)', () => {
     const metadata = adapter.getMetaDataFromMessage('a,b,c');
-    expect(metadata.get('mirth_type')).toBe('delimited');
-    expect(metadata.get('mirth_version')).toBe('');
-    // Must use mirth_ prefix, NOT bare 'type'
-    expect(metadata.has('type')).toBe(false);
+    expect(metadata).toBeInstanceOf(Map);
+    expect(metadata.size).toBe(0);
   });
 
-  test('populateMetaData writes mirth_type to map', () => {
+  test('populateMetaData is a no-op (matches Java DelimitedSerializer)', () => {
     const map = new Map<string, unknown>();
     adapter.populateMetaData('a,b,c', map);
-    expect(map.get('mirth_type')).toBe('delimited');
-    expect(map.get('mirth_version')).toBe('');
+    expect(map.size).toBe(0);
   });
 
   test('toJSON returns null (not supported)', () => {

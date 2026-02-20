@@ -8,6 +8,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../../api/middleware/auth.js';
 import { authorize } from '../../api/middleware/authorization.js';
+import { multipartFormMiddleware } from '../../api/middleware/multipartForm.js';
 import {
   CODE_TEMPLATE_GET,
   CODE_TEMPLATE_GET_ALL,
@@ -391,6 +392,7 @@ codeTemplateRouter.delete(
  */
 codeTemplateRouter.post(
   '/codeTemplateLibraries/_bulkUpdate',
+  multipartFormMiddleware(),
   authorize({ operation: CODE_TEMPLATE_LIBRARY_UPDATE }),
   async (req: Request, res: Response) => {
     try {

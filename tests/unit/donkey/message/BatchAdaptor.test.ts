@@ -1,5 +1,6 @@
 import { SimpleLineBatchAdaptor } from '../../../../src/donkey/message/SimpleLineBatchAdaptor';
-import { HL7BatchAdaptor } from '../../../../src/donkey/message/HL7BatchAdaptor';
+import { HL7BatchAdaptor, HL7v2SplitType, HL7BatchAdaptorFactory } from '../../../../src/donkey/message/HL7BatchAdaptor';
+import type { HL7v2BatchProperties } from '../../../../src/donkey/message/HL7BatchAdaptor';
 import { SourceConnector, SourceConnectorConfig } from '../../../../src/donkey/channel/SourceConnector';
 import { Channel } from '../../../../src/donkey/channel/Channel';
 import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
@@ -205,6 +206,251 @@ describe('HL7BatchAdaptor', () => {
     const adaptor = new HL7BatchAdaptor('');
     expect(adaptor.isBatchComplete()).toBe(true);
     expect(await adaptor.getMessage()).toBeNull();
+  });
+});
+
+describe('HL7BatchAdaptor (enhanced)', () => {
+  /** Helper to collect all messages from an adaptor */
+  async function collectMessages(adaptor: HL7BatchAdaptor): Promise<string[]> {
+    const messages: string[] = [];
+    while (!adaptor.isBatchComplete()) {
+      const msg = await adaptor.getMessage();
+      if (msg === null) break;
+      messages.push(msg);
+    }
+    return messages;
+  }
+
+  describe('MLLP framing byte stripping', () => {
+    it('should strip 0x0B prefix and 0x1C 0x0D suffix', async () => {
+      const VT = String.fromCharCode(0x0b);
+      const FS = String.fromCharCode(0x1c);
+      const CR = '\r';
+      const raw = `${VT}MSH|^~\\&|App|Fac|||202301010000||ADT^A01|MSG001|P|2.3${CR}PID|||12345||Doe^John${FS}${CR}`;
+
+      const adaptor = new HL7BatchAdaptor(raw);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('MSG001');
+      expect(messages[0]).toContain('Doe^John');
+      // Ensure framing bytes are not in output
+      expect(messages[0]!.charCodeAt(0)).not.toBe(0x0b);
+      expect(messages[0]).not.toContain(FS);
+    });
+
+    it('should strip 0x1C without trailing 0x0D', async () => {
+      const VT = String.fromCharCode(0x0b);
+      const FS = String.fromCharCode(0x1c);
+      const raw = `${VT}MSH|^~\\&|App|Fac|||202301010000||ADT^A01|MSG001|P|2.3${FS}`;
+
+      const adaptor = new HL7BatchAdaptor(raw);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('MSG001');
+      expect(messages[0]).not.toContain(FS);
+    });
+
+    it('should handle message with only MLLP framing (empty content after strip)', async () => {
+      const VT = String.fromCharCode(0x0b);
+      const FS = String.fromCharCode(0x1c);
+      const CR = '\r';
+      const raw = `${VT}${FS}${CR}`;
+
+      const adaptor = new HL7BatchAdaptor(raw);
+      expect(adaptor.isBatchComplete()).toBe(true);
+      expect(await adaptor.getMessage()).toBeNull();
+    });
+
+    it('should handle mixed MLLP-framed batch with envelope segments', async () => {
+      const VT = String.fromCharCode(0x0b);
+      const FS = String.fromCharCode(0x1c);
+      const CR = '\r';
+      const raw = [
+        `${VT}FHS|^~\\&|BatchApp`,
+        'BHS|^~\\&|BatchApp',
+        'MSH|^~\\&|App|Fac|||202301010000||ADT^A01|MSG001|P|2.3',
+        'PID|||12345||Doe^John',
+        'BTS|1',
+        `FTS|1${FS}${CR}`,
+      ].join('\n');
+
+      const adaptor = new HL7BatchAdaptor(raw);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('MSG001');
+      expect(messages[0]).not.toContain('FHS');
+      expect(messages[0]).not.toContain('BTS');
+    });
+  });
+
+  describe('custom lineBreakPattern', () => {
+    it('should split lines using custom regex pattern', async () => {
+      // Use pipe as line break delimiter
+      const raw = 'MSH|^~\\&|App|Fac|||202301010000||ADT^A01|MSG001|P|2.3##PID|||12345||Doe^John';
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.MSH_Segment,
+        lineBreakPattern: '##',
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('MSG001');
+      expect(messages[0]).toContain('Doe^John');
+      // Segments should be joined with default \r
+      const segments = messages[0]!.split('\r');
+      expect(segments).toHaveLength(2);
+    });
+
+    it('should use default pattern when lineBreakPattern is not specified', async () => {
+      const raw = 'MSH|^~\\&|App|Fac|||time||ADT^A01|M1|P|2.3\r\nPID|||123||Doe^John';
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.MSH_Segment,
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('Doe^John');
+    });
+  });
+
+  describe('custom segmentDelimiter', () => {
+    it('should join segments with custom delimiter', async () => {
+      const raw = 'MSH|^~\\&|App|Fac|||time||ADT^A01|M1|P|2.3\nPID|||123||Doe^John\nPV1||I';
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.MSH_Segment,
+        segmentDelimiter: '\n',
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(1);
+      // Should use \n instead of default \r
+      const segments = messages[0]!.split('\n');
+      expect(segments).toHaveLength(3);
+      expect(segments[0]).toMatch(/^MSH/);
+      expect(segments[1]).toMatch(/^PID/);
+      expect(segments[2]).toMatch(/^PV1/);
+    });
+
+    it('should use custom delimiter with multiple messages', async () => {
+      const raw = [
+        'MSH|^~\\&|App|Fac|||time||ADT^A01|M1|P|2.3',
+        'PID|||12345||Doe^John',
+        'MSH|^~\\&|App|Fac|||time||ADT^A02|M2|P|2.3',
+        'PID|||67890||Smith^Jane',
+      ].join('\n');
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.MSH_Segment,
+        segmentDelimiter: '\r\n',
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]!.split('\r\n')).toHaveLength(2);
+      expect(messages[1]!.split('\r\n')).toHaveLength(2);
+    });
+  });
+
+  describe('JavaScript batch script mode', () => {
+    it('should delegate to ScriptBatchAdaptor when splitType is JavaScript', async () => {
+      const raw = 'MSG1|||data1\nMSG2|||data2\nMSG3|||data3';
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.JavaScript,
+        batchScript: 'return context.reader.readLine();',
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(3);
+      expect(messages[0]).toBe('MSG1|||data1');
+      expect(messages[1]).toBe('MSG2|||data2');
+      expect(messages[2]).toBe('MSG3|||data3');
+    });
+
+    it('should handle JavaScript mode with getBatchSequenceId', async () => {
+      const raw = 'line1\nline2';
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.JavaScript,
+        batchScript: 'return context.reader.readLine();',
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+
+      expect(adaptor.getBatchSequenceId()).toBe(0);
+      await adaptor.getMessage();
+      expect(adaptor.getBatchSequenceId()).toBe(1);
+      await adaptor.getMessage();
+      expect(adaptor.getBatchSequenceId()).toBe(2);
+    });
+
+    it('should handle cleanup in JavaScript mode', async () => {
+      const raw = 'line1\nline2';
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.JavaScript,
+        batchScript: 'return context.reader.readLine();',
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      await adaptor.getMessage();
+      expect(adaptor.isBatchComplete()).toBe(false);
+
+      adaptor.cleanup();
+      expect(adaptor.isBatchComplete()).toBe(true);
+      expect(await adaptor.getMessage()).toBeNull();
+    });
+  });
+
+  describe('explicit MSH_Segment properties', () => {
+    it('should work with explicit MSH_Segment splitType', async () => {
+      const raw = [
+        'MSH|^~\\&|App|Fac|||time||ADT^A01|M1|P|2.3',
+        'PID|||12345||Doe^John',
+        'MSH|^~\\&|App|Fac|||time||ADT^A02|M2|P|2.3',
+        'PID|||67890||Smith^Jane',
+      ].join('\n');
+      const props: HL7v2BatchProperties = {
+        splitType: HL7v2SplitType.MSH_Segment,
+      };
+
+      const adaptor = new HL7BatchAdaptor(raw, props);
+      const messages = await collectMessages(adaptor);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toContain('Doe^John');
+      expect(messages[1]).toContain('Smith^Jane');
+    });
+  });
+
+  describe('HL7BatchAdaptorFactory', () => {
+    it('should create adaptor without properties', () => {
+      const factory = new HL7BatchAdaptorFactory();
+      const adaptor = factory.createBatchAdaptor('MSH|^~\\&|App|Fac|||time||ADT^A01|M1|P|2.3');
+      expect(adaptor).toBeInstanceOf(HL7BatchAdaptor);
+    });
+
+    it('should create adaptor with properties', async () => {
+      const factory = new HL7BatchAdaptorFactory({
+        splitType: HL7v2SplitType.MSH_Segment,
+        segmentDelimiter: '\n',
+      });
+      const raw = 'MSH|^~\\&|App|Fac|||time||ADT^A01|M1|P|2.3\nPID|||123||Doe';
+      const adaptor = factory.createBatchAdaptor(raw);
+      const msg = await adaptor.getMessage();
+      // Should use \n delimiter
+      expect(msg).toContain('\n');
+      expect(msg).not.toContain('\r');
+    });
   });
 });
 

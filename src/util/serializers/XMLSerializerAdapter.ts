@@ -13,7 +13,6 @@ import {
   DeserializationProperties,
 } from '../SerializerBase.js';
 import { XMLDataType } from '../../datatypes/xml/XMLDataType.js';
-import { TYPE_VARIABLE_MAPPING, VERSION_VARIABLE_MAPPING } from '../../model/DefaultMetaData.js';
 
 export interface XMLAdapterSerializationProperties extends SerializationProperties {
   stripNamespaces?: boolean;
@@ -55,10 +54,8 @@ export class XMLSerializerAdapter extends BaseSerializer {
     return this.xmlDataType.transformWithoutSerializing(message);
   }
 
-  populateMetaData(_message: string, map: Map<string, unknown>): void {
-    // Java XMLSerializer always returns version=1.0 and type=XML-Message
-    // (it does not parse the message for version/type — those are fixed).
-    map.set(VERSION_VARIABLE_MAPPING, '1.0');
-    map.set(TYPE_VARIABLE_MAPPING, 'XML-Message');
+  populateMetaData(_message: string, _map: Map<string, unknown>): void {
+    // Java XMLSerializer.populateMetaData() is a no-op.
+    // Metadata is only provided via getMetaDataFromMessage().
   }
 }
