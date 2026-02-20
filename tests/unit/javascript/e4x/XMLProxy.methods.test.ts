@@ -9,7 +9,8 @@ describe('XMLProxy E4X Methods', () => {
       expect(clone.toXMLString()).toBe(xml.toXMLString());
 
       // Modify original — clone should not be affected
-      xml['child'] = 'modified';
+      // Use 'as any' to bypass TS type check — Proxy set trap handles this at runtime
+      (xml as any)['child'] = 'modified';
       expect(clone.toString()).toBe('value');
     });
 

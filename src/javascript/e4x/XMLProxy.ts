@@ -319,6 +319,19 @@ export class XMLProxy {
   }
 
   /**
+   * Get child by name or index (E4X child() method)
+   *
+   * child(0)     → first child element (delegates to children().getIndex())
+   * child('PID') → child element named 'PID' (equivalent to .get('PID'))
+   */
+  child(nameOrIndex: string | number): XMLProxy {
+    if (typeof nameOrIndex === 'number') {
+      return this.children().getIndex(nameOrIndex);
+    }
+    return this.get(nameOrIndex);
+  }
+
+  /**
    * Get all descendants with name (E4X .. operator)
    */
   descendants(name?: string): XMLProxy {

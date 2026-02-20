@@ -63,6 +63,12 @@ export class E4XTranspiler {
     // 3.5. Handle E4X wildcards (.* and .@*) — after descendants so ..* is handled first
     code = this.transpileWildcards(code);
 
+    // 3.6. Handle empty XMLList literal <></>
+    code = this.transpileEmptyXMLList(code);
+
+    // 3.7. Handle computed tag names <{expr}>content</{expr}>
+    code = this.transpileComputedTagNames(code);
+
     // 4. Handle XML literals
     code = this.transpileXMLLiterals(code);
 
@@ -292,6 +298,112 @@ export class E4XTranspiler {
   }
 
   /**
+   * Transform: <></> (empty XMLList literal)
+   * To: XMLProxy.createList()
+   */
+  private transpileEmptyXMLList(code: string): string {
+    return this.replaceWithStringCheck(code, /<>\s*<\/>/g, () => {
+      return 'XMLProxy.createList()';
+    });
+  }
+
+  /**
+   * Transform: <{expr}>content</{expr}>
+   * To: XMLProxy.create('<' + String(expr) + '>' + 'content' + '</' + String(expr) + '>')
+   *
+   * Handles computed tag names where the tag name itself is an expression.
+   */
+  private transpileComputedTagNames(code: string): string {
+    // Match <{expr}>content</{expr}> — content can be anything including nested XML
+    // We need to find matching <{...}> ... </{...}> pairs
+    let result = '';
+    let i = 0;
+
+    while (i < code.length) {
+      // Look for <{ pattern
+      if (code[i] === '<' && i + 1 < code.length && code[i + 1] === '{' && !this.isInsideString(code, i)) {
+        // Find the closing } of the opening tag expression
+        const openExprStart = i + 2;
+        const openExprEnd = this.findClosingBrace(code, openExprStart);
+        if (openExprEnd === -1) { result += code[i]; i++; continue; }
+
+        // After the closing }, expect >
+        const afterOpenExpr = openExprEnd + 1;
+        if (afterOpenExpr >= code.length || code[afterOpenExpr] !== '>') { result += code[i]; i++; continue; }
+
+        const openExpr = code.slice(openExprStart, openExprEnd);
+
+        // Now find the matching closing tag </{expr}>
+        // Search for </ followed by { with a matching expression
+        const contentStart = afterOpenExpr + 1;
+        const closingTagPrefix = '</';
+        const closingIdx = code.indexOf(closingTagPrefix + '{', contentStart);
+        if (closingIdx === -1) { result += code[i]; i++; continue; }
+
+        // Find the expression in the closing tag
+        const closeExprStart = closingIdx + closingTagPrefix.length + 1;
+        const closeExprEnd = this.findClosingBrace(code, closeExprStart);
+        if (closeExprEnd === -1) { result += code[i]; i++; continue; }
+
+        // After closing }, expect >
+        const afterCloseExpr = closeExprEnd + 1;
+        if (afterCloseExpr >= code.length || code[afterCloseExpr] !== '>') { result += code[i]; i++; continue; }
+
+        const content = code.slice(contentStart, closingIdx);
+
+        // Build: XMLProxy.create('<' + String(expr) + '>' + 'content' + '</' + String(expr) + '>')
+        const processedContent = content.includes('{') && content.includes('}')
+          ? this.convertEmbeddedToConcat(content)
+          : `'${this.escapeForString(content)}'`;
+        result += `XMLProxy.create('<' + String(${openExpr}) + '>' + ${processedContent} + '</' + String(${openExpr}) + '>')`;
+        i = afterCloseExpr + 1;
+        continue;
+      }
+
+      // Also handle self-closing computed tag: <{expr}/>
+      if (code[i] === '<' && i + 1 < code.length && code[i + 1] === '{' && !this.isInsideString(code, i)) {
+        // Already handled above, this branch won't trigger for the same character
+      }
+
+      result += code[i];
+      i++;
+    }
+
+    return result;
+  }
+
+  /**
+   * Find the closing brace at the same nesting depth.
+   * Starts searching from the given index (should be the char after the opening {).
+   * Returns the index of the closing }, or -1.
+   */
+  private findClosingBrace(code: string, startIdx: number): number {
+    let depth = 1;
+    let inStr: string | null = null;
+    let escaped = false;
+
+    for (let j = startIdx; j < code.length; j++) {
+      const ch = code[j]!;
+
+      if (escaped) { escaped = false; continue; }
+      if (inStr !== null && ch === '\\') { escaped = true; continue; }
+
+      if (inStr !== null) {
+        if (ch === inStr) inStr = null;
+        continue;
+      }
+
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+      if (ch === '{') depth++;
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) return j;
+      }
+    }
+    return -1;
+  }
+
+  /**
    * Transform: <tag>content</tag> or <tag attr="val">{expr}</tag>
    * To: XMLProxy.create('<tag>content</tag>') or XMLProxy.create('<tag attr="val">' + String(expr) + '</tag>')
    */
@@ -310,12 +422,16 @@ export class E4XTranspiler {
       const before = result;
 
       // Match self-closing tags: <name attrs/>
-      result = result.replace(/(<(\w+)(?:\s+[^>]*)?\/\s*>)/g, (match, fullTag, _tagName, offset) => {
+      result = result.replace(/(<(\w+)((?:\s+[^>]*)?)\/\s*>)/g, (match, _fullTag, tagName, attrStr, offset) => {
         // Check if this is inside a string — use offset from callback, not indexOf
         if (this.isInsideString(result, offset)) {
           return match;
         }
-        return `XMLProxy.create('${this.escapeForString(fullTag)}')`;
+        // Check if attributes contain computed expressions {expr}
+        if (attrStr && attrStr.includes('{')) {
+          return this.buildComputedAttrTag(tagName, attrStr, null, true);
+        }
+        return `XMLProxy.create('${this.escapeForString(match)}')`;
       });
 
       // Match opening and closing tags with content
@@ -350,10 +466,17 @@ export class E4XTranspiler {
       const [fullMatch, tagName, attrs, content] = match;
       const attrStr = attrs || '';
       const contentStr = content || '';
+      const hasComputedAttrs = attrStr.includes('{');
+      const hasEmbeddedContent = contentStr.includes('{') && contentStr.includes('}');
 
-      // Check if content has embedded expressions
-      if (contentStr.includes('{') && contentStr.includes('}')) {
-        // Handle embedded expressions
+      if (hasComputedAttrs) {
+        // Computed attributes — build via string concatenation
+        const replacement = this.buildComputedAttrTag(tagName!, attrStr, contentStr, false);
+        return (
+          code.slice(0, match.index) + replacement + code.slice(match.index + fullMatch.length)
+        );
+      } else if (hasEmbeddedContent) {
+        // Static attrs, embedded content expressions
         const processedContent = this.convertEmbeddedToConcat(contentStr);
         const replacement = `XMLProxy.create('<${tagName}${attrStr}>' + ${processedContent} + '</${tagName}>')`;
         return (
@@ -431,6 +554,118 @@ export class E4XTranspiler {
     }
 
     return parts.join(' + ');
+  }
+
+  /**
+   * Build XMLProxy.create() with computed attributes via string concatenation.
+   *
+   * For self-closing: buildComputedAttrTag('tag', ' a={x} b="y"', null, true)
+   *   → XMLProxy.create('<tag a="' + String(x) + '" b="y"/>')
+   *
+   * For open/close: buildComputedAttrTag('tag', ' a={x}', 'content', false)
+   *   → XMLProxy.create('<tag a="' + String(x) + '">content</tag>')
+   */
+  private buildComputedAttrTag(
+    tagName: string,
+    attrStr: string,
+    content: string | null,
+    selfClosing: boolean
+  ): string {
+    // Build the opening tag via string concatenation
+    const parts: string[] = [`'<${tagName}'`];
+
+    // Parse attributes from attrStr. Attributes are in the form:
+    //   name="value"  or  name={expr}  or  name='value'
+    // We need to handle mixed static and computed attributes.
+    const attrParts = this.parseAttributes(attrStr.trim());
+    for (const attr of attrParts) {
+      if (attr.computed) {
+        // Computed: attr={expr} → ' attr="' + String(expr) + '"'
+        parts.push(`' ${attr.name}="'`);
+        parts.push(`String(${attr.value})`);
+        parts.push(`'"'`);
+      } else {
+        // Static: attr="value" → escaped literal
+        parts.push(`' ${attr.name}="${this.escapeForString(attr.value)}"'`);
+      }
+    }
+
+    if (selfClosing) {
+      parts.push(`'/>'`);
+    } else {
+      parts.push(`'>'`);
+    }
+
+    let expr = parts.join(' + ');
+
+    // Add content for non-self-closing tags
+    if (!selfClosing && content !== null) {
+      const hasEmbeddedContent = content.includes('{') && content.includes('}');
+      if (hasEmbeddedContent) {
+        expr += ' + ' + this.convertEmbeddedToConcat(content);
+      } else {
+        expr += ` + '${this.escapeForString(content)}'`;
+      }
+      expr += ` + '</${tagName}>'`;
+    }
+
+    return `XMLProxy.create(${expr})`;
+  }
+
+  /**
+   * Parse attribute string into name/value pairs, detecting computed {expr} values.
+   */
+  private parseAttributes(attrStr: string): Array<{ name: string; value: string; computed: boolean }> {
+    const attrs: Array<{ name: string; value: string; computed: boolean }> = [];
+    let i = 0;
+
+    while (i < attrStr.length) {
+      // Skip whitespace
+      while (i < attrStr.length && /\s/.test(attrStr[i]!)) i++;
+      if (i >= attrStr.length) break;
+
+      // Read attribute name
+      const nameStart = i;
+      while (i < attrStr.length && attrStr[i] !== '=' && !/\s/.test(attrStr[i]!)) i++;
+      const name = attrStr.slice(nameStart, i);
+      if (!name) break;
+
+      // Skip whitespace around =
+      while (i < attrStr.length && /\s/.test(attrStr[i]!)) i++;
+      if (i >= attrStr.length || attrStr[i] !== '=') {
+        // Boolean attribute (no value)
+        attrs.push({ name, value: name, computed: false });
+        continue;
+      }
+      i++; // skip =
+      while (i < attrStr.length && /\s/.test(attrStr[i]!)) i++;
+
+      if (i >= attrStr.length) break;
+
+      if (attrStr[i] === '{') {
+        // Computed value: {expr}
+        const exprStart = i + 1;
+        const exprEnd = this.findClosingBrace(attrStr, exprStart);
+        if (exprEnd === -1) break;
+        attrs.push({ name, value: attrStr.slice(exprStart, exprEnd), computed: true });
+        i = exprEnd + 1;
+      } else if (attrStr[i] === '"' || attrStr[i] === "'") {
+        // Quoted static value
+        const quote = attrStr[i]!;
+        const valStart = i + 1;
+        let valEnd = attrStr.indexOf(quote, valStart);
+        if (valEnd === -1) valEnd = attrStr.length;
+        attrs.push({ name, value: attrStr.slice(valStart, valEnd), computed: false });
+        i = valEnd + 1;
+      } else {
+        // Unquoted value (read until whitespace or end)
+        const valStart = i;
+        while (i < attrStr.length && !/\s/.test(attrStr[i]!)) i++;
+        attrs.push({ name, value: attrStr.slice(valStart, i), computed: false });
+      }
+    }
+
+    return attrs;
   }
 
   /**
