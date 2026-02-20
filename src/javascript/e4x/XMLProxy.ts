@@ -245,11 +245,15 @@ export class XMLProxy {
    */
   deleteAt(index: number): boolean {
     if (index >= 0 && index < this.nodes.length) {
+      const nodeToDelete = this.nodes[index]!;
       this.nodes.splice(index, 1);
 
-      // Also remove from parent if we have one
-      if (this._parent && this.tagName) {
-        this._parent.removeChildByName(this.tagName, index);
+      // Propagate deletion to parent. Use reference-based removal which works
+      // for both named access (msg.OBX[0]) and children() access (node.children()[i]).
+      // Name-based removal fails for children() because tagName is 'children',
+      // not a real element name.
+      if (this._parent) {
+        this._parent.removeNodeByReference(nodeToDelete);
       }
 
       return true;
@@ -258,23 +262,20 @@ export class XMLProxy {
   }
 
   /**
-   * Remove child by name and index from parent
+   * Remove a child node by object reference from the parent's underlying array.
+   * This is more robust than name-based removal because it works regardless of
+   * how the child XMLProxy was created (named access, children(), filter(), etc.)
    */
-  private removeChildByName(name: string, index: number): void {
-    for (const node of this.nodes) {
-      const tagName = this.getNodeTagName(node);
+  private removeNodeByReference(nodeToRemove: OrderedNode): void {
+    for (const parentNode of this.nodes) {
+      const tagName = this.getNodeTagName(parentNode);
       if (tagName) {
-        const children = node[tagName] as OrderedNode[];
+        const children = parentNode[tagName] as OrderedNode[];
         if (Array.isArray(children)) {
-          let nameIndex = 0;
-          for (let i = 0; i < children.length; i++) {
-            if (this.getNodeTagName(children[i]!) === name) {
-              if (nameIndex === index) {
-                children.splice(i, 1);
-                return;
-              }
-              nameIndex++;
-            }
+          const idx = children.indexOf(nodeToRemove);
+          if (idx !== -1) {
+            children.splice(idx, 1);
+            return;
           }
         }
       }

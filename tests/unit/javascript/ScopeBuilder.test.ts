@@ -65,8 +65,12 @@ describe('ScopeBuilder', () => {
     it('should include built-in functions', () => {
       const scope = buildBasicScope();
       expect(scope.parseInt).toBe(parseInt);
-      expect(scope.JSON).toBe(JSON);
-      expect(scope.Array).toBe(Array);
+      // Note: String, Object, Array, JSON, etc. are NOT in scope — vm.createContext()
+      // provides its own built-in versions. Overriding them with the outer realm's
+      // constructors causes cross-realm prototype mismatches for String.prototype
+      // patching (Java String methods: equals, matches, isEmpty, etc.)
+      expect(scope.JSON).toBeUndefined();
+      expect(scope.Array).toBeUndefined();
     });
 
     it('should use custom logger when provided', () => {

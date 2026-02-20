@@ -273,21 +273,17 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     setImmediate: undefined,
     queueMicrotask: undefined,
 
-    // Built-in functions that scripts might use
+    // Global functions that scripts might use (not built-in to VM contexts)
     parseInt,
     parseFloat,
     isNaN,
     isFinite,
-    String,
-    Number,
-    Boolean,
-    Array,
-    Object,
-    Date,
-    Math,
-    JSON,
-    RegExp,
-    Error,
+    // Note: String, Number, Boolean, Array, Object, Date, Math, JSON, RegExp,
+    // Error are NOT explicitly set here. vm.createContext() provides its own
+    // built-in versions automatically. Overriding them with the outer realm's
+    // constructors causes cross-realm prototype mismatches — e.g., String
+    // literals in the VM use the context's own String for auto-boxing, so
+    // patching the outer String.prototype (via __javaStringSetup) doesn't work.
   };
 }
 

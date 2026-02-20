@@ -556,6 +556,11 @@ export function createPackagesNamespace(javaNamespace: Record<string, unknown>):
 // ---------------------------------------------------------------------------
 
 export const JAVA_STRING_SETUP_SCRIPT = `
+  // Patch String.prototype with Java String methods inside the VM context.
+  // This works because vm.createContext() provides its own String built-in,
+  // and we do NOT override it with the outer realm's String in the scope.
+  // String literals in the VM use the context's own String for auto-boxing,
+  // so patching String.prototype here correctly affects all string operations.
   String.prototype.equals = function(other) { return this.valueOf() === String(other); };
   String.prototype.equalsIgnoreCase = function(other) {
     return this.valueOf().toLowerCase() === String(other).toLowerCase();
@@ -585,9 +590,6 @@ export const JAVA_STRING_SETUP_SCRIPT = `
   String.prototype.toCharArray = function() {
     return this.valueOf().split('');
   };
-  String.prototype.charAt = String.prototype.charAt;
-  String.prototype.substring = String.prototype.substring;
-  String.prototype.length = String.prototype.length;
 `;
 
 // Re-export individual classes for direct import if needed

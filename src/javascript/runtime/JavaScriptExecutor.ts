@@ -148,7 +148,11 @@ export class JavaScriptExecutor {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error : new Error(String(error)),
+        // Cross-realm error handling: VM context errors are not instanceof the
+        // outer realm's Error, so check for the 'message' property instead.
+        error: (error && typeof error === 'object' && 'message' in error)
+          ? new Error((error as Error).message)
+          : new Error(String(error)),
         executionTime: Date.now() - startTime,
       };
     }
