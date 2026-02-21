@@ -726,6 +726,16 @@ export class XMLProxy {
   }
 
   /**
+   * Array-like forEach iteration over XMLList nodes.
+   * Common pattern in Mirth scripts: msg.OBX.forEach(function(obx, i) { ... })
+   */
+  forEach(callback: (node: XMLProxy, index: number, list: XMLProxy) => void): void {
+    for (let i = 0; i < this.nodes.length; i++) {
+      callback(new XMLProxy([this.nodes[i]!], this.tagName, this), i, this);
+    }
+  }
+
+  /**
    * E4X copy() — deep clone of the XML node
    */
   copy(): XMLProxy {

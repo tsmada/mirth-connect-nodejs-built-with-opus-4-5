@@ -882,7 +882,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 8,169 passing** (357 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps + 18 pipeline-lifecycle)
+**Total Tests: 8,326 passing** (367 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps + 28 pipeline-lifecycle + 57 adversarial-runtime + 90 other)
 
 ### Quick Validation Scripts
 
@@ -1882,9 +1882,9 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C + Real-World) |
 | Agents completed | 100+ (100%) |
 | Total commits | 200+ |
-| Lines added | 111,400+ |
-| Tests added | 4,298+ |
-| Total tests passing | 8,169 |
+| Lines added | 112,000+ |
+| Tests added | 4,455+ |
+| Total tests passing | 8,326 |
 
 ### Wave Summary
 
@@ -1914,7 +1914,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Phase C | 0 | ~26,000 | 1,518 | ~3 hrs | **Batch adaptors, AutoResponder, escape handler, coverage 62%→71%** |
 | Real-World | 2 | ~2,500 | 261 | ~30 min | **Real-World Gap Remediation** (E4X computed attrs/tags, Java interop shims, XMLProxy.child, VM cross-realm fix) |
 | Pipeline | 0 | ~1,200 | 18 | ~30 min | **Pipeline Lifecycle Integration Tests** (13 scenarios, real VM execution, full dispatchRawMessage flow) |
-| **Total** | **100+** | **~111,400** | **4,298** | **~30.5 hrs** | |
+| Adversarial | 3 | ~600 | 57 | ~20 min | **Adversarial Runtime Testing** (P0-1..P0-4, P1-1..P1-3, P2-1..P2-3 fixes + 10 pipeline integration tests) |
+| **Total** | **100+** | **~112,000** | **4,355** | **~31 hrs** | |
 
 ### Components Ported
 
@@ -2512,6 +2513,9 @@ vm.createContext(scope);
 ```
 This bug was discovered during real-world integration testing (39 test channels from GitHub). It was invisible to prior automated scanning because the scanning agents compare method inventories and scope variable lists — they don't execute scripts in a real VM context. The cross-realm mismatch only manifests at runtime when a script calls a patched prototype method on a string literal.
 
+**60. Proxy-Wrapped Objects Silently Shadow Missing Methods as E4X Property Access (forEach Bug)**
+XMLProxy returns a `new Proxy(this, { get: ... })` from its constructor. The Proxy handler checks if a property is a method on the target (line 94-98: `typeof value === 'function'`), and if so, binds and returns it. But if a method like `forEach` is NOT defined on XMLProxy, the handler falls through to the E4X property access path (line 102: `target.get(prop)`), which creates a child XMLProxy named "forEach" — an empty XMLProxy with `nodes=[]`. Calling `()` on this XMLProxy throws `TypeError: not a function`. The insidious part: no error at property access time — `msg.OBX.forEach` silently returns an empty XMLProxy instead of `undefined`. This makes the error message misleading (`forEach is not a function` when it seems to exist). The fix is to implement the missing method on the class, not to work around it in calling code. Any common JavaScript iteration pattern (`forEach`, `map`, `filter`, `some`, `every`) that users might call on XMLList-like objects should be explicitly defined — relying on `Symbol.iterator` alone is insufficient because most developers reach for `forEach` by habit.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -3095,16 +3099,67 @@ Existing tests fell into two non-overlapping categories: (1) `Channel.test.ts` �
 | File | Lines | Tests | Purpose |
 |------|-------|-------|---------|
 | `tests/integration/pipeline/PipelineLifecycle.test.ts` | ~650 | 18 | Main test file — 13 describe blocks |
+| `tests/integration/pipeline/AdversarialPipeline.test.ts` | ~340 | 10 | Adversarial fixes end-to-end (P0-1..P2-3) |
 | `tests/integration/pipeline/helpers/PipelineTestHarness.ts` | ~290 | — | Channel factory with fluent API |
 | `tests/integration/pipeline/helpers/ScriptFixtures.ts` | ~260 | — | Reusable JavaScript script snippets |
-| **Total** | **~1,200** | **18** | |
+| **Total** | **~1,540** | **28** | |
 
-- 18 new tests (1 test suite), 8,169 total tests passing
+- 28 pipeline integration tests (2 test suites), 8,326 total tests passing
 - Plan: `plans/pipeline-lifecycle-integration-tests.md`
+
+### Adversarial Transformer Runtime Testing (2026-02-21)
+
+**Systematic adversarial test suite targeting 7 bug categories that only manifest at runtime with specific inputs — invisible to all prior automated inventory-based scanning.**
+
+These bugs were discovered during plan-mode exploration of the transpiler→builder→scope→VM pipeline. Unlike Waves 1-22 which compared method inventories ("does method X exist?"), these tests execute real scripts with adversarial data patterns through the full pipeline.
+
+3 parallel agents in git worktrees + sequential Phase 8 integration:
+
+| Agent | Branch | Scope | Tests |
+|-------|--------|-------|-------|
+| XMLProxy+ScopeBuilder | `worktree-agent-ad511368` | P0-1..P0-4, P2-2 fixes + 26 unit tests | 26 |
+| E4X Transpiler | `worktree-agent-a80e9f41` | P1-1..P1-3 fixes + 10 unit tests | 10 |
+| StepCompiler+ScriptBuilder | `worktree-agent-a0ce7ea1` | P2-1, P2-3 fixes + 11 unit tests | 11 |
+| Pipeline Integration | (main branch) | Phase 8: 10 end-to-end adversarial tests | 10 |
+
+**Bug fixes applied:**
+
+| Bug | Severity | File | Fix |
+|-----|----------|------|-----|
+| P0-1: Global namespace pollution | Critical | `XMLProxy.ts`, `ScopeBuilder.ts` | Per-scope closures via `createNamespaceFunctions()` |
+| P0-2: Empty XMLProxy always truthy | Critical | `XMLProxy.ts` | Added `exists()` method returning `nodes.length > 0` |
+| P0-3: `set()` only modifies first node | Critical | `XMLProxy.ts` | Iterates ALL nodes in XMLList |
+| P0-4: `toXMLString()` silent empty string | Critical | `XMLProxy.ts` | Warn + rethrow instead of swallowing errors |
+| P1-1: Missing `"` escaping in attributes | Major | `E4XTranspiler.ts` | `escapeForXmlAttr()` produces `&quot;` |
+| P1-2: Template literal `${...}` zones skipped | Major | `E4XTranspiler.ts` | `templateDepth` tracking in `isInsideStringOrComment` |
+| P1-3: Regex literals not detected | Major | `E4XTranspiler.ts` | Lookback heuristic for `/` as regex vs division |
+| P2-1: StepCompiler field injection | Major | `StepCompiler.ts` | `validateFieldExpression()` rejects `;`, `{}`, `//` |
+| P2-2: Buffer prototype pollution | Minor | `ScopeBuilder.ts` | Frozen `Buffer` wrapper blocks prototype modification |
+| P2-3: Serialization error context | Minor | `ScriptBuilder.ts` | Try-catch with contextual error messages |
+
+**Additional fix discovered during Phase 8:**
+- Added `XMLProxy.forEach()` method — common Mirth script pattern (`msg.OBX.forEach(...)`) was missing from XMLProxy, causing `TypeError` in pipeline execution
+
+**New files:**
+
+| File | Tests | Purpose |
+|------|-------|---------|
+| `tests/helpers/AdversarialTestHelpers.ts` | — | Shared transpile→scope→VM harness |
+| `tests/unit/javascript/e4x/XMLProxy.adversarial.test.ts` | 16 | P0-2, P0-3, P0-4 |
+| `tests/unit/javascript/e4x/XMLProxy.namespace.test.ts` | 6 | P0-1 |
+| `tests/unit/javascript/e4x/E4XTranspiler.adversarial.test.ts` | 10 | P1-1, P1-2, P1-3 |
+| `tests/unit/javascript/runtime/StepCompiler.injection.test.ts` | 5 | P2-1 |
+| `tests/unit/javascript/runtime/ScopeIsolation.test.ts` | 4 | P2-2 |
+| `tests/unit/javascript/runtime/AutoSerialization.adversarial.test.ts` | 6 | P2-3 |
+| `tests/integration/pipeline/AdversarialPipeline.test.ts` | 10 | All fixes end-to-end |
+| **Total** | **57** | |
+
+- 57 new tests (8 test suites), 8,326 total tests passing
+- Plan: `plans/adversarial-transformer-runtime-testing.md`
 
 ### Completion Status
 
-All Waves 1-22, Phase C, and Real-World Gaps are complete. The porting project has reached production-ready status:
+All Waves 1-22, Phase C, Real-World Gaps, and Adversarial Runtime Testing are complete. The porting project has reached production-ready status:
 
 **Completed (Waves 1-22 + Phase C + Real-World Gaps):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
@@ -3124,6 +3179,7 @@ All Waves 1-22, Phase C, and Real-World Gaps are complete. The porting project h
 - ✅ **OpenAPI 3.1 Spec Generation** — Zod schemas + `@asteasolutions/zod-to-openapi` for TypeScript-native spec generation. 22 schemas, 48 paths across 5 servlets, build-time generator (`npm run openapi:generate`), dev-mode Swagger UI at `/api-docs` (42 tests)
 - ✅ **Real-World JavaScript Runtime Gaps** — 12 gaps from 20+ GitHub Mirth channels: E4X computed attributes/tags/empty XMLList, Java interop shims (URL, SimpleDateFormat, ArrayList, HashMap, StringBuffer, System, StringUtils, MirthMap locking), XMLProxy.child(), cross-realm VM prototype fix (261 tests, 39 integration tests from real GitHub code)
 - ✅ **Pipeline Lifecycle Integration Tests** — 18 tests across 13 scenarios exercising the full `dispatchRawMessage()` pipeline with real V8 VM execution (E4X transpilation, scope construction, script building). Fills the gap between mocked-executor unit tests and isolated-VM integration tests. Covers: filter/transform, ERROR/QUEUED status, response transformers, preprocessor/postprocessor, deploy/undeploy, global+channel script chaining, E4X end-to-end, DestinationSet fan-out, and full map propagation.
+- ✅ **Adversarial Transformer Runtime Testing** — 57 tests across 8 phases targeting bugs that only manifest with adversarial data through the full transpiler→builder→scope→VM pipeline. Fixes: P0-1 namespace isolation (per-scope closures), P0-2 XMLProxy.exists() method, P0-3 multi-node set() on all XMLList nodes, P0-4 toXMLString() error propagation, P1-1 double-quote attribute escaping, P1-2 template literal interpolation zone tracking, P1-3 regex literal detection, P2-1 StepCompiler field injection prevention, P2-2 frozen Buffer prototype isolation, P2-3 auto-serialization contextual errors. Added XMLProxy.forEach() for real Mirth script patterns. 10 pipeline integration tests validate all fixes end-to-end.
 
 ### Role-Based Authorization Controller
 
@@ -3221,7 +3277,7 @@ Comprehensive audit performed across 9 dimensions. **Verdict: PRODUCTION READY.*
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
-| **Test Suite** | PASS | 8,169 tests / 357 suites / 0 failures / ~57s |
+| **Test Suite** | PASS | 8,326 tests / 367 suites / 0 failures / ~61s |
 | **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
 | **Code Quality** | WARN | 4,500 ESLint issues — all Prettier formatting, zero logic bugs |
 | **Dependencies** | PASS | 33 npm audit findings — all in jest dev dependencies, 0 in production |
