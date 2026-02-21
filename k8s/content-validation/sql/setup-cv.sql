@@ -1,0 +1,3 @@
+-- Content Validation Suite: Setup
+-- No custom tables needed -- all validation reads from D_MC{localId} tables.
+-- The CV channels use Mirth's built-in DEVELOPMENT storage mode to persist all content types.

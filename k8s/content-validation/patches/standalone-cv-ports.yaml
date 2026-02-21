@@ -1,0 +1,50 @@
+# Strategic merge patch: Add Content Validation ports to standalone deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-mirth
+  namespace: mirth-standalone
+spec:
+  template:
+    spec:
+      containers:
+        - name: node-mirth
+          ports:
+            - containerPort: 8120
+              name: cv-hl7-filter
+            - containerPort: 8121
+              name: cv-json-resp
+            - containerPort: 8122
+              name: cv-multi-dest
+            - containerPort: 8123
+              name: cv-postproc
+            - containerPort: 8124
+              name: cv-filter-rej
+            - containerPort: 8125
+              name: cv-e4x-deep
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-mirth
+  namespace: mirth-standalone
+spec:
+  ports:
+    - name: cv-hl7-filter
+      port: 8120
+      targetPort: 8120
+    - name: cv-json-resp
+      port: 8121
+      targetPort: 8121
+    - name: cv-multi-dest
+      port: 8122
+      targetPort: 8122
+    - name: cv-postproc
+      port: 8123
+      targetPort: 8123
+    - name: cv-filter-rej
+      port: 8124
+      targetPort: 8124
+    - name: cv-e4x-deep
+      port: 8125
+      targetPort: 8125
