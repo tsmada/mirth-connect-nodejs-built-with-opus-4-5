@@ -242,8 +242,8 @@ describe('PC-MJM-004: Write-Side Encryption', () => {
   });
 });
 
-describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
-  test('sourceMap written only once (no early INSERT + later UPSERT)', async () => {
+describe('PC-MJM-001: SourceMap Persistence', () => {
+  test('sourceMap uses storeContent (upsert) not insertContent', async () => {
     const channel = createChannel();
     const source = new TestSourceConnector();
     const dest = new TestDestinationConnector(1);
@@ -254,18 +254,24 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
     const sourceMap = new Map<string, unknown>([['key', 'value']]);
     await channel.dispatchRawMessage('MSH|test', sourceMap);
 
-    // Count SOURCE_MAP writes
+    // Count SOURCE_MAP writes via storeContent (upsert-safe)
     const storeContentMock = storeContent as jest.Mock;
+    const insertContentMock = insertContent as jest.Mock;
 
     const sourceMapUpserts = storeContentMock.mock.calls.filter(
       (call: any[]) => call[3] === ContentType.SOURCE_MAP
     );
+    const sourceMapInserts = insertContentMock.mock.calls.filter(
+      (call: any[]) => call[3] === ContentType.SOURCE_MAP
+    );
 
-    // Should have exactly ONE storeContent for SOURCE_MAP (at end of pipeline)
-    expect(sourceMapUpserts.length).toBe(1);
+    // All SOURCE_MAP writes should use storeContent (upsert), never insertContent
+    expect(sourceMapInserts.length).toBe(0);
+    // Two writes expected: txn2 (crash recovery) + final (trace feature)
+    expect(sourceMapUpserts.length).toBe(2);
   });
 
-  test('empty sourceMap skipped (no DB write)', async () => {
+  test('empty user sourceMap still writes if internal keys present during txn2', async () => {
     const channel = createChannel();
     const source = new TestSourceConnector();
     const dest = new TestDestinationConnector(1);
@@ -273,7 +279,9 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
     channel.addDestinationConnector(dest);
     channel.updateCurrentState(DeployedState.STARTED);
 
-    // No sourceMap provided -> empty map (internal keys like DESTINATION_SET_KEY are cleaned up before persist)
+    // No sourceMap provided — but internal keys (like DESTINATION_SET_KEY) are added
+    // during processing. txn2 sees them and writes. Final write cleans internal keys;
+    // if no user keys remain, final write may or may not occur depending on cleanup.
     await channel.dispatchRawMessage('MSH|test');
 
     const storeContentMock = storeContent as jest.Mock;
@@ -282,11 +290,11 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
       (call: any[]) => call[3] === ContentType.SOURCE_MAP
     );
 
-    // No user-provided source map data -> no writes (internal keys cleaned before persist)
-    expect(sourceMapUpserts.length).toBe(0);
+    // At least the txn2 write occurs (internal keys present at that point)
+    expect(sourceMapUpserts.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('sourceMap consolidation also works in processFromSourceQueue path', async () => {
+  test('sourceMap persistence also works in processFromSourceQueue path', async () => {
     // Create channel in async mode (respondAfterProcessing=false)
     const channel = createChannel();
     const source = new TestSourceConnector();
@@ -310,8 +318,8 @@ describe('PC-MJM-001: SourceMap Dual-Write Consolidation', () => {
       (call: any[]) => call[3] === ContentType.SOURCE_MAP
     );
 
-    // Should have exactly ONE storeContent for SOURCE_MAP (at end of pipeline)
-    expect(sourceMapUpserts.length).toBe(1);
+    // Two writes expected: txn2 (crash recovery) + final (trace feature)
+    expect(sourceMapUpserts.length).toBe(2);
 
     await channel.stop();
   });

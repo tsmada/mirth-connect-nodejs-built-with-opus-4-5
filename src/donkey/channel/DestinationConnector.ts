@@ -14,6 +14,7 @@
 import type { Channel } from './Channel.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
+import { Response } from '../../model/Response.js';
 import { Status } from '../../model/Status.js';
 import {
   FilterTransformerExecutor,
@@ -433,14 +434,38 @@ export abstract class DestinationConnector {
   }
 
   /**
-   * Execute the response transformer
+   * Execute the response transformer.
+   * Builds a Response from the connectorMessage's RESPONSE content, then calls
+   * executeResponseTransform() which uses buildResponseTransformerScope() —
+   * injecting 'response', 'responseStatus', etc. into the VM scope.
+   * Stores the output as RESPONSE_TRANSFORMED (ContentType=7).
    */
   async executeResponseTransformer(connectorMessage: ConnectorMessage): Promise<void> {
     if (!this.responseTransformerExecutor) {
       return;
     }
 
-    await this.responseTransformerExecutor.executeTransformer(connectorMessage);
+    // Build Response object from connector message's response content
+    const responseContent = connectorMessage.getResponseContent();
+    const response = new Response({
+      status: connectorMessage.getStatus() ?? Status.SENT,
+      message: responseContent?.content ?? '',
+    });
+
+    const result = await this.responseTransformerExecutor.executeResponseTransform(
+      connectorMessage,
+      response
+    );
+
+    // Store the response transformer's output as RESPONSE_TRANSFORMED content
+    if (result.transformedData !== undefined) {
+      connectorMessage.setContent({
+        contentType: ContentType.RESPONSE_TRANSFORMED,
+        content: result.transformedData,
+        dataType: result.transformedDataType ?? 'RAW',
+        encrypted: false,
+      });
+    }
   }
 
   /**

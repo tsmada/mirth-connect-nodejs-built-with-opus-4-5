@@ -11,6 +11,7 @@
 
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { ContentType } from '../../model/ContentType.js';
+import { Response } from '../../model/Response.js';
 import {
   JavaScriptExecutor,
   getDefaultExecutor,
@@ -214,6 +215,45 @@ export class FilterTransformerExecutor {
     }
 
     return result;
+  }
+
+  /**
+   * Execute response transformer steps.
+   * Unlike executeTransformer(), this calls JavaScriptExecutor.executeResponseTransformer()
+   * which uses buildResponseTransformerScope() — injecting 'response', 'responseStatus',
+   * 'responseStatusMessage', and 'responseErrorMessage' into the VM scope.
+   */
+  async executeResponseTransform(
+    connectorMessage: ConnectorMessage,
+    response: Response
+  ): Promise<FilterTransformerResult> {
+    if (this.transformerSteps.length === 0) {
+      return { filtered: false };
+    }
+
+    try {
+      const result = this.executor.executeResponseTransformer(
+        this.transformerSteps,
+        connectorMessage,
+        response,
+        this.template,
+        this.inboundDataType,
+        this.outboundDataType,
+        this.context
+      );
+
+      if (!result.success) {
+        return { filtered: false, error: result.error?.message };
+      }
+
+      return {
+        filtered: false,
+        transformedData: result.result,
+        transformedDataType: this.outboundDataType,
+      };
+    } catch (error) {
+      return { filtered: false, error: String(error) };
+    }
   }
 
   /**

@@ -198,7 +198,32 @@ export class XMLProxy {
    */
   set(name: string, value: unknown): void {
     if (this.nodes.length === 0) {
-      return;
+      // E4X auto-vivification: when assigning to a child of a nonexistent element,
+      // create the intermediate element in the parent first.
+      // e.g., msg['ZCV']['ZCV.1']['ZCV.1.1'] = 'value'
+      //   where ZCV exists but ZCV.1 does not yet — creates ZCV.1 inside ZCV,
+      //   then creates ZCV.1.1 inside ZCV.1.
+      if (this._parent && this.tagName) {
+        // Create the intermediate element in the parent
+        const newNode: OrderedNode = {};
+        newNode[this.tagName] = [];
+        this.nodes.push(newNode);
+
+        // Propagate to parent's node tree
+        for (const parentNode of this._parent.getNodes()) {
+          const parentTagName = this._parent.getNodeTagName(parentNode);
+          if (parentTagName) {
+            const parentChildren = parentNode[parentTagName] as OrderedNode[];
+            if (Array.isArray(parentChildren)) {
+              parentChildren.push(newNode);
+              break;
+            }
+          }
+        }
+        // Now fall through to the normal set logic below (this.nodes.length is now 1)
+      } else {
+        return;
+      }
     }
 
     // E4X behavior: set applies to ALL nodes in the XMLList
@@ -239,11 +264,34 @@ export class XMLProxy {
   setIndex(index: number, value: unknown): void {
     if (index >= 0 && index < this.nodes.length) {
       if (value instanceof XMLProxy) {
-        this.nodes[index] = value.nodes[0] ?? {};
+        // Use getNodes() — .nodes goes through the Proxy get trap
+        this.nodes[index] = value.getNodes()[0] ?? {};
       } else {
         const tagName = this.getNodeTagName(this.nodes[index]!);
         if (tagName) {
           this.nodes[index]![tagName] = [{ '#text': String(value) }];
+        }
+      }
+    } else if (index === 0 && this.nodes.length === 0 && this._parent && value instanceof XMLProxy) {
+      // Out-of-bounds assignment on empty proxy: add the new node to parent's children
+      // This enables createSegment() to add new segments to messages
+      // e.g., msg['ZCV'][0] = XMLProxy.create('<ZCV/>') when no ZCV segments exist
+      // Use getNodes() — .nodes goes through the Proxy get trap
+      const newNode = value.getNodes()[0];
+      if (newNode) {
+        this.nodes.push(newNode);
+
+        // Propagate to parent: add node to the parent's children array
+        // With preserveOrder:true, parent nodes are [{tagName: [...children]}]
+        for (const parentNode of this._parent.getNodes()) {
+          const parentTagName = this._parent.getNodeTagName(parentNode);
+          if (parentTagName) {
+            const children = parentNode[parentTagName] as OrderedNode[];
+            if (Array.isArray(children)) {
+              children.push(newNode);
+              return; // Added to first matching parent
+            }
+          }
         }
       }
     }

@@ -21,6 +21,7 @@ const logger = getLogger('engine');
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
 import { Status, isFinalStatus } from '../../model/Status.js';
 import { ContentType } from '../../model/ContentType.js';
+import { Response } from '../../model/Response.js';
 import { SourceConnector } from './SourceConnector.js';
 import { DestinationConnector } from './DestinationConnector.js';
 import { SourceQueue } from '../queue/SourceQueue.js';
@@ -1584,7 +1585,27 @@ export class Channel extends EventEmitter {
       // Execute postprocessor (channel + global chained, runs outside transaction)
       if (this.postprocessorScript || this.globalPostprocessorScript) {
         try {
-          await this.executePostprocessor(message);
+          const postprocessorResponse = await this.executePostprocessor(message);
+
+          // Persist PROCESSED_RESPONSE (ContentType=8) on source (metadataId=0)
+          if (postprocessorResponse && this.storageSettings.storeProcessedResponse) {
+            const responseContent = typeof postprocessorResponse.getMessage === 'function'
+              ? postprocessorResponse.getMessage()
+              : String(postprocessorResponse);
+            sourceMessage.setContent({
+              contentType: ContentType.PROCESSED_RESPONSE,
+              content: responseContent,
+              dataType: 'RAW',
+              encrypted: false,
+            });
+            txn4Ops.push((conn) =>
+              storeContent(
+                this.id, messageId, 0,
+                ContentType.PROCESSED_RESPONSE,
+                responseContent, 'RAW', this.encryptData, conn
+              )
+            );
+          }
         } catch (postError) {
           sourceMessage.setPostProcessorError(String(postError));
           const errorCode = sourceMessage.updateErrorCode();
@@ -1735,11 +1756,14 @@ export class Channel extends EventEmitter {
   }
 
   /**
-   * Execute the postprocessor script (channel + global chained)
+   * Execute the postprocessor script (channel + global chained).
+   * Returns the postprocessor's Response for persistence as PROCESSED_RESPONSE.
+   * Also writes back channelMap entries from the merged ConnectorMessage to the
+   * source ConnectorMessage, so $c() writes in the postprocessor are not lost.
    */
-  private async executePostprocessor(message: Message): Promise<void> {
+  private async executePostprocessor(message: Message): Promise<Response | undefined> {
     if (!this.postprocessorScript && !this.globalPostprocessorScript) {
-      return;
+      return undefined;
     }
 
     const context = this.getScriptContext();
@@ -1756,6 +1780,12 @@ export class Channel extends EventEmitter {
     if (!result.success) {
       throw result.error ?? new Error('Postprocessor script failed');
     }
+
+    // Note: channelMap sync from merged scope → source message is now handled inside
+    // JavaScriptExecutor.executePostprocessor() — which has access to the actual scope
+    // object used during VM execution (not a fresh copy from getMergedConnectorMessage()).
+
+    return result.result ?? undefined;
   }
 
   // ---------- Source Queue Background Processing ----------

@@ -466,6 +466,24 @@ export class JavaScriptExecutor {
     const context = this.createContext(scope);
     const result = this.executeScript<unknown>(generatedScript, context, timeout);
 
+    // Sync channelMap from merged scope back to source message.
+    // The scope was built with getMergedConnectorMessage() which creates a copy —
+    // $c() writes in the postprocessor go to the copy's channelMap. Without this
+    // sync, those writes would be discarded when the scope is garbage collected.
+    if (result.success) {
+      const sourceMsg = message.getSourceConnectorMessage();
+      const scopeChannelMap = scope.channelMap;
+      // MirthMap is NOT a JS Map subclass — it wraps Map in this.data and exposes
+      // keySet()/get()/put() instead of native Map methods like forEach/entries.
+      if (sourceMsg && scopeChannelMap != null && typeof (scopeChannelMap as Record<string, unknown>).keySet === 'function') {
+        const mirthMap = scopeChannelMap as { keySet: () => string[]; get: (k: string) => unknown };
+        const keys = mirthMap.keySet();
+        for (const key of keys) {
+          sourceMsg.getChannelMap().set(key, mirthMap.get(key));
+        }
+      }
+    }
+
     // Convert return value to Response (Java: getPostprocessorResponse)
     if (result.success && result.result != null) {
       if (result.result instanceof Response) {
