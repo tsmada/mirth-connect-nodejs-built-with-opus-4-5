@@ -20,6 +20,16 @@
 
 import { execFileSync } from 'child_process';
 import { DateUtil } from '../userutil/DateUtil.js';
+import {
+  JavaMessageDigest,
+  JavaBase64,
+  JavaCipher,
+  JavaMac,
+  JavaSecretKeySpec,
+  JavaIvParameterSpec,
+  JavaSecureRandom,
+  JavaKeyGenerator,
+} from './JavaCrypto.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -488,6 +498,11 @@ export function createJavaNamespace(): Record<string, unknown> {
       HashSet: JavaHashSet,
       Arrays: JavaArrays,
       Date: Date, // java.util.Date → native JS Date
+      Base64: JavaBase64,
+    },
+    security: {
+      MessageDigest: JavaMessageDigest,
+      SecureRandom: JavaSecureRandom,
     },
     lang: {
       String: String,
@@ -515,6 +530,17 @@ export function createJavaNamespace(): Record<string, unknown> {
 export function createPackagesNamespace(javaNamespace: Record<string, unknown>): Record<string, unknown> {
   return {
     java: javaNamespace,
+    javax: {
+      crypto: {
+        Cipher: JavaCipher,
+        Mac: JavaMac,
+        KeyGenerator: JavaKeyGenerator,
+        spec: {
+          SecretKeySpec: JavaSecretKeySpec,
+          IvParameterSpec: JavaIvParameterSpec,
+        },
+      },
+    },
     org: {
       apache: {
         commons: {

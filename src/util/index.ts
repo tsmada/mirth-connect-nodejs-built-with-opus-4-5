@@ -47,6 +47,9 @@ export {
   type ACKOptions,
 } from './ACKGenerator.js';
 
+// MessageEncryptionUtil - Bulk message encryption/decryption
+export { MessageEncryptionUtil } from './MessageEncryptionUtil.js';
+
 // SerializerFactory - Data type serializers
 export {
   SerializerFactory,

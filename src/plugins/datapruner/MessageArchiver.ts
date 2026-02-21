@@ -11,9 +11,10 @@
  * - Organize by channel and date
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createGzip, type Gzip } from 'zlib';
+import { createGzip, gunzipSync, type Gzip } from 'zlib';
 
 /**
  * Archive format options
@@ -130,6 +131,7 @@ export class MessageArchiver {
   private options: MessageWriterOptions;
   private currentFile: fs.WriteStream | null = null;
   private currentGzip: Gzip | null = null;
+  private currentCipher: crypto.CipherGCM | null = null;
   private currentFilePath: string = '';
   private currentMessageCount: number = 0;
   private totalArchived: number = 0;
@@ -192,9 +194,9 @@ export class MessageArchiver {
       await this.openNewFile(channelId);
     }
 
-    // Write message (to gzip stream if compressing, otherwise direct to file)
+    // Write to the head of the stream chain: gzip → cipher → file
     const content = this.formatMessage(message);
-    const writeTarget = this.currentGzip ?? this.currentFile!;
+    const writeTarget = this.currentGzip ?? this.currentCipher ?? this.currentFile!;
     writeTarget.write(content);
     this.currentMessageCount++;
     this.totalArchived++;
@@ -293,15 +295,49 @@ export class MessageArchiver {
     const timestamp = Date.now();
     const ext = this.options.format === ArchiveFormat.JSON ? 'json' : 'xml';
     const compressExt = this.options.compress ? '.gz' : '';
-    const filename = `messages_${timestamp}.${ext}${compressExt}`;
+    const encryptExt = this.options.encrypt ? '.enc' : '';
+    const filename = `messages_${timestamp}.${ext}${compressExt}${encryptExt}`;
 
     this.currentFilePath = path.join(dir, filename);
 
-    // Open file stream (with optional gzip compression)
+    // Open file stream
     this.currentFile = fs.createWriteStream(this.currentFilePath);
+
+    // Setup encryption if enabled
+    if (this.options.encrypt) {
+      if (!this.options.encryptionPassword) {
+        throw new Error('Encryption password is required when encrypt is true');
+      }
+
+      const salt = crypto.randomBytes(16);
+      const iv = crypto.randomBytes(12);
+      const key = crypto.pbkdf2Sync(this.options.encryptionPassword, salt, 100000, 32, 'sha256');
+
+      // Write 32-byte header: [16-byte salt][12-byte IV][4-byte reserved zeros]
+      const header = Buffer.alloc(32);
+      salt.copy(header, 0);
+      iv.copy(header, 16);
+      // bytes 28-31 are already zeros
+      this.currentFile.write(header);
+
+      this.currentCipher = crypto.createCipheriv('aes-256-gcm', key, iv) as crypto.CipherGCM;
+      // Pipe with { end: false } so cipher.end() doesn't cascade to file stream.
+      // This allows us to write the GCM auth tag after the cipher finishes.
+      this.currentCipher.pipe(this.currentFile, { end: false });
+    } else {
+      this.currentCipher = null;
+    }
+
+    // Setup compression if enabled
+    // Stream chain: data → [gzip] → [cipher] → file
     if (this.options.compress) {
       this.currentGzip = createGzip();
-      this.currentGzip.pipe(this.currentFile);
+      if (this.currentCipher) {
+        // Don't auto-end cipher when gzip ends — we control the close sequence manually
+        this.currentGzip.pipe(this.currentCipher, { end: false });
+      } else {
+        this.currentGzip.pipe(this.currentFile);
+      }
     } else {
       this.currentGzip = null;
     }
@@ -311,26 +347,71 @@ export class MessageArchiver {
    * Close the current archive file
    */
   async closeCurrentFile(): Promise<void> {
+    if (!this.currentFile && !this.currentGzip && !this.currentCipher) {
+      return;
+    }
+
+    // Wait for the file stream's 'finish' event to ensure all data is written to disk.
+    const fileFinished = this.currentFile
+      ? new Promise<void>((resolve, reject) => {
+          this.currentFile!.on('finish', resolve);
+          this.currentFile!.on('error', reject);
+        })
+      : Promise.resolve();
+
     if (this.currentGzip) {
-      // When gzip is piped to the file stream, ending gzip automatically
-      // flushes remaining data and ends the destination file stream.
-      // We wait for the file stream's 'finish' event to ensure all data is written.
-      const fileFinished = this.currentFile
-        ? new Promise<void>((resolve, reject) => {
-            this.currentFile!.on('finish', resolve);
-            this.currentFile!.on('error', reject);
-          })
-        : Promise.resolve();
+      if (this.currentCipher) {
+        // Compress + encrypt path. Sequence:
+        // 1. End gzip → gzip flushes final compressed bytes to cipher (via pipe)
+        // 2. Wait for gzip 'end' (readable side done — all data piped to cipher)
+        // 3. End cipher → cipher flushes final encrypted block to file (via pipe { end: false })
+        // 4. Write GCM auth tag directly to file
+        // 5. End file stream
 
-      await new Promise<void>((resolve, reject) => {
-        this.currentGzip!.end((err: Error | null | undefined) => {
-          if (err) reject(err);
-          else resolve();
+        await new Promise<void>((resolve, reject) => {
+          this.currentGzip!.on('end', resolve);
+          this.currentGzip!.on('error', reject);
+          this.currentGzip!.end();
         });
-      });
 
-      await fileFinished;
+        const cipherFinished = new Promise<void>((resolve, reject) => {
+          this.currentCipher!.on('finish', resolve);
+          this.currentCipher!.on('error', reject);
+        });
+        this.currentCipher.end();
+        await cipherFinished;
+
+        // Append GCM auth tag (16 bytes) directly to the file after cipher data
+        const authTag = this.currentCipher.getAuthTag();
+        this.currentFile!.write(authTag);
+        this.currentFile!.end();
+        await fileFinished;
+
+        this.currentCipher = null;
+      } else {
+        // gzip.end() cascades via pipe to file when no cipher
+        this.currentGzip.end();
+        await fileFinished;
+      }
+
       this.currentGzip = null;
+      this.currentFile = null;
+    } else if (this.currentCipher) {
+      // Encrypt only (no compression)
+      const cipherFinished = new Promise<void>((resolve, reject) => {
+        this.currentCipher!.on('finish', resolve);
+        this.currentCipher!.on('error', reject);
+      });
+      this.currentCipher.end();
+      await cipherFinished;
+
+      // Append GCM auth tag
+      const authTag = this.currentCipher.getAuthTag();
+      this.currentFile!.write(authTag);
+      this.currentFile!.end();
+      await fileFinished;
+
+      this.currentCipher = null;
       this.currentFile = null;
     } else if (this.currentFile) {
       await new Promise<void>((resolve, reject) => {
@@ -374,7 +455,11 @@ export class MessageArchiver {
           (entry.name.endsWith('.json') ||
             entry.name.endsWith('.json.gz') ||
             entry.name.endsWith('.xml') ||
-            entry.name.endsWith('.xml.gz'))
+            entry.name.endsWith('.xml.gz') ||
+            entry.name.endsWith('.json.enc') ||
+            entry.name.endsWith('.json.gz.enc') ||
+            entry.name.endsWith('.xml.enc') ||
+            entry.name.endsWith('.xml.gz.enc'))
         ) {
           files.push(fullPath);
         }
@@ -434,6 +519,50 @@ export class MessageArchiver {
     }
 
     return deleted;
+  }
+
+  /**
+   * Decrypt an encrypted archive file.
+   *
+   * File layout: [32-byte header][encrypted data][16-byte GCM auth tag]
+   * Header: [16-byte salt][12-byte IV][4-byte reserved]
+   *
+   * If the file was compressed (.gz.enc), decompresses after decryption.
+   */
+  static async decryptArchiveFile(filePath: string, password: string): Promise<Buffer> {
+    const data = await fs.promises.readFile(filePath);
+
+    if (data.length < 32 + 16) {
+      throw new Error('Encrypted archive file is too small to contain header and auth tag');
+    }
+
+    // Extract header
+    const salt = data.subarray(0, 16);
+    const iv = data.subarray(16, 28);
+    // bytes 28-31 reserved
+
+    // Extract auth tag (last 16 bytes)
+    const authTag = data.subarray(data.length - 16);
+
+    // Encrypted data is between header and auth tag
+    const encryptedData = data.subarray(32, data.length - 16);
+
+    // Derive key with same PBKDF2 parameters
+    const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+
+    // Decrypt
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv) as crypto.DecipherGCM;
+    decipher.setAuthTag(authTag);
+
+    const decrypted = Buffer.concat([decipher.update(encryptedData), decipher.final()]);
+
+    // Decompress if the file was compressed (detect .gz.enc pattern)
+    const basename = path.basename(filePath);
+    if (basename.includes('.gz.enc') || basename.includes('.gz.')) {
+      return gunzipSync(decrypted);
+    }
+
+    return decrypted;
   }
 }
 
