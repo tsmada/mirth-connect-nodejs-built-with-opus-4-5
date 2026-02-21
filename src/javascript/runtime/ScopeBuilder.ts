@@ -24,8 +24,7 @@ import {
 import {
   XMLProxy,
   createXML,
-  setDefaultXmlNamespace,
-  getDefaultXmlNamespace,
+  createNamespaceFunctions,
 } from '../e4x/XMLProxy.js';
 import { transpileE4X } from '../e4x/E4XTranspiler.js';
 import { ConnectorMessage } from '../../model/ConnectorMessage.js';
@@ -177,8 +176,17 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     XMLProxy,
     XML: XMLProxy,
     createXML,
-    setDefaultXmlNamespace,
-    getDefaultXmlNamespace,
+    // P0-1: Per-scope namespace functions — each VM execution gets independent state.
+    // The module-level setDefaultXmlNamespace/getDefaultXmlNamespace are shared globals
+    // that cause cross-channel pollution when Channel A sets a namespace that persists
+    // into Channel B's execution. createNamespaceFunctions() creates isolated closures.
+    ...(() => {
+      const ns = createNamespaceFunctions();
+      return {
+        setDefaultXmlNamespace: ns.setDefaultXmlNamespace,
+        getDefaultXmlNamespace: ns.getDefaultXmlNamespace,
+      };
+    })(),
 
     // E4X transpiler (for dynamic script execution)
     transpileE4X,
@@ -260,8 +268,19 @@ export function buildBasicScope(logger: ScriptLogger = defaultLogger): Scope {
     // Java String.prototype setup script — executed inside VM context before user code
     __javaStringSetup: JAVA_STRING_SETUP_SCRIPT,
 
-    // Buffer (needed by String.prototype.getBytes in the Java compat setup)
-    Buffer,
+    // P2-2: Frozen Buffer wrapper — blocks prototype pollution from VM scripts.
+    // User scripts need Buffer.from() for String.prototype.getBytes in the Java compat
+    // setup, but must not be able to modify Buffer.prototype (which would leak to the
+    // outer Node.js realm and affect ALL subsequent VM executions).
+    Buffer: Object.freeze(
+      Object.create(null, {
+        from: { value: Buffer.from.bind(Buffer), enumerable: true },
+        alloc: { value: Buffer.alloc.bind(Buffer), enumerable: true },
+        isBuffer: { value: Buffer.isBuffer.bind(Buffer), enumerable: true },
+        concat: { value: Buffer.concat.bind(Buffer), enumerable: true },
+        byteLength: { value: Buffer.byteLength.bind(Buffer), enumerable: true },
+      })
+    ),
 
     // Console for debugging
     console,

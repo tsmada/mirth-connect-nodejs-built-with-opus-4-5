@@ -76,7 +76,11 @@ export class XMLProxy {
             return target[Symbol.iterator].bind(target);
           }
           if (prop === Symbol.toPrimitive) {
-            return () => target.toString();
+            return (_hint: string) => {
+              // P0-2: Cannot make Proxy falsy in JavaScript, but return empty string
+              // for empty XMLProxy so string coercion works as a safe existence check.
+              return target.toString();
+            };
           }
           return Reflect.get(target, prop, receiver);
         }
@@ -188,37 +192,42 @@ export class XMLProxy {
 
   /**
    * Set child element value
+   *
+   * P0-3: E4X behavior — set applies to ALL nodes in the XMLList (not just the first).
+   * When msg.OBX has 3 nodes and you set msg.OBX['OBX.3'] = 'NEW', all 3 get updated.
    */
   set(name: string, value: unknown): void {
     if (this.nodes.length === 0) {
       return;
     }
 
-    const node = this.nodes[0]!;
-    const tagName = this.getNodeTagName(node);
+    // E4X behavior: set applies to ALL nodes in the XMLList
+    for (const node of this.nodes) {
+      const tagName = this.getNodeTagName(node);
 
-    if (tagName) {
-      const children = node[tagName] as OrderedNode[];
-      if (Array.isArray(children)) {
-        // Find or create child with this name
-        let found = false;
-        for (const child of children) {
-          if (this.getNodeTagName(child) === name) {
-            this.setNodeValue(child, name, value);
-            found = true;
-            break;
+      if (tagName) {
+        const children = node[tagName] as OrderedNode[];
+        if (Array.isArray(children)) {
+          // Find or create child with this name
+          let found = false;
+          for (const child of children) {
+            if (this.getNodeTagName(child) === name) {
+              this.setNodeValue(child, name, value);
+              found = true;
+              // Don't break — update ALL matching children within this node
+            }
           }
-        }
 
-        if (!found) {
-          // Create new child
-          const newChild: OrderedNode = {};
-          if (value instanceof XMLProxy) {
-            newChild[name] = value.nodes;
-          } else {
-            newChild[name] = [{ '#text': String(value) }];
+          if (!found) {
+            // Create new child
+            const newChild: OrderedNode = {};
+            if (value instanceof XMLProxy) {
+              newChild[name] = value.nodes;
+            } else {
+              newChild[name] = [{ '#text': String(value) }];
+            }
+            children.push(newChild);
           }
-          children.push(newChild);
         }
       }
     }
@@ -516,6 +525,20 @@ export class XMLProxy {
   }
 
   /**
+   * Check if this XMLProxy has any nodes (E4X existence check).
+   *
+   * JavaScript Proxy objects are always truthy, so `if (msg.PV1)` always
+   * evaluates to true even for non-existent segments. Use `exists()` instead:
+   *   if (msg.PV1.exists()) { ... }
+   *
+   * Or use length(): if (msg.PV1.length() > 0) { ... }
+   * Or use toString(): if (msg.PV1.toString()) { ... }
+   */
+  exists(): boolean {
+    return this.nodes.length > 0;
+  }
+
+  /**
    * Check if has simple content (text only)
    */
   hasSimpleContent(): boolean {
@@ -623,14 +646,24 @@ export class XMLProxy {
 
   /**
    * Convert to XML string (full XML)
+   *
+   * P0-4: Silent empty string on builder errors is the worst failure mode.
+   * Corrupted XML structure (from aggressive delete/append) would silently
+   * produce empty transformedData downstream. Now warns and rethrows.
    */
   toXMLString(): string {
     if (this.nodes.length === 0) return '';
 
     try {
       return builder.build(this.nodes);
-    } catch {
-      return '';
+    } catch (e) {
+      const nodeCount = this.nodes.length;
+      const tagName = this.nodes[0] ? this.getNodeTagName(this.nodes[0]) : 'unknown';
+      console.warn(
+        `[XMLProxy] toXMLString() failed for ${nodeCount} node(s) with root tag '${tagName}': ${e instanceof Error ? e.message : String(e)}. ` +
+          `This may indicate corrupted XML structure after delete/append operations.`
+      );
+      throw e;
     }
   }
 
@@ -932,7 +965,30 @@ export function createXML(xmlString: string): XMLProxy {
 }
 
 /**
- * Default namespace tracking
+ * Create per-scope namespace tracking functions.
+ * Each VM execution gets its own namespace state — no cross-channel pollution.
+ *
+ * P0-1: The module-level globalDefaultNamespace was shared state. When Channel A
+ * set `default xml namespace = "urn:hl7-org:v3"`, Channel B's transformer inherited it.
+ * This factory creates independent namespace state per VM scope.
+ */
+export function createNamespaceFunctions(): {
+  setDefaultXmlNamespace: (ns: string) => void;
+  getDefaultXmlNamespace: () => string;
+} {
+  let scopeDefaultNamespace = '';
+  return {
+    setDefaultXmlNamespace: (ns: string) => {
+      scopeDefaultNamespace = ns;
+    },
+    getDefaultXmlNamespace: () => scopeDefaultNamespace,
+  };
+}
+
+/**
+ * Default namespace tracking — module-level exports for backward compatibility.
+ * These should NOT be injected into VM scopes — use createNamespaceFunctions() instead.
+ * Kept for tests and direct imports that don't use the VM scope path.
  */
 let globalDefaultNamespace = '';
 
