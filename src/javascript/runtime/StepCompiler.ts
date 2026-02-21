@@ -66,6 +66,26 @@ export function compileFilterRule(
 }
 
 /**
+ * Validate a field expression from channel XML to prevent code injection.
+ * Valid patterns: msg['PID']['PID.5'], msg.PID.PID_5, etc.
+ * Rejects: semicolons, braces, newlines, comments (injection vectors).
+ */
+function validateFieldExpression(field: string): void {
+  // Reject empty fields
+  if (!field || !field.trim()) {
+    throw new Error(`StepCompiler: empty field expression`);
+  }
+
+  // Reject injection vectors: semicolons, braces, newlines, comments
+  if (/[;{}]|\/\/|\/\*|\n|\r/.test(field)) {
+    throw new Error(
+      `StepCompiler: invalid field expression "${field.substring(0, 50)}" — ` +
+      `contains prohibited characters (;, {, }, //, /*, or newlines)`
+    );
+  }
+}
+
+/**
  * Compile a RuleBuilderRule from its XML config.
  *
  * Java Mirth's RuleBuilderRule.getScript() generates boolean expressions
@@ -79,6 +99,7 @@ export function compileFilterRule(
  */
 function compileRuleBuilderRule(rule: Record<string, unknown>): string {
   const field = String(rule.field || '');
+  validateFieldExpression(field);
   const condition = String(rule.condition || 'EXISTS').toUpperCase();
   const values = extractValues(rule.values);
 

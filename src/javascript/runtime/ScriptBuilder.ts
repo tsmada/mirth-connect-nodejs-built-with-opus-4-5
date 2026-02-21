@@ -766,21 +766,29 @@ function updateAttachment() {
     // Auto-serialize msg — always call toXMLString() for XML objects (matches Java:
     // Context.toString(scope.get("msg")) always serializes, regardless of hasSimpleContent)
     builder.push("if (typeof msg === 'object' && msg !== null && typeof msg.toXMLString === 'function') {");
-    builder.push("  msg = msg.toXMLString();");
+    builder.push("  try { msg = msg.toXMLString(); } catch(__serErr) {");
+    builder.push("    throw new Error('Transformer auto-serialization error: msg.toXMLString() failed: ' + __serErr.message + '. Check for corrupted XML structure after delete/append operations.');");
+    builder.push("  }");
     builder.push("} else if (typeof msg !== 'undefined' && msg !== null) {");
     builder.push('  var toStringResult = Object.prototype.toString.call(msg);');
-    builder.push(
-      "  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { msg = JSON.stringify(msg); }"
-    );
+    builder.push("  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') {");
+    builder.push("    try { msg = JSON.stringify(msg); } catch(__serErr) {");
+    builder.push("      throw new Error('Transformer auto-serialization error: cannot serialize msg to JSON: ' + __serErr.message + '. Common cause: circular reference (msg.self = msg). Use string assignment instead.');");
+    builder.push("    }");
+    builder.push("  }");
     builder.push('}');
     // Auto-serialize tmp (INDEPENDENT — NOT else-if from msg block)
     builder.push("if (typeof tmp === 'object' && tmp !== null && typeof tmp.toXMLString === 'function') {");
-    builder.push("  tmp = tmp.toXMLString();");
+    builder.push("  try { tmp = tmp.toXMLString(); } catch(__serErr) {");
+    builder.push("    throw new Error('Transformer auto-serialization error: tmp.toXMLString() failed: ' + __serErr.message + '. Check for corrupted XML structure after delete/append operations.');");
+    builder.push("  }");
     builder.push("} else if (typeof tmp !== 'undefined' && tmp !== null) {");
     builder.push('  var toStringResult = Object.prototype.toString.call(tmp);');
-    builder.push(
-      "  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') { tmp = JSON.stringify(tmp); }"
-    );
+    builder.push("  if (toStringResult == '[object Object]' || toStringResult == '[object Array]') {");
+    builder.push("    try { tmp = JSON.stringify(tmp); } catch(__serErr) {");
+    builder.push("      throw new Error('Transformer auto-serialization error: cannot serialize tmp to JSON: ' + __serErr.message + '. Common cause: circular reference (tmp.self = tmp). Use string assignment instead.');");
+    builder.push("    }");
+    builder.push("  }");
     builder.push('}');
   }
 
