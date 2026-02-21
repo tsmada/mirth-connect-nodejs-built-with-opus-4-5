@@ -1,0 +1,5 @@
+id: test-channel-001
+name: Test Channel
+version: "3.9.1"
+revision: 3
+enabled: true

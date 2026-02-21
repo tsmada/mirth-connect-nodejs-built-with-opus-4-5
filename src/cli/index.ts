@@ -24,6 +24,7 @@ import { registerTraceCommand } from './commands/trace.js';
 import { registerShadowCommands } from './commands/shadow.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { registerSecretsCommands } from './commands/secrets.js';
+import { registerCodemodCommands } from './commands/codemod.js';
 import { ConfigManager } from './lib/ConfigManager.js';
 
 // Package version - would normally read from package.json
@@ -70,6 +71,7 @@ function createProgram(): Command {
   registerShadowCommands(program);
   registerArtifactCommands(program);
   registerSecretsCommands(program);
+  registerCodemodCommands(program);
 
   // Custom help with banner
   program.addHelpText('before', BANNER);
