@@ -585,8 +585,8 @@ export class E4XTranspiler {
         parts.push(`String(${attr.value})`);
         parts.push(`'"'`);
       } else {
-        // Static: attr="value" → escaped literal
-        parts.push(`' ${attr.name}="${this.escapeForString(attr.value)}"'`);
+        // Static: attr="value" → escaped literal (use XML attr escaping for double quotes)
+        parts.push(`' ${attr.name}="${this.escapeForXmlAttr(attr.value)}"'`);
       }
     }
 
@@ -771,15 +771,18 @@ export class E4XTranspiler {
   }
 
   /**
-   * Check if position is inside a string literal or comment.
-   * Tracks single-quoted, double-quoted, and template literal strings,
-   * as well as // line comments and /* block comments.
+   * Check if position is inside a string literal, comment, or regex literal.
+   * Tracks single-quoted, double-quoted, and template literal strings
+   * (including ${...} interpolation zones), // line comments, /* block comments,
+   * and /regex/ literals.
    */
   private isInsideStringOrComment(code: string, position: number): boolean {
     let inString: string | null = null;
     let inLineComment = false;
     let inBlockComment = false;
+    let inRegex = false;
     let escaped = false;
+    let templateDepth = 0; // Track ${...} nesting inside template literals
 
     for (let i = 0; i < position; i++) {
       const char = code[i];
@@ -802,6 +805,24 @@ export class E4XTranspiler {
         continue;
       }
 
+      // Handle regex literal
+      if (inRegex) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === '/') {
+          inRegex = false;
+          // Skip regex flags
+          while (i + 1 < position && /[gimsuy]/.test(code[i + 1]!)) i++;
+        }
+        continue;
+      }
+
       // Handle string escape
       if (escaped) {
         escaped = false;
@@ -813,13 +834,40 @@ export class E4XTranspiler {
           escaped = true;
           continue;
         }
+
+        // Template literal: track ${...} interpolation zones
+        if (inString === '`') {
+          if (char === '$' && nextChar === '{') {
+            templateDepth++;
+            i++; // skip the {
+            inString = null; // We're now in code, not string
+            continue;
+          }
+        }
+
         if (char === inString) {
           inString = null;
         }
         continue;
       }
 
-      // Not in string or comment — check for starts
+      // Handle closing } for template literal interpolation
+      if (templateDepth > 0 && char === '}') {
+        templateDepth--;
+        if (templateDepth === 0) {
+          // Back inside the template literal string portion
+          inString = '`';
+        }
+        continue;
+      }
+
+      // Handle nested { inside template interpolation
+      if (templateDepth > 0 && char === '{') {
+        templateDepth++;
+        continue;
+      }
+
+      // Not in string, comment, or regex — check for starts
       if (char === '/' && nextChar === '/') {
         inLineComment = true;
         i++; // skip second /
@@ -832,12 +880,27 @@ export class E4XTranspiler {
         continue;
       }
 
+      // Regex literal detection — heuristic based on preceding token
+      if (char === '/') {
+        let j = i - 1;
+        while (j >= 0 && (code[j] === ' ' || code[j] === '\t')) j--;
+        const prevChar = j >= 0 ? code[j] : '';
+        const prevIsOperator = prevChar === '' || '=(!{[,;:&|?+->~^%\n'.includes(prevChar!);
+        const precedingText = code.slice(Math.max(0, j - 6), j + 1);
+        const prevIsKeyword = /(?:return|typeof|case|void|new|in|of)\s*$/.test(precedingText);
+
+        if (prevIsOperator || prevIsKeyword) {
+          inRegex = true;
+          continue;
+        }
+      }
+
       if (char === '"' || char === "'" || char === '`') {
         inString = char;
       }
     }
 
-    return inString !== null || inLineComment || inBlockComment;
+    return inString !== null || inLineComment || inBlockComment || inRegex;
   }
 
   /**
@@ -859,6 +922,15 @@ export class E4XTranspiler {
       .replace(/\n/g, '\\n')
       .replace(/\r/g, '\\r')
       .replace(/\t/g, '\\t');
+  }
+
+  /**
+   * Escape a string for use inside an XML attribute value (double-quoted).
+   * Extends escapeForString by also escaping " → &quot;
+   */
+  private escapeForXmlAttr(str: string): string {
+    return this.escapeForString(str)
+      .replace(/"/g, '&quot;');
   }
 
   /**
