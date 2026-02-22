@@ -208,7 +208,10 @@ export class HL7v2Parser {
       this.properties.handleSubcomponents && content.includes(subcomponentSeparator);
 
     if (!hasComponents && !hasSubcomponents) {
-      // Simple field with no components
+      // Single-value field — still wrap in .1 component element to match Java Mirth's
+      // ER7Reader.handleField() (line 256), which ALWAYS creates a .1 sub-element even
+      // for fields without component separators. This enables the standard Mirth access
+      // pattern: obx['OBX.5']['OBX.5.1'].toString() === '12.5'
       return `<${fieldName}><${fieldName}.1>${this.escapeXml(content)}</${fieldName}.1></${fieldName}>`;
     }
 

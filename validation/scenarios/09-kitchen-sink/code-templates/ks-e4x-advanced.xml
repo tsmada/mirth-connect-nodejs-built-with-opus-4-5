@@ -51,7 +51,7 @@ function buildRoutingSummary(msgXml) {
     var summary = '&lt;RoutingSummary timestamp="' + new Date().toISOString() + '" messageType="' + msgType + '"&gt;';
     for each (var obx in msgXml..OBX) {
         var code = obx['OBX.3']['OBX.3.1'].toString();
-        var flag = obx['OBX.8'].toString();
+        var flag = obx['OBX.8']['OBX.8.1'].toString();
         var value = obx['OBX.5']['OBX.5.1'].toString();
         summary += '&lt;Result code="' + code + '" flag="' + flag + '" value="' + value + '"/&gt;';
     }

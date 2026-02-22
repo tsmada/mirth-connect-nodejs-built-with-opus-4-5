@@ -69,7 +69,7 @@ var abnormalFlags = [];
 for each (var obx in msg..OBX) {
   var code = obx['OBX.3']['OBX.3.1'].toString();
   var value = obx['OBX.5']['OBX.5.1'].toString();
-  var flag = obx['OBX.8'].toString();
+  var flag = obx['OBX.8']['OBX.8.1'].toString();
   var units = obx['OBX.6']['OBX.6.1'].toString();
 
   if (flag === 'H' || flag === 'HH' || flag === 'L' || flag === 'LL') {

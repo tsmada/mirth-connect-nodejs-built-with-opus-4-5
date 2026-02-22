@@ -225,9 +225,10 @@ export class HL7v2SerializerAdapter extends BaseSerializer {
       return xml;
     }
 
-    // Simple field with no component separators — still wrap in .1 component element
-    // to match Java Mirth's ER7Serializer behavior and enable E4X navigation
-    // (e.g., msg['PID']['PID.3']['PID.3.1'] must resolve)
+    // Single-value field — still wrap in .1 component element to match Java Mirth's
+    // ER7Reader.handleField() (line 256), which ALWAYS creates a .1 sub-element even
+    // for fields without component separators. This enables the standard Mirth access
+    // pattern: obx['OBX.5']['OBX.5.1'].toString() === '12.5'
     return `    <${segmentName}.${fieldNum}>\n      <${segmentName}.${fieldNum}.1>${this.escapeXml(value)}</${segmentName}.${fieldNum}.1>\n    </${segmentName}.${fieldNum}>\n`;
   }
 

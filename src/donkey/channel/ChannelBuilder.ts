@@ -57,6 +57,7 @@ import { JavaScriptReceiver } from '../../connectors/js/JavaScriptReceiver.js';
 import { JavaScriptDispatcher } from '../../connectors/js/JavaScriptDispatcher.js';
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 import { DefaultResponseValidator } from '../message/ResponseValidator.js';
+import { ResponseSelector } from './ResponseSelector.js';
 import { compileTransformerStep, compileFilterRule } from '../../javascript/runtime/StepCompiler.js';
 import type { BatchAdaptorFactory } from '../message/BatchAdaptor.js';
 import { HL7BatchAdaptorFactory, HL7v2SplitType } from '../message/HL7BatchAdaptor.js';
@@ -131,6 +132,17 @@ export function buildChannel(channelConfig: ChannelModel, options?: BuildChannel
       String(sourceConnProps?.respondAfterProcessing) === 'false'
     ) {
       sourceConnector.setRespondAfterProcessing(false);
+    }
+
+    // Wire ResponseSelector from sourceConnectorProperties.responseVariable.
+    // Java Mirth: Channel.responseSelector.respondFromName determines which response
+    // is returned to the source connector (and ultimately to the HTTP/MLLP caller).
+    // Values: "None", "d_postprocessor", "d1", "d2", "Auto-generate (...)", etc.
+    const responseVariable = String(sourceConnProps?.responseVariable ?? 'None');
+    if (responseVariable && responseVariable !== 'None') {
+      const selector = new ResponseSelector();
+      selector.setRespondFromName(responseVariable);
+      channel.setResponseSelector(selector);
     }
 
     // Wire inboundDataType from source transformer config

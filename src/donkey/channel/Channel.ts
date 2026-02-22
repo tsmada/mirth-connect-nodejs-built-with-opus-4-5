@@ -38,6 +38,7 @@ import { StorageSettings } from './StorageSettings.js';
 import { setMetaDataMap } from './MetaDataReplacer.js';
 import { runRecoveryTask } from './RecoveryTask.js';
 import { AttachmentHandler, NoOpAttachmentHandler } from '../message/AttachmentHandler.js';
+import { ResponseSelector } from './ResponseSelector.js';
 import {
   insertMessage,
   insertConnectorMessage,
@@ -143,6 +144,10 @@ export class Channel extends EventEmitter {
 
   // Attachment handler for extracting attachments before content storage
   private attachmentHandler: AttachmentHandler = new NoOpAttachmentHandler();
+
+  // Response selector — picks which destination/postprocessor response to return to source
+  // Java: Channel.java responseSelector field, wired from sourceConnectorProperties.responseVariable
+  private responseSelector: ResponseSelector = new ResponseSelector();
 
   // In-memory statistics counters (matches Java Mirth Statistics.java)
   private stats: ChannelStatistics = {
@@ -251,6 +256,14 @@ export class Channel extends EventEmitter {
 
   getStorageSettings(): StorageSettings {
     return this.storageSettings;
+  }
+
+  getResponseSelector(): ResponseSelector {
+    return this.responseSelector;
+  }
+
+  setResponseSelector(selector: ResponseSelector): void {
+    this.responseSelector = selector;
   }
 
   /**
@@ -1616,6 +1629,12 @@ export class Channel extends EventEmitter {
         try {
           const postprocessorResponse = await this.executePostprocessor(message);
 
+          // Store postprocessor Response in source's responseMap under "d_postprocessor".
+          // Java Mirth: Channel.java stores the postprocessor result for ResponseSelector lookup.
+          if (postprocessorResponse) {
+            sourceMessage.getResponseMap().set('d_postprocessor', postprocessorResponse);
+          }
+
           // Persist PROCESSED_RESPONSE (ContentType=8) on source (metadataId=0)
           if (postprocessorResponse && this.storageSettings.storeProcessedResponse) {
             const responseContent = typeof postprocessorResponse.getMessage === 'function'
@@ -1641,6 +1660,38 @@ export class Channel extends EventEmitter {
           await this.persistToDb(() =>
             updateErrors(this.id, messageId, 0, undefined, String(postError), errorCode)
           );
+        }
+      }
+
+      // Response selection — Java Mirth: Channel.java selectResponse() after postprocessor.
+      // The responseSelector picks which response to return to the source connector:
+      //   "None" → no response, "d_postprocessor" → postprocessor return value,
+      //   "d1" → destination 1's response, auto-generate modes, etc.
+      // The selected response is stored on the source connector and read by HttpReceiver.
+      if (this.responseSelector.canRespond()) {
+        // Merge all destination response maps onto source for response selector lookup
+        for (let i = 0; i < this.destinationConnectors.length; i++) {
+          const destMsg = message.getConnectorMessage(i + 1);
+          if (destMsg) {
+            for (const [k, v] of destMsg.getResponseMap()) {
+              sourceMessage.getResponseMap().set(k, v);
+            }
+          }
+        }
+
+        const selectedResponse = this.responseSelector.getResponse(sourceMessage, message);
+        if (selectedResponse) {
+          const respContent = typeof selectedResponse.getMessage === 'function'
+            ? selectedResponse.getMessage()
+            : String(selectedResponse);
+          // Store on source connector as RESPONSE content (ContentType=6).
+          // HttpReceiver.getResponseBody() reads this via sourceMsg.getResponseContent().
+          sourceMessage.setContent({
+            contentType: ContentType.RESPONSE,
+            content: respContent,
+            dataType: 'RAW',
+            encrypted: false,
+          });
         }
       }
 
