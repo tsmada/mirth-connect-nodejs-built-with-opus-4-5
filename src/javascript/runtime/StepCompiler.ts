@@ -156,5 +156,10 @@ function extractValues(values: unknown): string[] {
  * Escape a string for use inside a JavaScript single-quoted string literal.
  */
 function escapeJsString(str: string): string {
-  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\0/g, '\\0');
 }

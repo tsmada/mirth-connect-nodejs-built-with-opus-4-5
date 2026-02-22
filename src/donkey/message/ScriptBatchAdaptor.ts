@@ -12,6 +12,7 @@
  * script scope. This matches the existing Node.js adaptor pattern (HL7BatchAdaptor, EDIBatchAdaptor).
  */
 
+import vm from 'node:vm';
 import type { BatchAdaptor, BatchAdaptorFactory } from './BatchAdaptor.js';
 
 /**
@@ -52,6 +53,45 @@ function createStringReader(content: string): ScriptBatchReader {
     close(): void {
       allRead = true;
     },
+  };
+}
+
+/** Default timeout for batch script execution (30 seconds, matching other script types) */
+const BATCH_SCRIPT_TIMEOUT_MS = 30_000;
+
+/**
+ * Compile a user-defined batch script string into a sandboxed function.
+ *
+ * Uses vm.createContext() + vm.Script to execute the script in an isolated V8 context,
+ * preventing access to require(), process, global, and the filesystem.
+ * Only `reader` and `sourceMap` are visible in the script scope.
+ *
+ * @param scriptBody The user's batch script source code
+ * @returns A function that executes the script in a sandboxed context
+ */
+export function compileBatchScript(
+  scriptBody: string,
+  timeoutMs: number = BATCH_SCRIPT_TIMEOUT_MS
+): (context: { reader: ScriptBatchReader; sourceMap: Map<string, unknown> }) => string | null {
+  // Wrap user script in an IIFE that executes immediately within runInContext().
+  // reader and sourceMap are injected into the sandbox context, NOT passed as function args.
+  // This ensures the timeout applies to the actual user script execution, not just
+  // the function definition (which would evaluate instantly and defeat the timeout).
+  const wrappedSource = `(function() { ${scriptBody} })()`;
+  const compiled = new vm.Script(wrappedSource, { filename: 'batch-script.js' });
+
+  return (ctx: { reader: ScriptBatchReader; sourceMap: Map<string, unknown> }) => {
+    const sandbox = vm.createContext({
+      reader: ctx.reader,
+      sourceMap: ctx.sourceMap,
+      // Disable timer functions to prevent scheduled code surviving script timeout
+      setTimeout: undefined,
+      setInterval: undefined,
+      setImmediate: undefined,
+      queueMicrotask: undefined,
+    });
+
+    return compiled.runInContext(sandbox, { timeout: timeoutMs }) as string | null;
   };
 }
 

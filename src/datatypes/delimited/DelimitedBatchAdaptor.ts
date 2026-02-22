@@ -15,7 +15,7 @@
  */
 
 import type { BatchAdaptor, BatchAdaptorFactory } from '../../donkey/message/BatchAdaptor.js';
-import { ScriptBatchAdaptor, type ScriptBatchReader } from '../../donkey/message/ScriptBatchAdaptor.js';
+import { ScriptBatchAdaptor, compileBatchScript } from '../../donkey/message/ScriptBatchAdaptor.js';
 import { unescapeDelimiter } from './DelimitedProperties.js';
 
 export enum DelimitedSplitType {
@@ -336,14 +336,9 @@ export class DelimitedBatchAdaptor implements BatchAdaptor {
       throw new Error('No batch script was set.');
     }
 
-    // Build the batch script function from the user's script string
-    // The script receives { reader, sourceMap } and should return the next message or null
-    // eslint-disable-next-line no-new-func
-    const scriptFn = new Function(
-      'context',
-      `const { reader, sourceMap } = context; ${props.batchScript}`
-    ) as (context: { reader: ScriptBatchReader; sourceMap: Map<string, unknown> }) => string | null;
-
+    // Build the batch script function from the user's script string (sandboxed via vm.Script)
+    // The script receives reader and sourceMap in scope and should return the next message or null
+    const scriptFn = compileBatchScript(props.batchScript);
     this.scriptAdaptor = new ScriptBatchAdaptor(rawMessage, scriptFn);
   }
 

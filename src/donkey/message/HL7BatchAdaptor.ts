@@ -13,8 +13,7 @@
  */
 
 import type { BatchAdaptor, BatchAdaptorFactory } from './BatchAdaptor.js';
-import { ScriptBatchAdaptor } from './ScriptBatchAdaptor.js';
-import type { ScriptBatchReader } from './ScriptBatchAdaptor.js';
+import { ScriptBatchAdaptor, compileBatchScript } from './ScriptBatchAdaptor.js';
 
 export enum HL7v2SplitType {
   MSH_Segment = 'MSH_Segment',
@@ -70,9 +69,8 @@ export class HL7BatchAdaptor implements BatchAdaptor {
     const stripped = stripMLLPFraming(rawMessage);
 
     if (properties?.splitType === HL7v2SplitType.JavaScript && properties.batchScript) {
-      // Delegate to ScriptBatchAdaptor for JavaScript mode
-      const scriptFn = new Function('context', properties.batchScript) as
-        (context: { reader: ScriptBatchReader; sourceMap: Map<string, unknown> }) => string | null;
+      // Delegate to ScriptBatchAdaptor for JavaScript mode (sandboxed via vm.Script)
+      const scriptFn = compileBatchScript(properties.batchScript);
       this.scriptDelegate = new ScriptBatchAdaptor(stripped, scriptFn);
     } else {
       const lineBreakPattern = properties?.lineBreakPattern ?? DEFAULT_LINE_BREAK_PATTERN;

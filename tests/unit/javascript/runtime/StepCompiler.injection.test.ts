@@ -49,4 +49,61 @@ describe('StepCompiler injection prevention', () => {
       });
     }).toThrow(/prohibited characters/);
   });
+
+  describe('escapeJsString completeness', () => {
+    it('should produce valid JS when value contains newline', () => {
+      const result = compileFilterRule('com.mirth.RuleBuilderRule', {
+        field: "msg['PID']['PID.5']",
+        condition: 'EQUALS',
+        values: { string: 'line1\nline2' },
+      });
+      // The generated code should have escaped newlines, not literal ones
+      expect(result).not.toContain('\n');
+      expect(result).toContain('\\n');
+      // Verify it's valid JavaScript by evaluating it
+      expect(() => new Function(`var msg = {'PID': {'PID.5': {toString: function() { return 'line1\\nline2'; }}}}; return ${result};`)).not.toThrow();
+    });
+
+    it('should produce valid JS when value contains carriage return', () => {
+      const result = compileFilterRule('com.mirth.RuleBuilderRule', {
+        field: "msg['PID']['PID.5']",
+        condition: 'CONTAINS',
+        values: { string: 'val\rwith\rcr' },
+      });
+      // No literal carriage returns in generated code
+      expect(result).not.toContain('\r');
+      expect(result).toContain('\\r');
+    });
+
+    it('should produce valid JS when value contains null byte', () => {
+      const result = compileFilterRule('com.mirth.RuleBuilderRule', {
+        field: "msg['PID']['PID.5']",
+        condition: 'EQUALS',
+        values: { string: 'before\0after' },
+      });
+      // No literal null bytes in generated code
+      expect(result).not.toContain('\0');
+      expect(result).toContain('\\0');
+    });
+
+    it('should handle backslash + single quote together', () => {
+      const result = compileFilterRule('com.mirth.RuleBuilderRule', {
+        field: "msg['PID']['PID.5']",
+        condition: 'EQUALS',
+        values: { string: "it\\'s a test" },
+      });
+      // Should be valid JS — no unescaped quotes or backslashes
+      expect(() => new Function(`return ${result}`)).not.toThrow();
+    });
+
+    it('should handle all escape characters combined', () => {
+      const result = compileFilterRule('com.mirth.RuleBuilderRule', {
+        field: "msg['OBX']['OBX.5']",
+        condition: 'NOT_CONTAIN',
+        values: { string: "line1\nline2\rend\0" },
+      });
+      // Generated code must not contain raw control characters
+      expect(result).not.toMatch(/[\n\r\0]/);
+    });
+  });
 });

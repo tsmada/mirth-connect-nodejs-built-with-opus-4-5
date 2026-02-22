@@ -366,7 +366,7 @@ describe('HL7BatchAdaptor (enhanced)', () => {
       const raw = 'MSG1|||data1\nMSG2|||data2\nMSG3|||data3';
       const props: HL7v2BatchProperties = {
         splitType: HL7v2SplitType.JavaScript,
-        batchScript: 'return context.reader.readLine();',
+        batchScript: 'return reader.readLine();',
       };
 
       const adaptor = new HL7BatchAdaptor(raw, props);
@@ -382,7 +382,7 @@ describe('HL7BatchAdaptor (enhanced)', () => {
       const raw = 'line1\nline2';
       const props: HL7v2BatchProperties = {
         splitType: HL7v2SplitType.JavaScript,
-        batchScript: 'return context.reader.readLine();',
+        batchScript: 'return reader.readLine();',
       };
 
       const adaptor = new HL7BatchAdaptor(raw, props);
@@ -398,7 +398,7 @@ describe('HL7BatchAdaptor (enhanced)', () => {
       const raw = 'line1\nline2';
       const props: HL7v2BatchProperties = {
         splitType: HL7v2SplitType.JavaScript,
-        batchScript: 'return context.reader.readLine();',
+        batchScript: 'return reader.readLine();',
       };
 
       const adaptor = new HL7BatchAdaptor(raw, props);
