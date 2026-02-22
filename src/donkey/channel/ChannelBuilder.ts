@@ -58,6 +58,11 @@ import { JavaScriptDispatcher } from '../../connectors/js/JavaScriptDispatcher.j
 import { Channel as ChannelModel, Connector } from '../../api/models/Channel.js';
 import { DefaultResponseValidator } from '../message/ResponseValidator.js';
 import { compileTransformerStep, compileFilterRule } from '../../javascript/runtime/StepCompiler.js';
+import type { BatchAdaptorFactory } from '../message/BatchAdaptor.js';
+import { HL7BatchAdaptorFactory, HL7v2SplitType } from '../message/HL7BatchAdaptor.js';
+import { XMLBatchAdaptorFactory, XMLSplitType } from '../../datatypes/xml/XMLBatchAdaptor.js';
+import { DelimitedBatchAdaptorFactory, DelimitedSplitType } from '../../datatypes/delimited/DelimitedBatchAdaptor.js';
+import { EDIBatchAdaptorFactory } from '../message/EDIBatchAdaptor.js';
 
 export interface BuildChannelOptions {
   globalPreprocessorScript?: string;
@@ -132,6 +137,22 @@ export function buildChannel(channelConfig: ChannelModel, options?: BuildChannel
     const sourceTransformer = channelConfig.sourceConnector?.transformer;
     if (sourceTransformer?.inboundDataType) {
       sourceConnector.setInboundDataType(sourceTransformer.inboundDataType);
+    }
+
+    // Wire processBatch and batch adaptor factory from sourceConnectorProperties.
+    // Java Mirth: SourceConnector.handleRawMessage() checks isProcessBatch() and
+    // routes to batchAdaptorFactory.createBatchAdaptor() when true.
+    // The batch adaptor type depends on the inbound data type.
+    const processBatchStr = String(sourceConnProps?.processBatch ?? 'false');
+    if (processBatchStr === 'true') {
+      sourceConnector.setProcessBatch(true);
+      const batchFactory = createBatchAdaptorFactory(
+        sourceTransformer?.inboundDataType ?? 'RAW',
+        sourceConnProps
+      );
+      if (batchFactory) {
+        sourceConnector.setBatchAdaptorFactory(batchFactory);
+      }
     }
 
     // Wire source filter/transformer scripts from channel config
@@ -1267,6 +1288,69 @@ function parseMapVariables(raw: unknown): string[] {
  * use XML-based representation in the script context (via E4X/XMLProxy).
  * Only RAW and JSON have distinct serialization modes.
  */
+/**
+ * Create a BatchAdaptorFactory based on the inbound data type.
+ * Matches Java Mirth: each DataType class provides getBatchAdaptor(batchProperties).
+ * The factory creates adaptors that split incoming messages into individual sub-messages.
+ */
+function createBatchAdaptorFactory(
+  dataType: string,
+  sourceConnProps?: Record<string, unknown>
+): BatchAdaptorFactory | null {
+  const dt = (dataType || 'RAW').toUpperCase();
+
+  // Parse batch properties from sourceConnectorProperties if available
+  const batchProps = sourceConnProps?.batchProperties as Record<string, unknown> | undefined;
+
+  switch (dt) {
+    case 'HL7V2': {
+      // HL7v2 batch: split on MSH segment boundaries
+      const splitType = String(batchProps?.splitType || 'MSH_Segment');
+      return new HL7BatchAdaptorFactory({
+        splitType: splitType === 'JavaScript' ? HL7v2SplitType.JavaScript : HL7v2SplitType.MSH_Segment,
+        batchScript: batchProps?.batchScript as string | undefined,
+      });
+    }
+    case 'XML': {
+      const xmlSplitType = String(batchProps?.splitType || 'Element_Name') as XMLSplitType;
+      return new XMLBatchAdaptorFactory({
+        splitType: xmlSplitType,
+        elementName: batchProps?.elementName as string | undefined,
+        level: batchProps?.level != null ? parseInt(String(batchProps.level), 10) : undefined,
+        xpathQuery: batchProps?.query as string | undefined,
+        batchScript: batchProps?.batchScript as string | undefined,
+      });
+    }
+    case 'DELIMITED': {
+      const delimSplitType = String(batchProps?.splitType || 'Record') as DelimitedSplitType;
+      return new DelimitedBatchAdaptorFactory({
+        splitType: delimSplitType,
+        recordDelimiter: String(batchProps?.recordDelimiter || '\\n'),
+        columnDelimiter: String(batchProps?.columnDelimiter || ','),
+        messageDelimiter: batchProps?.messageDelimiter as string | undefined,
+        messageDelimiterIncluded: String(batchProps?.messageDelimiterIncluded) === 'true',
+        groupingColumn: batchProps?.groupingColumn as string | undefined,
+        batchScript: batchProps?.batchScript as string | undefined,
+      });
+    }
+    case 'JSON':
+    case 'RAW':
+      // JSON and Raw batch adaptors require a compiled batch script function
+      // which is only available for JMS/JavaScript receivers that parse it from channel XML.
+      // For TCP/HTTP receivers with processBatch=true, the data type's default
+      // split behavior is used — but JSON/Raw have no structural split point,
+      // so they return null (no batch splitting).
+      return null;
+    case 'EDI':
+    case 'X12':
+    case 'EDI/X12':
+      return new EDIBatchAdaptorFactory();
+    default:
+      // Unknown data type — no batch adaptor available
+      return null;
+  }
+}
+
 function mapDataTypeToSerialization(dataType?: string): SerializationType {
   if (!dataType) return SerializationType.RAW;
   switch (dataType.toUpperCase()) {

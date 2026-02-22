@@ -2540,6 +2540,9 @@ When `new Proxy(target, { get: (t, p) => value.bind(target) })` binds methods to
 **62. Root Document vs Query Result Requires Explicit Flag for `append()` Semantics**
 `XMLProxy.create('<root>...')` and `xml.get('item')` both produce single-node XMLProxy objects, but `append()` should behave differently: root documents add children (`msg += <ZZZ/>` adds segment to HL7Message), while query results add siblings (`items += <item/>` adds another item). The initial heuristic (`this.nodes.length === 1`) was too broad — it couldn't distinguish factory-created roots from query results. The fix adds `_isDocument: boolean` set only in `XMLProxy.create()`. This is preferable to using `_parent === null` because `createList()` also has null parent but should use sibling semantics.
 
+**63. E4X `toString()` Has Dual Behavior: Simple Content → Text, Complex Content → XML (Live Validation)**
+Per ECMA-357 Section 10.1.1, `XML.toString()` on a **simple content** element (leaf node, no child elements) returns text content only — e.g., `msg['PID']['PID.5']['PID.5.1'].toString()` → `"DOE"`. But on a **complex content** element (has child elements), it returns `toXMLString()` — full XML markup. Our `XMLProxy.toString()` always collected text nodes via `collectText()`, which was correct for leaf nodes but wrong for branch nodes. This caused `msg.toString().indexOf('ZKS')` to return `-1` even after `createSegment('ZKS', msg)` — because the concatenated text content `"SENDING_APPPAT123KitchenSink"` doesn't contain the tag name. The fix: check `hasSimpleContent()` first — if true, return text; otherwise delegate to `toXMLString()`. Also updated `text()` to always return text content (previously delegated to `toString()`). This bug was invisible to all 22 waves of automated scanning and 57 adversarial tests because it only manifests when a user script calls `toString()` on a complex element expecting XML markup — a pattern common in production Mirth channels but absent from synthetic test fixtures.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -3230,6 +3233,16 @@ All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, and XMLPr
 - ✅ **Adversarial Transformer Runtime Testing** — 57 tests across 8 phases targeting bugs that only manifest with adversarial data through the full transpiler→builder→scope→VM pipeline. Fixes: P0-1 namespace isolation (per-scope closures), P0-2 XMLProxy.exists() method, P0-3 multi-node set() on all XMLList nodes, P0-4 toXMLString() error propagation, P1-1 double-quote attribute escaping, P1-2 template literal interpolation zone tracking, P1-3 regex literal detection, P2-1 StepCompiler field injection prevention, P2-2 frozen Buffer prototype isolation, P2-3 auto-serialization contextual errors. Added XMLProxy.forEach() for real Mirth script patterns. 10 pipeline integration tests validate all fixes end-to-end.
 - ✅ **XMLProxy TQ Remediation** — 6 runtime bugs in XMLProxy.ts found by transformation-quality-checker scan. Critical: Proxy `return this` bypass (added `_self` field), `value.nodes` Proxy trap (→ `getNodes()`). Major: `append()` child vs sibling (added `_isDocument` flag). Minor: `attributes().length()`, `createList()` type guard. 31 tests, 0 regressions across 368 suites.
 - ✅ **TQ Full Scan Verified Clean (2026-02-22)** — Full transformation-quality-checker re-scan after commits 68de9a7 + 27cddc6. 89 verification items across 8 phases (static anti-patterns, E4X transpilation execution, scope types, generated code, cross-realm isolation, data flow stages, map chains, XMLProxy methods). Result: 88/89 PASS, 0 critical, 0 major, 1 minor (Buffer.freeze() silent failure in non-strict VM — protection effective, no fix needed). All prior fixes from lessons #54-#61, adversarial testing P0-1 through P2-3, and TQ remediation confirmed intact. Report: `plans/tq-checker-full-scan-2026-02-22.md`.
+
+### Live Server Validation (2026-02-22)
+
+**Full-stack live server validation against 15 kitchen sink channels.**
+
+Deployed 5 code template libraries (14 templates) and 15 channels to a live Node.js Mirth server (standalone mode, localhost MySQL). Sent test messages via HTTP, MLLP, and VM connectors. All 15 channels processed messages through the full E4X transpilation → script building → scope construction → VM execution → DB persistence → API retrieval pipeline.
+
+**Bug found and fixed:** `XMLProxy.toString()` violated ECMA-357 E4X spec — always returned text content instead of XML for complex elements. Fixed to check `hasSimpleContent()` first. This resolved CH19's `hasZKS/hasZE4: "false"` bug. See lesson #63.
+
+**Results:** All 15 channels Source TRANSFORMED. All code template functions work. All E4X patterns (descendant, for-each, delete, createSegment, XML literals, namespace) verified correct. 8,144 unit tests passing, 0 regressions. Report: `plans/live-server-validation-2026-02-22.md`.
 
 ### Role-Based Authorization Controller
 

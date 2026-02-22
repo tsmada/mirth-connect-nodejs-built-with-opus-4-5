@@ -186,7 +186,7 @@ describe('PENDING status checkpoint', () => {
     );
   });
 
-  it('should NOT set PENDING when destination has no response', async () => {
+  it('should still set PENDING when destination has no response (response transformer runs unconditionally)', async () => {
     const dest = new NoResponseDestination(1);
     channel = new Channel({
       id: 'no-pending-test',
@@ -200,11 +200,13 @@ describe('PENDING status checkpoint', () => {
     await channel.dispatchRawMessage('<test/>');
     await channel.stop();
 
-    // PENDING should NOT appear because getResponse() returned null
+    // PENDING should STILL appear — Java Mirth runs the response transformer
+    // unconditionally after send(), regardless of whether response data exists.
+    // The PENDING checkpoint is part of the response transformer flow.
     const pendingCalls = (updateConnectorMessageStatus as jest.Mock).mock.calls.filter(
       (call: unknown[]) => call[3] === Status.PENDING
     );
-    expect(pendingCalls).toHaveLength(0);
+    expect(pendingCalls).toHaveLength(1);
   });
 
   it('should NOT set PENDING when storeResponse is false', async () => {

@@ -20,7 +20,7 @@ import {
 } from './FilterTransformerExecutor.js';
 import { ScriptContext } from '../../javascript/runtime/ScopeBuilder.js';
 import { DeployedState } from '../../api/models/DashboardStatus.js';
-import type { BatchAdaptor } from '../message/BatchAdaptor.js';
+import type { BatchAdaptor, BatchAdaptorFactory } from '../message/BatchAdaptor.js';
 import { dashboardStatusController } from '../../plugins/dashboardstatus/DashboardStatusController.js';
 import type {
   ConnectionStatusEvent,
@@ -34,6 +34,7 @@ export interface SourceConnectorConfig {
   waitForDestinations?: boolean;
   queueSendFirst?: boolean;
   respondAfterProcessing?: boolean;
+  processBatch?: boolean;
 }
 
 export abstract class SourceConnector {
@@ -45,6 +46,20 @@ export abstract class SourceConnector {
   protected waitForDestinations: boolean;
   protected queueSendFirst: boolean;
   protected respondAfterProcessing: boolean;
+
+  /**
+   * Whether this source connector should split incoming messages into batches.
+   * Matches Java Mirth SourceConnector.isProcessBatch() — checks batchAdaptorFactory != null.
+   * Set from sourceConnectorProperties.processBatch in channel XML.
+   */
+  protected processBatch: boolean;
+
+  /**
+   * Factory for creating batch adaptors based on inbound data type.
+   * Set by ChannelBuilder when processBatch=true.
+   * Matches Java: dataType.getBatchAdaptor(batchProperties)
+   */
+  protected batchAdaptorFactory: BatchAdaptorFactory | null = null;
 
   protected filterTransformerExecutor: FilterTransformerExecutor | null = null;
 
@@ -62,6 +77,7 @@ export abstract class SourceConnector {
     this.waitForDestinations = config.waitForDestinations ?? false;
     this.queueSendFirst = config.queueSendFirst ?? false;
     this.respondAfterProcessing = config.respondAfterProcessing ?? true;
+    this.processBatch = config.processBatch ?? false;
   }
 
   getInboundDataType(): string {
@@ -268,6 +284,52 @@ export abstract class SourceConnector {
    */
   protected async onHalt(): Promise<void> {
     await this.onStop();
+  }
+
+  isProcessBatch(): boolean {
+    return this.processBatch;
+  }
+
+  setProcessBatch(value: boolean): void {
+    this.processBatch = value;
+  }
+
+  setBatchAdaptorFactory(factory: BatchAdaptorFactory | null): void {
+    this.batchAdaptorFactory = factory;
+  }
+
+  getBatchAdaptorFactory(): BatchAdaptorFactory | null {
+    return this.batchAdaptorFactory;
+  }
+
+  /**
+   * Handle a raw message, routing to batch or normal dispatch.
+   *
+   * Matches Java Mirth SourceConnector.handleRawMessage():
+   * - If processBatch=true and a batchAdaptorFactory is set, splits the message
+   *   into individual sub-messages via the batch adaptor and dispatches each separately.
+   * - Otherwise, dispatches as a single message.
+   *
+   * Returns the processed Message for the last dispatched sub-message (batch mode)
+   * or the single message (normal mode).
+   */
+  async handleRawMessage(
+    rawData: string,
+    sourceMap?: Map<string, unknown>
+  ): Promise<Message> {
+    if (!this.channel) {
+      throw new Error('Source connector is not attached to a channel');
+    }
+
+    if (this.processBatch && this.batchAdaptorFactory) {
+      const adaptor = this.batchAdaptorFactory.createBatchAdaptor(rawData);
+      await this.dispatchBatchMessage(rawData, adaptor, sourceMap);
+      // Return a synthetic message for the batch (Java returns the first dispatch result)
+      // The individual messages are already dispatched. Return a placeholder.
+      return this.channel.getLastProcessedMessage();
+    }
+
+    return this.channel.dispatchRawMessage(rawData, sourceMap);
   }
 
   /**

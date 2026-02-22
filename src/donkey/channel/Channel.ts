@@ -168,6 +168,13 @@ export class Channel extends EventEmitter {
   private sourceQueueAbortController: AbortController | null = null;
   private sourceQueuePromise: Promise<void> | null = null;
 
+  /**
+   * Last message processed through dispatchRawMessage().
+   * Used by SourceConnector.handleRawMessage() to return a result after batch dispatch.
+   * Matches Java Mirth Channel.java — batch dispatch returns the last DispatchResult.
+   */
+  private lastProcessedMessage: Message | null = null;
+
   // Polling lease coordination for cluster mode
   private pollingLeaseHeld = false;
   private leaseRetryTimer: ReturnType<typeof setInterval> | null = null;
@@ -217,6 +224,25 @@ export class Channel extends EventEmitter {
 
   getDescription(): string {
     return this.description;
+  }
+
+  /**
+   * Get the last message processed through dispatchRawMessage().
+   * Used by SourceConnector.handleRawMessage() after batch dispatch.
+   * Matches Java Mirth — batch dispatch returns the last message processed.
+   */
+  getLastProcessedMessage(): Message {
+    if (this.lastProcessedMessage) {
+      return this.lastProcessedMessage;
+    }
+    // Return a synthetic empty message if nothing has been processed yet
+    return new Message({
+      messageId: 0,
+      serverId: this.serverId,
+      channelId: this.id,
+      receivedDate: new Date(),
+      processed: false,
+    });
   }
 
   isEnabled(): boolean {
@@ -1313,21 +1339,24 @@ export class Channel extends EventEmitter {
                 encrypted: false,
               });
               destMessage.setResponseDate(new Date());
-
-              // PENDING checkpoint — crash recovery marker
-              // If server crashes between send and response transformer,
-              // recovery can re-run response transformer for PENDING messages
-              destMessage.setStatus(Status.PENDING);
-              await this.persistToDb(() =>
-                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING)
-              );
-
-              // Execute response transformer
-              await dest.executeResponseTransformer(destMessage);
-
-              // Restore SENT status after response transformer completes
-              destMessage.setStatus(Status.SENT);
             }
+
+            // PENDING checkpoint — crash recovery marker
+            // If server crashes between send and response transformer,
+            // recovery can re-run response transformer for PENDING messages
+            destMessage.setStatus(Status.PENDING);
+            await this.persistToDb(() =>
+              updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING)
+            );
+
+            // Execute response transformer unconditionally — Java Mirth runs this
+            // in afterResponse() regardless of whether response data exists.
+            // Response transformers can create responses, set channelMap values,
+            // and modify response status even without incoming response data.
+            await dest.executeResponseTransformer(destMessage);
+
+            // Restore SENT status after response transformer completes
+            destMessage.setStatus(Status.SENT);
           }
 
           // Transaction 3: Per-destination — status + content + maps + custom metadata
@@ -1701,6 +1730,9 @@ export class Channel extends EventEmitter {
     }
 
     this.emit('messageComplete', { channelId: this.id, channelName: this.name, messageId });
+
+    // Track last processed message for batch dispatch return value
+    this.lastProcessedMessage = message;
 
     return message;
   }
@@ -2153,19 +2185,19 @@ export class Channel extends EventEmitter {
                 encrypted: false,
               });
               destMessage.setResponseDate(new Date());
-
-              // PENDING checkpoint — crash recovery marker (matching dispatchRawMessage path)
-              destMessage.setStatus(Status.PENDING);
-              await this.persistToDb(() =>
-                updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING)
-              );
-
-              // Execute response transformer
-              await dest.executeResponseTransformer(destMessage);
-
-              // Restore SENT status after response transformer completes
-              destMessage.setStatus(Status.SENT);
             }
+
+            // PENDING checkpoint — crash recovery marker (matching dispatchRawMessage path)
+            destMessage.setStatus(Status.PENDING);
+            await this.persistToDb(() =>
+              updateConnectorMessageStatus(this.id, messageId, i + 1, Status.PENDING)
+            );
+
+            // Execute response transformer unconditionally (matching dispatchRawMessage path)
+            await dest.executeResponseTransformer(destMessage);
+
+            // Restore SENT status after response transformer completes
+            destMessage.setStatus(Status.SENT);
           }
 
           this.statsAccumulator.increment(i + 1, Status.SENT);

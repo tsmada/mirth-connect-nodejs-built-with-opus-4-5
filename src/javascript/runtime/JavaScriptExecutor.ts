@@ -14,6 +14,7 @@
  */
 
 import * as vm from 'vm';
+import { writeFileSync } from 'fs';
 import {
   ScriptBuilder,
   FilterRule,
@@ -130,6 +131,9 @@ export class JavaScriptExecutor {
     const startTime = Date.now();
 
     try {
+      if (!script || !script.trim()) {
+        logger.warn(`Empty script passed to executeScript, script length=${script?.length}`);
+      }
       const compiled = new vm.Script(script, { filename: 'script.js' });
       const result = compiled.runInContext(context, { timeout }) as T;
       const elapsed = Date.now() - startTime;
@@ -146,6 +150,12 @@ export class JavaScriptExecutor {
         executionTime: elapsed,
       };
     } catch (error) {
+      // Dump failing script to /tmp for debugging
+      try {
+        const dumpPath = `/tmp/mirth-failing-script-${Date.now()}.js`;
+        writeFileSync(dumpPath, script);
+        logger.error(`Script compilation/execution failed. Script dumped to: ${dumpPath}`);
+      } catch { /* ignore dump errors */ }
       return {
         success: false,
         // Cross-realm error handling: VM context errors are not instanceof the

@@ -627,10 +627,13 @@ export class XMLProxy {
   }
 
   /**
-   * Get text content (E4X text() method)
+   * Get text content (E4X text() method) — always returns concatenated text nodes
    */
   text(): string {
-    return this.toString();
+    if (this.nodes.length === 0) return '';
+    const texts: string[] = [];
+    this.collectText(this.nodes, texts);
+    return texts.join('');
   }
 
   /**
@@ -671,14 +674,20 @@ export class XMLProxy {
   }
 
   /**
-   * Convert to string (text content only)
+   * Convert to string — E4X spec (ECMA-357 Section 10.1.1):
+   *   - Simple content (leaf nodes): return text content
+   *   - Complex content (child elements): return toXMLString()
    */
   toString(): string {
     if (this.nodes.length === 0) return '';
 
-    const texts: string[] = [];
-    this.collectText(this.nodes, texts);
-    return texts.join('');
+    if (this.hasSimpleContent()) {
+      const texts: string[] = [];
+      this.collectText(this.nodes, texts);
+      return texts.join('');
+    }
+
+    return this.toXMLString();
   }
 
   private collectText(nodes: OrderedNode[], texts: string[]): void {

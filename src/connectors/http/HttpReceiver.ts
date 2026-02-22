@@ -551,7 +551,8 @@ export class HttpReceiver extends SourceConnector {
 
   /**
    * Dispatch raw message and return the Message result.
-   * Wraps SourceConnector.dispatchRawMessage() to capture the channel pipeline result.
+   * Uses handleRawMessage() which checks processBatch and routes to
+   * batch adaptor when enabled (matching Java Mirth SourceConnector.handleRawMessage).
    *
    * CPC-W20-001: Same pattern as TcpReceiver.dispatchRawMessageWithResult()
    */
@@ -559,10 +560,7 @@ export class HttpReceiver extends SourceConnector {
     rawData: string,
     sourceMap?: Map<string, unknown>
   ): Promise<Message | null> {
-    if (!this.channel) {
-      throw new Error('Source connector is not attached to a channel');
-    }
-    return this.channel.dispatchRawMessage(rawData, sourceMap);
+    return this.handleRawMessage(rawData, sourceMap);
   }
 
   /**

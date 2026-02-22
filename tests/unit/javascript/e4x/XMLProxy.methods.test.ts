@@ -11,7 +11,8 @@ describe('XMLProxy E4X Methods', () => {
       // Modify original — clone should not be affected
       // Use 'as any' to bypass TS type check — Proxy set trap handles this at runtime
       (xml as any)['child'] = 'modified';
-      expect(clone.toString()).toBe('value');
+      // clone is complex (has <child> element), so toString() returns XML per E4X spec
+      expect(clone.text()).toBe('value');
     });
 
     it('should return empty proxy for empty XML', () => {

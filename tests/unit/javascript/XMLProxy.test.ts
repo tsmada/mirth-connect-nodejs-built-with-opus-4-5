@@ -167,9 +167,12 @@ describe('XMLProxy', () => {
       expect(xml.toString()).toBe('Hello World');
     });
 
-    it('should concatenate nested text', () => {
+    it('should return XML for complex elements per E4X spec', () => {
       const xml = XMLProxy.create('<root><a>Hello</a><b>World</b></root>');
-      expect(xml.toString()).toBe('HelloWorld');
+      // Complex content: toString() returns toXMLString() per ECMA-357 Section 10.1.1
+      expect(xml.toString()).toBe(xml.toXMLString());
+      // Use text() for text-only content
+      expect(xml.text()).toBe('HelloWorld');
     });
 
     it('should return empty string for empty elements', () => {

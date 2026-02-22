@@ -476,16 +476,14 @@ export class TcpReceiver extends SourceConnector {
 
   /**
    * Dispatch raw message and return the Message result.
-   * Wraps SourceConnector.dispatchRawMessage() to capture the return value.
+   * Uses handleRawMessage() which checks processBatch and routes to
+   * batch adaptor when enabled (matching Java Mirth SourceConnector.handleRawMessage).
    */
   private async dispatchRawMessageWithResult(
     rawData: string,
     sourceMap?: Map<string, unknown>
   ): Promise<Message | null> {
-    if (!this.channel) {
-      throw new Error('Source connector is not attached to a channel');
-    }
-    return this.channel.dispatchRawMessage(rawData, sourceMap);
+    return this.handleRawMessage(rawData, sourceMap);
   }
 
   /**

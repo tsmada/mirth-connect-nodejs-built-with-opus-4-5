@@ -30,7 +30,8 @@ describe('XMLProxy TQ Fixes', () => {
 
       // If append() returned raw target, bracket access would fail
       expect(p(result)['PID']).toBeDefined();
-      expect(p(result)['PID'].toString()).toBe('Smith');
+      // PID is complex, so toString() returns XML per E4X spec; use text() for text content
+      expect(p(result)['PID'].text()).toBe('Smith');
     });
 
     it('msg = msg.append(x) preserves Proxy behavior', () => {
@@ -92,7 +93,8 @@ describe('XMLProxy TQ Fixes', () => {
       const result = msg.normalize();
 
       expect(result.get('PID').exists()).toBe(true);
-      expect(result.get('PID').toString()).toBe('Smith');
+      // PID is complex — toString() returns XML per E4X spec
+      expect(result.get('PID').text()).toBe('Smith');
     });
 
     it('bracket access works on Proxy-returned values', () => {
@@ -119,7 +121,8 @@ describe('XMLProxy TQ Fixes', () => {
 
       // The new child should contain the inner content
       expect(msg.get('newChild').toXMLString()).toContain('inner');
-      expect(msg.get('newChild').toString()).toBe('new-content');
+      // newChild has complex content (<inner>), so toString() returns XML per E4X spec
+      expect(msg.get('newChild').text()).toBe('new-content');
     });
 
     it('set() with XMLProxy on existing child replaces content correctly', () => {
@@ -128,8 +131,8 @@ describe('XMLProxy TQ Fixes', () => {
 
       msg.set('child', newValue);
 
-      // The child should now have the new content
-      expect(msg.get('child').toString()).toBe('replaced');
+      // child has complex content (<sub>), so toString() returns XML per E4X spec
+      expect(msg.get('child').text()).toBe('replaced');
     });
 
     it('set() with XMLProxy on multiple nodes updates all', () => {
@@ -141,8 +144,9 @@ describe('XMLProxy TQ Fixes', () => {
 
       // Both items should be updated
       const allItems = msg.get('item');
-      expect(allItems.getIndex(0).get('val').toString()).toBe('updated');
-      expect(allItems.getIndex(1).get('val').toString()).toBe('updated');
+      // val has complex content (<data>), so toString() returns XML per E4X spec
+      expect(allItems.getIndex(0).get('val').text()).toBe('updated');
+      expect(allItems.getIndex(1).get('val').text()).toBe('updated');
     });
 
     it('setNodeValue() with XMLProxy preserves node data', () => {
