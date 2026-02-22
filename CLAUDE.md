@@ -870,7 +870,7 @@ Discovered gaps are tracked in `manifest.json` under `validationGaps`:
 
 Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 
-### Validation Status (as of 2026-02-15)
+### Validation Status (as of 2026-02-22)
 
 | Priority | Category | Status | Notes |
 |----------|----------|--------|-------|
@@ -881,8 +881,9 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 4 | Data Types | ✅ Passing | HL7v2, XML, JSON, Delimited, EDI, HL7v3, NCPDP, DICOM (Wave 3-5) |
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
+| 7 | Live Server Runtime | ✅ Passing | 15 channels, 30+ transformation patterns, 6 bugs fixed (3 sessions) |
 
-**Total Tests: 8,368 passing** (368 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps + 28 pipeline-lifecycle + 57 adversarial-runtime + 31 xmlproxy-tq-fixes + 101 other)
+**Total Tests: 8,211 passing** (348 unit suites with 8,123 tests + 4 integration suites with 88 tests — 0 regressions)
 
 ### Quick Validation Scripts
 
@@ -3233,16 +3234,61 @@ All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, and XMLPr
 - ✅ **Adversarial Transformer Runtime Testing** — 57 tests across 8 phases targeting bugs that only manifest with adversarial data through the full transpiler→builder→scope→VM pipeline. Fixes: P0-1 namespace isolation (per-scope closures), P0-2 XMLProxy.exists() method, P0-3 multi-node set() on all XMLList nodes, P0-4 toXMLString() error propagation, P1-1 double-quote attribute escaping, P1-2 template literal interpolation zone tracking, P1-3 regex literal detection, P2-1 StepCompiler field injection prevention, P2-2 frozen Buffer prototype isolation, P2-3 auto-serialization contextual errors. Added XMLProxy.forEach() for real Mirth script patterns. 10 pipeline integration tests validate all fixes end-to-end.
 - ✅ **XMLProxy TQ Remediation** — 6 runtime bugs in XMLProxy.ts found by transformation-quality-checker scan. Critical: Proxy `return this` bypass (added `_self` field), `value.nodes` Proxy trap (→ `getNodes()`). Major: `append()` child vs sibling (added `_isDocument` flag). Minor: `attributes().length()`, `createList()` type guard. 31 tests, 0 regressions across 368 suites.
 - ✅ **TQ Full Scan Verified Clean (2026-02-22)** — Full transformation-quality-checker re-scan after commits 68de9a7 + 27cddc6. 89 verification items across 8 phases (static anti-patterns, E4X transpilation execution, scope types, generated code, cross-realm isolation, data flow stages, map chains, XMLProxy methods). Result: 88/89 PASS, 0 critical, 0 major, 1 minor (Buffer.freeze() silent failure in non-strict VM — protection effective, no fix needed). All prior fixes from lessons #54-#61, adversarial testing P0-1 through P2-3, and TQ remediation confirmed intact. Report: `plans/tq-checker-full-scan-2026-02-22.md`.
+- ✅ **Live Server Runtime Validation (2026-02-22)** — Full-stack live server validation against 15 kitchen sink channels across 3 sessions. 6 bugs found and fixed: XMLProxy.toString() ECMA-357 non-compliance (critical), response transformer unconditional execution (critical), batch processing wiring (major), ResponseSelector pipeline wiring (major), HL7v2 parser .1 sub-element wrapping (major), CH34 E4X access pattern (minor). 30+ transformation patterns verified correct including E4X (8 types), code templates, multi-destination routing, cross-channel VM routing, MLLP ACK generation/rejection, HTTP dispatcher/receiver chains, batch HL7 split, response selection, and postprocessor `$r()` access. 8,211 automated tests passing, 0 regressions. Report: `plans/live-server-validation-2026-02-22.md`.
 
-### Live Server Validation (2026-02-22)
+### Live Server Runtime Validation (2026-02-22)
 
-**Full-stack live server validation against 15 kitchen sink channels.**
+**Full-stack live server validation against 15 kitchen sink channels across 3 sessions. 6 bugs found and fixed. All 30+ transformation patterns verified correct.**
 
-Deployed 5 code template libraries (14 templates) and 15 channels to a live Node.js Mirth server (standalone mode, localhost MySQL). Sent test messages via HTTP, MLLP, and VM connectors. All 15 channels processed messages through the full E4X transpilation → script building → scope construction → VM execution → DB persistence → API retrieval pipeline.
+Deployed 5 code template libraries (14 templates) and 15 channels to a live Node.js Mirth server (`PORT=8081 MIRTH_MODE=standalone`, localhost MySQL via Rancher Desktop). Sent test messages via HTTP (10 channels), MLLP (2 channels), and VM (3 auto-triggered channels). All 15 channels processed messages through the full E4X transpilation → script building → scope construction → VM execution → DB persistence → API retrieval pipeline.
 
-**Bug found and fixed:** `XMLProxy.toString()` violated ECMA-357 E4X spec — always returned text content instead of XML for complex elements. Fixed to check `hasSimpleContent()` first. This resolved CH19's `hasZKS/hasZE4: "false"` bug. See lesson #63.
+#### Bugs Found and Fixed (6)
 
-**Results:** All 15 channels Source TRANSFORMED. All code template functions work. All E4X patterns (descendant, for-each, delete, createSegment, XML literals, namespace) verified correct. 8,144 unit tests passing, 0 regressions. Report: `plans/live-server-validation-2026-02-22.md`.
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 1 | `XMLProxy.toString()` ECMA-357 non-compliance | Critical | Check `hasSimpleContent()` → text; complex → `toXMLString()`. See lesson #63 |
+| 2 | Response transformers only ran when response present | Critical | Execute unconditionally in `ResponseTransformerExecutor.ts` (matches Java) |
+| 3 | Batch processing not wired | Major | Wire `HL7BatchAdaptor` in `ChannelBuilder.ts` when `processBatch=true` |
+| 4 | ResponseSelector not wired in pipeline | Major | Add `ResponseSelector` to `Channel.ts`, read `responseVariable` in `ChannelBuilder.ts` |
+| 5 | HL7v2 parser `.1` sub-element wrapping removed incorrectly | Major | Restored `.1` wrapping — Java ER7Reader.handleField() (line 256) ALWAYS creates `.1` children |
+| 6 | CH34 E4X access pattern wrong | Minor | `obx['OBX.8'].toString()` → `obx['OBX.8']['OBX.8.1'].toString()` |
+
+#### Channel Results (15/15 PASS)
+
+**HTTP Entry Points (10 channels):**
+- CH02 (8090 `/api/patient`): JSON filter rejects invalid (FILTERED), accepts valid (TRANSFORMED). `normalizePatientName` code template → `"TEST, VALID"`
+- CH08 (8091 `/complete`): HTTP chain target from CH02
+- CH14 (8094 `/hl7`): `validate()`, `createSegment('ZE4')`, DestinationSet
+- CH15 (8095 `/json`): JSON→XML conversion
+- CH17 (8096 `/multi`): 3 destinations SENT, `$r()` postprocessor → `{alpha:ALPHA_OK, beta:BETA_OK, gamma:GAMMA_OK}`
+- CH25 (8098 `/convert`): HL7V2→XML cross-datatype transform
+- CH29 (8099 `/global`): Channel preprocessor functional
+- CH31 (8100 `/metadata`): Custom metadata columns
+- CH32 (8101 `/response`): Response mode → `{d1:true, d2:true, d3:true, allSent:true}`
+- CH34 (8102 `/e4x-stress`): `abnormalFlagCount=3`, `criticalResults` correct
+
+**MLLP Entry Points (2 channels):**
+- CH19 (6671): Full E4X pipeline — `obxValueList: "WBC=12.5|RBC=4.85|HGB=14.2|PLT=125"`, ACK AA, ACK AR for non-ADT/ORU
+- CH28 (6672): 3 MSH segments → 3 individual messages, ACK AA
+
+**VM Receivers (3 channels):**
+- CH07 Audit Logger: 65+ messages from upstream channels
+- CH20 E4X Advanced: Attr write, XML literals, namespaces
+- CH33 E4X Filters: Predicate-based filtering, child iteration
+
+#### Transformation Patterns Verified (30+)
+
+E4X descendant (`msg..OBX`), for-each loop, delete operator, XML literals, namespace handling, filter predicates, computed attributes, `createSegment()`, `validate()` with regex, DestinationSet, `$r()` postprocessor, response transformer, code template functions, JSON filter/transform, multi-destination fan-out, inter-channel HTTP/VM, MLLP ACK generation/rejection, HL7 escape sequences (`\T\`, `\S\`), global preprocessor, custom metadata columns, batch HL7 split, cross-datatype (HL7→XML), `hasSimpleContent()`/`hasComplexContent()`.
+
+#### Test Suite Verification
+
+| Suite | Count | Status |
+|-------|-------|--------|
+| Unit tests (348 suites) | 8,123 | All passing |
+| Pipeline integration (4 suites) | 88 | All passing |
+| **Total automated** | **8,211** | **All passing, 0 regressions** |
+
+Report: `plans/live-server-validation-2026-02-22.md`
 
 ### Role-Based Authorization Controller
 
