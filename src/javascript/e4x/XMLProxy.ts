@@ -61,14 +61,17 @@ export class XMLProxy {
   private _parent: XMLProxy | null;
   private tagName: string;
   private defaultNamespace: string = '';
+  private _self!: XMLProxy; // Proxy self-reference — methods return this instead of raw target
+  private _isDocument: boolean = false; // true for XMLProxy.create() results, false for query results
 
-  private constructor(nodes: OrderedNode[], tagName: string = '', parent: XMLProxy | null = null) {
+  private constructor(nodes: OrderedNode[], tagName: string = '', parent: XMLProxy | null = null, isDocument: boolean = false) {
+    this._isDocument = isDocument;
     this.nodes = nodes;
     this.tagName = tagName;
     this._parent = parent;
 
     // Return a Proxy to intercept property access
-    return new Proxy(this, {
+    const proxy = new Proxy(this, {
       get: (target, prop, receiver) => {
         // Handle built-in methods and properties first
         if (typeof prop === 'symbol') {
@@ -129,6 +132,8 @@ export class XMLProxy {
         return true;
       },
     });
+    this._self = proxy;
+    return proxy;
   }
 
   /**
@@ -141,7 +146,7 @@ export class XMLProxy {
 
     try {
       const parsed = parser.parse(xmlString) as OrderedNode[];
-      return new XMLProxy(Array.isArray(parsed) ? parsed : [parsed], 'root');
+      return new XMLProxy(Array.isArray(parsed) ? parsed : [parsed], 'root', null, true);
     } catch {
       // Return empty proxy on parse error
       return new XMLProxy([], '');
@@ -159,8 +164,8 @@ export class XMLProxy {
    * Create XMLList (array of XMLProxy)
    * Accepts optional string argument for parsing (E4X: new XMLList(str))
    */
-  static createList(str?: string): XMLProxy {
-    if (str !== undefined && str !== null && str !== '') {
+  static createList(str?: unknown): XMLProxy {
+    if (typeof str === 'string' && str !== '') {
       return XMLProxy.create(str);
     }
     return new XMLProxy([], 'list');
@@ -247,7 +252,7 @@ export class XMLProxy {
             // Create new child
             const newChild: OrderedNode = {};
             if (value instanceof XMLProxy) {
-              newChild[name] = value.nodes;
+              newChild[name] = value.getNodes();
             } else {
               newChild[name] = [{ '#text': String(value) }];
             }
@@ -547,22 +552,32 @@ export class XMLProxy {
 
   /**
    * Get all attributes
+   *
+   * Returns an object with attribute name→value pairs plus a length() method
+   * for E4X compatibility (msg.@*.length()).
    */
-  attributes(): Record<string, string> {
-    if (this.nodes.length === 0) return {};
+  attributes(): Record<string, string> & { length: () => number } {
+    const addLength = (obj: Record<string, string>, count: number): Record<string, string> & { length: () => number } => {
+      Object.defineProperty(obj, 'length', { value: () => count, enumerable: false });
+      return obj as Record<string, string> & { length: () => number };
+    };
+
+    if (this.nodes.length === 0) return addLength({}, 0);
 
     const node = this.nodes[0]!;
     const attrs = node[':@'] as Record<string, string> | undefined;
     if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
       const result: Record<string, string> = {};
+      let count = 0;
       for (const [key, value] of Object.entries(attrs)) {
         if (key.startsWith('@_')) {
           result[key.substring(2)] = value;
+          count++;
         }
       }
-      return result;
+      return addLength(result, count);
     }
-    return {};
+    return addLength({}, 0);
   }
 
   /**
@@ -717,36 +732,53 @@ export class XMLProxy {
 
   /**
    * Append XML (E4X += operator)
+   *
+   * For single-root XML (common: msg is an <HL7Message>), appended elements
+   * become children of the root. For multi-node XMLList, they become siblings
+   * (E4X list concatenation).
    */
   append(value: XMLProxy | string): XMLProxy {
-    if (typeof value === 'string') {
-      const parsed = XMLProxy.create(value);
-      this.nodes.push(...parsed.getNodes());
-    } else {
-      this.nodes.push(...value.getNodes());
+    const newNodes = typeof value === 'string'
+      ? XMLProxy.create(value).getNodes()
+      : value.getNodes();
+
+    if (this.nodes.length === 1 && this._isDocument) {
+      // Root document: add as child (Mirth pattern: msg += <ZZZ/>)
+      const rootNode = this.nodes[0]!;
+      const rootTag = this.getNodeTagName(rootNode);
+      if (rootTag) {
+        const children = rootNode[rootTag];
+        if (Array.isArray(children)) {
+          children.push(...newNodes);
+          return this._self;
+        }
+      }
     }
-    return this;
+
+    // XMLList or fallback: add as sibling (E4X concatenation)
+    this.nodes.push(...newNodes);
+    return this._self;
   }
 
   /**
    * Insert child after specified node
    */
   insertChildAfter(refChild: XMLProxy, newChild: XMLProxy): XMLProxy {
-    if (this.nodes.length === 0) return this;
+    if (this.nodes.length === 0) return this._self;
 
     const node = this.nodes[0]!;
     const tagName = this.getNodeTagName(node);
-    if (!tagName) return this;
+    if (!tagName) return this._self;
 
     const children = node[tagName];
-    if (!Array.isArray(children)) return this;
+    if (!Array.isArray(children)) return this._self;
 
     const refIndex = refChild.childIndex();
     if (refIndex >= 0 && refIndex < children.length) {
       children.splice(refIndex + 1, 0, ...newChild.getNodes());
     }
 
-    return this;
+    return this._self;
   }
 
   /**
@@ -757,7 +789,8 @@ export class XMLProxy {
 
     const parentChildren = this._parent.children();
     for (let i = 0; i < parentChildren.length(); i++) {
-      if (parentChildren.getIndex(i).nodes[0] === this.nodes[0]) {
+      // Use getNodes() — .nodes goes through the Proxy get trap
+      if (parentChildren.getIndex(i).getNodes()[0] === this.nodes[0]) {
         return i;
       }
     }
@@ -796,21 +829,21 @@ export class XMLProxy {
    * E4X replace(propertyName, value) — replace a named child element
    */
   replace(propertyName: string, value: XMLProxy | string): XMLProxy {
-    if (this.nodes.length === 0) return this;
+    if (this.nodes.length === 0) return this._self;
 
     const node = this.nodes[0]!;
     const tagName = this.getNodeTagName(node);
-    if (!tagName) return this;
+    if (!tagName) return this._self;
 
     const children = node[tagName];
-    if (!Array.isArray(children)) return this;
+    if (!Array.isArray(children)) return this._self;
 
     const idx = children.findIndex((child) => {
       const ct = this.getNodeTagName(child);
       return ct === propertyName;
     });
 
-    if (idx === -1) return this;
+    if (idx === -1) return this._self;
 
     if (value instanceof XMLProxy && value.getNodes().length > 0) {
       children.splice(idx, 1, ...value.getNodes());
@@ -818,21 +851,21 @@ export class XMLProxy {
       children[idx] = { [propertyName]: [{ '#text': String(value) }] } as unknown as OrderedNode;
     }
 
-    return this;
+    return this._self;
   }
 
   /**
    * E4X insertChildBefore(refChild, newChild) — insert before reference node
    */
   insertChildBefore(refChild: XMLProxy, newChild: XMLProxy | string): XMLProxy {
-    if (this.nodes.length === 0) return this;
+    if (this.nodes.length === 0) return this._self;
 
     const node = this.nodes[0]!;
     const tagName = this.getNodeTagName(node);
-    if (!tagName) return this;
+    if (!tagName) return this._self;
 
     const children = node[tagName];
-    if (!Array.isArray(children)) return this;
+    if (!Array.isArray(children)) return this._self;
 
     // Use getNodes() instead of .nodes — .nodes goes through the Proxy get trap
     const newNodes =
@@ -852,28 +885,28 @@ export class XMLProxy {
       }
     }
 
-    return this;
+    return this._self;
   }
 
   /**
    * E4X prependChild(child) — insert child at the beginning
    */
   prependChild(child: XMLProxy | string): XMLProxy {
-    if (this.nodes.length === 0) return this;
+    if (this.nodes.length === 0) return this._self;
 
     const node = this.nodes[0]!;
     const tagName = this.getNodeTagName(node);
-    if (!tagName) return this;
+    if (!tagName) return this._self;
 
     const children = node[tagName];
-    if (!Array.isArray(children)) return this;
+    if (!Array.isArray(children)) return this._self;
 
     // Use getNodes() instead of .nodes — .nodes goes through the Proxy get trap
     const newNodes =
       typeof child === 'string' ? XMLProxy.create(child).getNodes() : child.getNodes();
 
     children.unshift(...newNodes);
-    return this;
+    return this._self;
   }
 
   /**
@@ -915,7 +948,7 @@ export class XMLProxy {
    * E4X normalize() — normalize adjacent text nodes (noop for fast-xml-parser)
    */
   normalize(): XMLProxy {
-    return this;
+    return this._self;
   }
 
   /**
@@ -1004,7 +1037,7 @@ export class XMLProxy {
 
   private setNodeValue(node: OrderedNode, tagName: string, value: unknown): void {
     if (value instanceof XMLProxy) {
-      node[tagName] = value.nodes;
+      node[tagName] = value.getNodes();
     } else {
       node[tagName] = [{ '#text': String(value) }];
     }

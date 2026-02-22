@@ -882,7 +882,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 5 | Advanced | ✅ Passing | Response transformers, routing, multi-destination (Wave 5) |
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 
-**Total Tests: 8,326 passing** (367 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps + 28 pipeline-lifecycle + 57 adversarial-runtime + 90 other)
+**Total Tests: 8,368 passing** (368 test suites — 2,559 core + 417 artifact management + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C batch/coverage + 89 auth/OpenAPI + 76 generated-code-bugs + 125 cluster-polling + 261 real-world-gaps + 28 pipeline-lifecycle + 57 adversarial-runtime + 31 xmlproxy-tq-fixes + 101 other)
 
 ### Quick Validation Scripts
 
@@ -1834,6 +1834,23 @@ Parameters:
 
 See `.claude/agents/serializer-parity-checker.md` for full specification.
 
+### transformation-quality-checker
+Detect transformation pipeline bugs where correct status codes mask wrong content — silent data loss, E4X transpilation runtime errors, scope wiring gaps, generated code bugs, cross-realm isolation failures, XMLProxy behavioral gaps, and map propagation errors. Combines static pattern analysis with execution verification via `node -e`.
+
+**Use for**: Post-fix behavioral verification, pre-production pipeline audits, diagnosing wrong output with correct status codes, E4X transpilation execution testing, XMLProxy behavioral testing, map propagation tracing.
+
+**Quick start**:
+```
+Use the transformation-quality-checker agent to scan for all transformation quality issues.
+Parameters:
+- scope: full|channel-xml|e4x|scope|maps|xmlproxy|response-chain
+- channelXmlPath: path/to/channel.xml (required when scope: channel-xml)
+- severity: critical|major|minor
+- bugCategories: ["TQ-SDL", "TQ-ETE", "TQ-SWG", "TQ-GCB", "TQ-CRI", "TQ-XBG", "TQ-MPE", "TQ-RHG"]
+```
+
+See `.claude/agents/transformation-quality-checker.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-21 Complete)
@@ -1915,7 +1932,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Real-World | 2 | ~2,500 | 261 | ~30 min | **Real-World Gap Remediation** (E4X computed attrs/tags, Java interop shims, XMLProxy.child, VM cross-realm fix) |
 | Pipeline | 0 | ~1,200 | 18 | ~30 min | **Pipeline Lifecycle Integration Tests** (13 scenarios, real VM execution, full dispatchRawMessage flow) |
 | Adversarial | 3 | ~600 | 57 | ~20 min | **Adversarial Runtime Testing** (P0-1..P0-4, P1-1..P1-3, P2-1..P2-3 fixes + 10 pipeline integration tests) |
-| **Total** | **100+** | **~112,000** | **4,355** | **~31 hrs** | |
+| TQ Fixes | 0 | ~130 | 31 | ~15 min | **XMLProxy TQ Remediation** (Proxy self-ref, value.nodes trap, append child/sibling, attributes().length(), createList guard) |
+| **Total** | **100+** | **~112,130** | **4,386** | **~31 hrs** | |
 
 ### Components Ported
 
@@ -2516,6 +2534,12 @@ This bug was discovered during real-world integration testing (39 test channels 
 **60. Proxy-Wrapped Objects Silently Shadow Missing Methods as E4X Property Access (forEach Bug)**
 XMLProxy returns a `new Proxy(this, { get: ... })` from its constructor. The Proxy handler checks if a property is a method on the target (line 94-98: `typeof value === 'function'`), and if so, binds and returns it. But if a method like `forEach` is NOT defined on XMLProxy, the handler falls through to the E4X property access path (line 102: `target.get(prop)`), which creates a child XMLProxy named "forEach" — an empty XMLProxy with `nodes=[]`. Calling `()` on this XMLProxy throws `TypeError: not a function`. The insidious part: no error at property access time — `msg.OBX.forEach` silently returns an empty XMLProxy instead of `undefined`. This makes the error message misleading (`forEach is not a function` when it seems to exist). The fix is to implement the missing method on the class, not to work around it in calling code. Any common JavaScript iteration pattern (`forEach`, `map`, `filter`, `some`, `every`) that users might call on XMLList-like objects should be explicitly defined — relying on `Symbol.iterator` alone is insufficient because most developers reach for `forEach` by habit.
 
+**61. Proxy `return this` Returns Unwrapped Target — All Method Chaining Breaks (TQ Remediation)**
+When `new Proxy(target, { get: (t, p) => value.bind(target) })` binds methods to `target`, any method that does `return this` returns the raw unwrapped object. After `msg = msg.append(x)`, `msg` is no longer a Proxy — bracket access (`msg['PID']`) returns `undefined` instead of triggering the Proxy get trap. The fix is a `_self` field: assign the Proxy reference after construction (`this._self = proxy; return proxy;`), then replace all `return this;` with `return this._self;`. This pattern applies to ANY JavaScript class that: (a) wraps itself in a Proxy in the constructor, and (b) has methods that return `this` for chaining. Additionally, **any property access on a Proxy-wrapped XMLProxy** that shares a name with a potential XML child element will silently return an empty XMLProxy instead of the expected value — `value.nodes` looks up element `<nodes>`, not the internal array. Always use explicit getter methods (`getNodes()`) instead of direct field access on Proxy-wrapped objects.
+
+**62. Root Document vs Query Result Requires Explicit Flag for `append()` Semantics**
+`XMLProxy.create('<root>...')` and `xml.get('item')` both produce single-node XMLProxy objects, but `append()` should behave differently: root documents add children (`msg += <ZZZ/>` adds segment to HL7Message), while query results add siblings (`items += <item/>` adds another item). The initial heuristic (`this.nodes.length === 1`) was too broad — it couldn't distinguish factory-created roots from query results. The fix adds `_isDocument: boolean` set only in `XMLProxy.create()`. This is preferable to using `_parent === null` because `createList()` also has null parent but should use sibling semantics.
+
 ### Wave 6: Dual Operational Modes (2026-02-04)
 
 **The culmination of the port — enabling seamless Java → Node.js migration.**
@@ -3104,7 +3128,7 @@ Existing tests fell into two non-overlapping categories: (1) `Channel.test.ts` �
 | `tests/integration/pipeline/helpers/ScriptFixtures.ts` | ~260 | — | Reusable JavaScript script snippets |
 | **Total** | **~1,540** | **28** | |
 
-- 28 pipeline integration tests (2 test suites), 8,326 total tests passing
+- 28 pipeline integration tests (2 test suites), 8,326 total tests passing (pre-TQ)
 - Plan: `plans/pipeline-lifecycle-integration-tests.md`
 
 ### Adversarial Transformer Runtime Testing (2026-02-21)
@@ -3157,9 +3181,33 @@ These bugs were discovered during plan-mode exploration of the transpiler→buil
 - 57 new tests (8 test suites), 8,326 total tests passing
 - Plan: `plans/adversarial-transformer-runtime-testing.md`
 
+### XMLProxy Transformation Quality Remediation (2026-02-22)
+
+**6 runtime bugs in XMLProxy.ts found by `transformation-quality-checker` agent scan + manual investigation. All fixes in a single file.**
+
+| Fix | ID | Severity | Description |
+|-----|-----|----------|-------------|
+| 1 | NEW | **Critical** | `return this` bypasses Proxy — all chaining + `msg += <tag/>` breaks. Added `_self` field storing Proxy reference |
+| 2 | TQ-XBG-001 | **Critical** | `value.nodes` in `set()`/`setNodeValue()`/`childIndex()` goes through Proxy trap → E4X child lookup for `<nodes>`. Changed to `getNodes()` |
+| 3 | TQ-XBG-003 | **Major** | `append()` adds as sibling instead of child for root documents. Added `_isDocument` flag — `create()` sets true, `get()`/query results leave false |
+| 4 | TQ-XBG-004 | Minor | `attributes()` returns plain object missing `length()`. Added non-enumerable `length()` via `Object.defineProperty` |
+| 5 | TQ-XBG-005 | Minor | `createList([])` crashes — `typeof str === 'string'` guard added |
+| 6 | (childIndex) | Pre-existing | `parentChildren.getIndex(i).nodes[0]` had same Proxy trap bug as Fix 2. Changed to `getNodes()` |
+
+**Key architectural insight:** The root cause of Fix 1 is a JavaScript Proxy pattern pitfall. When `new Proxy(target, { get: (t, p) => { ... value.bind(target) } })` binds methods to `target`, any method returning `this` returns the unwrapped object. The `_self` field pattern (assign Proxy reference after construction, return `this._self` instead of `this`) should be used in any class that both wraps itself in a Proxy and returns `this` from methods.
+
+**Key files:**
+
+| File | Tests | Purpose |
+|------|-------|---------|
+| `src/javascript/e4x/XMLProxy.ts` | — | All 6 fixes (single file) |
+| `tests/unit/javascript/e4x/XMLProxy.tq-fixes.test.ts` | 31 | Fix 1–5 tests |
+
+- 31 new tests (1 test suite), 8,368 total tests passing (0 regressions across 368 suites)
+
 ### Completion Status
 
-All Waves 1-22, Phase C, Real-World Gaps, and Adversarial Runtime Testing are complete. The porting project has reached production-ready status:
+All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, and XMLProxy TQ Remediation are complete. The porting project has reached production-ready status:
 
 **Completed (Waves 1-22 + Phase C + Real-World Gaps):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
@@ -3180,6 +3228,7 @@ All Waves 1-22, Phase C, Real-World Gaps, and Adversarial Runtime Testing are co
 - ✅ **Real-World JavaScript Runtime Gaps** — 12 gaps from 20+ GitHub Mirth channels: E4X computed attributes/tags/empty XMLList, Java interop shims (URL, SimpleDateFormat, ArrayList, HashMap, StringBuffer, System, StringUtils, MirthMap locking), XMLProxy.child(), cross-realm VM prototype fix (261 tests, 39 integration tests from real GitHub code)
 - ✅ **Pipeline Lifecycle Integration Tests** — 18 tests across 13 scenarios exercising the full `dispatchRawMessage()` pipeline with real V8 VM execution (E4X transpilation, scope construction, script building). Fills the gap between mocked-executor unit tests and isolated-VM integration tests. Covers: filter/transform, ERROR/QUEUED status, response transformers, preprocessor/postprocessor, deploy/undeploy, global+channel script chaining, E4X end-to-end, DestinationSet fan-out, and full map propagation.
 - ✅ **Adversarial Transformer Runtime Testing** — 57 tests across 8 phases targeting bugs that only manifest with adversarial data through the full transpiler→builder→scope→VM pipeline. Fixes: P0-1 namespace isolation (per-scope closures), P0-2 XMLProxy.exists() method, P0-3 multi-node set() on all XMLList nodes, P0-4 toXMLString() error propagation, P1-1 double-quote attribute escaping, P1-2 template literal interpolation zone tracking, P1-3 regex literal detection, P2-1 StepCompiler field injection prevention, P2-2 frozen Buffer prototype isolation, P2-3 auto-serialization contextual errors. Added XMLProxy.forEach() for real Mirth script patterns. 10 pipeline integration tests validate all fixes end-to-end.
+- ✅ **XMLProxy TQ Remediation** — 6 runtime bugs in XMLProxy.ts found by transformation-quality-checker scan. Critical: Proxy `return this` bypass (added `_self` field), `value.nodes` Proxy trap (→ `getNodes()`). Major: `append()` child vs sibling (added `_isDocument` flag). Minor: `attributes().length()`, `createList()` type guard. 31 tests, 0 regressions across 368 suites.
 
 ### Role-Based Authorization Controller
 
