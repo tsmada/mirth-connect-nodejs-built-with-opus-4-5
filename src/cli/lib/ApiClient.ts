@@ -346,6 +346,36 @@ export class ApiClient {
     return handleResponse<ChannelGroup>(response);
   }
 
+  /**
+   * Bulk update channel groups (create/update and delete)
+   *
+   * The server expects channels as { id, revision } objects, but the CLI
+   * uses flat string arrays. This method maps string[] → { id, revision }[].
+   */
+  async bulkUpdateChannelGroups(
+    channelGroups: ChannelGroup[],
+    removedChannelGroupIds: string[] = []
+  ): Promise<void> {
+    // Map CLI's channels: string[] → server's channels: { id, revision }[]
+    const serverGroups = channelGroups.map((group) => ({
+      ...group,
+      channels: (group.channels || []).map((channelId) => ({
+        id: channelId,
+        revision: 0,
+      })),
+    }));
+
+    const response = await this.axios.post('/api/channelgroups/_bulkUpdate', {
+      channelGroups: serverGroups,
+      removedChannelGroupIds,
+    });
+
+    if (response.status >= 400) {
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to update channel groups');
+      throw new ApiError(errorMsg, response.status);
+    }
+  }
+
   // ===========================================================================
   // Channel Operations (Deploy, Start, Stop, etc.)
   // ===========================================================================

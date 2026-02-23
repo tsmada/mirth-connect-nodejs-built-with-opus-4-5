@@ -9,6 +9,7 @@ import chalk, { ChalkInstance } from 'chalk';
 import {
   ChannelStatus,
   ChannelState,
+  ChannelGroup,
   Message,
   MessageStatus,
   ServerEvent,
@@ -405,6 +406,73 @@ export function formatMessageDetails(message: Message): string {
     if (connector.errorCode !== undefined && connector.errorCode !== 0) {
       lines.push(`    ${chalk.gray('Error Code:')}    ${chalk.red(String(connector.errorCode))}`);
     }
+  }
+
+  return lines.join('\n');
+}
+
+// =============================================================================
+// Group Formatters
+// =============================================================================
+
+/**
+ * Format channel groups as a table with channel counts
+ */
+export function formatGroupTable(groups: ChannelGroup[], ungroupedCount: number): string {
+  const columns: TableColumn[] = [
+    { header: 'NAME', width: 24 },
+    { header: 'ID', width: 36 },
+    { header: 'CHANNELS', width: 8, align: 'right' },
+    { header: 'DESCRIPTION', width: 30 },
+  ];
+
+  const data = groups.map((group) => [
+    group.name,
+    group.id,
+    String(group.channels?.length || 0),
+    truncate(group.description || '', 30),
+  ]);
+
+  if (ungroupedCount > 0) {
+    data.push([chalk.gray('(Ungrouped)'), '', String(ungroupedCount), '']);
+  }
+
+  return createTable(data, { columns });
+}
+
+/**
+ * Format group details with member channel statuses
+ */
+export function formatGroupDetails(
+  group: ChannelGroup,
+  channelDetails: Array<{ id: string; name: string; state?: ChannelState }>
+): string {
+  const lines = [
+    chalk.bold(`Group: ${group.name}`),
+    '',
+    `  ${chalk.gray('ID:')}          ${group.id}`,
+    `  ${chalk.gray('Description:')} ${group.description || '-'}`,
+    `  ${chalk.gray('Revision:')}    ${group.revision || '-'}`,
+    `  ${chalk.gray('Channels:')}    ${channelDetails.length}`,
+  ];
+
+  if (channelDetails.length > 0) {
+    lines.push('', chalk.bold('Member Channels:'));
+
+    const columns: TableColumn[] = [
+      { header: 'NAME', width: 24 },
+      { header: 'ID', width: 36 },
+      { header: 'STATUS', width: 10 },
+    ];
+
+    const tableData = channelDetails.map((ch) => {
+      const stateColor = ch.state ? getStateColor(ch.state) : chalk.gray;
+      return [ch.name, ch.id, ch.state ? stateColor(ch.state) : chalk.gray('UNKNOWN')];
+    });
+
+    lines.push(createTable(tableData, { columns }));
+  } else {
+    lines.push('', chalk.gray('  No channels in this group'));
   }
 
   return lines.join('\n');

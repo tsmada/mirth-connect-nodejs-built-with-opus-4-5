@@ -25,6 +25,7 @@ import { registerShadowCommands } from './commands/shadow.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { registerSecretsCommands } from './commands/secrets.js';
 import { registerCodemodCommands } from './commands/codemod.js';
+import { registerGroupCommands } from './commands/groups.js';
 import { ConfigManager } from './lib/ConfigManager.js';
 
 // Package version - would normally read from package.json
@@ -72,6 +73,7 @@ function createProgram(): Command {
   registerArtifactCommands(program);
   registerSecretsCommands(program);
   registerCodemodCommands(program);
+  registerGroupCommands(program);
 
   // Custom help with banner
   program.addHelpText('before', BANNER);
@@ -139,7 +141,7 @@ async function main(): Promise<void> {
 }
 
 // Run the CLI
-main().catch((error) => {
-  console.error(chalk.red('Fatal error:'), error.message);
+main().catch((error: unknown) => {
+  console.error(chalk.red('Fatal error:'), (error as Error).message);
   process.exit(1);
 });
