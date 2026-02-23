@@ -48,6 +48,10 @@ export interface DashboardStatus {
   queueEnabled?: boolean;
   queued?: number;
   waitForPrevious?: boolean;
+  /** Transport type name, e.g. "TCP Listener", "HTTP Dispatcher" */
+  transportName?: string;
+  /** Whether the connector is enabled (destinations only) */
+  enabled?: boolean;
   /** Listener info for socket-based source connectors (TCP, MLLP, HTTP, WS, DICOM) */
   listenerInfo?: ListenerInfo;
 }

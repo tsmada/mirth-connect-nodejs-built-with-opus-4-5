@@ -25,7 +25,11 @@ const mockGetName = jest.fn().mockReturnValue('Channel One');
 const mockGetSourceConnector = jest.fn().mockReturnValue(null);
 const mockGetDestinationConnectors = jest.fn().mockReturnValue([]);
 const mockGetStatistics = jest.fn().mockReturnValue({
-  received: 10, sent: 8, error: 1, filtered: 1, queued: 0,
+  received: 10,
+  sent: 8,
+  error: 1,
+  filtered: 1,
+  queued: 0,
 });
 const mockDispatchRawMessage = jest.fn().mockResolvedValue({
   getMessageId: () => 42,
@@ -140,8 +144,12 @@ jest.mock('../../../src/model/RawMessage', () => ({
       this.rawData = data.rawData;
       this.sourceMap = data.sourceMap ?? new Map();
     }
-    getRawData() { return this.rawData; }
-    getSourceMap() { return this.sourceMap; }
+    getRawData() {
+      return this.rawData;
+    }
+    getSourceMap() {
+      return this.sourceMap;
+    }
   },
 }));
 
@@ -205,6 +213,8 @@ describe('EngineController coverage', () => {
     mockDonkeyGetChannel.mockReturnValue(undefined);
     mockGetChannel.mockResolvedValue(makeChannelConfig('ch-1', 'Channel One'));
     mockGetAllChannels.mockResolvedValue([]);
+    mockGetSourceConnector.mockReturnValue(null);
+    mockGetDestinationConnectors.mockReturnValue([]);
 
     setDonkeyInstance({
       deployChannel: mockDonkeyDeployChannel,
@@ -216,7 +226,9 @@ describe('EngineController coverage', () => {
     for (const id of EngineController.getDeployedChannelIds()) {
       try {
         await EngineController.undeployChannel(id);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   });
 
@@ -276,9 +288,7 @@ describe('EngineController coverage', () => {
 
     it('should return all deployed channels when no IDs provided', async () => {
       await EngineController.deployChannel('ch-1');
-      mockGetAllChannels.mockResolvedValue([
-        { id: 'ch-1', name: 'Channel One', enabled: true },
-      ]);
+      mockGetAllChannels.mockResolvedValue([{ id: 'ch-1', name: 'Channel One', enabled: true }]);
 
       const statuses = await EngineController.getChannelStatuses();
       expect(statuses.length).toBe(1);
@@ -316,9 +326,7 @@ describe('EngineController coverage', () => {
 
     it('should filter deployed channels in all-channel mode', async () => {
       await EngineController.deployChannel('ch-1');
-      mockGetAllChannels.mockResolvedValue([
-        { id: 'ch-1', name: 'Channel One', enabled: true },
-      ]);
+      mockGetAllChannels.mockResolvedValue([{ id: 'ch-1', name: 'Channel One', enabled: true }]);
 
       const matching = await EngineController.getChannelStatuses(undefined, 'one');
       expect(matching.length).toBe(1);
@@ -358,9 +366,7 @@ describe('EngineController coverage', () => {
 
     it('should use createStatusFromDeployment for deployed channels', async () => {
       await EngineController.deployChannel('ch-1');
-      mockGetAllChannels.mockResolvedValue([
-        { id: 'ch-1', name: 'Channel One', enabled: true },
-      ]);
+      mockGetAllChannels.mockResolvedValue([{ id: 'ch-1', name: 'Channel One', enabled: true }]);
 
       const info = await EngineController.getDashboardChannelInfo(10);
       expect(info.dashboardStatuses.length).toBe(1);
@@ -373,13 +379,10 @@ describe('EngineController coverage', () => {
   // -----------------------------------------------------------------------
   describe('deployAllChannels()', () => {
     it('should deploy all enabled channels', async () => {
-      const configs = [
-        makeChannelConfig('ch-a', 'A'),
-        makeChannelConfig('ch-b', 'B'),
-      ];
+      const configs = [makeChannelConfig('ch-a', 'A'), makeChannelConfig('ch-b', 'B')];
       mockGetAllChannels.mockResolvedValue(configs);
-      mockGetChannel.mockImplementation(async (id: string) =>
-        configs.find(c => c.id === id) ?? null
+      mockGetChannel.mockImplementation(
+        async (id: string) => configs.find((c) => c.id === id) ?? null
       );
 
       await EngineController.deployAllChannels();
@@ -587,9 +590,9 @@ describe('EngineController coverage', () => {
     });
 
     it('should throw if channel is not deployed', async () => {
-      await expect(
-        EngineController.dispatchMessage('nonexistent', '<msg/>')
-      ).rejects.toThrow('Channel not deployed');
+      await expect(EngineController.dispatchMessage('nonexistent', '<msg/>')).rejects.toThrow(
+        'Channel not deployed'
+      );
     });
 
     it('should pass sourceMapData to channel', async () => {
@@ -682,9 +685,9 @@ describe('EngineController coverage', () => {
 
     it('should throw if channel is not deployed', async () => {
       const rawMsg = new RawMessage({ rawData: '<msg/>' });
-      await expect(
-        EngineController.dispatchRawMessage('nonexistent', rawMsg)
-      ).rejects.toThrow('Channel not deployed');
+      await expect(EngineController.dispatchRawMessage('nonexistent', rawMsg)).rejects.toThrow(
+        'Channel not deployed'
+      );
     });
 
     it('should throw in shadow mode for non-active channels', async () => {
@@ -693,9 +696,9 @@ describe('EngineController coverage', () => {
       mockIsChannelActive.mockReturnValue(false);
 
       const rawMsg = new RawMessage({ rawData: '<msg/>' });
-      await expect(
-        EngineController.dispatchRawMessage('ch-1', rawMsg)
-      ).rejects.toThrow('shadow mode');
+      await expect(EngineController.dispatchRawMessage('ch-1', rawMsg)).rejects.toThrow(
+        'shadow mode'
+      );
     });
   });
 
@@ -707,9 +710,7 @@ describe('EngineController coverage', () => {
       await EngineController.deployChannel('ch-1');
       const rawMsg = new RawMessage({ rawData: '<msg/>' });
 
-      const result = await engineControllerAdapter.dispatchRawMessage(
-        'ch-1', rawMsg, false, true
-      );
+      const result = await engineControllerAdapter.dispatchRawMessage('ch-1', rawMsg, false, true);
       expect(result).not.toBeNull();
       expect(result!.messageId).toBe(42);
     });
@@ -730,6 +731,9 @@ describe('EngineController coverage', () => {
       };
 
       mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'TCP Listener',
+        getCurrentState: () => DeployedState.STARTED,
         getListenerInfo: () => mockListenerInfo,
       });
 
@@ -742,6 +746,9 @@ describe('EngineController coverage', () => {
 
     it('should handle source connector without getListenerInfo', async () => {
       mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'Channel Reader',
+        getCurrentState: () => DeployedState.STARTED,
         // No getListenerInfo method
       });
 
@@ -754,6 +761,9 @@ describe('EngineController coverage', () => {
 
     it('should handle getListenerInfo returning null', async () => {
       mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'TCP Listener',
+        getCurrentState: () => DeployedState.STOPPED,
         getListenerInfo: () => null,
       });
 
@@ -772,6 +782,106 @@ describe('EngineController coverage', () => {
       const status = await EngineController.getChannelStatus('ch-1');
       expect(status).not.toBeNull();
       expect(status!.listenerInfo).toBeUndefined();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // childStatuses (per-connector status)
+  // -----------------------------------------------------------------------
+  describe('createStatusFromDeployment() childStatuses', () => {
+    it('should populate childStatuses with source + destinations', async () => {
+      mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'TCP Listener',
+        getCurrentState: () => DeployedState.STARTED,
+      });
+      mockGetDestinationConnectors.mockReturnValue([
+        {
+          getName: () => 'HTTP Sender',
+          getTransportName: () => 'HTTP Dispatcher',
+          getCurrentState: () => DeployedState.STARTED,
+          getMetaDataId: () => 1,
+          isQueueEnabled: () => true,
+          isEnabled: () => true,
+        },
+        {
+          getName: () => 'File Writer',
+          getTransportName: () => 'File Dispatcher',
+          getCurrentState: () => DeployedState.STOPPED,
+          getMetaDataId: () => 2,
+          isQueueEnabled: () => false,
+          isEnabled: () => false,
+        },
+      ]);
+
+      await EngineController.deployChannel('ch-1');
+      const status = await EngineController.getChannelStatus('ch-1');
+
+      expect(status).not.toBeNull();
+      expect(status!.childStatuses).toBeDefined();
+      expect(status!.childStatuses).toHaveLength(3);
+
+      // Source connector
+      const src = status!.childStatuses![0]!;
+      expect(src.metaDataId).toBe(0);
+      expect(src.name).toBe('Source');
+      expect(src.transportName).toBe('TCP Listener');
+      expect(src.state).toBe(DeployedState.STARTED);
+
+      // Destination 1
+      const d1 = status!.childStatuses![1]!;
+      expect(d1.metaDataId).toBe(1);
+      expect(d1.name).toBe('HTTP Sender');
+      expect(d1.transportName).toBe('HTTP Dispatcher');
+      expect(d1.state).toBe(DeployedState.STARTED);
+      expect(d1.queueEnabled).toBe(true);
+      expect(d1.enabled).toBe(true);
+
+      // Destination 2 (disabled)
+      const d2 = status!.childStatuses![2]!;
+      expect(d2.metaDataId).toBe(2);
+      expect(d2.name).toBe('File Writer');
+      expect(d2.transportName).toBe('File Dispatcher');
+      expect(d2.state).toBe(DeployedState.STOPPED);
+      expect(d2.queueEnabled).toBe(false);
+      expect(d2.enabled).toBe(false);
+    });
+
+    it('should have no childStatuses when no connectors exist', async () => {
+      mockGetSourceConnector.mockReturnValue(null);
+      mockGetDestinationConnectors.mockReturnValue([]);
+
+      await EngineController.deployChannel('ch-1');
+      const status = await EngineController.getChannelStatus('ch-1');
+
+      expect(status).not.toBeNull();
+      expect(status!.childStatuses).toBeUndefined();
+    });
+
+    it('should include listenerInfo on source child status', async () => {
+      const mockListenerInfo = {
+        port: 6661,
+        host: '0.0.0.0',
+        connectionCount: 2,
+        maxConnections: 50,
+        transportType: 'TCP',
+        listening: true,
+      };
+
+      mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'TCP Listener',
+        getCurrentState: () => DeployedState.STARTED,
+        getListenerInfo: () => mockListenerInfo,
+      });
+      mockGetDestinationConnectors.mockReturnValue([]);
+
+      await EngineController.deployChannel('ch-1');
+      const status = await EngineController.getChannelStatus('ch-1');
+
+      expect(status!.childStatuses).toHaveLength(1);
+      const src = status!.childStatuses![0]!;
+      expect(src.listenerInfo).toEqual(mockListenerInfo);
     });
   });
 
@@ -938,7 +1048,15 @@ describe('EngineController coverage', () => {
     it('should stop a destination connector by metaDataId', async () => {
       const mockDestStop = jest.fn().mockResolvedValue(undefined);
       mockGetDestinationConnectors.mockReturnValue([
-        { getMetaDataId: () => 2, stop: mockDestStop },
+        {
+          getMetaDataId: () => 2,
+          getName: () => 'Dest 1',
+          getTransportName: () => 'HTTP Dispatcher',
+          getCurrentState: () => DeployedState.STARTED,
+          isQueueEnabled: () => false,
+          isEnabled: () => true,
+          stop: mockDestStop,
+        },
       ]);
       await EngineController.deployChannel('ch-1');
 
@@ -948,7 +1066,12 @@ describe('EngineController coverage', () => {
 
     it('should stop the source connector (metaDataId 0)', async () => {
       const mockSourceStop = jest.fn().mockResolvedValue(undefined);
-      mockGetSourceConnector.mockReturnValue({ stop: mockSourceStop });
+      mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'TCP Listener',
+        getCurrentState: () => DeployedState.STARTED,
+        stop: mockSourceStop,
+      });
       await EngineController.deployChannel('ch-1');
 
       await EngineController.stopConnector('ch-1', 0);
@@ -1036,6 +1159,11 @@ describe('EngineController coverage', () => {
       // Create a VmDispatcher-like instance
       const vmDest = Object.create(VmDispatcher.prototype);
       vmDest.getMetaDataId = () => 1;
+      vmDest.getName = () => 'Channel Writer';
+      vmDest.getTransportName = () => 'Channel Writer';
+      vmDest.getCurrentState = () => DeployedState.STOPPED;
+      vmDest.isQueueEnabled = () => false;
+      vmDest.isEnabled = () => true;
       vmDest.getFilterTransformerExecutor = () => null;
       vmDest.setEngineController = mockSetEngineController;
 

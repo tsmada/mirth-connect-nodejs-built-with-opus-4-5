@@ -118,6 +118,12 @@ export interface ConnectorStatus {
   name: string;
   state: ChannelState;
   statistics: ConnectorStatistics;
+  /** Transport type name, e.g. "TCP Listener", "HTTP Dispatcher" */
+  transportName?: string;
+  /** Whether queue is enabled for this connector */
+  queueEnabled?: boolean;
+  /** Whether the connector is enabled (destinations only) */
+  enabled?: boolean;
 }
 
 /**

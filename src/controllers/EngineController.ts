@@ -17,6 +17,7 @@ import {
   DeployedState,
   ListenerInfo,
   createDashboardStatus,
+  createEmptyStatistics,
 } from '../api/models/DashboardStatus.js';
 import { ChannelController } from './ChannelController.js';
 import { ConfigurationController } from './ConfigurationController.js';
@@ -318,7 +319,9 @@ export class EngineController {
       // Fetch code templates for this channel and create a per-channel executor
       try {
         const codeTemplateScripts = await getAllCodeTemplateScriptsForChannel(channelId);
-        logger.debug(`Channel ${channelConfig.name}: found ${codeTemplateScripts.length} code template scripts`);
+        logger.debug(
+          `Channel ${channelConfig.name}: found ${codeTemplateScripts.length} code template scripts`
+        );
         if (codeTemplateScripts.length > 0) {
           const channelExecutor = createJavaScriptExecutor({ codeTemplates: codeTemplateScripts });
           runtimeChannel.setExecutor(channelExecutor);
@@ -775,6 +778,35 @@ export class EngineController {
       }
     }
 
+    // Build per-connector child statuses
+    const childStatuses: DashboardStatus[] = [];
+
+    if (sourceConnector) {
+      childStatuses.push({
+        channelId: deployment.channelId,
+        name: sourceConnector.getName(),
+        state: sourceConnector.getCurrentState(),
+        metaDataId: 0,
+        transportName: sourceConnector.getTransportName(),
+        statistics: createEmptyStatistics(),
+        listenerInfo,
+      });
+    }
+
+    const destConnectors = deployment.runtimeChannel.getDestinationConnectors();
+    for (const dest of destConnectors) {
+      childStatuses.push({
+        channelId: deployment.channelId,
+        name: dest.getName(),
+        state: dest.getCurrentState(),
+        metaDataId: dest.getMetaDataId(),
+        transportName: dest.getTransportName(),
+        queueEnabled: dest.isQueueEnabled(),
+        enabled: dest.isEnabled(),
+        statistics: createEmptyStatistics(),
+      });
+    }
+
     return {
       channelId: deployment.channelId,
       name: deployment.name,
@@ -784,6 +816,7 @@ export class EngineController {
       deployedRevisionDelta: 0,
       statistics: deployment.runtimeChannel.getStatistics(),
       listenerInfo,
+      childStatuses: childStatuses.length > 0 ? childStatuses : undefined,
     };
   }
 

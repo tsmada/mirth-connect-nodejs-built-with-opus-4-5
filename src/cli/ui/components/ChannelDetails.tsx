@@ -119,6 +119,130 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
       ` ${label} `
     );
 
+  const truncate = (s: string, max: number) =>
+    s.length > max ? s.slice(0, max - 1) + '\u2026' : s;
+
+  const renderConnectorsTab = () => {
+    const connectors = channel.childStatuses;
+    if (!connectors || connectors.length === 0) {
+      return React.createElement(
+        Box,
+        { flexDirection: 'column', marginTop: 1 },
+        React.createElement(
+          Text,
+          { color: 'gray' },
+          'Connector information unavailable. Channel may not be deployed.'
+        )
+      );
+    }
+
+    const source = connectors.find((c) => c.metaDataId === 0);
+    const destinations = connectors.filter((c) => c.metaDataId !== 0);
+
+    const elements: React.ReactElement[] = [];
+
+    // Source section
+    if (source) {
+      elements.push(
+        React.createElement(
+          Box,
+          { key: 'src-header', flexDirection: 'column', marginTop: 1 },
+          React.createElement(Text, { bold: true, color: 'white' }, 'Source'),
+          React.createElement(Text, { color: 'gray' }, '\u2500'.repeat(30))
+        )
+      );
+      elements.push(
+        React.createElement(
+          Box,
+          { key: 'src-name', flexDirection: 'row', marginTop: 1 },
+          React.createElement(Text, { color: 'gray' }, '  Name:      '),
+          React.createElement(Text, null, source.name)
+        )
+      );
+      if (source.transportName) {
+        elements.push(
+          React.createElement(
+            Box,
+            { key: 'src-transport', flexDirection: 'row' },
+            React.createElement(Text, { color: 'gray' }, '  Transport: '),
+            React.createElement(Text, null, source.transportName)
+          )
+        );
+      }
+      elements.push(
+        React.createElement(
+          Box,
+          { key: 'src-state', flexDirection: 'row' },
+          React.createElement(Text, { color: 'gray' }, '  State:     '),
+          React.createElement(StatusIndicator, { state: source.state })
+        )
+      );
+      if (channel.listenerInfo) {
+        const li = channel.listenerInfo;
+        const connStr =
+          li.connectionCount > 0
+            ? ` (${li.connectionCount} connection${li.connectionCount === 1 ? '' : 's'})`
+            : '';
+        elements.push(
+          React.createElement(
+            Box,
+            { key: 'src-listener', flexDirection: 'row' },
+            React.createElement(Text, { color: 'gray' }, '  Listener:  '),
+            React.createElement(Text, null, `${li.host}:${li.port}${connStr}`)
+          )
+        );
+      }
+    }
+
+    // Destinations section
+    if (destinations.length > 0) {
+      elements.push(
+        React.createElement(
+          Box,
+          { key: 'dest-header', flexDirection: 'column', marginTop: 1 },
+          React.createElement(Text, { bold: true, color: 'white' }, 'Destinations'),
+          React.createElement(Text, { color: 'gray' }, '\u2500'.repeat(30))
+        )
+      );
+      for (const dest of destinations) {
+        const namePart = truncate(dest.name, 20).padEnd(20);
+        const transportPart = dest.transportName ? truncate(dest.transportName, 18).padEnd(18) : '';
+        const disabledBadge = dest.enabled === false;
+        elements.push(
+          React.createElement(
+            Box,
+            { key: `dest-${dest.metaDataId}`, flexDirection: 'column', marginTop: 1 },
+            React.createElement(
+              Box,
+              { flexDirection: 'row' },
+              React.createElement(Text, { color: 'gray' }, `  #${dest.metaDataId}  `),
+              React.createElement(Text, null, namePart),
+              transportPart
+                ? React.createElement(Text, { color: 'gray' }, ` ${transportPart} `)
+                : null,
+              React.createElement(StatusIndicator, { state: dest.state }),
+              disabledBadge
+                ? React.createElement(Text, { color: 'gray', dimColor: true }, '  [disabled]')
+                : null
+            ),
+            React.createElement(
+              Box,
+              { flexDirection: 'row' },
+              React.createElement(Text, { color: 'gray' }, '        Queue: '),
+              React.createElement(
+                Text,
+                { color: dest.queueEnabled ? 'green' : 'gray' },
+                dest.queueEnabled ? 'Enabled' : 'Disabled'
+              )
+            )
+          )
+        );
+      }
+    }
+
+    return React.createElement(Box, { flexDirection: 'column' }, ...elements);
+  };
+
   return React.createElement(
     Box,
     {
@@ -240,12 +364,7 @@ export const ChannelDetails: FC<ChannelDetailsProps> = ({
         { flexDirection: 'column', marginTop: 1 },
         React.createElement(Text, { color: 'gray' }, 'Press [M] to view messages for this channel.')
       ),
-    activeTab === 'connectors' &&
-      React.createElement(
-        Box,
-        { flexDirection: 'column', marginTop: 1 },
-        React.createElement(Text, { color: 'gray' }, 'Connector information not yet implemented.')
-      ),
+    activeTab === 'connectors' && renderConnectorsTab(),
     // Action message
     actionMessage &&
       React.createElement(

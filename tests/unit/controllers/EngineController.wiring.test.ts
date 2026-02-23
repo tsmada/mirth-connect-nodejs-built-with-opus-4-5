@@ -25,7 +25,11 @@ const mockGetName = jest.fn().mockReturnValue('Test Channel');
 const mockGetSourceConnector = jest.fn().mockReturnValue(null);
 const mockGetDestinationConnectors = jest.fn().mockReturnValue([]);
 const mockGetStatistics = jest.fn().mockReturnValue({
-  received: 0, sent: 0, error: 0, filtered: 0, queued: 0,
+  received: 0,
+  sent: 0,
+  error: 0,
+  filtered: 0,
+  queued: 0,
 });
 const mockOn = jest.fn();
 
@@ -147,6 +151,8 @@ describe('EngineController wiring fixes', () => {
     // (The module maintains internal state across tests)
     mockGetCurrentState.mockReturnValue(DeployedState.STOPPED);
     mockDonkeyGetChannel.mockReturnValue(undefined);
+    mockGetSourceConnector.mockReturnValue(null);
+    mockGetDestinationConnectors.mockReturnValue([]);
   });
 
   describe('Bug 1: SBF-DUAL-001 — Donkey undeploy state drift', () => {
@@ -292,6 +298,9 @@ describe('EngineController wiring fixes', () => {
     beforeEach(async () => {
       // Configure mock source connector
       mockGetSourceConnector.mockReturnValue({
+        getName: () => 'Source',
+        getTransportName: () => 'TCP Listener',
+        getCurrentState: () => 'STARTED',
         start: mockSourceStart,
         stop: mockSourceStop,
       });
@@ -300,6 +309,10 @@ describe('EngineController wiring fixes', () => {
       mockGetDestinationConnectors.mockReturnValue([
         {
           getMetaDataId: () => 1,
+          getName: () => 'Dest 1',
+          getTransportName: () => 'HTTP Dispatcher',
+          getCurrentState: () => 'STARTED',
+          isEnabled: () => true,
           start: mockDestStart,
           stop: mockDestStop,
           isQueueEnabled: () => false,
@@ -345,6 +358,10 @@ describe('EngineController wiring fixes', () => {
       mockGetDestinationConnectors.mockReturnValue([
         {
           getMetaDataId: () => 1,
+          getName: () => 'Dest 1',
+          getTransportName: () => 'HTTP Dispatcher',
+          getCurrentState: () => 'STARTED',
+          isEnabled: () => true,
           start: mockDestStart,
           stop: mockDestStop,
           isQueueEnabled: () => true,
@@ -358,15 +375,15 @@ describe('EngineController wiring fixes', () => {
     });
 
     it('should throw for non-deployed channel', async () => {
-      await expect(
-        EngineController.startConnector('non-existent', 0)
-      ).rejects.toThrow('Channel not deployed');
+      await expect(EngineController.startConnector('non-existent', 0)).rejects.toThrow(
+        'Channel not deployed'
+      );
     });
 
     it('should throw for non-existent destination metaDataId', async () => {
-      await expect(
-        EngineController.startConnector('test-channel-id', 99)
-      ).rejects.toThrow('Destination connector 99 not found');
+      await expect(EngineController.startConnector('test-channel-id', 99)).rejects.toThrow(
+        'Destination connector 99 not found'
+      );
     });
   });
 });
