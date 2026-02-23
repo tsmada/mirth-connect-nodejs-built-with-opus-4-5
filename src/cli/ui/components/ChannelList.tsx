@@ -6,7 +6,11 @@
 
 import React, { FC, useMemo } from 'react';
 import { Box, Text } from 'ink';
-import { ChannelStatus, ChannelGroup as ChannelGroupType } from '../../types/index.js';
+import {
+  ChannelStatus,
+  ChannelGroup as ChannelGroupType,
+  CHANNEL_GROUP_DEFAULT_ID,
+} from '../../types/index.js';
 import { ChannelRow, COLUMN_WIDTHS, calculateNameWidth } from './ChannelRow.js';
 import { ChannelGroup } from './ChannelGroup.js';
 
@@ -73,12 +77,22 @@ function buildFlatList(
     channelList.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  // Add groups and their channels to the flat list
-  const sortedGroups = [...groups].sort((a, b) => a.name.localeCompare(b.name));
+  // Build ordered group list: Default Group first, then the rest alphabetically.
+  // The groups array already comes with Default Group first from useChannelGroups,
+  // but we ensure sort stability here.
+  const defaultGroup = groups.find((g) => g.id === CHANNEL_GROUP_DEFAULT_ID);
+  const otherGroups = groups
+    .filter((g) => g.id !== CHANNEL_GROUP_DEFAULT_ID)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const orderedGroups = defaultGroup ? [defaultGroup, ...otherGroups] : otherGroups;
 
-  for (const group of sortedGroups) {
+  for (const group of orderedGroups) {
     const groupChannels = groupedChannels.get(group.id);
-    if (!groupChannels || groupChannels.length === 0) continue;
+
+    // Show Default Group header even when empty; hide other empty groups
+    if (group.id !== CHANNEL_GROUP_DEFAULT_ID && (!groupChannels || groupChannels.length === 0)) {
+      continue;
+    }
 
     // Add group header
     items.push({
@@ -88,40 +102,18 @@ function buildFlatList(
       data: group,
     });
 
-    // Add channels if expanded
-    if (expandedGroups.has(group.id)) {
-      for (const channel of groupChannels) {
-        items.push({
-          type: 'channel',
-          id: channel.channelId,
-          groupId: group.id,
-          data: channel,
-        });
+    // Add channels if expanded (Default Group is always expanded)
+    if (group.id === CHANNEL_GROUP_DEFAULT_ID || expandedGroups.has(group.id)) {
+      if (groupChannels) {
+        for (const channel of groupChannels) {
+          items.push({
+            type: 'channel',
+            id: channel.channelId,
+            groupId: group.id,
+            data: channel,
+          });
+        }
       }
-    }
-  }
-
-  // Add ungrouped channels
-  const ungroupedChannels = groupedChannels.get(null);
-  if (ungroupedChannels && ungroupedChannels.length > 0) {
-    // Add "Ungrouped" header if there are groups
-    if (groups.length > 0) {
-      items.push({
-        type: 'group',
-        id: 'group-ungrouped',
-        groupId: null,
-        data: { id: 'ungrouped', name: 'Ungrouped', channels: [] } as ChannelGroupType,
-      });
-    }
-
-    // Always show ungrouped channels (no collapse)
-    for (const channel of ungroupedChannels) {
-      items.push({
-        type: 'channel',
-        id: channel.channelId,
-        groupId: null,
-        data: channel,
-      });
     }
   }
 
@@ -198,21 +190,15 @@ export const ChannelList: FC<ChannelListProps> = ({
     ...items.map((item, index) => {
       if (item.type === 'group') {
         const group = item.data as ChannelGroupType;
-        const channelCount =
-          item.groupId === null
-            ? channels.filter((ch) => {
-                for (const g of groups) {
-                  if ((g.channels || []).includes(ch.channelId)) return false;
-                }
-                return true;
-              }).length
-            : (group.channels || []).length;
+        const channelCount = (group.channels || []).length;
 
         return React.createElement(ChannelGroup, {
           key: item.id,
           name: group.name,
           channelCount,
-          expanded: item.groupId === null || expandedGroups.has(item.groupId),
+          expanded:
+            group.id === CHANNEL_GROUP_DEFAULT_ID ||
+            (item.groupId != null && expandedGroups.has(item.groupId)),
           selected: index === selectedIndex,
         });
       }

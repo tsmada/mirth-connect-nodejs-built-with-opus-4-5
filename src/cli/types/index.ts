@@ -7,6 +7,15 @@
  */
 
 // =============================================================================
+// Default Group Constants (matches Java ChannelGroup.java:32-33)
+// =============================================================================
+
+/** Virtual group ID for channels not assigned to any real group */
+export const CHANNEL_GROUP_DEFAULT_ID = 'Default Group';
+/** Display name for the virtual default group */
+export const CHANNEL_GROUP_DEFAULT_NAME = '[Default Group]';
+
+// =============================================================================
 // Configuration Types
 // =============================================================================
 

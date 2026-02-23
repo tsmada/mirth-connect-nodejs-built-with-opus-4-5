@@ -353,4 +353,61 @@ describe('ChannelGroupServlet', () => {
       expect(response.body.error).toBe('Failed to update channel groups');
     });
   });
+
+  // ==========================================================================
+  // Default Group Protection
+  // ==========================================================================
+
+  describe('Default Group protection', () => {
+    it('should reject create with Default Group ID', async () => {
+      const response = await request(app)
+        .post('/channelgroups/_bulkUpdate')
+        .send({
+          channelGroups: [
+            { id: 'Default Group', name: 'Sneaky Group', revision: 1, channels: [] },
+          ],
+        });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toContain('default group');
+    });
+
+    it('should reject create with Default Group name', async () => {
+      const response = await request(app)
+        .post('/channelgroups/_bulkUpdate')
+        .send({
+          channelGroups: [
+            { id: TEST_GROUP_ID, name: '[Default Group]', revision: 1, channels: [] },
+          ],
+        });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toContain('default group');
+    });
+
+    it('should reject delete of Default Group ID', async () => {
+      const response = await request(app)
+        .post('/channelgroups/_bulkUpdate')
+        .send({
+          removedChannelGroupIds: ['Default Group'],
+        });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toContain('default group');
+    });
+
+    it('should allow normal group CRUD (regression)', async () => {
+      const response = await request(app)
+        .post('/channelgroups/_bulkUpdate')
+        .send({
+          channelGroups: [
+            { id: TEST_GROUP_ID, name: 'Normal Group', revision: 1, channels: [] },
+          ],
+          removedChannelGroupIds: [TEST_GROUP_ID_2],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toBe(true);
+    });
+  });
 });

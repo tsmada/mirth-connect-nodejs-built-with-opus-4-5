@@ -15,7 +15,8 @@ export type ViewMode =
   | 'help'
   | 'search'
   | 'traceInput'
-  | 'trace';
+  | 'trace'
+  | 'groupPicker';
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'polling';
 
 export interface DashboardMessage {

@@ -81,6 +81,7 @@ const HELP_CATEGORIES: ShortcutCategory[] = [
   {
     title: 'Groups',
     shortcuts: [
+      { key: 'g', description: 'Move channel to group' },
       { key: 'e', description: 'Expand all groups' },
       { key: 'w', description: 'Collapse all groups' },
     ],

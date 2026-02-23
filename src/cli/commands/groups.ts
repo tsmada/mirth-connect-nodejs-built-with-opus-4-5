@@ -14,7 +14,13 @@ import { ConfigManager } from '../lib/ConfigManager.js';
 import { GroupResolver } from '../lib/GroupResolver.js';
 import { ChannelResolver } from '../lib/ChannelResolver.js';
 import { OutputFormatter, formatGroupTable, formatGroupDetails } from '../lib/OutputFormatter.js';
-import { GlobalOptions, ChannelGroup, ChannelState } from '../types/index.js';
+import {
+  GlobalOptions,
+  ChannelGroup,
+  ChannelState,
+  CHANNEL_GROUP_DEFAULT_ID,
+  CHANNEL_GROUP_DEFAULT_NAME,
+} from '../types/index.js';
 
 function getGlobalOpts(cmd: Command): GlobalOptions {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
@@ -218,6 +224,13 @@ export function registerGroupCommands(program: Command): void {
         const client = createClient(globalOpts);
         const spinner = ora('Creating group...').start();
 
+        // Reject Default Group name
+        if (name === CHANNEL_GROUP_DEFAULT_NAME) {
+          spinner.stop();
+          formatter.error(`Cannot create a group named '${CHANNEL_GROUP_DEFAULT_NAME}' — this name is reserved`);
+          process.exit(1);
+        }
+
         // Check for duplicate name
         const existingGroups = await client.getChannelGroups();
         const duplicate = existingGroups.find((g) => g.name.toLowerCase() === name.toLowerCase());
@@ -271,6 +284,18 @@ export function registerGroupCommands(program: Command): void {
               console.log(chalk.gray(`  - ${s.name} (${s.id})`));
             }
           }
+          process.exit(1);
+        }
+
+        // Reject renaming the Default Group or renaming to the Default Group name
+        if (result.group.id === CHANNEL_GROUP_DEFAULT_ID) {
+          spinner.stop();
+          formatter.error('Cannot rename the Default Group');
+          process.exit(1);
+        }
+        if (newName === CHANNEL_GROUP_DEFAULT_NAME) {
+          spinner.stop();
+          formatter.error(`Cannot rename a group to '${CHANNEL_GROUP_DEFAULT_NAME}' — this name is reserved`);
           process.exit(1);
         }
 

@@ -9,7 +9,11 @@ import React, { FC, useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { ApiClient } from '../../lib/ApiClient.js';
 import { ConfigManager } from '../../lib/ConfigManager.js';
-import { ChannelStatus } from '../../types/index.js';
+import {
+  ChannelStatus,
+  CHANNEL_GROUP_DEFAULT_ID,
+  CHANNEL_GROUP_DEFAULT_NAME,
+} from '../../types/index.js';
 import { useWebSocket, WebSocketStatus } from '../hooks/useWebSocket.js';
 import { useChannels } from '../hooks/useChannels.js';
 import { useChannelGroups } from '../hooks/useChannelGroups.js';
@@ -24,6 +28,7 @@ import { TraceInput } from './TraceInput.js';
 import { TraceTreeView } from './TraceTreeView.js';
 import { MessageList } from './MessageList.js';
 import { MessageDetail } from './MessageDetail.js';
+import { GroupPicker } from './GroupPicker.js';
 import { useTrace } from '../hooks/useTrace.js';
 import { useMessages } from '../hooks/useMessages.js';
 import { Message } from '../../types/index.js';
@@ -81,6 +86,7 @@ export const Dashboard: FC<DashboardProps> = ({
   const [fullMessage, setFullMessage] = useState<Message | null>(null);
   const [fullMessageLoading, setFullMessageLoading] = useState(false);
   const [fullMessageError, setFullMessageError] = useState<string | null>(null);
+  const [groupPickerChannelIds, setGroupPickerChannelIds] = useState<string[]>([]);
 
   // Trace hook
   const trace = useTrace({ client });
@@ -268,7 +274,8 @@ export const Dashboard: FC<DashboardProps> = ({
         viewMode === 'traceInput' ||
         viewMode === 'trace' ||
         viewMode === 'messages' ||
-        viewMode === 'messageDetail'
+        viewMode === 'messageDetail' ||
+        viewMode === 'groupPicker'
       ) {
         return;
       }
@@ -354,6 +361,17 @@ export const Dashboard: FC<DashboardProps> = ({
           setTraceChannelId(selectedChannel.channelId);
           trace.clear();
           setViewMode('traceInput');
+        }
+      }
+      // Group picker
+      else if (input === 'g' || input === 'G') {
+        if (selectedChannel) {
+          const targetIds =
+            selectedChannelIds.size > 0
+              ? Array.from(selectedChannelIds)
+              : [selectedChannel.channelId];
+          setGroupPickerChannelIds(targetIds);
+          setViewMode('groupPicker');
         }
       }
       // Messages view
@@ -575,6 +593,107 @@ export const Dashboard: FC<DashboardProps> = ({
         },
       })
     );
+  }
+
+  // Group picker overlay
+  if (viewMode === 'groupPicker' && groupPickerChannelIds.length > 0) {
+    const pickerLabel =
+      groupPickerChannelIds.length === 1
+        ? channels.channels.find((ch) => ch.channelId === groupPickerChannelIds[0])?.name ??
+          groupPickerChannelIds[0]!
+        : `${groupPickerChannelIds.length} channels`;
+
+    const handleGroupSelect = async (groupId: string) => {
+      try {
+        showMessage('Moving channel(s)...', 'info');
+
+        // Fetch current real groups (not including virtual Default Group)
+        const allGroups = await client.getChannelGroups();
+
+        // Remove channel(s) from any current group
+        const updatedGroups = allGroups.map((g) => ({
+          ...g,
+          channels: (g.channels || []).filter(
+            (chId) => !groupPickerChannelIds.includes(chId)
+          ),
+          revision: (g.revision || 0) + 1,
+        }));
+
+        // Add channel(s) to target group (unless Default Group = just remove from all)
+        if (groupId !== CHANNEL_GROUP_DEFAULT_ID) {
+          const targetGroup = updatedGroups.find((g) => g.id === groupId);
+          if (targetGroup) {
+            targetGroup.channels = [
+              ...targetGroup.channels,
+              ...groupPickerChannelIds,
+            ];
+          }
+        }
+
+        await client.bulkUpdateChannelGroups(updatedGroups);
+        await groups.refresh();
+        showMessage(
+          `Moved ${groupPickerChannelIds.length} channel(s) to ${
+            groupId === CHANNEL_GROUP_DEFAULT_ID
+              ? CHANNEL_GROUP_DEFAULT_NAME
+              : allGroups.find((g) => g.id === groupId)?.name ?? groupId
+          }`,
+          'success'
+        );
+      } catch (err) {
+        showMessage(`Failed: ${(err as Error).message}`, 'error');
+      }
+      setGroupPickerChannelIds([]);
+      setViewMode('list');
+    };
+
+    const handleGroupCreate = async (name: string) => {
+      try {
+        showMessage('Creating group...', 'info');
+        const allGroups = await client.getChannelGroups();
+
+        // Remove channel(s) from current groups
+        const updatedGroups = allGroups.map((g) => ({
+          ...g,
+          channels: (g.channels || []).filter(
+            (chId) => !groupPickerChannelIds.includes(chId)
+          ),
+          revision: (g.revision || 0) + 1,
+        }));
+
+        // Create new group with the channel(s)
+        const { v4: uuidv4 } = await import('uuid');
+        updatedGroups.push({
+          id: uuidv4(),
+          name,
+          channels: [...groupPickerChannelIds],
+          revision: 1,
+        });
+
+        await client.bulkUpdateChannelGroups(updatedGroups);
+        await groups.refresh();
+        showMessage(`Created group '${name}' with ${groupPickerChannelIds.length} channel(s)`, 'success');
+      } catch (err) {
+        showMessage(`Failed: ${(err as Error).message}`, 'error');
+      }
+      setGroupPickerChannelIds([]);
+      setViewMode('list');
+    };
+
+    return React.createElement(GroupPicker, {
+      groups: groups.groups,
+      channelLabel: pickerLabel,
+      onSelect: (groupId: string) => {
+        handleGroupSelect(groupId).catch(() => {});
+      },
+      onCreate: (name: string) => {
+        handleGroupCreate(name).catch(() => {});
+      },
+      onCancel: () => {
+        setGroupPickerChannelIds([]);
+        setViewMode('list');
+      },
+    });
   }
 
   // Main list view

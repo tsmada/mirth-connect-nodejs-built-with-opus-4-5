@@ -24,6 +24,10 @@ const logger = getLogger('api');
 
 export const channelGroupRouter = Router();
 
+// Default Group constants — matches Java ChannelGroup.java:32-33
+const CHANNEL_GROUP_DEFAULT_ID = 'Default Group';
+const CHANNEL_GROUP_DEFAULT_NAME = '[Default Group]';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -248,6 +252,25 @@ channelGroupRouter.post(
         channelGroups?: ChannelGroup[];
         removedChannelGroupIds?: string[];
       };
+
+      // Default Group protection — matches Java DefaultChannelController.java:812-816
+      if (removedChannelGroupIds?.includes(CHANNEL_GROUP_DEFAULT_ID)) {
+        res.status(409).json({
+          error: 'Channel groups cannot have the same ID or name as the default group.',
+        });
+        return;
+      }
+
+      if (channelGroups) {
+        for (const group of channelGroups) {
+          if (group.id === CHANNEL_GROUP_DEFAULT_ID || group.name === CHANNEL_GROUP_DEFAULT_NAME) {
+            res.status(409).json({
+              error: 'Channel groups cannot have the same ID or name as the default group.',
+            });
+            return;
+          }
+        }
+      }
 
       // Delete removed groups
       if (removedChannelGroupIds && removedChannelGroupIds.length > 0) {

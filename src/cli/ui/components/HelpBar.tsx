@@ -25,6 +25,7 @@ const LIST_SHORTCUTS: ShortcutHint[] = [
   { key: 'P', label: 'Pause' },
   { key: 'D', label: 'Deploy' },
   { key: 'U', label: 'Undeploy' },
+  { key: 'G', label: 'Group' },
   { key: 'R', label: 'Refresh' },
   { key: '/', label: 'Search' },
   { key: '?', label: 'Help' },
@@ -86,6 +87,12 @@ const TRACE_SHORTCUTS: ShortcutHint[] = [
   { key: 'Esc', label: 'Back' },
 ];
 
+const GROUP_PICKER_SHORTCUTS: ShortcutHint[] = [
+  { key: '↑↓', label: 'Navigate' },
+  { key: 'Enter', label: 'Select' },
+  { key: 'Esc', label: 'Cancel' },
+];
+
 function getShortcuts(viewMode: ViewMode, hasSelection: boolean): ShortcutHint[] {
   switch (viewMode) {
     case 'search':
@@ -102,6 +109,8 @@ function getShortcuts(viewMode: ViewMode, hasSelection: boolean): ShortcutHint[]
       return TRACE_INPUT_SHORTCUTS;
     case 'trace':
       return TRACE_SHORTCUTS;
+    case 'groupPicker':
+      return GROUP_PICKER_SHORTCUTS;
     case 'list':
     default:
       return hasSelection ? LIST_WITH_SELECTION_SHORTCUTS : LIST_SHORTCUTS;

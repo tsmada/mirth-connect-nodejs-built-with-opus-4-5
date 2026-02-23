@@ -4,9 +4,14 @@
  * React hook for managing channel groups with expand/collapse state.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ApiClient } from '../../lib/ApiClient.js';
-import { ChannelGroup, ChannelStatus } from '../../types/index.js';
+import {
+  ChannelGroup,
+  ChannelStatus,
+  CHANNEL_GROUP_DEFAULT_ID,
+  CHANNEL_GROUP_DEFAULT_NAME,
+} from '../../types/index.js';
 
 export interface GroupedChannel {
   channel: ChannelStatus;
@@ -59,16 +64,16 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
   const [error, setError] = useState<Error | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  // Fetch groups from API
+  // Fetch groups from API and synthesize virtual Default Group
   const refresh = useCallback(async () => {
     try {
       setLoading(true);
       const fetchedGroups = await client.getChannelGroups();
       setGroups(fetchedGroups);
 
-      // Expand all groups by default on first load
+      // Expand all groups (including Default Group) on first load
       if (expandedGroups.size === 0) {
-        setExpandedGroups(new Set(fetchedGroups.map((g) => g.id)));
+        setExpandedGroups(new Set([CHANNEL_GROUP_DEFAULT_ID, ...fetchedGroups.map((g) => g.id)]));
       }
 
       setError(null);
@@ -84,6 +89,30 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
     void refresh();
   }, []);
 
+  // Synthesize the groups list with a virtual Default Group at the front
+  const groupsWithDefault = useMemo(() => {
+    // Collect all channel IDs that belong to a real group
+    const assignedChannelIds = new Set<string>();
+    for (const group of groups) {
+      for (const channelId of group.channels || []) {
+        assignedChannelIds.add(channelId);
+      }
+    }
+
+    // Channels not in any real group belong to the Default Group
+    const defaultGroupChannels = channels
+      .filter((ch) => !assignedChannelIds.has(ch.channelId))
+      .map((ch) => ch.channelId);
+
+    const defaultGroup: ChannelGroup = {
+      id: CHANNEL_GROUP_DEFAULT_ID,
+      name: CHANNEL_GROUP_DEFAULT_NAME,
+      channels: defaultGroupChannels,
+    };
+
+    return [defaultGroup, ...groups];
+  }, [groups, channels]);
+
   const toggleGroup = useCallback((groupId: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
@@ -97,8 +126,8 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
   }, []);
 
   const expandAll = useCallback(() => {
-    setExpandedGroups(new Set(groups.map((g) => g.id)));
-  }, [groups]);
+    setExpandedGroups(new Set(groupsWithDefault.map((g) => g.id)));
+  }, [groupsWithDefault]);
 
   const collapseAll = useCallback(() => {
     setExpandedGroups(new Set());
@@ -112,7 +141,7 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
   const getGroupedChannels = useCallback(() => {
     // Build a map of channel ID to group
     const channelToGroup = new Map<string, ChannelGroup>();
-    for (const group of groups) {
+    for (const group of groupsWithDefault) {
       for (const channelId of group.channels || []) {
         channelToGroup.set(channelId, group);
       }
@@ -120,14 +149,14 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
 
     // Group channels
     const grouped = new Map<
-      string | null,
-      { groupName: string | null; channels: ChannelStatus[] }
+      string,
+      { groupName: string; channels: ChannelStatus[] }
     >();
 
     for (const channel of channels) {
       const group = channelToGroup.get(channel.channelId);
-      const groupId = group?.id ?? null;
-      const groupName = group?.name ?? null;
+      const groupId = group?.id ?? CHANNEL_GROUP_DEFAULT_ID;
+      const groupName = group?.name ?? CHANNEL_GROUP_DEFAULT_NAME;
 
       if (!grouped.has(groupId)) {
         grouped.set(groupId, { groupName, channels: [] });
@@ -135,17 +164,25 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
       grouped.get(groupId)!.channels.push(channel);
     }
 
-    // Sort groups: named groups first (alphabetically), then ungrouped
+    // Build result: Default Group first, then named groups alphabetically
     const result: {
       groupId: string | null;
       groupName: string | null;
       channels: ChannelStatus[];
     }[] = [];
 
-    // Add named groups first (sorted by name)
+    // Default Group always first
+    const defaultEntry = grouped.get(CHANNEL_GROUP_DEFAULT_ID);
+    result.push({
+      groupId: CHANNEL_GROUP_DEFAULT_ID,
+      groupName: CHANNEL_GROUP_DEFAULT_NAME,
+      channels: (defaultEntry?.channels ?? []).sort((a, b) => a.name.localeCompare(b.name)),
+    });
+
+    // Real groups sorted alphabetically
     const namedGroups = Array.from(grouped.entries())
-      .filter(([id]) => id !== null)
-      .sort(([, a], [, b]) => (a.groupName || '').localeCompare(b.groupName || ''));
+      .filter(([id]) => id !== CHANNEL_GROUP_DEFAULT_ID)
+      .sort(([, a], [, b]) => a.groupName.localeCompare(b.groupName));
 
     for (const [groupId, { groupName, channels: groupChannels }] of namedGroups) {
       result.push({
@@ -155,21 +192,11 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
       });
     }
 
-    // Add ungrouped channels last
-    const ungrouped = grouped.get(null);
-    if (ungrouped && ungrouped.channels.length > 0) {
-      result.push({
-        groupId: null,
-        groupName: 'Ungrouped',
-        channels: ungrouped.channels.sort((a, b) => a.name.localeCompare(b.name)),
-      });
-    }
-
     return result;
-  }, [groups, channels]);
+  }, [groupsWithDefault, channels]);
 
   return {
-    groups,
+    groups: groupsWithDefault,
     loading,
     error,
     expandedGroups,
