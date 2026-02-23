@@ -1852,6 +1852,23 @@ Parameters:
 
 See `.claude/agents/transformation-quality-checker.md` for full specification.
 
+### behavioral-test-writer
+Generate behavioral tests using 15 patterns with orchestrator-driven gap discovery.
+
+**Use for**: Coverage gap analysis, porting Java test contracts, behavioral validation of state machines, DAO orchestration testing, serialization round-trips, VM script execution, pipeline dispatch coverage.
+
+**Quick start**:
+```
+Use the behavioral-test-writer agent to discover and write behavioral tests.
+Parameters:
+- mode: full (or discover for analysis-only)
+- maxTests: 50 (optional budget cap)
+- javaTestSource: ~/Projects/connect/.../Tests.java (optional — omit for orchestrator discovery)
+- targetComponent: RecoveryTask (optional — omit for full-scope discovery)
+```
+
+See `.claude/agents/behavioral-test-writer.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-21 Complete)
