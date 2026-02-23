@@ -883,7 +883,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 | 7 | Live Server Runtime | ✅ Passing | 15 channels, 30+ transformation patterns, 6 bugs fixed (3 sessions) |
 
-**Total Tests: 8,211 passing** (348 unit suites with 8,123 tests + 4 integration suites with 88 tests — 0 regressions)
+**Total Tests: 8,421 passing** (362 unit suites with 8,315 tests + 8 integration suites with 106 tests — 0 regressions)
 
 ### Quick Validation Scripts
 
@@ -1902,7 +1902,7 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Total commits | 200+ |
 | Lines added | 112,000+ |
 | Tests added | 4,455+ |
-| Total tests passing | 8,326 |
+| Total tests passing | 8,421 |
 
 ### Wave Summary
 
@@ -1934,7 +1934,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Pipeline | 0 | ~1,200 | 18 | ~30 min | **Pipeline Lifecycle Integration Tests** (13 scenarios, real VM execution, full dispatchRawMessage flow) |
 | Adversarial | 3 | ~600 | 57 | ~20 min | **Adversarial Runtime Testing** (P0-1..P0-4, P1-1..P1-3, P2-1..P2-3 fixes + 10 pipeline integration tests) |
 | TQ Fixes | 0 | ~130 | 31 | ~15 min | **XMLProxy TQ Remediation** (Proxy self-ref, value.nodes trap, append child/sibling, attributes().length(), createList guard) |
-| **Total** | **100+** | **~112,130** | **4,386** | **~31 hrs** | |
+| Edge Case Parity | 6 | ~2,400 | 87 | ~20 min | **Java Mirth Transformation Test Parity** (FTE failures, disabled rules/steps, map serialization, getArrayOrXmlLength, respondAfterProcessing, processedRaw, halt(), metadata columns) |
+| **Total** | **106+** | **~114,530** | **4,473** | **~31.5 hrs** | |
 
 ### Components Ported
 
@@ -3209,9 +3210,47 @@ These bugs were discovered during plan-mode exploration of the transpiler→buil
 
 - 31 new tests (1 test suite), 8,368 total tests passing (0 regressions across 368 suites)
 
+### Edge Case Parity — Java Mirth Transformation Test Coverage (2026-02-22)
+
+**8 untested patterns from Java Mirth's ~102 transformation test files. 6 parallel agents in isolated git worktrees. 87 new tests, 5 source files modified, 3 new implementations.**
+
+Cross-referenced Java Mirth's transformation test files (`FilterTransformerTests.java`, `ChannelTests.java`, `SourceConnectorTests.java`, `JavaScriptBuilderTest.java`, `MapUtilTest.java`) against 8,211 passing Node.js tests. Found 8 gaps: 5 tests-only (code exists), 3 requiring implementation fixes.
+
+**Category A — Tests Only (5 patterns):**
+
+| Agent | Pattern | Tests | Key Assertions |
+|-------|---------|-------|----------------|
+| agent-a1a3 | A1: FTE 5 failure modes | 14 | Inbound serialization throws→ERROR, filter false→FILTERED, filter throws→ERROR, outbound throws→ERROR, normal→TRANSFORMED |
+| agent-a1a3 | A3: Map serialization safety | 16 | Functions→toString, circular refs→safe fallback, BigInt→string, XMLProxy→XML, null/undefined preserved |
+| agent-a2a4 | A2: Disabled rules/steps | 13 | Disabled rules produce identical script as omitting, all disabled=empty, nested iterators cascade |
+| agent-a2a4 | A4: getArrayOrXmlLength | 14 | undefined→0, null→0, []→0, [1,2,3]→3, XMLProxy with children→childCount, string→length |
+| agent-a5 | A5: respondAfterProcessing=false | 6 | Returns immediately, processed=false, dispatches asynchronously |
+
+**Category B — Implementation + Tests (3 patterns):**
+
+| Agent | Pattern | Tests | Implementation |
+|-------|---------|-------|----------------|
+| agent-b1 | B1: processedRaw content path | 5 | `ConnectorMessage.getProcessedRawData()` now checks PROCESSED_RAW content (ContentType=2) before falling back to raw |
+| agent-b2 | B2: Channel.halt() | 9 | Force-stop: no queue drain, no undeploy script, immediate connector stop. Wired to `EngineController.haltChannel()` |
+| agent-b3 | B3: Metadata column mutations | 10 | `SchemaManager.ensureMetaDataColumns()`: queries information_schema.COLUMNS, generates ALTER TABLE ADD/DROP/MODIFY for D_MCM |
+
+**Additional fix:** `DonkeyDao.safeSerializeMap()` — replaces all 8 occurrences of `JSON.stringify(Object.fromEntries(map))` with safe serialization handling circular refs, functions, and BigInt (matching Java's `MapUtil.serializeMap()`).
+
+**Key files:**
+
+| File | Changes |
+|------|---------|
+| `src/model/ConnectorMessage.ts` | Fixed `getProcessedRawData()` stub, added `setProcessedRawData()` |
+| `src/donkey/channel/Channel.ts` | Added `halt()` method (~50 lines) |
+| `src/db/DonkeyDao.ts` | `safeSerializeMap()` + 8 callsite updates |
+| `src/db/SchemaManager.ts` | `ensureMetaDataColumns()` with ALTER TABLE logic (~147 lines) |
+| `src/controllers/EngineController.ts` | Wired `halt()` + `ensureMetaDataColumns()` during deploy |
+
+- 87 new tests (8 test suites), 8,421 total tests passing (0 regressions across 370 suites)
+
 ### Completion Status
 
-All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, and XMLProxy TQ Remediation are complete. The porting project has reached production-ready status:
+All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy TQ Remediation, and Edge Case Parity are complete. The porting project has reached production-ready status:
 
 **Completed (Waves 1-22 + Phase C + Real-World Gaps):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
@@ -3235,6 +3274,7 @@ All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, and XMLPr
 - ✅ **XMLProxy TQ Remediation** — 6 runtime bugs in XMLProxy.ts found by transformation-quality-checker scan. Critical: Proxy `return this` bypass (added `_self` field), `value.nodes` Proxy trap (→ `getNodes()`). Major: `append()` child vs sibling (added `_isDocument` flag). Minor: `attributes().length()`, `createList()` type guard. 31 tests, 0 regressions across 368 suites.
 - ✅ **TQ Full Scan Verified Clean (2026-02-22)** — Full transformation-quality-checker re-scan after commits 68de9a7 + 27cddc6. 89 verification items across 8 phases (static anti-patterns, E4X transpilation execution, scope types, generated code, cross-realm isolation, data flow stages, map chains, XMLProxy methods). Result: 88/89 PASS, 0 critical, 0 major, 1 minor (Buffer.freeze() silent failure in non-strict VM — protection effective, no fix needed). All prior fixes from lessons #54-#61, adversarial testing P0-1 through P2-3, and TQ remediation confirmed intact. Report: `plans/tq-checker-full-scan-2026-02-22.md`.
 - ✅ **Live Server Runtime Validation (2026-02-22)** — Full-stack live server validation against 15 kitchen sink channels across 3 sessions. 6 bugs found and fixed: XMLProxy.toString() ECMA-357 non-compliance (critical), response transformer unconditional execution (critical), batch processing wiring (major), ResponseSelector pipeline wiring (major), HL7v2 parser .1 sub-element wrapping (major), CH34 E4X access pattern (minor). 30+ transformation patterns verified correct including E4X (8 types), code templates, multi-destination routing, cross-channel VM routing, MLLP ACK generation/rejection, HTTP dispatcher/receiver chains, batch HL7 split, response selection, and postprocessor `$r()` access. 8,211 automated tests passing, 0 regressions. Report: `plans/live-server-validation-2026-02-22.md`.
+- ✅ **Edge Case Parity (2026-02-22)** — 8 untested patterns from Java Mirth's ~102 transformation test files. Category A (tests only): FTE 5 failure modes, disabled rules/steps, map serialization safety (circular refs, functions, BigInt), getArrayOrXmlLength via VM execution, respondAfterProcessing=false. Category B (implementation + tests): processedRaw content path (PROCESSED_RAW ContentType=2), Channel.halt() force-stop, ensureMetaDataColumns() ALTER TABLE on redeploy. 87 new tests, 8,421 total passing.
 
 ### Live Server Runtime Validation (2026-02-22)
 
@@ -3286,7 +3326,7 @@ E4X descendant (`msg..OBX`), for-each loop, delete operator, XML literals, names
 |-------|-------|--------|
 | Unit tests (348 suites) | 8,123 | All passing |
 | Pipeline integration (4 suites) | 88 | All passing |
-| **Total automated** | **8,211** | **All passing, 0 regressions** |
+| **Total automated** | **8,421** | **All passing, 0 regressions** |
 
 Report: `plans/live-server-validation-2026-02-22.md`
 
