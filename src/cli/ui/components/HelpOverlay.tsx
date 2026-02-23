@@ -35,6 +35,7 @@ const HELP_CATEGORIES: ShortcutCategory[] = [
       { key: 'p', description: 'Pause / Resume channel' },
       { key: 'd', description: 'Deploy channel' },
       { key: 'u', description: 'Undeploy channel' },
+      { key: '0', description: 'Clear statistics' },
     ],
   },
   {

@@ -467,6 +467,53 @@ export class ApiClient {
   }
 
   // ===========================================================================
+  // Channel Statistics Operations
+  // ===========================================================================
+
+  /**
+   * Clear statistics for specific channels.
+   * Matches: POST /channels/_clearStatistics
+   *
+   * By default all stat types are cleared. Pass false for specific types to skip them.
+   */
+  async clearChannelStatistics(
+    channelIds: string[],
+    options?: { received?: boolean; filtered?: boolean; sent?: boolean; error?: boolean }
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    if (options?.received === false) params.set('received', 'false');
+    if (options?.filtered === false) params.set('filtered', 'false');
+    if (options?.sent === false) params.set('sent', 'false');
+    if (options?.error === false) params.set('error', 'false');
+
+    // Body: map of channelId → null (clear all connectors per channel)
+    const body: Record<string, null> = {};
+    for (const id of channelIds) {
+      body[id] = null;
+    }
+
+    const qs = params.toString();
+    const url = `/api/channels/_clearStatistics${qs ? `?${qs}` : ''}`;
+    const response = await this.axios.post(url, body);
+    if (response.status >= 400) {
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to clear statistics');
+      throw new ApiError(errorMsg, response.status);
+    }
+  }
+
+  /**
+   * Clear all statistics for all channels.
+   * Matches: POST /channels/_clearAllStatistics
+   */
+  async clearAllStatistics(): Promise<void> {
+    const response = await this.axios.post('/api/channels/_clearAllStatistics');
+    if (response.status >= 400) {
+      const errorMsg = this.extractErrorMessage(response.data, 'Failed to clear all statistics');
+      throw new ApiError(errorMsg, response.status);
+    }
+  }
+
+  // ===========================================================================
   // Messages
   // ===========================================================================
 

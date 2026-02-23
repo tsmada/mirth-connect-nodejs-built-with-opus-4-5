@@ -29,6 +29,7 @@ import { TraceTreeView } from './TraceTreeView.js';
 import { MessageList } from './MessageList.js';
 import { MessageDetail } from './MessageDetail.js';
 import { GroupPicker } from './GroupPicker.js';
+import { ClearStatsOverlay } from './ClearStatsOverlay.js';
 import { useTrace } from '../hooks/useTrace.js';
 import { useMessages } from '../hooks/useMessages.js';
 import { Message } from '../../types/index.js';
@@ -263,6 +264,24 @@ export const Dashboard: FC<DashboardProps> = ({
     [selectedChannelIds, selectedChannel, channels, showMessage]
   );
 
+  // Clear statistics handler
+  const handleClearStats = useCallback(
+    async (
+      channelIds: string[],
+      options: { received: boolean; filtered: boolean; sent: boolean; error: boolean }
+    ) => {
+      showMessage(`Clearing stats for ${channelIds.length} channel(s)...`, 'info');
+      try {
+        await channels.clearChannelStats(channelIds, options);
+        showMessage(`Cleared stats for ${channelIds.length} channel(s)`, 'success');
+      } catch (error) {
+        showMessage(`Error: ${(error as Error).message}`, 'error');
+      }
+      setViewMode('list');
+    },
+    [channels, showMessage]
+  );
+
   // Keyboard input handler (for list view)
   useInput(
     (input, key) => {
@@ -275,7 +294,8 @@ export const Dashboard: FC<DashboardProps> = ({
         viewMode === 'trace' ||
         viewMode === 'messages' ||
         viewMode === 'messageDetail' ||
-        viewMode === 'groupPicker'
+        viewMode === 'groupPicker' ||
+        viewMode === 'clearStats'
       ) {
         return;
       }
@@ -381,6 +401,10 @@ export const Dashboard: FC<DashboardProps> = ({
           setViewMode('messages');
           messages.loadMessages(selectedChannel.channelId).catch(() => {});
         }
+      }
+      // Clear statistics
+      else if (input === '0') {
+        setViewMode('clearStats');
       }
       // Quit
       else if (input === 'q' || input === 'Q' || key.escape) {
@@ -593,6 +617,36 @@ export const Dashboard: FC<DashboardProps> = ({
         },
       })
     );
+  }
+
+  // Clear statistics overlay
+  if (viewMode === 'clearStats') {
+    const targetIds =
+      selectedChannelIds.size > 0
+        ? Array.from(selectedChannelIds)
+        : selectedChannel
+          ? [selectedChannel.channelId]
+          : [];
+
+    if (targetIds.length === 0) {
+      // No channel selected — show warning and return to list
+      showMessage('No channel selected', 'warning');
+      setViewMode('list');
+    } else {
+      const label =
+        targetIds.length === 1
+          ? (channels.channels.find((ch) => ch.channelId === targetIds[0])?.name ?? targetIds[0]!)
+          : `${targetIds.length} channel(s)`;
+
+      return React.createElement(ClearStatsOverlay, {
+        channelCount: targetIds.length,
+        channelLabel: label,
+        onConfirm: (options) => {
+          handleClearStats(targetIds, options).catch(() => {});
+        },
+        onCancel: () => setViewMode('list'),
+      });
+    }
   }
 
   // Group picker overlay

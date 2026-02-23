@@ -44,6 +44,11 @@ export interface UseChannelsResult {
   updateChannelState: (channelId: string, state: ChannelStatus['state']) => void;
   /** Update channel statistics */
   updateChannelStats: (channelId: string, stats: Partial<ChannelStatus['statistics']>) => void;
+  /** Clear statistics for specific channels */
+  clearChannelStats: (
+    channelIds: string[],
+    options?: { received?: boolean; filtered?: boolean; sent?: boolean; error?: boolean }
+  ) => Promise<void>;
 }
 
 /**
@@ -160,6 +165,17 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
     setLastUpdate(new Date());
   }, []);
 
+  const clearChannelStats = useCallback(
+    async (
+      channelIds: string[],
+      options?: { received?: boolean; filtered?: boolean; sent?: boolean; error?: boolean }
+    ) => {
+      await client.clearChannelStatistics(channelIds, options);
+      await refresh();
+    },
+    [client, refresh]
+  );
+
   const updateChannelStats = useCallback(
     (channelId: string, stats: Partial<ChannelStatus['statistics']>) => {
       setChannels((prev) =>
@@ -193,6 +209,7 @@ export function useChannels(options: UseChannelsOptions): UseChannelsResult {
     undeployChannel,
     updateChannelState,
     updateChannelStats,
+    clearChannelStats,
   };
 }
 

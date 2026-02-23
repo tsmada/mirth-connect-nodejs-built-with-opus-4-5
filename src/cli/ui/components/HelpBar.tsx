@@ -26,6 +26,7 @@ const LIST_SHORTCUTS: ShortcutHint[] = [
   { key: 'D', label: 'Deploy' },
   { key: 'U', label: 'Undeploy' },
   { key: 'G', label: 'Group' },
+  { key: '0', label: 'Clear Stats' },
   { key: 'R', label: 'Refresh' },
   { key: '/', label: 'Search' },
   { key: '?', label: 'Help' },
@@ -40,6 +41,7 @@ const LIST_WITH_SELECTION_SHORTCUTS: ShortcutHint[] = [
   { key: 'T', label: 'Stop' },
   { key: 'A', label: 'Select All' },
   { key: 'C', label: 'Clear' },
+  { key: '0', label: 'Clear Stats' },
   { key: 'Q', label: 'Quit' },
 ];
 
@@ -93,6 +95,14 @@ const GROUP_PICKER_SHORTCUTS: ShortcutHint[] = [
   { key: 'Esc', label: 'Cancel' },
 ];
 
+const CLEAR_STATS_SHORTCUTS: ShortcutHint[] = [
+  { key: '↑↓', label: 'Navigate' },
+  { key: 'Space', label: 'Toggle' },
+  { key: 'I', label: 'Invert' },
+  { key: 'Enter', label: 'Clear' },
+  { key: 'Esc', label: 'Cancel' },
+];
+
 function getShortcuts(viewMode: ViewMode, hasSelection: boolean): ShortcutHint[] {
   switch (viewMode) {
     case 'search':
@@ -111,6 +121,8 @@ function getShortcuts(viewMode: ViewMode, hasSelection: boolean): ShortcutHint[]
       return TRACE_SHORTCUTS;
     case 'groupPicker':
       return GROUP_PICKER_SHORTCUTS;
+    case 'clearStats':
+      return CLEAR_STATS_SHORTCUTS;
     case 'list':
     default:
       return hasSelection ? LIST_WITH_SELECTION_SHORTCUTS : LIST_SHORTCUTS;
