@@ -20,6 +20,7 @@ interface ShortcutHint {
 
 const LIST_SHORTCUTS: ShortcutHint[] = [
   { key: '↑↓', label: 'Navigate' },
+  { key: 'C-u·d', label: 'Page' },
   { key: 'S', label: 'Start' },
   { key: 'T', label: 'Stop' },
   { key: 'P', label: 'Pause' },

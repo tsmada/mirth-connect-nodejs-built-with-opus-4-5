@@ -77,9 +77,13 @@ export const Dashboard: FC<DashboardProps> = ({
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [selectedChannelIds, setSelectedChannelIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [message, setMessage] = useState<DashboardMessage | null>(null);
+
+  // Terminal dimensions for viewport scrolling
+  const [termHeight, setTermHeight] = useState(process.stdout.rows || 24);
   const [traceChannelId, setTraceChannelId] = useState<string | null>(null);
   const [traceVerbose, setTraceVerbose] = useState(false);
   const [messagesChannelId, setMessagesChannelId] = useState<string | null>(null);
@@ -120,6 +124,20 @@ export const Dashboard: FC<DashboardProps> = ({
     ws.status,
     !ws.isConnected && channels.channels.length > 0
   );
+
+  // Terminal resize handler
+  useEffect(() => {
+    const onResize = () => setTermHeight(process.stdout.rows || 24);
+    process.stdout.on('resize', onResize);
+    return () => {
+      process.stdout.off('resize', onResize);
+    };
+  }, []);
+
+  // Viewport calculation: fixed overhead for non-scrollable UI elements
+  // Header(2) + ListHeader(1) + Divider(1) + ScrollIndicator(1) + StatusBar(2) + HelpBar(2) = 9
+  const FIXED_OVERHEAD = 9 + (viewMode === 'search' ? 2 : 0);
+  const visibleRows = Math.max(5, termHeight - FIXED_OVERHEAD);
 
   // Connect WebSocket on mount
   useEffect(() => {
@@ -178,6 +196,23 @@ export const Dashboard: FC<DashboardProps> = ({
       ),
     [channels.channels, groups.groups, groups.expandedGroups, viewMode, searchQuery]
   );
+
+  // Clamp scrollOffset and selectedIndex when itemCount or visibleRows change
+  useEffect(() => {
+    if (itemCount === 0) return;
+    if (selectedIndex >= itemCount) {
+      setSelectedIndex(itemCount - 1);
+    }
+    if (scrollOffset >= itemCount) {
+      setScrollOffset(Math.max(0, itemCount - visibleRows));
+    }
+    // Ensure selectedIndex is within viewport after resize
+    if (selectedIndex < scrollOffset) {
+      setScrollOffset(selectedIndex);
+    } else if (selectedIndex >= scrollOffset + visibleRows) {
+      setScrollOffset(selectedIndex - visibleRows + 1);
+    }
+  }, [itemCount, visibleRows]);
 
   // Selected channel (for details view)
   const selectedChannel = useMemo(() => {
@@ -300,11 +335,39 @@ export const Dashboard: FC<DashboardProps> = ({
         return;
       }
 
-      // Navigation
+      // Navigation (scroll-aware)
       if (key.upArrow || input === 'k') {
-        setSelectedIndex((i) => Math.max(0, i - 1));
+        setSelectedIndex((i) => {
+          const next = Math.max(0, i - 1);
+          if (next < scrollOffset) {
+            setScrollOffset(next);
+          }
+          return next;
+        });
       } else if (key.downArrow || input === 'j') {
-        setSelectedIndex((i) => Math.min(itemCount - 1, i + 1));
+        setSelectedIndex((i) => {
+          const next = Math.min(itemCount - 1, i + 1);
+          if (next >= scrollOffset + visibleRows) {
+            setScrollOffset(next - visibleRows + 1);
+          }
+          return next;
+        });
+      }
+      // Page Up (Ctrl+U)
+      else if (key.ctrl && input === 'u') {
+        setSelectedIndex((i) => {
+          const next = Math.max(0, i - visibleRows);
+          setScrollOffset((s) => Math.max(0, Math.min(next, s - visibleRows)));
+          return next;
+        });
+      }
+      // Page Down (Ctrl+D)
+      else if (key.ctrl && input === 'd') {
+        setSelectedIndex((i) => {
+          const next = Math.min(itemCount - 1, i + visibleRows);
+          setScrollOffset((s) => Math.min(Math.max(0, itemCount - visibleRows), s + visibleRows));
+          return next;
+        });
       }
       // Enter: expand group or show details
       else if (key.return) {
@@ -767,10 +830,13 @@ export const Dashboard: FC<DashboardProps> = ({
           onSubmit: () => {
             setViewMode('list');
             setSelectedIndex(0);
+            setScrollOffset(0);
           },
           onCancel: () => {
             setSearchQuery('');
             setViewMode('list');
+            setSelectedIndex(0);
+            setScrollOffset(0);
           },
         })
       ),
@@ -783,6 +849,8 @@ export const Dashboard: FC<DashboardProps> = ({
       selectedChannelIds,
       width: termWidth,
       searchQuery: viewMode === 'search' ? searchQuery : undefined,
+      scrollOffset,
+      visibleRows,
     }),
     // Status bar
     React.createElement(StatusBar, {

@@ -29,6 +29,8 @@ export interface ChannelListProps {
   selectedChannelIds: Set<string>;
   width: number;
   searchQuery?: string;
+  scrollOffset: number;
+  visibleRows: number;
 }
 
 /**
@@ -131,6 +133,8 @@ export const ChannelList: FC<ChannelListProps> = ({
   selectedChannelIds,
   width,
   searchQuery,
+  scrollOffset,
+  visibleRows,
 }) => {
   const items = useMemo(
     () => buildFlatList(channels, groups, expandedGroups, searchQuery),
@@ -168,6 +172,10 @@ export const ChannelList: FC<ChannelListProps> = ({
     'SENT'.padStart(8) + // " S:" (3) + 5 digits
     'ERR'.padStart(7); // " E:" (3) + 4 digits
 
+  // Viewport slicing: only render visible rows
+  const visibleItems = items.slice(scrollOffset, scrollOffset + visibleRows);
+  const showScrollIndicator = items.length > visibleRows;
+
   return React.createElement(
     Box,
     { flexDirection: 'column' },
@@ -186,8 +194,10 @@ export const ChannelList: FC<ChannelListProps> = ({
       { flexDirection: 'row' },
       React.createElement(Text, { color: 'gray' }, '─'.repeat(Math.min(width - 2, 100)))
     ),
-    // Items
-    ...items.map((item, index) => {
+    // Items (viewport-sliced)
+    ...visibleItems.map((item, index) => {
+      const absoluteIndex = index + scrollOffset;
+
       if (item.type === 'group') {
         const group = item.data as ChannelGroupType;
         const channelCount = (group.channels || []).length;
@@ -199,7 +209,7 @@ export const ChannelList: FC<ChannelListProps> = ({
           expanded:
             group.id === CHANNEL_GROUP_DEFAULT_ID ||
             (item.groupId != null && expandedGroups.has(item.groupId)),
-          selected: index === selectedIndex,
+          selected: absoluteIndex === selectedIndex,
         });
       }
 
@@ -207,12 +217,24 @@ export const ChannelList: FC<ChannelListProps> = ({
       return React.createElement(ChannelRow, {
         key: item.id,
         channel,
-        selected: index === selectedIndex,
+        selected: absoluteIndex === selectedIndex,
         multiSelected: selectedChannelIds.has(channel.channelId),
         width,
         indent: groups.length > 0 ? 1 : 0,
       });
-    })
+    }),
+    // Scroll position indicator
+    showScrollIndicator
+      ? React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(
+            Text,
+            { color: 'gray' },
+            `[${scrollOffset + 1}-${Math.min(scrollOffset + visibleRows, items.length)} of ${items.length}]`
+          )
+        )
+      : null
   );
 };
 
