@@ -1,0 +1,6 @@
+{
+  "javaVersion": "3.9.1",
+  "portIteration": 0,
+  "tagPrefix": "v",
+  "tagFormat": "${javaVersion}-port.${portIteration}"
+}

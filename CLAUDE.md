@@ -3998,3 +3998,67 @@ npm run version-manager -- validate 3.10.0
 - `/version-diff <from> <to>` - Compare Java versions
 - `/version-upgrade <target>` - Plan version upgrade
 - `/version-validate <version>` - Run version-specific validation
+
+---
+
+## Release Process
+
+### Version Scheme
+
+The project uses a dual-version scheme: `JAVA_VERSION-port.N`
+
+- `3.9.1-port.0` — First release mirroring Java Mirth 3.9.1
+- `3.9.1-port.5` — Fifth iteration of fixes/features against 3.9.1
+- `3.10.0-port.0` — First release after upgrading to Java Mirth 3.10.0
+
+The `port.N` counter resets to 0 on Java version upgrade. Git tags use `v` prefix: `v3.9.1-port.0`.
+
+### Creating a Release
+
+```bash
+npm run release              # Bump port iteration (port.0 → port.1)
+npm run release:dry          # Preview changelog + version without changes
+npm run release -- --java 3.10.0   # Upgrade Java version (resets to port.0)
+npm run release -- --skip-tests    # Skip test suite during release
+git push origin master --follow-tags  # Push tag to trigger release workflow
+```
+
+### Conventional Commits
+
+All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) format. Enforced by commitlint via husky pre-commit hook.
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `feat` | New feature | `feat(engine): add channel metrics` |
+| `fix` | Bug fix | `fix(tcp): connection timeout handling` |
+| `docs` | Documentation | `docs: update deployment guide` |
+| `chore` | Maintenance | `chore(deps): update mysql2` |
+| `refactor` | Code restructuring | `refactor(api): extract auth middleware` |
+| `test` | Adding tests | `test(pipeline): add queue lifecycle tests` |
+| `ci` | CI/CD changes | `ci: add Node 22 to test matrix` |
+| `perf` | Performance | `perf(dao): batch insert optimization` |
+| `style` | Formatting | `style: fix prettier violations` |
+| `build` | Build system | `build: update typescript to 5.4` |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `.release.json` | Dual-version state (Java version + port iteration) |
+| `package.json:version` | npm version (`3.9.1-port.N`) |
+| `manifest.json:mirthCompatibility.current` | Canonical Java version for version-manager |
+| `CHANGELOG.md` | Release history with conventional commit grouping |
+| `scripts/release.ts` | Release orchestration (bump, changelog, tag) |
+| `commitlint.config.cjs` | Conventional commit validation rules |
+| `.husky/commit-msg` | Commitlint git hook |
+| `.husky/pre-commit` | lint-staged git hook |
+| `.github/workflows/ci.yml` | PR validation (lint, typecheck, test, commitlint) |
+| `.github/workflows/release.yml` | Tag-triggered release (build, tarball, GitHub Release) |
+
+### Integration with Version Manager
+
+The `tools/version-manager/` tracks per-component Java version parity. The release system tracks per-release project version. They are complementary:
+
+- `manifest.json:mirthCompatibility.current` is the canonical Java version — both systems read it
+- `.release.json:portIteration` is owned exclusively by the release system
+- `scripts/release.ts --java 3.10.0` updates `manifest.json`, which the version-manager picks up

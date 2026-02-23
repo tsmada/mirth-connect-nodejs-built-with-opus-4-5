@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*-port.*'
+  workflow_dispatch:
+    inputs:
+      java_version:
+        description: 'Java Mirth version to upgrade to (leave empty for port iteration bump)'
+        required: false
+        type: string
+      skip_tests:
+        description: 'Skip test suite'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || !inputs.skip_tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --ci --forceExit
+
+  build-and-release:
+    name: Build & Release
+    needs: [validate]
+    if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          JAVA_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('.release.json','utf8')).javaVersion)")
+          PORT_ITER=$(node -e "console.log(JSON.parse(require('fs').readFileSync('.release.json','utf8')).portIteration)")
+          TAG_NAME=${GITHUB_REF_NAME:-v${VERSION}}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "java_version=${JAVA_VERSION}" >> $GITHUB_OUTPUT
+          echo "port_iteration=${PORT_ITER}" >> $GITHUB_OUTPUT
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Create dist tarball
+        run: |
+          tar -czf mirth-connect-nodejs-${{ steps.version.outputs.tag_name }}-dist.tar.gz \
+            dist/ k8s/ package.json package-lock.json .release.json CHANGELOG.md README.md LICENSE
+
+      - name: Create source tarball
+        run: |
+          tar -czf mirth-connect-nodejs-${{ steps.version.outputs.tag_name }}-src.tar.gz \
+            --exclude=node_modules --exclude=.git --exclude=dist --exclude=coverage \
+            .
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > /tmp/release-notes.md << 'NOTES_EOF'
+          ## Mirth Connect Node.js Runtime ${{ steps.version.outputs.tag_name }}
+
+          | Property | Value |
+          |----------|-------|
+          | **Java Mirth Version** | ${{ steps.version.outputs.java_version }} |
+          | **Port Iteration** | ${{ steps.version.outputs.port_iteration }} |
+          | **Node.js** | >=18.0.0 (recommended: 20 LTS) |
+
+          ### Quick Start
+
+          **From tarball:**
+          ```bash
+          tar xzf mirth-connect-nodejs-${{ steps.version.outputs.tag_name }}-dist.tar.gz
+          npm ci --production
+          PORT=8081 MIRTH_MODE=standalone node dist/index.js
+          ```
+
+          **With Docker:**
+          ```bash
+          docker build -t mirth-node:${{ steps.version.outputs.tag_name }} .
+          docker run -p 8081:8080 -e MIRTH_MODE=standalone mirth-node:${{ steps.version.outputs.tag_name }}
+          ```
+
+          **On Kubernetes:**
+          ```bash
+          kubectl apply -k k8s/overlays/standalone/
+          ```
+
+          ### Operational Modes
+
+          | Mode | Description |
+          |------|-------------|
+          | `standalone` | Fresh database, own schema |
+          | `takeover` | Connect to existing Java Mirth database |
+          | `shadow` | Read-only observer for safe cutover |
+          | `cluster` | Horizontal scaling with lease coordination |
+
+          See [CHANGELOG.md](CHANGELOG.md) for detailed changes.
+          NOTES_EOF
+          echo "path=/tmp/release-notes.md" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: ${{ steps.version.outputs.tag_name }}
+          body_path: /tmp/release-notes.md
+          files: |
+            mirth-connect-nodejs-${{ steps.version.outputs.tag_name }}-dist.tar.gz
+            mirth-connect-nodejs-${{ steps.version.outputs.tag_name }}-src.tar.gz
+          draft: false
+          prerelease: false
+
+  create-release-tag:
+    name: Create Release Tag
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Run release script
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.java_version }}" ]; then
+            ARGS="--java ${{ inputs.java_version }}"
+          fi
+          if [ "${{ inputs.skip_tests }}" = "true" ]; then
+            ARGS="$ARGS --skip-tests"
+          fi
+          npx tsx scripts/release.ts $ARGS
+      - name: Push tag
+        run: git push origin master --follow-tags
