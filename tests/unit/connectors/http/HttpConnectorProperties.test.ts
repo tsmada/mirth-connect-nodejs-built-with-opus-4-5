@@ -197,6 +197,7 @@ describe('HttpReceiverProperties interface', () => {
           contentType: 'text/plain',
         },
       ],
+      maxConnections: 0,
     };
 
     expect(props.port).toBe(8080);

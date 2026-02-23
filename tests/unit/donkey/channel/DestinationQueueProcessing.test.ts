@@ -39,6 +39,7 @@ jest.mock('../../../../src/db/pool', () => ({
     const mockConn = {};
     await fn(mockConn);
   }),
+  withRetry: jest.fn().mockImplementation(async (fn: () => Promise<unknown>) => fn()),
 }));
 
 // ── Mock all DonkeyDao functions that Channel.ts imports ────────────────
@@ -55,7 +56,7 @@ jest.mock('../../../../src/db/DonkeyDao', () => ({
   updateResponseMap: jest.fn().mockResolvedValue(undefined),
   updateSendAttempts: (...args: unknown[]) => mockUpdateSendAttempts(...args),
   getNextMessageId: jest.fn().mockResolvedValue(1),
-  channelTablesExist: jest.fn().mockResolvedValue(false),
+  channelTablesExist: jest.fn().mockResolvedValue(true),
   getStatistics: jest.fn().mockResolvedValue([]),
   pruneMessageContent: jest.fn().mockResolvedValue(undefined),
   pruneMessageAttachments: jest.fn().mockResolvedValue(undefined),

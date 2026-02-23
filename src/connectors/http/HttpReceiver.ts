@@ -54,6 +54,7 @@ export class HttpReceiver extends SourceConnector {
   private app: Express | null = null;
   private server: Server | null = null;
   private authenticator: HttpAuthenticator | null = null;
+  private activeRequests = 0;
 
   constructor(config: HttpReceiverConfig) {
     super({
@@ -160,6 +161,7 @@ export class HttpReceiver extends SourceConnector {
             this.authenticator.shutdown();
           }
           this.authenticator = null;
+          this.activeRequests = 0;
           // CPC-MCE-001: Dispatch DISCONNECTED on stop
           this.dispatchConnectionEvent(ConnectionStatusEventType.DISCONNECTED);
           resolve();
@@ -173,6 +175,24 @@ export class HttpReceiver extends SourceConnector {
    */
   private configureMiddleware(): void {
     if (!this.app) return;
+
+    // Concurrency limiting — prevents DB pool exhaustion under sustained HTTP load.
+    // Java Mirth limits via Jetty's thread pool (default 254 threads).
+    // Node.js is single-threaded; each concurrent dispatchRawMessage() acquires a DB
+    // connection. Without a limit, bursts exceeding the pool size starve health checks.
+    if (this.properties.maxConnections > 0) {
+      this.app.use((_req: Request, res: Response, next: NextFunction) => {
+        if (this.activeRequests >= this.properties.maxConnections) {
+          res.status(503).set('Retry-After', '1').send('Service Unavailable');
+          return;
+        }
+        this.activeRequests++;
+        res.on('close', () => {
+          this.activeRequests--;
+        });
+        next();
+      });
+    }
 
     // Raw body parser for all content types
     this.app.use(

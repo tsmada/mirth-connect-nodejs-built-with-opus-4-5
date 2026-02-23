@@ -18,6 +18,7 @@ export interface DatabaseConfig {
   waitForConnections?: boolean;
   queueLimit?: number;
   connectTimeout?: number;
+  timezone?: string;
 }
 
 const DEFAULT_CONFIG: Partial<DatabaseConfig> = {
@@ -25,6 +26,7 @@ const DEFAULT_CONFIG: Partial<DatabaseConfig> = {
   waitForConnections: true,
   queueLimit: parseInt(process.env.DB_QUEUE_LIMIT || '200', 10),
   connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000', 10),
+  timezone: process.env.DB_TIMEZONE || '+00:00',
 };
 
 let pool: Pool | null = null;

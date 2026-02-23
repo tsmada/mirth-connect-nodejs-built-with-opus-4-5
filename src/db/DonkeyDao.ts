@@ -691,8 +691,14 @@ export function safeSerializeMap(map: Map<string, unknown>): string {
           JSON.stringify(value);
           safeObj[key] = value;
         } catch {
-          // Non-serializable value — use toString() fallback
-          safeObj[key] = value != null ? String(value) : null;
+          // Non-serializable value — type-aware fallback matching primary path format
+          if (value instanceof Date) {
+            safeObj[key] = value.toISOString();
+          } else if (typeof value === 'bigint') {
+            safeObj[key] = value.toString();
+          } else {
+            safeObj[key] = value != null ? String(value) : null;
+          }
         }
       }
     }

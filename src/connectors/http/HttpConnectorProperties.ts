@@ -73,6 +73,15 @@ export interface HttpReceiverProperties {
    * fields above. Supports Basic, Digest, and JavaScript auth types.
    */
   authProperties?: HttpAuthProperties;
+
+  /**
+   * Maximum concurrent requests before returning 503.
+   * 0 = no limit (default). Java Mirth limits via Jetty's thread pool (default 254).
+   * In Node.js, each concurrent request acquires a DB connection from the pool,
+   * so this should be set at or below the DB connection pool size to prevent
+   * pool exhaustion and health check starvation.
+   */
+  maxConnections: number;
 }
 
 /**
@@ -175,6 +184,7 @@ export function getDefaultHttpReceiverProperties(): HttpReceiverProperties {
     useResponseHeadersVariable: false,
     responseHeadersVariable: '',
     staticResources: [],
+    maxConnections: 0,
   };
 }
 
