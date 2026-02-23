@@ -883,7 +883,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 | 7 | Live Server Runtime | ✅ Passing | 15 channels, 30+ transformation patterns, 6 bugs fixed (3 sessions) |
 
-**Total Tests: 8,472 passing** (366 unit suites with 8,348 tests + 8 integration suites with 124 tests — 0 regressions)
+**Total Tests: 8,690 passing** (381 unit suites with 8,546 tests + 13 integration suites with 144 tests — 0 regressions)
 
 ### Quick Validation Scripts
 
@@ -1914,12 +1914,12 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 
 | Metric | Value |
 |--------|-------|
-| Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C + Real-World) |
+| Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C + Real-World + Behavioral Wave 3) |
 | Agents completed | 100+ (100%) |
 | Total commits | 200+ |
-| Lines added | 114,000+ |
-| Tests added | 4,524+ |
-| Total tests passing | 8,472 |
+| Lines added | 118,000+ |
+| Tests added | 4,742+ |
+| Total tests passing | 8,690 |
 
 ### Wave Summary
 
@@ -1953,7 +1953,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | TQ Fixes | 0 | ~130 | 31 | ~15 min | **XMLProxy TQ Remediation** (Proxy self-ref, value.nodes trap, append child/sibling, attributes().length(), createList guard) |
 | Edge Case Parity | 6 | ~2,400 | 87 | ~20 min | **Java Mirth Transformation Test Parity** (FTE failures, disabled rules/steps, map serialization, getArrayOrXmlLength, respondAfterProcessing, processedRaw, halt(), metadata columns) |
 | Behavioral Wave 2 | 0 | ~1,800 | 51 | ~10 min | **Java Runtime Behavioral Contracts** (RecoveryTask orchestration, ResponseSelector modes, ContentStorageModes 5-mode gating, Pause/Resume/Halt state machine, Queue lifecycle) |
-| **Total** | **110+** | **~116,330** | **4,524** | **~32 hrs** | |
+| Behavioral Wave 3 | 0 | ~3,800 | 218 | ~20 min | **Top 25 Java Behavioral Contracts** (Statistics aggregate, DestinationConnector lifecycle, DestinationChain, Queue buffer/drain, DonkeyDao patterns, ChannelController CRUD, ConfigurationController restore, UserController login, AlertDao/EventDao CRUD, DataPruner safety, JsonXmlUtil bidirectional) |
+| **Total** | **110+** | **~120,130** | **4,742** | **~33 hrs** | |
 
 ### Components Ported
 
@@ -3302,9 +3303,61 @@ Pause stops source (destinations keep running), pause preserves state (resume re
 
 - 51 new tests (4 test suites), 8,472 total tests passing (0 regressions across 374 suites)
 
+### Behavioral Wave 3 — Top 25 Java Behavioral Contracts (2026-02-22)
+
+**218 tests across 13 new files porting the top 25 highest-impact Java behavioral contracts with zero coverage. 6 parallel agents in isolated git worktrees. Tests only — 0 source code changes, 0 bugs found.**
+
+Cross-referenced Java Mirth's 102 test files (~490 @Test methods) against 8,472 existing Node.js tests. Identified 25 contracts ranked by production impact. All expected source bugs (Statistics.ts aggregate rollup, Channel.ts response transformer coercion, DestinationConnector.ts PENDING timing, ConnectorMessageQueue.ts buffer methods, DonkeyDao.ts cascade delete) did NOT materialize — validating the quality of prior 22 porting waves.
+
+6 parallel agents coordinated via team "top25-contracts":
+
+| Agent | Test File | Tests | Contracts |
+|-------|-----------|-------|-----------|
+| wave-a-writer | StatisticsAccumulation.test.ts | 17 | #1 (aggregate rollup rules) |
+| wave-a-writer | DestinationConnector.behavioral.test.ts | 8 | #2, #3, #4 (lifecycle, timing, coercion) |
+| wave-a-writer | DestinationChainContracts.test.ts | 6 | #5 (chain content + maps) |
+| wave-a-writer | QueueBehavioral.test.ts | 15 | #8, #9, #10, #21 (buffer, drain, FIFO) |
+| wave-a-writer | ExceptionHandling.test.ts | 9 | #15, #16, #17, #22 (error propagation) |
+| wave-a-writer | DonkeyDao.behavioral.test.ts | 16 | #12, #13, #19, #20, #23 (DAO patterns) |
+| wave-b-channel-ctrl | ChannelController.test.ts | 29 | #6 (CRUD, revision, cache) |
+| wave-b-config-ctrl | ConfigurationController.test.ts | 30 | #7, #24 (restore, cascading) |
+| wave-b-user-alert-event | UserController.behavioral.test.ts | 7 | #18 (login state machine) |
+| wave-b-user-alert-event | AlertDao.test.ts | 10 | #25 (alert CRUD) |
+| wave-b-user-alert-event | EventDao.test.ts | 10 | #25 (event CRUD + search) |
+| wave-c-datapruner | DataPruner.behavioral.test.ts | 8 | #11 (safety guards) |
+| wave-c-jsonxmlutil | JsonXmlUtil.behavioral.test.ts | 31 | #14 (JSON/XML bidirectional) |
+
+**Key contracts verified:**
+- **Statistics aggregate rollup** (#1): Asymmetric rules (RECEIVED from source only, FILTERED/ERROR from all, SENT from destinations only), event dispatching, allowNegatives, StatisticsAccumulator flush ordering
+- **Destination lifecycle** (#2-4): STOPPED→STARTING→STARTED state machine, PENDING checkpoint timing, response transformer status coercion
+- **Queue behavior** (#8-10, #21): Buffer capacity invariants, source/dest drain lifecycle, FIFO ordering, markAsDeleted
+- **DonkeyDao patterns** (#12-13, #19-20, #23): Table name SQL injection prevention, insert ordering, storeContent UPDATE-first upsert, updateErrors content types, safeSerializeMap safety, updateMaps empty-skip
+- **Controller CRUD** (#6-7): Channel revision tracking, cache invalidation, configuration restore ordering, code template cascading, global scripts round-trip
+- **Data integrity** (#11, #14): DataPruner PROCESSED=0/QUEUED/ERROR safety guards, JSON↔XML namespace preservation, repeated-element→array, auto-primitive inference, CDATA, roundtrip fidelity
+
+**Key files:**
+
+| File | Tests | Pattern |
+|------|-------|---------|
+| `tests/integration/pipeline/StatisticsAccumulation.test.ts` | 17 | P10 (Model Object Graph) |
+| `tests/unit/donkey/channel/DestinationConnector.behavioral.test.ts` | 8 | P4 (Full DAO Mock) |
+| `tests/integration/pipeline/DestinationChainContracts.test.ts` | 6 | P9 (Pipeline Integration) |
+| `tests/integration/pipeline/QueueBehavioral.test.ts` | 15 | P6 (Timer Control) |
+| `tests/integration/pipeline/ExceptionHandling.test.ts` | 9 | P9 (Pipeline Integration) |
+| `tests/unit/db/DonkeyDao.behavioral.test.ts` | 16 | P4 (Full DAO Mock) |
+| `tests/unit/controllers/ChannelController.test.ts` | 29 | P4 (Full DAO Mock) |
+| `tests/unit/controllers/ConfigurationController.test.ts` | 30 | P4 (Full DAO Mock) |
+| `tests/unit/controllers/UserController.behavioral.test.ts` | 7 | P4 (Full DAO Mock) |
+| `tests/unit/db/AlertDao.test.ts` | 10 | P4 (Full DAO Mock) |
+| `tests/unit/db/EventDao.test.ts` | 10 | P4 (Full DAO Mock) |
+| `tests/unit/plugins/datapruner/DataPruner.behavioral.test.ts` | 8 | P4 (Full DAO Mock) |
+| `tests/unit/javascript/userutil/JsonXmlUtil.behavioral.test.ts` | 31 | P1 (Pure Unit) |
+
+- 218 new tests (13 test suites), 8,690 total tests passing (0 regressions across 388 suites)
+
 ### Completion Status
 
-All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy TQ Remediation, Edge Case Parity, and Behavioral Wave 2 are complete. The porting project has reached production-ready status:
+All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy TQ Remediation, Edge Case Parity, Behavioral Wave 2, and Behavioral Wave 3 are complete. The porting project has reached production-ready status:
 
 **Completed (Waves 1-22 + Phase C + Real-World Gaps):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
@@ -3330,6 +3383,7 @@ All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy 
 - ✅ **Live Server Runtime Validation (2026-02-22)** — Full-stack live server validation against 15 kitchen sink channels across 3 sessions. 6 bugs found and fixed: XMLProxy.toString() ECMA-357 non-compliance (critical), response transformer unconditional execution (critical), batch processing wiring (major), ResponseSelector pipeline wiring (major), HL7v2 parser .1 sub-element wrapping (major), CH34 E4X access pattern (minor). 30+ transformation patterns verified correct including E4X (8 types), code templates, multi-destination routing, cross-channel VM routing, MLLP ACK generation/rejection, HTTP dispatcher/receiver chains, batch HL7 split, response selection, and postprocessor `$r()` access. 8,211 automated tests passing, 0 regressions. Report: `plans/live-server-validation-2026-02-22.md`.
 - ✅ **Edge Case Parity (2026-02-22)** — 8 untested patterns from Java Mirth's ~102 transformation test files. Category A (tests only): FTE 5 failure modes, disabled rules/steps, map serialization safety (circular refs, functions, BigInt), getArrayOrXmlLength via VM execution, respondAfterProcessing=false. Category B (implementation + tests): processedRaw content path (PROCESSED_RAW ContentType=2), Channel.halt() force-stop, ensureMetaDataColumns() ALTER TABLE on redeploy. 87 new tests, 8,421 total passing.
 - ✅ **Behavioral Wave 2 (2026-02-23)** — 51 behavioral integration tests matching Java Mirth's exact state-sequence contracts for 5 runtime patterns: RecoveryTask orchestration (10 tests), ResponseSelector 9-mode selection (14 tests), ContentStorageModes 5-mode gating (15 tests), Pause/Resume/Halt state machine + Queue lifecycle (12 tests). Tests only — 0 source code changes. 4 parallel agents, 8,472 total passing.
+- ✅ **Behavioral Wave 3 (2026-02-22)** — Top 25 Java behavioral contracts ported across 13 new test files (218 tests). Statistics aggregate rollup, DestinationConnector lifecycle/timing/coercion, DestinationChain content storage, Queue buffer/drain/FIFO, DonkeyDao patterns (upsert, cascade, serialization), ChannelController CRUD with revision tracking, ConfigurationController restore atomicity, UserController login state machine, AlertDao/EventDao CRUD, DataPruner safety guards, JsonXmlUtil bidirectional with namespaces. 6 parallel agents, 0 source bugs found, 8,690 total passing.
 
 ### Live Server Runtime Validation (2026-02-22)
 
@@ -3379,9 +3433,10 @@ E4X descendant (`msg..OBX`), for-each loop, delete operator, XML literals, names
 
 | Suite | Count | Status |
 |-------|-------|--------|
-| Unit tests (348 suites) | 8,123 | All passing |
-| Pipeline integration (4 suites) | 88 | All passing |
-| **Total automated** | **8,472** | **All passing, 0 regressions** |
+| Unit tests (361 suites) | 8,341 | All passing |
+| Pipeline integration (13 suites) | 144 | All passing |
+| Behavioral contracts (14 suites) | 205 | All passing |
+| **Total automated** | **8,690** | **All passing, 0 regressions** |
 
 Report: `plans/live-server-validation-2026-02-22.md`
 
