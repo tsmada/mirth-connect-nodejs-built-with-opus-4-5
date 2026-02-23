@@ -421,7 +421,7 @@ export async function insertConnectorMessage(
         messageId,
         metaDataId,
         ContentType.SOURCE_MAP,
-        JSON.stringify(Object.fromEntries(sourceMap)),
+        safeSerializeMap(sourceMap),
         'JSON',
         false,
         conn
@@ -433,7 +433,7 @@ export async function insertConnectorMessage(
         messageId,
         metaDataId,
         ContentType.CONNECTOR_MAP,
-        JSON.stringify(Object.fromEntries(connectorMap)),
+        safeSerializeMap(connectorMap),
         'JSON',
         false,
         conn
@@ -445,7 +445,7 @@ export async function insertConnectorMessage(
         messageId,
         metaDataId,
         ContentType.CHANNEL_MAP,
-        JSON.stringify(Object.fromEntries(channelMap)),
+        safeSerializeMap(channelMap),
         'JSON',
         false,
         conn
@@ -457,7 +457,7 @@ export async function insertConnectorMessage(
         messageId,
         metaDataId,
         ContentType.RESPONSE_MAP,
-        JSON.stringify(Object.fromEntries(responseMap)),
+        safeSerializeMap(responseMap),
         'JSON',
         false,
         conn
@@ -661,10 +661,51 @@ export async function updateErrors(
 }
 
 /**
+ * Safely serialize a Map to JSON, handling non-serializable values.
+ *
+ * Matches Java MapUtil.serializeMap() behavior: values that cannot be JSON-serialized
+ * (circular references, functions, etc.) are converted to their .toString() representation.
+ * This prevents JSON.stringify from throwing on maps containing user script objects.
+ */
+export function safeSerializeMap(map: Map<string, unknown>): string {
+  const obj: Record<string, unknown> = {};
+  for (const [key, value] of map) {
+    if (typeof value === 'function') {
+      // Functions are omitted by JSON.stringify; store their toString instead
+      obj[key] = value.toString();
+    } else {
+      obj[key] = value;
+    }
+  }
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    // Circular reference or other serialization failure — fall back per-value
+    const safeObj: Record<string, unknown> = {};
+    for (const [key, value] of map) {
+      if (typeof value === 'function') {
+        safeObj[key] = value.toString();
+      } else {
+        try {
+          // Test individual value serialization
+          JSON.stringify(value);
+          safeObj[key] = value;
+        } catch {
+          // Non-serializable value — use toString() fallback
+          safeObj[key] = value != null ? String(value) : null;
+        }
+      }
+    }
+    return JSON.stringify(safeObj);
+  }
+}
+
+/**
  * Persist connector, channel, and response maps to D_MC.
  * Ported from JdbcDao.updateMaps() (lines 1016-1051).
  *
  * Each map is serialized as JSON and stored as the corresponding ContentType.
+ * Uses safeSerializeMap to handle non-serializable values gracefully.
  */
 export async function updateMaps(
   channelId: string,
@@ -681,7 +722,7 @@ export async function updateMaps(
       messageId,
       metaDataId,
       ContentType.CONNECTOR_MAP,
-      JSON.stringify(Object.fromEntries(connectorMap)),
+      safeSerializeMap(connectorMap),
       'JSON',
       false,
       conn
@@ -693,7 +734,7 @@ export async function updateMaps(
       messageId,
       metaDataId,
       ContentType.CHANNEL_MAP,
-      JSON.stringify(Object.fromEntries(channelMap)),
+      safeSerializeMap(channelMap),
       'JSON',
       false,
       conn
@@ -705,7 +746,7 @@ export async function updateMaps(
       messageId,
       metaDataId,
       ContentType.RESPONSE_MAP,
-      JSON.stringify(Object.fromEntries(responseMap)),
+      safeSerializeMap(responseMap),
       'JSON',
       false,
       conn
@@ -730,7 +771,7 @@ export async function updateResponseMap(
       messageId,
       metaDataId,
       ContentType.RESPONSE_MAP,
-      JSON.stringify(Object.fromEntries(responseMap)),
+      safeSerializeMap(responseMap),
       'JSON',
       false,
       conn

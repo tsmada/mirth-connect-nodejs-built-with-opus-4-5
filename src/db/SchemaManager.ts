@@ -14,8 +14,10 @@ import { getPool, transaction } from './pool.js';
 import {
   createChannelTables,
   channelTablesExist as donkeyChannelTablesExist,
+  validateChannelId,
 } from './DonkeyDao.js';
 import { getLogger, registerComponent } from '../logging/index.js';
+import { MetaDataColumnType } from '../api/models/ServerSettings.js';
 
 registerComponent('database', 'Database pool and queries');
 const logger = getLogger('database');
@@ -524,6 +526,151 @@ export async function ensureChannelTables(channelId: string): Promise<void> {
   await createChannelTables(channelId);
 
   logger.info(`Channel tables ensured for ${channelId}`);
+}
+
+// Built-in columns in D_MCM tables that should never be added/dropped/modified
+const BUILTIN_MCM_COLUMNS = new Set(['MESSAGE_ID', 'METADATA_ID']);
+
+// Map MetaDataColumnType to MySQL column type
+function metaDataTypeToSql(type: MetaDataColumnType | string): string {
+  switch (type) {
+    case MetaDataColumnType.STRING:
+    case 'STRING':
+      return 'VARCHAR(255)';
+    case MetaDataColumnType.NUMBER:
+    case 'NUMBER':
+      return 'DECIMAL(31, 15)';
+    case MetaDataColumnType.BOOLEAN:
+    case 'BOOLEAN':
+      return 'TINYINT(1)';
+    case MetaDataColumnType.TIMESTAMP:
+    case 'TIMESTAMP':
+      return 'DATETIME';
+    default:
+      return 'VARCHAR(255)';
+  }
+}
+
+// Normalize MySQL column types for comparison (e.g. "varchar(255)" → "VARCHAR(255)")
+function normalizeSqlType(rawType: string): string {
+  const upper = rawType.toUpperCase().trim();
+  // MySQL's INFORMATION_SCHEMA reports "int" not "int(11)", "decimal(31,15)" etc.
+  // Normalize common variants
+  if (upper === 'INT' || upper === 'TINYINT') return upper;
+  return upper;
+}
+
+interface ColumnInfoRow extends RowDataPacket {
+  COLUMN_NAME: string;
+  COLUMN_TYPE: string;
+}
+
+/**
+ * Column definition accepted by ensureMetaDataColumns.
+ * Accepts both MetaDataColumn (enum type) and MetaDataColumnConfig (string type).
+ */
+interface MetaDataColumnDef {
+  name: string;
+  type: MetaDataColumnType | string;
+  mappingName: string;
+}
+
+/**
+ * Ensure custom metadata columns match the desired column definitions.
+ * Compares existing D_MCM columns against desired columns and runs
+ * ALTER TABLE ADD/DROP/MODIFY as needed.
+ *
+ * Matches Java Mirth behavior: on redeploy, metadata columns are synced
+ * to match the channel configuration.
+ *
+ * @param channelId - Channel ID (used for table name D_MCM{channelId})
+ * @param columns - Desired metadata column definitions
+ */
+export async function ensureMetaDataColumns(
+  channelId: string,
+  columns: MetaDataColumnDef[]
+): Promise<void> {
+  const tableName = `D_MCM${validateChannelId(channelId)}`;
+  const pool = getPool();
+
+  // Query existing columns from information_schema
+  const [existingRows] = await pool.query<ColumnInfoRow[]>(
+    `SELECT COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+     ORDER BY ORDINAL_POSITION`,
+    [tableName]
+  );
+
+  // Build map of existing custom columns (exclude built-in MESSAGE_ID, METADATA_ID)
+  const existingColumns = new Map<string, string>();
+  for (const row of existingRows) {
+    if (!BUILTIN_MCM_COLUMNS.has(row.COLUMN_NAME.toUpperCase())) {
+      existingColumns.set(row.COLUMN_NAME.toUpperCase(), normalizeSqlType(row.COLUMN_TYPE));
+    }
+  }
+
+  // Build map of desired columns
+  const desiredColumns = new Map<string, { name: string; sqlType: string }>();
+  for (const col of columns) {
+    desiredColumns.set(col.name.toUpperCase(), {
+      name: col.name,
+      sqlType: metaDataTypeToSql(col.type),
+    });
+  }
+
+  // Determine columns to add, drop, and modify
+  const toAdd: { name: string; sqlType: string }[] = [];
+  const toDrop: string[] = [];
+  const toModify: { name: string; sqlType: string }[] = [];
+
+  // Columns in desired but not in existing → ADD
+  for (const [upperName, desired] of desiredColumns) {
+    if (!existingColumns.has(upperName)) {
+      toAdd.push(desired);
+    } else {
+      // Column exists — check if type changed
+      const existingType = existingColumns.get(upperName)!;
+      const desiredType = normalizeSqlType(desired.sqlType);
+      if (existingType !== desiredType) {
+        toModify.push(desired);
+      }
+    }
+  }
+
+  // Columns in existing but not in desired → DROP
+  for (const [upperName] of existingColumns) {
+    if (!desiredColumns.has(upperName)) {
+      toDrop.push(upperName);
+    }
+  }
+
+  // Execute ALTER TABLE statements
+  for (const col of toAdd) {
+    await pool.execute(
+      `ALTER TABLE ${tableName} ADD COLUMN \`${col.name}\` ${col.sqlType}`
+    );
+    logger.debug(`Added metadata column \`${col.name}\` (${col.sqlType}) to ${tableName}`);
+  }
+
+  for (const colName of toDrop) {
+    await pool.execute(
+      `ALTER TABLE ${tableName} DROP COLUMN \`${colName}\``
+    );
+    logger.debug(`Dropped metadata column \`${colName}\` from ${tableName}`);
+  }
+
+  for (const col of toModify) {
+    await pool.execute(
+      `ALTER TABLE ${tableName} MODIFY COLUMN \`${col.name}\` ${col.sqlType}`
+    );
+    logger.debug(`Modified metadata column \`${col.name}\` to ${col.sqlType} in ${tableName}`);
+  }
+
+  if (toAdd.length > 0 || toDrop.length > 0 || toModify.length > 0) {
+    logger.info(
+      `Synced metadata columns for ${tableName}: +${toAdd.length} -${toDrop.length} ~${toModify.length}`
+    );
+  }
 }
 
 /**

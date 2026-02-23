@@ -704,6 +704,58 @@ export class Channel extends EventEmitter {
   }
 
   /**
+   * Force-stop the channel immediately without waiting for in-flight messages.
+   * Unlike stop(), halt() does NOT:
+   * - Wait for destination queues to drain (skips stopQueueProcessing)
+   * - Execute the undeploy script
+   *
+   * Matches Java Mirth Channel.halt() — used for emergency shutdowns.
+   */
+  async halt(): Promise<void> {
+    if (this.currentState === DeployedState.STOPPED) {
+      return;
+    }
+
+    try {
+      this.updateCurrentState(DeployedState.STOPPING);
+
+      // Stop lease retry timer and release polling lease
+      this.stopLeaseRetryTimer();
+      if (this.pollingLeaseHeld) {
+        try {
+          const { releaseLease, stopLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+          stopLeaseRenewal(this.id);
+          await releaseLease(this.id, this.serverId);
+          this.pollingLeaseHeld = false;
+        } catch (err) {
+          logger.error(`[${this.name}] Failed to release polling lease during halt: ${err}`);
+        }
+      }
+
+      // Stop source queue processing
+      await this.stopSourceQueueProcessing();
+      this.sourceQueue = null;
+
+      // Stop source connector immediately
+      if (this.sourceConnector) {
+        await this.sourceConnector.stop();
+      }
+
+      // Stop destination connectors immediately — NO queue drain, NO stopQueueProcessing
+      for (const dest of this.destinationConnectors) {
+        await dest.stop();
+      }
+
+      // NOTE: No undeploy script execution — this is the key difference from stop()
+
+      this.updateCurrentState(DeployedState.STOPPED);
+    } catch (error) {
+      this.updateCurrentState(DeployedState.STOPPED);
+      throw error;
+    }
+  }
+
+  /**
    * Pause the channel (stop receiving new messages but keep destinations running).
    *
    * Matches Java Mirth pattern in Channel.java:857-876

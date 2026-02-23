@@ -22,7 +22,7 @@ import { ChannelController } from './ChannelController.js';
 import { ConfigurationController } from './ConfigurationController.js';
 import { Channel } from '../donkey/channel/Channel.js';
 import { buildChannel } from '../donkey/channel/ChannelBuilder.js';
-import { ensureChannelTables } from '../db/SchemaManager.js';
+import { ensureChannelTables, ensureMetaDataColumns } from '../db/SchemaManager.js';
 import type { Donkey } from '../donkey/Donkey.js';
 import { RawMessage } from '../model/RawMessage.js';
 import {
@@ -291,6 +291,12 @@ export class EngineController {
     await ensureChannelTables(channelId);
     logger.debug(`Channel tables verified for ${channelConfig.name}`);
 
+    // Sync custom metadata columns to match channel configuration
+    const metaDataColumns = channelConfig.properties?.metaDataColumns ?? [];
+    if (metaDataColumns.length > 0) {
+      await ensureMetaDataColumns(channelId, metaDataColumns);
+    }
+
     try {
       // Load global scripts for preprocessor/postprocessor chaining (SBF-INIT-001)
       let globalPreprocessorScript: string | undefined;
@@ -523,7 +529,7 @@ export class EngineController {
     }
 
     const { runtimeChannel, name } = deployment;
-    await runtimeChannel.stop();
+    await runtimeChannel.halt();
     logger.info(`Channel ${name} halted`);
   }
 

@@ -14,6 +14,7 @@ import { DeployedState } from '../../../src/api/models/DashboardStatus';
 // --- Track mock calls ---
 const mockStart = jest.fn().mockResolvedValue(undefined);
 const mockStop = jest.fn().mockResolvedValue(undefined);
+const mockHalt = jest.fn().mockResolvedValue(undefined);
 const mockPause = jest.fn().mockResolvedValue(undefined);
 const mockResume = jest.fn().mockResolvedValue(undefined);
 const mockLoadStatisticsFromDb = jest.fn().mockResolvedValue(undefined);
@@ -38,6 +39,7 @@ jest.mock('../../../src/donkey/channel/Channel', () => ({
   Channel: jest.fn().mockImplementation(() => ({
     start: mockStart,
     stop: mockStop,
+    halt: mockHalt,
     pause: mockPause,
     resume: mockResume,
     loadStatisticsFromDb: mockLoadStatisticsFromDb,
@@ -428,10 +430,10 @@ describe('EngineController coverage', () => {
   describe('haltChannel()', () => {
     it('should halt a deployed channel', async () => {
       await EngineController.deployChannel('ch-1');
-      mockStop.mockClear();
+      mockHalt.mockClear();
 
       await EngineController.haltChannel('ch-1');
-      expect(mockStop).toHaveBeenCalled();
+      expect(mockHalt).toHaveBeenCalled();
     });
 
     it('should throw if channel is not deployed', async () => {

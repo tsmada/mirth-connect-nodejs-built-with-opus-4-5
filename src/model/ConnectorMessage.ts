@@ -181,11 +181,30 @@ export class ConnectorMessage {
   }
 
   /**
-   * Get the processed raw data (after attachment handling)
-   * For now, returns the same as raw data
+   * Get the processed raw data (after preprocessor execution).
+   * Falls back to raw data if no PROCESSED_RAW content exists.
+   *
+   * Java Mirth: ConnectorMessage.getProcessedRawData() checks for
+   * PROCESSED_RAW content type first, falls back to RAW.
    */
   getProcessedRawData(): string | null {
+    const processedRaw = this.content.get(ContentType.PROCESSED_RAW);
+    if (processedRaw) {
+      return processedRaw.content;
+    }
     return this.getRawData();
+  }
+
+  /**
+   * Set the processed raw data (after preprocessor execution).
+   */
+  setProcessedRawData(data: string, dataType: string = 'RAW'): void {
+    this.setContent({
+      contentType: ContentType.PROCESSED_RAW,
+      content: data,
+      dataType,
+      encrypted: false,
+    });
   }
 
   /**
