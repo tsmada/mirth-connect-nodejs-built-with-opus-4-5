@@ -26,6 +26,7 @@ Agents are reusable AI assistants with specific expertise. They follow documente
 | [serializer-parity-checker](./serializer-parity-checker.md) | Detect Java↔Node.js data type serializer gaps | Missing serializer methods, property mismatches, batch adaptor gaps, factory registration holes, metadata divergences |
 | [transformation-quality-checker](./transformation-quality-checker.md) | Detect pipeline bugs where correct status masks wrong content | Silent data loss, E4X runtime errors, scope wiring gaps, generated code bugs, XMLProxy behavioral gaps, map propagation errors |
 | [behavioral-test-writer](./behavioral-test-writer.md) | Generate behavioral tests with 15 patterns + orchestrator discovery | Porting Java test contracts, coverage gap analysis, pre-release behavioral validation |
+| [behavioral-comparison](./behavioral-comparison.md) | Compare Java vs Node.js behavioral outputs | Post-inventory-scan verification, pre-takeover validation, wrong-content diagnosis |
 
 ## How to Invoke an Agent
 

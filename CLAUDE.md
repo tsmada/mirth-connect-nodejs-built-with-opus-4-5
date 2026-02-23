@@ -1869,6 +1869,22 @@ Parameters:
 
 See `.claude/agents/behavioral-test-writer.md` for full specification.
 
+### behavioral-comparison
+Compare actual behavioral outputs between Java Mirth and Node.js Mirth implementations.
+
+**Use for**: Post-inventory-scan verification, pre-takeover behavioral validation, diagnosing wrong-output-correct-status bugs, serializer round-trip fidelity.
+
+**Quick start**:
+```
+Use the behavioral-comparison agent to compare all behavioral outputs.
+Parameters:
+- scope: full
+- severity: minor
+- executeVerification: true
+```
+
+See `.claude/agents/behavioral-comparison.md` for full specification.
+
 ---
 
 ## Parallel Agent Porting (Waves 1-21 Complete)
