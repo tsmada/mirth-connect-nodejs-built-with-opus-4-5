@@ -883,7 +883,7 @@ Reports are saved to `validation/reports/validation-TIMESTAMP.json`
 | 6 | Operational Modes | ✅ Passing | Takeover, standalone, auto-detect (Wave 6) |
 | 7 | Live Server Runtime | ✅ Passing | 15 channels, 30+ transformation patterns, 6 bugs fixed (3 sessions) |
 
-**Total Tests: 8,421 passing** (362 unit suites with 8,315 tests + 8 integration suites with 106 tests — 0 regressions)
+**Total Tests: 8,472 passing** (366 unit suites with 8,348 tests + 8 integration suites with 124 tests — 0 regressions)
 
 ### Quick Validation Scripts
 
@@ -1900,9 +1900,9 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Agents spawned | 100+ (89 Waves 1-21 + 11 Wave 22 + Phase C + Real-World) |
 | Agents completed | 100+ (100%) |
 | Total commits | 200+ |
-| Lines added | 112,000+ |
-| Tests added | 4,455+ |
-| Total tests passing | 8,421 |
+| Lines added | 114,000+ |
+| Tests added | 4,524+ |
+| Total tests passing | 8,472 |
 
 ### Wave Summary
 
@@ -1935,7 +1935,8 @@ Uses **Claude Code agent teams** (TeamCreate/SendMessage/TaskCreate) with git wo
 | Adversarial | 3 | ~600 | 57 | ~20 min | **Adversarial Runtime Testing** (P0-1..P0-4, P1-1..P1-3, P2-1..P2-3 fixes + 10 pipeline integration tests) |
 | TQ Fixes | 0 | ~130 | 31 | ~15 min | **XMLProxy TQ Remediation** (Proxy self-ref, value.nodes trap, append child/sibling, attributes().length(), createList guard) |
 | Edge Case Parity | 6 | ~2,400 | 87 | ~20 min | **Java Mirth Transformation Test Parity** (FTE failures, disabled rules/steps, map serialization, getArrayOrXmlLength, respondAfterProcessing, processedRaw, halt(), metadata columns) |
-| **Total** | **106+** | **~114,530** | **4,473** | **~31.5 hrs** | |
+| Behavioral Wave 2 | 0 | ~1,800 | 51 | ~10 min | **Java Runtime Behavioral Contracts** (RecoveryTask orchestration, ResponseSelector modes, ContentStorageModes 5-mode gating, Pause/Resume/Halt state machine, Queue lifecycle) |
+| **Total** | **110+** | **~116,330** | **4,524** | **~32 hrs** | |
 
 ### Components Ported
 
@@ -3248,9 +3249,45 @@ Cross-referenced Java Mirth's transformation test files (`FilterTransformerTests
 
 - 87 new tests (8 test suites), 8,421 total tests passing (0 regressions across 370 suites)
 
+### Behavioral Wave 2 — Java Runtime Behavioral Integration Tests (2026-02-23)
+
+**51 tests across 4 new files matching Java Mirth's exact state-sequence contracts for 5 runtime patterns. Tests only — 0 source code changes.**
+
+4 parallel agents in isolated git worktrees, zero merge conflicts:
+
+| Agent | Test File | Tests | Java Source |
+|-------|-----------|-------|-------------|
+| agent-t1 | `RecoveryBehavior.test.ts` | 10 | `RecoveryTests.java` |
+| agent-t2 | `ResponseSelector.behavior.test.ts` | 14 | `SourceConnectorTests.java` |
+| agent-t3 | `ContentStorageModes.test.ts` | 15 | `ChannelTests.java` |
+| agent-t4 | `PauseAndQueueLifecycle.test.ts` | 12 | `ChannelTests.java`, `QueueTests.java` |
+
+**T1: Recovery Behavioral Contracts (10 tests):**
+Source RECEIVED recovery (10 messages), mixed destination recovery (only RECEIVED/PENDING recovered, SENT untouched), PENDING recovery with error message format, PROCESSED=true marking, empty recovery (zero counts), cluster SERVER_ID isolation, mixed RECEIVED+PENDING in same message, error resilience (one failure doesn't stop others), exact error message format, transaction wrapping per message.
+
+**T2: ResponseSelector Behavioral Contracts (14 tests):**
+RESPONSE_NONE → null, null respondFromName → null, RESPONSE_AUTO_BEFORE → RECEIVED, RESPONSE_SOURCE_TRANSFORMED → source status, DESTINATIONS_COMPLETED with 5 status combinations (all SENT, mixed SENT+ERROR, FILTERED+SENT, all QUEUED, all FILTERED), named destination 'd1', named by connector name, invalid name → null, postprocessor response, status precedence ordering (ERROR > SENT > QUEUED > FILTERED).
+
+**T3: Content Storage Mode Contracts (15 tests):**
+DEVELOPMENT stores all content types, PRODUCTION skips intermediates (PROCESSED_RAW, TRANSFORMED, RESPONSE_TRANSFORMED, PROCESSED_RESPONSE), RAW stores only raw content (no maps, no encoded/sent/response), METADATA stores no content (but message rows still created), DISABLED stores nothing, removeContentOnCompletion, removeOnlyFilteredOnCompletion, removeAttachmentsOnCompletion, getStorageSettings() flag verification (6 sub-tests), multiple messages with METADATA mode.
+
+**T4: Pause/Resume/Halt + Queue Lifecycle (12 tests):**
+Pause stops source (destinations keep running), pause preserves state (resume restores), pause leaves destinations running, cannot pause from STOPPED, pause from PAUSED is idempotent, resume from PAUSED → STARTED, cannot resume from STARTED, resume allows message dispatch, halt() skips undeploy script, halt() from PAUSED, stop() vs halt() behavioral comparison, queue-enabled + send error → QUEUED (not ERROR).
+
+**Key files:**
+
+| File | Tests | Pattern |
+|------|-------|---------|
+| `tests/integration/pipeline/RecoveryBehavior.test.ts` | 10 | Mocked DonkeyDao, direct runRecoveryTask() calls |
+| `tests/unit/donkey/channel/ResponseSelector.behavior.test.ts` | 14 | Pure unit tests on ResponseSelector.getResponse() |
+| `tests/integration/pipeline/ContentStorageModes.test.ts` | 15 | Pipeline integration with StorageSettings flags |
+| `tests/integration/pipeline/PauseAndQueueLifecycle.test.ts` | 12 | Channel state machine + queue integration |
+
+- 51 new tests (4 test suites), 8,472 total tests passing (0 regressions across 374 suites)
+
 ### Completion Status
 
-All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy TQ Remediation, and Edge Case Parity are complete. The porting project has reached production-ready status:
+All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy TQ Remediation, Edge Case Parity, and Behavioral Wave 2 are complete. The porting project has reached production-ready status:
 
 **Completed (Waves 1-22 + Phase C + Real-World Gaps):**
 - ✅ 34/34 Userutil classes (100%) — including MessageHeaders, MessageParameters (Wave 14)
@@ -3275,6 +3312,7 @@ All Waves 1-22, Phase C, Real-World Gaps, Adversarial Runtime Testing, XMLProxy 
 - ✅ **TQ Full Scan Verified Clean (2026-02-22)** — Full transformation-quality-checker re-scan after commits 68de9a7 + 27cddc6. 89 verification items across 8 phases (static anti-patterns, E4X transpilation execution, scope types, generated code, cross-realm isolation, data flow stages, map chains, XMLProxy methods). Result: 88/89 PASS, 0 critical, 0 major, 1 minor (Buffer.freeze() silent failure in non-strict VM — protection effective, no fix needed). All prior fixes from lessons #54-#61, adversarial testing P0-1 through P2-3, and TQ remediation confirmed intact. Report: `plans/tq-checker-full-scan-2026-02-22.md`.
 - ✅ **Live Server Runtime Validation (2026-02-22)** — Full-stack live server validation against 15 kitchen sink channels across 3 sessions. 6 bugs found and fixed: XMLProxy.toString() ECMA-357 non-compliance (critical), response transformer unconditional execution (critical), batch processing wiring (major), ResponseSelector pipeline wiring (major), HL7v2 parser .1 sub-element wrapping (major), CH34 E4X access pattern (minor). 30+ transformation patterns verified correct including E4X (8 types), code templates, multi-destination routing, cross-channel VM routing, MLLP ACK generation/rejection, HTTP dispatcher/receiver chains, batch HL7 split, response selection, and postprocessor `$r()` access. 8,211 automated tests passing, 0 regressions. Report: `plans/live-server-validation-2026-02-22.md`.
 - ✅ **Edge Case Parity (2026-02-22)** — 8 untested patterns from Java Mirth's ~102 transformation test files. Category A (tests only): FTE 5 failure modes, disabled rules/steps, map serialization safety (circular refs, functions, BigInt), getArrayOrXmlLength via VM execution, respondAfterProcessing=false. Category B (implementation + tests): processedRaw content path (PROCESSED_RAW ContentType=2), Channel.halt() force-stop, ensureMetaDataColumns() ALTER TABLE on redeploy. 87 new tests, 8,421 total passing.
+- ✅ **Behavioral Wave 2 (2026-02-23)** — 51 behavioral integration tests matching Java Mirth's exact state-sequence contracts for 5 runtime patterns: RecoveryTask orchestration (10 tests), ResponseSelector 9-mode selection (14 tests), ContentStorageModes 5-mode gating (15 tests), Pause/Resume/Halt state machine + Queue lifecycle (12 tests). Tests only — 0 source code changes. 4 parallel agents, 8,472 total passing.
 
 ### Live Server Runtime Validation (2026-02-22)
 
@@ -3326,7 +3364,7 @@ E4X descendant (`msg..OBX`), for-each loop, delete operator, XML literals, names
 |-------|-------|--------|
 | Unit tests (348 suites) | 8,123 | All passing |
 | Pipeline integration (4 suites) | 88 | All passing |
-| **Total automated** | **8,421** | **All passing, 0 regressions** |
+| **Total automated** | **8,472** | **All passing, 0 regressions** |
 
 Report: `plans/live-server-validation-2026-02-22.md`
 
