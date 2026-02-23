@@ -7,10 +7,7 @@
 
 import React, { FC, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import {
-  ChannelGroup,
-  CHANNEL_GROUP_DEFAULT_NAME,
-} from '../../types/index.js';
+import { ChannelGroup, CHANNEL_GROUP_DEFAULT_NAME } from '../../types/index.js';
 
 export interface GroupPickerProps {
   /** All available groups (including virtual Default Group) */
@@ -145,7 +142,9 @@ export const GroupPicker: FC<GroupPickerProps> = ({
       React.createElement(
         Text,
         { color: 'gray', italic: true },
-        creatingNew ? '[Enter] Create  [Esc] Cancel' : '[j/k] Navigate  [Enter] Select  [Esc] Cancel'
+        creatingNew
+          ? '[Enter] Create  [Esc] Cancel'
+          : '[j/k] Navigate  [Enter] Select  [Esc] Cancel'
       )
     )
   );

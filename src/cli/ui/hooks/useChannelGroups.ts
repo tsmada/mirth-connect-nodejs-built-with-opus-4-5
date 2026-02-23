@@ -148,10 +148,7 @@ export function useChannelGroups(options: UseChannelGroupsOptions): UseChannelGr
     }
 
     // Group channels
-    const grouped = new Map<
-      string,
-      { groupName: string; channels: ChannelStatus[] }
-    >();
+    const grouped = new Map<string, { groupName: string; channels: ChannelStatus[] }>();
 
     for (const channel of channels) {
       const group = channelToGroup.get(channel.channelId);

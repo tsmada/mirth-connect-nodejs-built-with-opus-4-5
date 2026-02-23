@@ -85,7 +85,7 @@ function serializeGroup(group: ChannelGroup): string {
  * Deserialize channel group from storage
  */
 function deserializeGroup(row: ChannelGroupRow): ChannelGroup {
-  const data = JSON.parse(row.GROUP_DATA || '{}');
+  const data = JSON.parse(row.GROUP_DATA || '{}') as { channels?: ChannelGroupChannel[] };
   return {
     id: row.ID,
     name: row.NAME,
@@ -216,11 +216,14 @@ channelGroupRouter.post(
 
       // Handle various body formats
       if (Array.isArray(req.body)) {
-        ids = req.body;
-      } else if (req.body && req.body.set && req.body.set.string) {
+        ids = req.body as string[];
+      } else if (req.body) {
         // XML format: <set><string>id1</string></set>
-        const idList = req.body.set.string;
-        ids = Array.isArray(idList) ? idList : [idList];
+        const body = req.body as { set?: { string?: string | string[] } };
+        if (body.set?.string) {
+          const idList = body.set.string;
+          ids = Array.isArray(idList) ? idList : [idList];
+        }
       }
 
       const groups = await getChannelGroups(ids);

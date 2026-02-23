@@ -227,7 +227,9 @@ export function registerGroupCommands(program: Command): void {
         // Reject Default Group name
         if (name === CHANNEL_GROUP_DEFAULT_NAME) {
           spinner.stop();
-          formatter.error(`Cannot create a group named '${CHANNEL_GROUP_DEFAULT_NAME}' — this name is reserved`);
+          formatter.error(
+            `Cannot create a group named '${CHANNEL_GROUP_DEFAULT_NAME}' — this name is reserved`
+          );
           process.exit(1);
         }
 
@@ -295,7 +297,9 @@ export function registerGroupCommands(program: Command): void {
         }
         if (newName === CHANNEL_GROUP_DEFAULT_NAME) {
           spinner.stop();
-          formatter.error(`Cannot rename a group to '${CHANNEL_GROUP_DEFAULT_NAME}' — this name is reserved`);
+          formatter.error(
+            `Cannot rename a group to '${CHANNEL_GROUP_DEFAULT_NAME}' — this name is reserved`
+          );
           process.exit(1);
         }
 

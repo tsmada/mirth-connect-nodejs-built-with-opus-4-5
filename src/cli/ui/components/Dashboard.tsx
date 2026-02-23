@@ -326,7 +326,7 @@ export const Dashboard: FC<DashboardProps> = ({
         channels
           .refresh()
           .then(() => showMessage('Refreshed', 'success'))
-          .catch((err) => showMessage(`Refresh failed: ${err.message}`, 'error'));
+          .catch((err: Error) => showMessage(`Refresh failed: ${err.message}`, 'error'));
       }
       // Search
       else if (input === '/') {
@@ -599,8 +599,8 @@ export const Dashboard: FC<DashboardProps> = ({
   if (viewMode === 'groupPicker' && groupPickerChannelIds.length > 0) {
     const pickerLabel =
       groupPickerChannelIds.length === 1
-        ? channels.channels.find((ch) => ch.channelId === groupPickerChannelIds[0])?.name ??
-          groupPickerChannelIds[0]!
+        ? (channels.channels.find((ch) => ch.channelId === groupPickerChannelIds[0])?.name ??
+          groupPickerChannelIds[0]!)
         : `${groupPickerChannelIds.length} channels`;
 
     const handleGroupSelect = async (groupId: string) => {
@@ -613,9 +613,7 @@ export const Dashboard: FC<DashboardProps> = ({
         // Remove channel(s) from any current group
         const updatedGroups = allGroups.map((g) => ({
           ...g,
-          channels: (g.channels || []).filter(
-            (chId) => !groupPickerChannelIds.includes(chId)
-          ),
+          channels: (g.channels || []).filter((chId) => !groupPickerChannelIds.includes(chId)),
           revision: (g.revision || 0) + 1,
         }));
 
@@ -623,10 +621,7 @@ export const Dashboard: FC<DashboardProps> = ({
         if (groupId !== CHANNEL_GROUP_DEFAULT_ID) {
           const targetGroup = updatedGroups.find((g) => g.id === groupId);
           if (targetGroup) {
-            targetGroup.channels = [
-              ...targetGroup.channels,
-              ...groupPickerChannelIds,
-            ];
+            targetGroup.channels = [...targetGroup.channels, ...groupPickerChannelIds];
           }
         }
 
@@ -636,7 +631,7 @@ export const Dashboard: FC<DashboardProps> = ({
           `Moved ${groupPickerChannelIds.length} channel(s) to ${
             groupId === CHANNEL_GROUP_DEFAULT_ID
               ? CHANNEL_GROUP_DEFAULT_NAME
-              : allGroups.find((g) => g.id === groupId)?.name ?? groupId
+              : (allGroups.find((g) => g.id === groupId)?.name ?? groupId)
           }`,
           'success'
         );
@@ -655,9 +650,7 @@ export const Dashboard: FC<DashboardProps> = ({
         // Remove channel(s) from current groups
         const updatedGroups = allGroups.map((g) => ({
           ...g,
-          channels: (g.channels || []).filter(
-            (chId) => !groupPickerChannelIds.includes(chId)
-          ),
+          channels: (g.channels || []).filter((chId) => !groupPickerChannelIds.includes(chId)),
           revision: (g.revision || 0) + 1,
         }));
 
@@ -672,7 +665,10 @@ export const Dashboard: FC<DashboardProps> = ({
 
         await client.bulkUpdateChannelGroups(updatedGroups);
         await groups.refresh();
-        showMessage(`Created group '${name}' with ${groupPickerChannelIds.length} channel(s)`, 'success');
+        showMessage(
+          `Created group '${name}' with ${groupPickerChannelIds.length} channel(s)`,
+          'success'
+        );
       } catch (err) {
         showMessage(`Failed: ${(err as Error).message}`, 'error');
       }
