@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 /**
  * Ported from: ~/Projects/connect/donkey/src/main/java/com/mirth/connect/donkey/server/channel/Channel.java
  *
@@ -58,7 +59,7 @@ import {
   deleteMessageContentByMetaDataIds,
   insertCustomMetaData,
   getConnectorMessageStatuses,
-  updateStatistics,
+  batchInitializeStatistics,
 } from '../../db/DonkeyDao.js';
 import { transaction, withRetry } from '../../db/pool.js';
 import { StatisticsAccumulator } from './StatisticsAccumulator.js';
@@ -374,14 +375,10 @@ export class Channel extends EventEmitter {
       }
       if (!this.tablesExist) return;
 
-      const serverId = this.serverId;
-      // Create initial zero-count rows for source and each destination.
-      // Uses INSERT ON DUPLICATE KEY UPDATE with count=0, so existing rows
-      // are untouched (adding 0 is a no-op).
-      await updateStatistics(this.id, 0, serverId, Status.RECEIVED, 0);
-      for (let i = 0; i < this.destinationConnectors.length; i++) {
-        await updateStatistics(this.id, i + 1, serverId, Status.RECEIVED, 0);
-      }
+      // Batch-initialize all connector statistics in a single INSERT.
+      // metadataId 0 = source, 1..N = destinations.
+      const metadataIds = [0, ...this.destinationConnectors.map((_, i) => i + 1)];
+      await batchInitializeStatistics(this.id, metadataIds, this.serverId);
     } catch (err) {
       logger.error(`[${this.name}] Failed to initialize statistics: ${err}`);
     }
@@ -453,16 +450,17 @@ export class Channel extends EventEmitter {
     if (!isPollingAllowedInTakeover(this.id, this.name)) {
       logger.info(
         `[${this.name}] Takeover mode: polling blocked (Java Mirth may be polling). ` +
-        `Enable with: MIRTH_TAKEOVER_POLL_CHANNELS=${this.id} or API call`
+          `Enable with: MIRTH_TAKEOVER_POLL_CHANNELS=${this.id} or API call`
       );
-      return false;  // No retry timer — operator must explicitly enable
+      return false; // No retry timer — operator must explicitly enable
     }
 
     // Cluster lease coordination (between Node.js instances)
     const config = getClusterConfig();
     if (!config.clusterEnabled || config.pollingMode === 'all') return true;
 
-    const { acquireLease, startLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+    const { acquireLease, startLeaseRenewal } =
+      await import('../../cluster/PollingLeaseManager.js');
     const acquired = await acquireLease(this.id, this.serverId, config.leaseTtl);
     this.pollingLeaseHeld = acquired;
 
@@ -491,7 +489,8 @@ export class Channel extends EventEmitter {
     const config = getClusterConfig();
     this.leaseRetryTimer = setInterval(async () => {
       try {
-        const { acquireLease, startLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+        const { acquireLease, startLeaseRenewal } =
+          await import('../../cluster/PollingLeaseManager.js');
         const acquired = await acquireLease(this.id, this.serverId, config.leaseTtl);
         if (acquired) {
           this.pollingLeaseHeld = true;
@@ -662,7 +661,8 @@ export class Channel extends EventEmitter {
       this.stopLeaseRetryTimer();
       if (this.pollingLeaseHeld) {
         try {
-          const { releaseLease, stopLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+          const { releaseLease, stopLeaseRenewal } =
+            await import('../../cluster/PollingLeaseManager.js');
           stopLeaseRenewal(this.id);
           await releaseLease(this.id, this.serverId);
           this.pollingLeaseHeld = false;
@@ -723,7 +723,8 @@ export class Channel extends EventEmitter {
       this.stopLeaseRetryTimer();
       if (this.pollingLeaseHeld) {
         try {
-          const { releaseLease, stopLeaseRenewal } = await import('../../cluster/PollingLeaseManager.js');
+          const { releaseLease, stopLeaseRenewal } =
+            await import('../../cluster/PollingLeaseManager.js');
           stopLeaseRenewal(this.id);
           await releaseLease(this.id, this.serverId);
           this.pollingLeaseHeld = false;
@@ -1694,9 +1695,10 @@ export class Channel extends EventEmitter {
 
           // Persist PROCESSED_RESPONSE (ContentType=8) on source (metadataId=0)
           if (postprocessorResponse && this.storageSettings.storeProcessedResponse) {
-            const responseContent = typeof postprocessorResponse.getMessage === 'function'
-              ? postprocessorResponse.getMessage()
-              : String(postprocessorResponse);
+            const responseContent =
+              typeof postprocessorResponse.getMessage === 'function'
+                ? postprocessorResponse.getMessage()
+                : String(postprocessorResponse);
             sourceMessage.setContent({
               contentType: ContentType.PROCESSED_RESPONSE,
               content: responseContent,
@@ -1705,9 +1707,14 @@ export class Channel extends EventEmitter {
             });
             txn4Ops.push((conn) =>
               storeContent(
-                this.id, messageId, 0,
+                this.id,
+                messageId,
+                0,
                 ContentType.PROCESSED_RESPONSE,
-                responseContent, 'RAW', this.encryptData, conn
+                responseContent,
+                'RAW',
+                this.encryptData,
+                conn
               )
             );
           }
@@ -1738,9 +1745,10 @@ export class Channel extends EventEmitter {
 
         const selectedResponse = this.responseSelector.getResponse(sourceMessage, message);
         if (selectedResponse) {
-          const respContent = typeof selectedResponse.getMessage === 'function'
-            ? selectedResponse.getMessage()
-            : String(selectedResponse);
+          const respContent =
+            typeof selectedResponse.getMessage === 'function'
+              ? selectedResponse.getMessage()
+              : String(selectedResponse);
           // Store on source connector as RESPONSE content (ContentType=6).
           // HttpReceiver.getResponseBody() reads this via sourceMsg.getResponseContent().
           sourceMessage.setContent({

@@ -683,6 +683,51 @@ await ensureChannelTables(channelId);  // Creates D_M, D_MM, D_MC, D_MA, D_MS, D
 - `D_MSQ{id}` - Message sequence (row-locked for ID generation)
 - `D_MCM{id}` - Custom metadata (user-defined fields)
 
+### Database Pool Sizing
+
+The connection pool auto-scales at startup based on channel count, then remains fixed for the lifetime of the process (mysql2 does not support live pool resizing).
+
+**Default behavior (auto-scaled):**
+1. After `initPool()` and schema detection, `autoScalePool()` queries `SELECT COUNT(*) FROM CHANNEL WHERE ENABLED = 1`
+2. Computes recommended size: `max(10, ceil(channelCount / 5))`
+3. Applies mode-aware cap: **50** in takeover mode (leaves room for Java Mirth), **100** in standalone mode
+4. If computed > current pool size → `recreatePool()` with new size (safe — no active transactions yet)
+5. Logs: `Auto-scaled pool: 10 → 46 connections for 227 enabled channels (standalone mode, cap: 100)`
+
+**Two-phase startup (deploy-all-then-start):**
+- Phase 1: Deploy all channels with `startAfterDeploy: false` — DDL, build runtime, wire connectors, no starts
+- Phase 2: Start channels with controlled concurrency via `startDeployedChannels()` — semaphore limits max concurrent starts
+- This prevents the "triple squeeze" where DDL transactions, already-started channels, and statistics initialization all compete for the same pool
+
+**Startup concurrency formula:** `min(10, max(1, floor(poolSize / 3)))` — ensures at least 1/3 of pool capacity remains for deployment operations during the start phase.
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_POOL_SIZE` | (auto) | Explicit pool size override. If set, disables auto-scaling entirely. |
+| `DB_POOL_MAX` | `100` (standalone) / `50` (takeover) | Upper bound for auto-scaled pool size |
+| `MIRTH_STARTUP_CONCURRENCY` | `min(10, poolSize/3)` | Max channels starting simultaneously during server boot |
+
+**Sizing guidance:**
+- Rule of thumb: `max(10, channels/5)` — each channel needs ~2 connections during start (stats + recovery)
+- MySQL `max_connections` (default 151) is the hard ceiling across ALL clients
+- In takeover mode: Java Mirth + Node.js share the same MySQL → keep total under `max_connections`
+- If `DB_POOL_SIZE` is explicitly set and `channels > poolSize * 5`, a warning is logged at startup
+
+**Batch statistics initialization:**
+- `batchInitializeStatistics()` in `DonkeyDao.ts` generates a single multi-value `INSERT ... ON DUPLICATE KEY UPDATE` for all metadata IDs (source + destinations)
+- Reduces per-channel pool checkouts from `1 + N_destinations` to exactly 1
+
+**Key files:**
+
+| File | Function |
+|------|----------|
+| `src/db/pool.ts` | `recreatePool()`, `getPoolStats()`, `getPoolConfig()`, `isPoolSizeExplicit()` |
+| `src/server/Mirth.ts` | `autoScalePool()`, two-phase `loadAndDeployChannels()` |
+| `src/controllers/EngineController.ts` | `startDeployedChannels()` with semaphore, `deployChannel({ startAfterDeploy })` |
+| `src/db/DonkeyDao.ts` | `batchInitializeStatistics()` |
+
 ## Validation Requirements
 Before marking component complete:
 1. Unit tests pass

@@ -12,7 +12,13 @@
 
 import { Donkey } from '../donkey/Donkey.js';
 import { startServer } from '../api/server.js';
-import { initPool, closePool } from '../db/pool.js';
+import {
+  initPool,
+  closePool,
+  recreatePool,
+  getPoolConfig,
+  isPoolSizeExplicit,
+} from '../db/pool.js';
 import { initEncryptorFromEnv } from '../db/Encryptor.js';
 import { ChannelController } from '../controllers/ChannelController.js';
 import { EngineController, setDonkeyInstance } from '../controllers/EngineController.js';
@@ -201,11 +207,13 @@ export class Mirth {
       const { getTakeoverPollingEnabled } = await import('../cluster/TakeoverPollingGuard.js');
       const enabled = getTakeoverPollingEnabled();
       if (enabled.size > 0) {
-        logger.info(`Takeover mode: polling enabled for ${enabled.size} channels via MIRTH_TAKEOVER_POLL_CHANNELS`);
+        logger.info(
+          `Takeover mode: polling enabled for ${enabled.size} channels via MIRTH_TAKEOVER_POLL_CHANNELS`
+        );
       } else {
         logger.warn(
           'Takeover mode: all polling connectors (File, Database) are blocked by default. ' +
-          'Enable per-channel with MIRTH_TAKEOVER_POLL_CHANNELS env var or mirth-cli polling enable <channel>'
+            'Enable per-channel with MIRTH_TAKEOVER_POLL_CHANNELS env var or mirth-cli polling enable <channel>'
         );
       }
     }
@@ -298,7 +306,10 @@ export class Mirth {
       logger.warn(`Failed to load ConfigurationMap: ${String(err)}`);
     }
 
-    // Load channels from database and deploy them
+    // Auto-scale pool based on channel count (safe — no active transactions yet)
+    await this.autoScalePool();
+
+    // Load channels from database and deploy them (two-phase: deploy all, then start)
     await this.loadAndDeployChannels();
 
     // Wire ChannelUtil singletons for user scripts (ChannelUtil.startChannel(), etc.)
@@ -377,7 +388,7 @@ export class Mirth {
       setSecretsFunction(createSecretsFunction());
     }
 
-    mirthInstance = this;
+    mirthInstance = this; // eslint-disable-line @typescript-eslint/no-this-alias
     this.running = true;
     logger.info(`Mirth Connect started on port ${this.config.httpPort} (HTTP)`);
   }
@@ -394,7 +405,8 @@ export class Mirth {
 
     // Release all polling leases and stop renewal timers
     try {
-      const { stopAllLeaseRenewals, releaseAllLeases } = await import('../cluster/PollingLeaseManager.js');
+      const { stopAllLeaseRenewals, releaseAllLeases } =
+        await import('../cluster/PollingLeaseManager.js');
       stopAllLeaseRenewals();
       await releaseAllLeases(getClusterConfig().serverId);
     } catch {
@@ -593,9 +605,11 @@ export class Mirth {
 
       // --- ErrorTaskHandler helper ---
       type IErrorTaskHandler = { isErrored(): boolean; getError(): Error | null };
+      // eslint-disable-next-line no-inner-declarations
       function noError(): IErrorTaskHandler {
         return { isErrored: () => false, getError: () => null };
       }
+      // eslint-disable-next-line no-inner-declarations
       function withError(err: unknown): IErrorTaskHandler {
         return {
           isErrored: () => true,
@@ -723,6 +737,7 @@ export class Mirth {
             return withError(e);
           }
         },
+        // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
         async deployChannels(channelIds: Set<string>, _context: unknown | null) {
           try {
             for (const id of channelIds) await EC.deployChannel(id);
@@ -731,6 +746,7 @@ export class Mirth {
             return withError(e);
           }
         },
+        // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
         async undeployChannels(channelIds: Set<string>, _context: unknown | null) {
           try {
             for (const id of channelIds) await EC.undeployChannel(id);
@@ -779,13 +795,79 @@ export class Mirth {
   }
 
   /**
-   * Load channels from database and deploy them via EngineController
-   * This ensures consistent state tracking across the API and runtime
+   * Auto-scale the database connection pool based on enabled channel count.
+   * Safe to call only at startup before any channels are deployed (no active transactions).
+   *
+   * - If DB_POOL_SIZE is explicitly set, honor it and skip auto-scaling.
+   * - Otherwise, compute: max(10, ceil(channelCount / 5))
+   * - Cap based on mode: takeover=50 (shared MySQL), standalone=100
+   */
+  private async autoScalePool(): Promise<void> {
+    if (isPoolSizeExplicit()) {
+      const { connectionLimit } = getPoolConfig();
+      logger.info(`Database pool size explicitly set: ${connectionLimit} (auto-scaling disabled)`);
+      return;
+    }
+
+    try {
+      const channelConfigs = await ChannelController.getAllChannels();
+      const enabledCount = channelConfigs.filter((c) => c.enabled).length;
+      const currentSize = getPoolConfig().connectionLimit;
+
+      // Compute recommended size: 1 connection per 5 channels, minimum 10
+      const recommended = Math.max(10, Math.ceil(enabledCount / 5));
+
+      // Mode-aware caps
+      const defaultMax = this.detectedMode === 'takeover' ? 50 : 100;
+      const maxPoolSize = parseInt(process.env['DB_POOL_MAX'] || String(defaultMax), 10);
+      const targetSize = Math.min(recommended, maxPoolSize);
+
+      if (targetSize <= currentSize) {
+        return;
+      }
+
+      // Recreate pool with larger size (safe — no active transactions at startup)
+      logger.info(
+        `Auto-scaled pool: ${currentSize} → ${targetSize} connections for ${enabledCount} enabled channels ` +
+          `(${this.detectedMode} mode, cap: ${maxPoolSize})`
+      );
+      await recreatePool({
+        ...this.config.database,
+        connectionLimit: targetSize,
+      });
+    } catch (err) {
+      logger.warn(`Failed to auto-scale pool: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Load channels from database and deploy them via EngineController.
+   *
+   * Two-phase startup:
+   *   Phase 1: Deploy all channels (DDL, build runtime, wire connectors — no starts)
+   *   Phase 2: Start channels with controlled concurrency
+   *
+   * This prevents pool exhaustion when deploying many channels, because
+   * already-started channels don't compete for connections during deployment.
    */
   private async loadAndDeployChannels(): Promise<void> {
     try {
       const channelConfigs = await ChannelController.getAllChannels();
       logger.info(`Found ${channelConfigs.length} channel(s) in database`);
+
+      // Warn if explicit pool size may be too small
+      const enabledCount = channelConfigs.filter((c) => c.enabled).length;
+      const { connectionLimit } = getPoolConfig();
+      if (isPoolSizeExplicit() && enabledCount > connectionLimit * 5) {
+        logger.warn(
+          `${enabledCount} channels with pool size ${connectionLimit} — pool exhaustion likely. ` +
+            `Consider increasing DB_POOL_SIZE or removing the explicit override to enable auto-scaling.`
+        );
+      }
+
+      // Phase 1: Deploy all channels (no starts)
+      const channelsToStart: string[] = [];
+      let deployedCount = 0;
 
       for (const channelConfig of channelConfigs) {
         if (!channelConfig.enabled) {
@@ -794,14 +876,33 @@ export class Mirth {
         }
 
         try {
-          // Use EngineController to deploy - this ensures state is tracked
-          // in both EngineController.channelStates AND Donkey engine
-          await EngineController.deployChannel(channelConfig.id);
+          await EngineController.deployChannel(channelConfig.id, { startAfterDeploy: false });
           logger.info(`Deployed channel: ${channelConfig.name} (${channelConfig.id})`);
+          deployedCount++;
+
+          const initialState = channelConfig.properties?.initialState || 'STARTED';
+          if (initialState === 'STARTED') {
+            channelsToStart.push(channelConfig.id);
+          }
         } catch (channelError) {
           logger.error(`Failed to deploy channel ${channelConfig.name}`, channelError as Error);
-          // Continue with other channels
         }
+      }
+
+      logger.info(`Phase 1 complete: ${deployedCount} channels deployed`);
+
+      // Phase 2: Start channels with controlled concurrency
+      if (channelsToStart.length > 0) {
+        const poolSize = getPoolConfig().connectionLimit;
+        const defaultConcurrency = Math.min(10, Math.max(1, Math.floor(poolSize / 3)));
+        const startupConcurrency = parseInt(
+          process.env['MIRTH_STARTUP_CONCURRENCY'] || String(defaultConcurrency),
+          10
+        );
+
+        await EngineController.startDeployedChannels(channelsToStart, {
+          concurrency: startupConcurrency,
+        });
       }
     } catch (error) {
       logger.error('Failed to load channels from database', error as Error);

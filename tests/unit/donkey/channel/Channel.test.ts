@@ -20,6 +20,7 @@ jest.mock('../../../../src/db/DonkeyDao.js', () => ({
   updateConnectorMessageStatus: jest.fn().mockResolvedValue(undefined),
   updateMessageProcessed: jest.fn().mockResolvedValue(undefined),
   updateStatistics: jest.fn().mockResolvedValue(undefined),
+  batchInitializeStatistics: jest.fn().mockResolvedValue(undefined),
   updateErrors: jest.fn().mockResolvedValue(undefined),
   updateMaps: jest.fn().mockResolvedValue(undefined),
   updateResponseMap: jest.fn().mockResolvedValue(undefined),
@@ -45,16 +46,37 @@ import { Message } from '../../../../src/model/Message';
 import { Status } from '../../../../src/model/Status';
 import { ContentType } from '../../../../src/model/ContentType';
 import { DeployedState } from '../../../../src/api/models/DashboardStatus';
-import { MessageStorageMode, getStorageSettings } from '../../../../src/donkey/channel/StorageSettings';
-import { GlobalMap, ConfigurationMap, GlobalChannelMapStore } from '../../../../src/javascript/userutil/MirthMap';
+import {
+  MessageStorageMode,
+  getStorageSettings,
+} from '../../../../src/donkey/channel/StorageSettings';
+import {
+  GlobalMap,
+  ConfigurationMap,
+  GlobalChannelMapStore,
+} from '../../../../src/javascript/userutil/MirthMap';
 import { resetDefaultExecutor } from '../../../../src/javascript/runtime/JavaScriptExecutor';
 import {
-  insertMessage, insertConnectorMessage, insertContent, storeContent,
-  updateConnectorMessageStatus, updateMessageProcessed,
-  updateStatistics, updateErrors, updateMaps, updateResponseMap, updateSendAttempts,
-  getNextMessageId, channelTablesExist, getStatistics,
-  pruneMessageContent, pruneMessageAttachments, deleteMessageContentByMetaDataIds,
-  insertCustomMetaData, getConnectorMessageStatuses,
+  insertMessage,
+  insertConnectorMessage,
+  insertContent,
+  storeContent,
+  updateConnectorMessageStatus,
+  updateMessageProcessed,
+  updateStatistics,
+  batchInitializeStatistics,
+  updateErrors,
+  updateMaps,
+  updateResponseMap,
+  updateSendAttempts,
+  getNextMessageId,
+  channelTablesExist,
+  getStatistics,
+  pruneMessageContent,
+  pruneMessageAttachments,
+  deleteMessageContentByMetaDataIds,
+  insertCustomMetaData,
+  getConnectorMessageStatuses,
 } from '../../../../src/db/DonkeyDao';
 import { StorageSettings } from '../../../../src/donkey/channel/StorageSettings';
 
@@ -411,8 +433,8 @@ describe('Channel', () => {
         'test-channel-1',
         message.getMessageId(),
         expect.any(String), // serverId
-        expect.any(Date),   // receivedDate
-        mockPoolConnection  // conn from transaction
+        expect.any(Date), // receivedDate
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -422,11 +444,11 @@ describe('Channel', () => {
       expect(insertConnectorMessage).toHaveBeenCalledWith(
         'test-channel-1',
         message.getMessageId(),
-        0,                   // metaDataId for source
-        'Test Source',       // connector name
-        expect.any(Date),    // receivedDate
+        0, // metaDataId for source
+        'Test Source', // connector name
+        expect.any(Date), // receivedDate
         Status.RECEIVED,
-        0,                   // chainId
+        0, // chainId
         // storeMaps options — rawDurable defaults to true so maps are passed
         expect.objectContaining({
           storeMaps: expect.objectContaining({
@@ -436,7 +458,7 @@ describe('Channel', () => {
             responseMap: expect.any(Map),
           }),
         }),
-        mockPoolConnection   // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -445,13 +467,13 @@ describe('Channel', () => {
 
       expect(insertContent).toHaveBeenCalledWith(
         'test-channel-1',
-        expect.any(Number),  // messageId
-        0,                   // metaDataId for source
+        expect.any(Number), // messageId
+        0, // metaDataId for source
         ContentType.RAW,
         '<test>hello</test>',
-        expect.any(String),  // dataType
-        false,               // encrypted
-        mockPoolConnection   // conn from transaction
+        expect.any(String), // dataType
+        false, // encrypted
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -462,10 +484,10 @@ describe('Channel', () => {
       expect(insertConnectorMessage).toHaveBeenCalledWith(
         'test-channel-1',
         message.getMessageId(),
-        1,                    // metaDataId for destination
-        'Test Destination',   // connector name
+        1, // metaDataId for destination
+        'Test Destination', // connector name
         expect.any(Date),
-        expect.any(String)    // status
+        expect.any(String) // status
       );
     });
 
@@ -475,9 +497,9 @@ describe('Channel', () => {
       expect(updateConnectorMessageStatus).toHaveBeenCalledWith(
         'test-channel-1',
         message.getMessageId(),
-        1,                  // destination metaDataId
+        1, // destination metaDataId
         Status.SENT,
-        mockPoolConnection  // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -487,27 +509,29 @@ describe('Channel', () => {
       // Verify RECEIVED statistics for source (metaDataId=0) — inside transaction
       expect(updateStatistics).toHaveBeenCalledWith(
         'test-channel-1',
-        0,                   // source metaDataId
-        expect.any(String),  // serverId
+        0, // source metaDataId
+        expect.any(String), // serverId
         Status.RECEIVED,
-        1,                   // increment
-        mockPoolConnection   // conn from transaction
+        1, // increment
+        mockPoolConnection // conn from transaction
       );
 
       // Verify SENT statistics for destination (metaDataId=1) — inside transaction
       expect(updateStatistics).toHaveBeenCalledWith(
         'test-channel-1',
-        1,                   // destination metaDataId
-        expect.any(String),  // serverId
+        1, // destination metaDataId
+        expect.any(String), // serverId
         Status.SENT,
-        1,                   // increment
-        mockPoolConnection   // conn from transaction
+        1, // increment
+        mockPoolConnection // conn from transaction
       );
     });
 
     it('should use DB-backed message IDs when tables exist', async () => {
       mockNextMessageId = 42;
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       const message = await channel.dispatchRawMessage('<test>hello</test>');
 
@@ -555,8 +579,8 @@ describe('Channel', () => {
       // Final SOURCE_MAP write uses storeContent (upsert — storeMaps may have already INSERTed it)
       expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
-        expect.any(Number),  // messageId
-        0,                   // metaDataId
+        expect.any(Number), // messageId
+        0, // metaDataId
         ContentType.SOURCE_MAP,
         expect.stringContaining('key1'),
         'JSON',
@@ -571,7 +595,7 @@ describe('Channel', () => {
         'test-channel-1',
         message.getMessageId(),
         true,
-        mockPoolConnection  // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
   });
@@ -704,7 +728,9 @@ describe('Channel', () => {
           this.running = false;
         }
         async send(): Promise<void> {}
-        async getResponse(): Promise<string | null> { return null; }
+        async getResponse(): Promise<string | null> {
+          return null;
+        }
       }
 
       const rollbackChannel = new Channel({
@@ -756,7 +782,9 @@ describe('Channel', () => {
           this.running = false;
         }
         async send(): Promise<void> {}
-        async getResponse(): Promise<string | null> { return null; }
+        async getResponse(): Promise<string | null> {
+          return null;
+        }
       }
 
       class FailingDestination extends DestinationConnector {
@@ -771,7 +799,9 @@ describe('Channel', () => {
           this.running = false;
         }
         async send(): Promise<void> {}
-        async getResponse(): Promise<string | null> { return null; }
+        async getResponse(): Promise<string | null> {
+          return null;
+        }
       }
 
       const rollbackChannel = new Channel({
@@ -844,12 +874,12 @@ describe('Channel', () => {
       expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
-        1,                   // destination metaDataId
+        1, // destination metaDataId
         ContentType.SENT,
-        expect.any(String),  // sent data
-        expect.any(String),  // dataType
+        expect.any(String), // sent data
+        expect.any(String), // dataType
         false,
-        mockPoolConnection   // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -858,12 +888,12 @@ describe('Channel', () => {
 
       expect(updateSendAttempts).toHaveBeenCalledWith(
         'test-channel-1',
-        expect.any(Number),   // messageId
-        1,                    // destination metaDataId
-        1,                    // sendAttempts (incremented once)
-        expect.any(Date),     // sendDate
-        undefined,            // responseDate (no response captured in default test setup)
-        mockPoolConnection    // conn from transaction
+        expect.any(Number), // messageId
+        1, // destination metaDataId
+        1, // sendAttempts (incremented once)
+        expect.any(Date), // sendDate
+        undefined, // responseDate (no response captured in default test setup)
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -875,7 +905,9 @@ describe('Channel', () => {
         async send(_msg: ConnectorMessage): Promise<void> {
           throw new Error('Connection refused');
         }
-        async getResponse(): Promise<string | null> { return null; }
+        async getResponse(): Promise<string | null> {
+          return null;
+        }
       }
 
       const errorChannel = new Channel({
@@ -892,13 +924,13 @@ describe('Channel', () => {
 
       expect(updateErrors).toHaveBeenCalledWith(
         'error-persist-test',
-        expect.any(Number),   // messageId
-        1,                    // destination metaDataId
+        expect.any(Number), // messageId
+        1, // destination metaDataId
         expect.stringContaining('Connection refused'),
-        undefined,            // no postprocessor error
-        expect.any(Number),   // error code bitmask
-        undefined,            // responseError
-        mockPoolConnection    // conn from transaction
+        undefined, // no postprocessor error
+        expect.any(Number), // error code bitmask
+        undefined, // responseError
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -910,12 +942,12 @@ describe('Channel', () => {
       expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
-        1,                    // destination metaDataId
+        1, // destination metaDataId
         ContentType.RESPONSE,
         'ACK^A01|OK',
         'RAW',
         false,
-        mockPoolConnection    // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -925,11 +957,11 @@ describe('Channel', () => {
       expect(updateMaps).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
-        1,                    // destination metaDataId
-        expect.any(Map),      // connectorMap
-        expect.any(Map),      // channelMap
-        expect.any(Map),      // responseMap
-        mockPoolConnection    // conn from transaction
+        1, // destination metaDataId
+        expect.any(Map), // connectorMap
+        expect.any(Map), // channelMap
+        expect.any(Map), // responseMap
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -939,11 +971,11 @@ describe('Channel', () => {
       expect(updateMaps).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
-        0,                    // source metaDataId
-        expect.any(Map),      // connectorMap
-        expect.any(Map),      // channelMap
-        expect.any(Map),      // responseMap
-        mockPoolConnection    // conn from transaction
+        0, // source metaDataId
+        expect.any(Map), // connectorMap
+        expect.any(Map), // channelMap
+        expect.any(Map), // responseMap
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -961,7 +993,9 @@ describe('Channel', () => {
       await metadataChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await metadataChannel.dispatchRawMessage('<test/>');
       await metadataChannel.stop();
@@ -999,11 +1033,11 @@ describe('Channel', () => {
       // Should persist postprocessor error (second argument to updateErrors)
       expect(updateErrors).toHaveBeenCalledWith(
         'post-error-test',
-        expect.any(Number),   // messageId
-        0,                    // source metaDataId
-        undefined,            // no processing error
+        expect.any(Number), // messageId
+        0, // source metaDataId
+        undefined, // no processing error
         expect.stringContaining('post failed'),
-        expect.any(Number)    // error code bitmask
+        expect.any(Number) // error code bitmask
       );
     });
 
@@ -1021,7 +1055,9 @@ describe('Channel', () => {
       await rawChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       const sourceMap = new Map<string, unknown>([['traceKey', 'traceValue']]);
       await rawChannel.dispatchRawMessage('<test/>', sourceMap);
@@ -1116,12 +1152,12 @@ describe('Channel', () => {
       expect(storeContent).toHaveBeenCalledWith(
         'rt-persist-test',
         expect.any(Number),
-        1,                    // destination metaDataId
+        1, // destination metaDataId
         ContentType.RESPONSE_TRANSFORMED,
         '<transformed>ACK|original</transformed>',
         'XML',
         false,
-        mockPoolConnection    // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -1165,12 +1201,12 @@ describe('Channel', () => {
       expect(storeContent).toHaveBeenCalledWith(
         'pr-persist-test',
         expect.any(Number),
-        1,                    // destination metaDataId
+        1, // destination metaDataId
         ContentType.PROCESSED_RESPONSE,
         '{"status":"SENT","message":"ACK|processed"}',
         'RAW',
         false,
-        mockPoolConnection    // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -1210,7 +1246,9 @@ describe('Channel', () => {
       await trackChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await trackChannel.dispatchRawMessage('<test/>');
       await trackChannel.stop();
@@ -1248,12 +1286,12 @@ describe('Channel', () => {
       expect(storeContent).toHaveBeenCalledWith(
         'test-channel-1',
         expect.any(Number),
-        0,                      // source metaDataId
+        0, // source metaDataId
         ContentType.RESPONSE,
         'ACK^A01|SUCCESS',
         'RAW',
         false,
-        mockPoolConnection      // conn from transaction
+        mockPoolConnection // conn from transaction
       );
     });
 
@@ -1265,7 +1303,9 @@ describe('Channel', () => {
         async send(_msg: ConnectorMessage): Promise<void> {
           throw new Error('Connection refused');
         }
-        async getResponse(): Promise<string | null> { return 'ERROR_RESPONSE'; }
+        async getResponse(): Promise<string | null> {
+          return 'ERROR_RESPONSE';
+        }
       }
 
       const dest2 = new TestDestinationConnector(2, 'Success Dest');
@@ -1283,7 +1323,9 @@ describe('Channel', () => {
       await multiChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await multiChannel.dispatchRawMessage('<test/>');
       await multiChannel.stop();
@@ -1315,7 +1357,9 @@ describe('Channel', () => {
       await rawChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await rawChannel.dispatchRawMessage('<test/>');
       await rawChannel.stop();
@@ -1345,7 +1389,9 @@ describe('Channel', () => {
         async send(msg: ConnectorMessage): Promise<void> {
           msg.getResponseMap().set(this.mapKey, this.mapValue);
         }
-        async getResponse(): Promise<string | null> { return 'OK'; }
+        async getResponse(): Promise<string | null> {
+          return 'OK';
+        }
       }
 
       const mergeChannel = new Channel({
@@ -1360,7 +1406,9 @@ describe('Channel', () => {
       await mergeChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await mergeChannel.dispatchRawMessage('<test/>');
       await mergeChannel.stop();
@@ -1369,9 +1417,9 @@ describe('Channel', () => {
       expect(updateResponseMap).toHaveBeenCalledWith(
         'merge-resp-map-test',
         expect.any(Number),
-        0,                      // source metaDataId
+        0, // source metaDataId
         expect.any(Map),
-        mockPoolConnection      // conn from transaction
+        mockPoolConnection // conn from transaction
       );
 
       // Verify the merged map contains entries from both destinations
@@ -1401,7 +1449,9 @@ describe('Channel', () => {
       await rawChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await rawChannel.dispatchRawMessage('<test/>');
       await rawChannel.stop();
@@ -1416,18 +1466,36 @@ describe('Channel', () => {
   describe('statistics loading from DB on start', () => {
     it('should load statistics from D_MS when tables exist', async () => {
       (getStatistics as jest.Mock).mockResolvedValue([
-        { METADATA_ID: 0, SERVER_ID: 'node-1', RECEIVED: 100, FILTERED: 5, TRANSFORMED: 0, PENDING: 0, SENT: 0, ERROR: 2 },
-        { METADATA_ID: 1, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 3, TRANSFORMED: 0, PENDING: 2, SENT: 88, ERROR: 1 },
+        {
+          METADATA_ID: 0,
+          SERVER_ID: 'node-1',
+          RECEIVED: 100,
+          FILTERED: 5,
+          TRANSFORMED: 0,
+          PENDING: 0,
+          SENT: 0,
+          ERROR: 2,
+        },
+        {
+          METADATA_ID: 1,
+          SERVER_ID: 'node-1',
+          RECEIVED: 0,
+          FILTERED: 3,
+          TRANSFORMED: 0,
+          PENDING: 2,
+          SENT: 88,
+          ERROR: 1,
+        },
       ]);
 
       await channel.start();
 
       const stats = channel.getStatistics();
       expect(stats.received).toBe(100);
-      expect(stats.filtered).toBe(8);   // 5 + 3
+      expect(stats.filtered).toBe(8); // 5 + 3
       expect(stats.sent).toBe(88);
-      expect(stats.error).toBe(3);      // 2 + 1
-      expect(stats.queued).toBe(2);     // PENDING maps to queued
+      expect(stats.error).toBe(3); // 2 + 1
+      expect(stats.queued).toBe(2); // PENDING maps to queued
 
       expect(getStatistics).toHaveBeenCalledWith('test-channel-1');
 
@@ -1468,10 +1536,46 @@ describe('Channel', () => {
 
     it('should correctly sum across multiple metadata IDs', async () => {
       (getStatistics as jest.Mock).mockResolvedValue([
-        { METADATA_ID: 0, SERVER_ID: 'node-1', RECEIVED: 50, FILTERED: 10, TRANSFORMED: 0, PENDING: 0, SENT: 0, ERROR: 0 },
-        { METADATA_ID: 1, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 5, SENT: 30, ERROR: 3 },
-        { METADATA_ID: 2, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 2, SENT: 20, ERROR: 1 },
-        { METADATA_ID: 3, SERVER_ID: 'node-1', RECEIVED: 0, FILTERED: 0, TRANSFORMED: 0, PENDING: 0, SENT: 10, ERROR: 0 },
+        {
+          METADATA_ID: 0,
+          SERVER_ID: 'node-1',
+          RECEIVED: 50,
+          FILTERED: 10,
+          TRANSFORMED: 0,
+          PENDING: 0,
+          SENT: 0,
+          ERROR: 0,
+        },
+        {
+          METADATA_ID: 1,
+          SERVER_ID: 'node-1',
+          RECEIVED: 0,
+          FILTERED: 0,
+          TRANSFORMED: 0,
+          PENDING: 5,
+          SENT: 30,
+          ERROR: 3,
+        },
+        {
+          METADATA_ID: 2,
+          SERVER_ID: 'node-1',
+          RECEIVED: 0,
+          FILTERED: 0,
+          TRANSFORMED: 0,
+          PENDING: 2,
+          SENT: 20,
+          ERROR: 1,
+        },
+        {
+          METADATA_ID: 3,
+          SERVER_ID: 'node-1',
+          RECEIVED: 0,
+          FILTERED: 0,
+          TRANSFORMED: 0,
+          PENDING: 0,
+          SENT: 10,
+          ERROR: 0,
+        },
       ]);
 
       await channel.start();
@@ -1479,9 +1583,9 @@ describe('Channel', () => {
       const stats = channel.getStatistics();
       expect(stats.received).toBe(50);
       expect(stats.filtered).toBe(10);
-      expect(stats.sent).toBe(60);       // 30 + 20 + 10
-      expect(stats.error).toBe(4);       // 3 + 1
-      expect(stats.queued).toBe(7);      // 5 + 2
+      expect(stats.sent).toBe(60); // 30 + 20 + 10
+      expect(stats.error).toBe(4); // 3 + 1
+      expect(stats.queued).toBe(7); // 5 + 2
 
       await channel.stop();
     });
@@ -1503,24 +1607,15 @@ describe('Channel', () => {
 
     it('should initialize D_MS rows for source and destinations on start (PC-MPS-001)', async () => {
       (getStatistics as jest.Mock).mockResolvedValue([]);
-      (updateStatistics as jest.Mock).mockClear();
+      (batchInitializeStatistics as jest.Mock).mockClear();
 
       await channel.start();
 
-      // Should create initial zero-count rows for source (metaDataId=0) and destination (metaDataId=1)
-      expect(updateStatistics).toHaveBeenCalledWith(
+      // Should create initial zero-count rows via single batch INSERT for source (0) and destination (1)
+      expect(batchInitializeStatistics).toHaveBeenCalledWith(
         'test-channel-1',
-        0,                   // source
-        expect.any(String),  // serverId
-        'R',                 // Status.RECEIVED
-        0                    // zero-count initialization
-      );
-      expect(updateStatistics).toHaveBeenCalledWith(
-        'test-channel-1',
-        1,                   // destination
-        expect.any(String),  // serverId
-        'R',                 // Status.RECEIVED
-        0                    // zero-count initialization
+        [0, 1], // metadataIds: source + 1 destination
+        expect.any(String) // serverId
       );
 
       await channel.stop();
@@ -1528,12 +1623,12 @@ describe('Channel', () => {
 
     it('should skip D_MS initialization when tables do not exist', async () => {
       (channelTablesExist as jest.Mock).mockResolvedValue(false);
-      (updateStatistics as jest.Mock).mockClear();
+      (batchInitializeStatistics as jest.Mock).mockClear();
 
       await channel.start();
 
       // No initialization calls when tables don't exist
-      expect(updateStatistics).not.toHaveBeenCalled();
+      expect(batchInitializeStatistics).not.toHaveBeenCalled();
 
       await channel.stop();
     });
@@ -1611,12 +1706,16 @@ describe('Channel', () => {
       await cleanupChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
       // DB check: all destinations in terminal state
-      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(new Map([
-        [0, Status.TRANSFORMED],
-        [1, Status.SENT],
-      ]));
+      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(
+        new Map([
+          [0, Status.TRANSFORMED],
+          [1, Status.SENT],
+        ])
+      );
 
       await cleanupChannel.dispatchRawMessage('<test/>');
       await cleanupChannel.stop();
@@ -1641,12 +1740,16 @@ describe('Channel', () => {
       await noCleanupChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
       // Destination has SENT status, not FILTERED
-      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(new Map([
-        [0, Status.TRANSFORMED],
-        [1, Status.SENT],
-      ]));
+      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(
+        new Map([
+          [0, Status.TRANSFORMED],
+          [1, Status.SENT],
+        ])
+      );
 
       await noCleanupChannel.dispatchRawMessage('<test/>');
       await noCleanupChannel.stop();
@@ -1674,13 +1777,17 @@ describe('Channel', () => {
       await selectiveChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
       // Destination 1 is FILTERED, destination 2 is SENT
-      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(new Map([
-        [0, Status.TRANSFORMED],
-        [1, Status.FILTERED],
-        [2, Status.SENT],
-      ]));
+      (getConnectorMessageStatuses as jest.Mock).mockResolvedValue(
+        new Map([
+          [0, Status.TRANSFORMED],
+          [1, Status.FILTERED],
+          [2, Status.SENT],
+        ])
+      );
 
       await selectiveChannel.dispatchRawMessage('<test/>');
       await selectiveChannel.stop();
@@ -1689,7 +1796,7 @@ describe('Channel', () => {
       expect(deleteMessageContentByMetaDataIds).toHaveBeenCalledWith(
         'selective-test',
         expect.any(Number),
-        [1]  // Only the FILTERED destination's metaDataId
+        [1] // Only the FILTERED destination's metaDataId
       );
       // Should NOT use bulk removal
       expect(pruneMessageContent).not.toHaveBeenCalled();
@@ -1711,12 +1818,16 @@ describe('Channel', () => {
       await attachCleanupChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await attachCleanupChannel.dispatchRawMessage('<test/>');
       await attachCleanupChannel.stop();
 
-      expect(pruneMessageAttachments).toHaveBeenCalledWith('attach-cleanup-test', [expect.any(Number)]);
+      expect(pruneMessageAttachments).toHaveBeenCalledWith('attach-cleanup-test', [
+        expect.any(Number),
+      ]);
     });
 
     it('should NOT delete content or attachments by default', async () => {
@@ -1724,7 +1835,9 @@ describe('Channel', () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await channel.dispatchRawMessage('<test/>');
       await channel.stop();
@@ -1739,7 +1852,9 @@ describe('Channel', () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       const sourceMap = new Map<string, unknown>([['traceId', '12345']]);
       await channel.dispatchRawMessage('<test/>', sourceMap);
@@ -1789,7 +1904,9 @@ describe('Channel', () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await channel.dispatchRawMessage('<test>hello</test>');
 
@@ -1809,7 +1926,9 @@ describe('Channel', () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await channel.dispatchRawMessage('<test/>');
 
@@ -1847,14 +1966,18 @@ describe('Channel', () => {
         async send(msg: ConnectorMessage): Promise<void> {
           msg.getConnectorMap().set('patientName', 'John Doe');
         }
-        async getResponse(): Promise<string | null> { return null; }
+        async getResponse(): Promise<string | null> {
+          return null;
+        }
       }
       metaChannel.addDestinationConnector(new MappingDest());
 
       await metaChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await metaChannel.dispatchRawMessage('<test/>');
       await metaChannel.stop();
@@ -1876,9 +1999,7 @@ describe('Channel', () => {
         name: 'No Meta Test',
         enabled: true,
         storageSettings: settings,
-        metaDataColumns: [
-          { name: 'Ignored', type: 'STRING' as any, mappingName: 'ignored' },
-        ],
+        metaDataColumns: [{ name: 'Ignored', type: 'STRING' as any, mappingName: 'ignored' }],
       });
       noMetaChannel.setSourceConnector(new TestSourceConnector());
       noMetaChannel.addDestinationConnector(new TestDestinationConnector(1));
@@ -1886,7 +2007,9 @@ describe('Channel', () => {
       await noMetaChannel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await noMetaChannel.dispatchRawMessage('<test/>');
       await noMetaChannel.stop();
@@ -1902,7 +2025,9 @@ describe('Channel', () => {
       await channel.start();
       jest.clearAllMocks();
       (channelTablesExist as jest.Mock).mockResolvedValue(true);
-      (getNextMessageId as jest.Mock).mockImplementation(() => Promise.resolve(mockNextMessageId++));
+      (getNextMessageId as jest.Mock).mockImplementation(() =>
+        Promise.resolve(mockNextMessageId++)
+      );
 
       await channel.dispatchRawMessage('<test/>');
 

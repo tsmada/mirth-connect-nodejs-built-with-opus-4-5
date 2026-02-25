@@ -275,8 +275,14 @@ export class EngineController {
   /**
    * Deploy a single channel
    * Registers the channel with both EngineController and Donkey engine
+   * @param options.startAfterDeploy - When false, channel is left in STOPPED state after deploy.
+   *   Defaults to true for backward compatibility with API-triggered deployments.
    */
-  static async deployChannel(channelId: string): Promise<void> {
+  static async deployChannel(
+    channelId: string,
+    options?: { startAfterDeploy?: boolean }
+  ): Promise<void> {
+    const startAfterDeploy = options?.startAfterDeploy ?? true;
     const channelConfig = await ChannelController.getChannel(channelId);
     if (!channelConfig) {
       throw new Error(`Channel not found: ${channelId}`);
@@ -388,15 +394,18 @@ export class EngineController {
       // Determine initial state from channel properties
       const initialState = channelConfig.properties?.initialState || DeployedState.STARTED;
 
-      // Start the channel if initial state is STARTED
+      // Start the channel if initial state is STARTED and startAfterDeploy is true
       // In shadow mode, only start promoted channels — others remain deployed but stopped
-      if (initialState === DeployedState.STARTED) {
+      if (startAfterDeploy && initialState === DeployedState.STARTED) {
         if (!isShadowMode() || isChannelPromoted(channelId)) {
           await runtimeChannel.start();
         } else {
           // Shadow mode: load stats for dashboard display without starting connectors
           await runtimeChannel.loadStatisticsFromDb();
         }
+      } else if (!startAfterDeploy && initialState === DeployedState.STARTED) {
+        // Deploy-only mode: load stats for dashboard but don't start connectors
+        await runtimeChannel.loadStatisticsFromDb();
       }
 
       // Register in cluster channel registry (non-fatal)
@@ -416,6 +425,71 @@ export class EngineController {
       deployedChannels.delete(channelId);
       throw error;
     }
+  }
+
+  /**
+   * Start multiple deployed channels with controlled concurrency.
+   * Used during server boot to prevent pool exhaustion by limiting
+   * how many channels start simultaneously.
+   *
+   * @param channelIds - Channel IDs to start (must already be deployed)
+   * @param opts.concurrency - Max concurrent starts (default: min(10, poolSize/3))
+   */
+  static async startDeployedChannels(
+    channelIds: string[],
+    opts?: { concurrency?: number }
+  ): Promise<void> {
+    const concurrency = opts?.concurrency ?? 10;
+    let started = 0;
+    let failed = 0;
+    let active = 0;
+    const total = channelIds.length;
+
+    logger.info(`Starting channels: 0/${total} (concurrency: ${concurrency})`);
+
+    // Simple semaphore pattern: track active count, resolve when slot opens
+    const waitForSlot = async () => {
+      while (active >= concurrency) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    };
+
+    const promises: Promise<void>[] = [];
+
+    for (const channelId of channelIds) {
+      await waitForSlot();
+      active++;
+
+      const promise = (async () => {
+        const deployment = deployedChannels.get(channelId);
+        if (!deployment) {
+          active--;
+          return;
+        }
+
+        try {
+          if (!isShadowMode() || isChannelPromoted(channelId)) {
+            await deployment.runtimeChannel.start();
+            started++;
+          }
+        } catch (err) {
+          failed++;
+          logger.error(`Failed to start channel ${deployment.name}`, err as Error);
+        } finally {
+          active--;
+          if ((started + failed) % 25 === 0 || started + failed === total) {
+            logger.info(
+              `Starting channels: ${started + failed}/${total} (${started} started, ${failed} failed)`
+            );
+          }
+        }
+      })();
+
+      promises.push(promise);
+    }
+
+    await Promise.all(promises);
+    logger.info(`Channel startup complete: ${started} started, ${failed} failed out of ${total}`);
   }
 
   /**
