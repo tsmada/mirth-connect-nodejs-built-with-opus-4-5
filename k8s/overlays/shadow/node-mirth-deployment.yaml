@@ -79,6 +79,10 @@ spec:
               value: "mirth"
             - name: DB_PASSWORD
               value: "mirth"
+            - name: DB_NAME
+              value: "mirthdb"
+            - name: CORS_ORIGINS
+              value: "http://localhost:8080,http://node-mirth:8080,http://node-mirth.mirth-shadow.svc.cluster.local:8080"
             - name: OTEL_SERVICE_NAME
               value: "mirth-connect-node"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

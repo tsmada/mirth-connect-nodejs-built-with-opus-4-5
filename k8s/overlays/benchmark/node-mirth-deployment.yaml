@@ -49,6 +49,8 @@ spec:
               value: "mirth"
             - name: DB_PASSWORD
               value: "mirth"
+            - name: DB_NAME
+              value: "mirthdb"
           envFrom:
             - configMapRef:
                 name: node-mirth-config

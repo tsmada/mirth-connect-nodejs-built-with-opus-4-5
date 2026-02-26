@@ -79,7 +79,7 @@ Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase
 
 | Dimension | Rating | Evidence |
 |-----------|--------|----------|
-| **Test Suite** | PASS | 7,689 tests / 334 suites / 0 failures |
+| **Test Suite** | PASS | 8,861 tests / 402 suites / 0 failures |
 | **Type Safety** | PASS | `tsc --noEmit` — zero errors under strict mode |
 | **Dependencies** | PASS | Zero production dependency vulnerabilities |
 | **Security** | PASS | Parameterized SQL, role-based authorization (4 roles, 35+ permissions), VM sandbox, rate limiting |
@@ -142,10 +142,6 @@ Comprehensive audit performed 2026-02-19 across 9 dimensions including a 7-phase
 | API Docs | None (manual) | OpenAPI 3.1 spec with Swagger UI (`/api-docs`) |
 | Authorization | Custom role/permission CRUD | 4 predefined roles, zero config needed |
 
-### Known Deferrals (15 total — non-blocking)
-
-5 connector deferrals (HTTP/WS plugin auth, DICOM storage commitment, HTTP Digest edge cases, JDBC parameterized receiver queries) and 10 JS runtime deferrals (convenience vars, `Namespace()`/`QName()` constructors, `XML.ignoreWhitespace`, minor edge cases). Several previously-deferred items have been resolved: File FTP/S3/SMB backends, E4X `delete`, Database Reader `resultMap`, script timeout, `AuthenticationResult`/`AuthStatus`. See `CLAUDE.md` for the full inventory. None affect core message processing or API compatibility.
-
 ## Features
 
 | Category | Features |
@@ -190,7 +186,7 @@ npm run build
 
 ### Configuration
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` and customize:
 
 ```env
 # Operational Mode (the ONLY difference between Java and Node.js Mirth)
@@ -355,7 +351,7 @@ Full E4X transpilation (including attribute write, XML append, filter predicates
 | `npm run build` | Compile TypeScript |
 | `npm run dev` | Development server with hot reload |
 | `npm start` | Production server |
-| `npm test` | Run test suite (7,689 tests) |
+| `npm test` | Run test suite (8,861 tests) |
 | `npm run test:coverage` | Generate coverage report |
 | `npm run lint` | Check code style |
 | `npm run typecheck` | Type check without compiling |
@@ -365,13 +361,13 @@ See the full [Development Guide](docs/development-guide.md) for project structur
 
 ## Testing & Validation
 
-**7,689 tests passing** across 334 test suites (2,559 core + 417 artifact + 2,313 parity/unit + 599 OTEL/operational + 204 servlet/pool-hardening + 1,508 Phase C + 89 auth/OpenAPI). The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
+**8,861 tests passing** across 402 test suites. The `validation/` directory validates Node.js behavior against the Java engine across all priority levels (export compatibility, MLLP, JavaScript, connectors, data types, advanced, operational modes). Kubernetes deployment validated across all 4 operational modes on Rancher Desktop k3s. See the full [Development Guide](docs/development-guide.md#validation-suite).
 
 ### Validation Tiers
 
 | Tier | What | Count | Purpose |
 |------|------|-------|---------|
-| Unit Tests | Jest test suites | 7,689 tests / 334 suites | Component-level correctness |
+| Unit Tests | Jest test suites | 8,861 tests / 402 suites | Component-level correctness |
 | Parity Scans | Automated agents | 5 connector + 3 JS runtime scans | Java-to-Node.js fidelity |
 | Java Comparison | Side-by-side validation | Priority 0-6 scenarios | Behavioral equivalence |
 | K8s Functional | Deep validation suite | 7 phases, 12 DV channels | Production resilience |
@@ -434,10 +430,13 @@ When deploying to production, review these settings to harden security and relia
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_POOL_SIZE` | `10` | Max concurrent connections. Increase for high-volume channels. |
+| `DB_POOL_SIZE` | (auto) | Explicit pool size override. If omitted, auto-scales at startup based on channel count: `max(10, ceil(channels/5))`, capped by `DB_POOL_MAX`. |
+| `DB_POOL_MAX` | `100`/`50` | Upper bound for auto-scaled pool. 100 in standalone mode, 50 in takeover mode (leaves room for Java Mirth). |
 | `DB_DEADLOCK_RETRIES` | `3` | Auto-retry on MySQL deadlock (error 1213) and lock wait timeout (1205). Exponential backoff. |
 | `DB_CONNECT_TIMEOUT` | `10000` | Connection timeout in ms |
-| `DB_QUEUE_LIMIT` | `0` | Max queued connection requests (0 = unlimited) |
+| `DB_ACQUIRE_TIMEOUT` | `30000` | Max ms to wait for a free connection before error |
+| `DB_QUEUE_LIMIT` | `200` | Max queued connection requests |
+| `MIRTH_STARTUP_CONCURRENCY` | (auto) | Max channels starting simultaneously during boot. Default: `min(10, floor(poolSize/3))`. |
 
 ### Script Execution
 
