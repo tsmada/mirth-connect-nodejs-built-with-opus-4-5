@@ -39,6 +39,7 @@ docker/volumes/
 tmp/
 temp/
 
-# Tech debt reports
+# Auto-generated reports (tech debt, validation runs)
 reports/
+!k8s/deep-validation/reports/
 node_modules
